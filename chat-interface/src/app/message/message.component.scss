@@ -1,0 +1,29 @@
+.message {
+  padding: 5px;
+  margin: 5px;
+  border-radius: 15px;
+  display: inline-block;
+  max-width: 60%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+
+  &.user {
+    float: right;
+    text-align: right;
+    border-bottom-right-radius: 0;
+    background-color: #1e1e1e;
+  }
+
+  &.notUser {
+    float: left;
+    text-align: left;
+    border-bottom-left-radius: 0;
+    background-color: #444444;
+  }
+}
+
+.timestamp {
+  font-size: 0.8em;
+  color: #888;
+}

@@ -1,0 +1,4 @@
+<div class="message" [class.user]="message.isUser" [class.notUser]="!message.isUser">
+  <p>{{ message.text }}</p>
+  <span class="timestamp">{{ message.time | date:'shortTime' }}</span>
+</div>

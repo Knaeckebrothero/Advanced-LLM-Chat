@@ -1,0 +1,12 @@
+<div class="chat-container">
+  <div class="message-window">
+    <app-message *ngFor="let message of messages" [message]="message"></app-message>
+  </div>  
+  <div class="input-container">
+    <mat-form-field>
+      <mat-label>Type your message</mat-label>
+      <input matInput [(ngModel)]="newMessage" placeholder="Type your message..." (keydown.enter)="sendMessage()">
+    </mat-form-field>          
+    <button mat-raised-button color="primary" (click)="sendMessage()">Send</button>
+  </div>
+</div>
