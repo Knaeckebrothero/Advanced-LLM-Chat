@@ -1,0 +1,12 @@
+<div class="chat-ui-container">
+    <div class="message-container">
+        <app-chat-ui-message *ngFor="let message of messages$ | async" [message]="message"></app-chat-ui-message>
+    </div>  
+    <div class="input-container">
+        <mat-form-field>
+            <mat-label>Type your message</mat-label>
+            <input matInput [(ngModel)]="inputField" placeholder="Type your message..." (keydown.enter)="inputUserMessage()">
+        </mat-form-field>          
+        <button mat-raised-button color="primary" (click)="inputUserMessage()">Send</button>
+    </div>
+</div>
