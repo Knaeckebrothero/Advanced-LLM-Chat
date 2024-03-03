@@ -1,16 +1,17 @@
 import { Injectable, OnInit } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Message } from './message.model';
+import { Message } from './message-interface';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ChatService implements OnInit {
 
-  // The BehaviorSubject is a special type of observable that allows us to set the initial value of the observable.
+  // 
   private messagesSubject = new BehaviorSubject<Message[]>([]);
-  // The messages$ observable is exposed as a public property of the ChatService.
-  public messages$: Observable<Message[]> = this.messagesSubject.asObservable();
+
+  // Messages array as an observable
+  public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // The ChatService is responsible for managing the messages array and exposing it as an observable.
   ngOnInit() {

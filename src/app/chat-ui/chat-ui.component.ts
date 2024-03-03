@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { ChatService } from './chat.service';
+import { ChatService } from '../chat/chat.service';
 
 @Component({
   selector: 'app-chat-ui',
@@ -12,7 +12,8 @@ export class ChatUiComponent {
   inputField: string = '';
 
   // Messages are managed by the ChatService and are passed to the ChatUiComponent via the messages$ observable.
-  messages$ = this.chatService.messages$;
+  messages = this.chatService.messages;
+  
   constructor(private chatService: ChatService) {}
 
   // The inputUserMessage method is called when the user submits a new message.
