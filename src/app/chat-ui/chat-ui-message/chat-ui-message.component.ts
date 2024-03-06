@@ -10,10 +10,4 @@ export class ChatUiMessageComponent {
   
   // Pass the message object from the parent component
   @Input() message!: Message;
-
-  // The formattedTime property converts the Unix timestamp to a Date object
-  get formattedTime(): Date {
-    // Convert Unix timestamp (seconds) to milliseconds and return as a new Date object
-    return new Date(this.message.time * 1000);
-  }
 }

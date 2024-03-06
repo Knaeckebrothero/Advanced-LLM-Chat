@@ -21,12 +21,15 @@ export class DataService {
 
   // The database instance
   private db!: IDBPDatabase<ChatDB>;
+  private status: Promise<void>;
 
   constructor() {
-    this.initDB();
+    this.status = this.initDB();
   }
 
+  // Initialize the database
   async initDB() {
+    console.log("Starting database...");
     this.db = await openDB<ChatDB>('chat-db', 1, {
       upgrade(db) {
         // Create a store for messages with 'id' as the key path
@@ -35,9 +38,24 @@ export class DataService {
         messageStore.createIndex('by-time', 'time');
       }
     });
+    console.log("Database started!");
   }
 
-  // CRUD operations for messages
+  // Get a promise that resolves when the database is ready
+  public getDatabaseReadyPromise() {
+    console.log("Waiting for database to be ready...");
+    return this.status
+  }
+
+  // Get all messages from the database
+  async getAllMessages() {
+    return await this.db.getAll('messages');
+  }
+
+  /*
+  CRUD operations for messages
+  */
+
   async addMessage(message: Message) {
     return await this.db.add('messages', message);
   }
@@ -52,9 +70,5 @@ export class DataService {
 
   async deleteMessage(id: string) {
     return await this.db.delete('messages', id);
-  }
-
-  async getAllMessages() {
-    return await this.db.getAll('messages');
   }
 }

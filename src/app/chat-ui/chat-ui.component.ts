@@ -11,10 +11,11 @@ export class ChatUiComponent {
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
 
-  // Messages are managed by the ChatService and are passed to the ChatUiComponent via the messages$ observable.
+  // Messages are managed by the ChatService and are passed to the ChatUiComponent via the observable.
   messages = this.chatService.messages;
   
-  constructor(private chatService: ChatService) {}
+  constructor(private chatService: ChatService) {
+  }
 
   // The inputUserMessage method is called when the user submits a new message.
   inputUserMessage() {
@@ -22,6 +23,8 @@ export class ChatUiComponent {
     if (this.inputField !== '') {
       // The ChatService is used to add a new usermessage to the history.
       this.chatService.addMessage(this.inputField, true);
+      console.log("Message sent!");
+      
       // The input field is cleared.
       this.inputField = '';
     }
