@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { openDB, IDBPDatabase } from 'idb';
 import { Message } from './interfaces/message-interface';
-import { ChatDB } from './interfaces/chat-db-schema';
+import { MainAppDB } from './interfaces/db-schema';
 
 
 @Injectable({
@@ -10,7 +10,7 @@ import { ChatDB } from './interfaces/chat-db-schema';
 export class DataService {
 
   // The database instance
-  private db!: IDBPDatabase<ChatDB>;
+  private db!: IDBPDatabase<MainAppDB>;
   private status: Promise<void>;
 
   constructor() {
@@ -20,7 +20,7 @@ export class DataService {
   // Initialize the database
   async initDB() {
     console.log("Starting database...");
-    this.db = await openDB<ChatDB>('chat-db', 1, {
+    this.db = await openDB<MainAppDB>('chat-db', 1, {
       upgrade(db) {
         // Create a store for messages with 'id' as the key path
         const messageStore = db.createObjectStore('messages', { keyPath: 'id' });
@@ -60,5 +60,25 @@ export class DataService {
 
   async deleteMessage(id: string) {
     return await this.db.delete('messages', id);
+  }
+
+  /*
+  CRUD operations for API components
+  */
+
+  async addLLMConfig(id: string, config: any) {
+    return await this.db.add('settings', config, id);
+  }
+
+  async getLLMConfig(id: string) {
+    return await this.db.get('settings', id);
+  }
+
+  async updateLLMConfig(id: string, config: any) {
+    return await this.db.put('settings', config, id);
+  }
+
+  async deleteLLMConfig(id: string) {
+    return await this.db.delete('settings', id);
   }
 }

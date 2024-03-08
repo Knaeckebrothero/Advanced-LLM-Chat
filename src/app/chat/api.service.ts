@@ -7,19 +7,18 @@ import { DataService } from '../data/data.service';
   providedIn: 'root'
 })
 export class ApiService {
-
   // Variables
   private baseUrl: string = 'https://api.openai.com/v1';
-  private openAiKey: string = '';
+  private settings: {} = {};
 
   // Inject the DataService and load the api key from the database
   constructor(private http: HttpClient, private dataService: DataService) {
     // Wait for the database to be ready
     this.dataService.getDatabaseReadyPromise().then(() => {
       // Load the api key from the database
-      this.openAiKey = this.dataService.getApiKey('openai');
+      this.settings = this.dataService.getLLMConfig('openai-default');
       });
-      console.log("Messages loaded!");
+      console.log("API set up!");
   }
 
   // Send a request to the OpenAI API
@@ -27,7 +26,7 @@ export class ApiService {
     const endpoint: string = `${this.baseUrl}/engines/davinci-codex/completions`; // You can change the engine as needed
     const headers = new HttpHeaders({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.apiKey}`,
+      //'Authorization': `Bearer ${this.apiKey}`,
     });
 
     const body = {
