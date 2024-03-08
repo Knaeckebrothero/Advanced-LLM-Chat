@@ -1,18 +1,8 @@
 import { Injectable } from '@angular/core';
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import { Message } from './message-interface';
+import { openDB, IDBPDatabase } from 'idb';
+import { Message } from './interfaces/message-interface';
+import { ChatDB } from './interfaces/chat-db-schema';
 
-interface ChatDB extends DBSchema {
-  messages: {
-    key: string;
-    value: Message;
-    indexes: { 'by-time': Date };
-  };
-  agents: {
-    key: string;
-    value: { id: string; name: string; email?: string };
-  };
-}
 
 @Injectable({
   providedIn: 'root'

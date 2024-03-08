@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Message } from './message-interface';
-import { DataService } from './data.service';
+import { Message } from '../data/interfaces/message-interface';
+import { DataService } from '../data/data.service';
 
 
 @Injectable({
