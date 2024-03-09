@@ -16,7 +16,10 @@ export class ChatService {
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // Declare a conversation
-  private conversation: Conversation;
+  private conversation = new Conversation(0, 
+    [], 
+    'This is a new conversation. There is no summary yet.', 
+    []);
 
   // Inject the DataService and load the messages from the database
   constructor(private dbService: DBService, private apiService: OpenAIService) {
@@ -34,12 +37,19 @@ export class ChatService {
 
   // Generate a new message
   private generate() {
-    // Generate a message using the OpenAI API
-    this.apiService.chatComplete(this.messagesSubject.getValue()).then((response) => {
-      // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), response]);
+    // Extract the messages not part of the conversation summery
+    const messages = this.messagesSubject.getValue();
+    const messagesNotInSummary = messages.slice(messages.length - this.conversation.messagesPartOfSummery).map((message: Message) => {
+      return {role: message.user, content: message.content};
     });
+  
+    // Generate a message using the OpenAI API, including only the last 10 messages
+    this.apiService.chatComplete([
+      {role: "system", content: this.conversation.conversationPromt},
+      ...messagesNotInSummary
+    ]);
   }
+  
 
   /*
   The ChatService exposes a veriety of methods for managing the message history.
@@ -59,5 +69,9 @@ export class ChatService {
 
     // Add the message to the messages array
     this.messagesSubject.next([...this.messagesSubject.getValue(), newMessage]);
+
+    // Generate a response
+    const response = this.generate();
+    console.log(response);
   }
 }
