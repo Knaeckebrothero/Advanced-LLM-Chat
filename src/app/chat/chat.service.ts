@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/interfaces/chat-message';
-import { DataService } from '../data/data.service';
+import { DBService } from '../data/db.service';
 
 
 @Injectable({
@@ -14,12 +14,12 @@ export class ChatService {
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // Inject the DataService and load the messages from the database
-  constructor(private dataService: DataService) {
+  constructor(private dbService: DBService) {
     // Wait for the database to be ready
-    this.dataService.getDatabaseReadyPromise().then(() => {
+    this.dbService.getDatabaseReadyPromise().then(() => {
       // Load the messages from the database once it has been started
       console.log("Loading messages from the database...");
-      this.dataService.getAllMessages().then((messages: Message[]) => {
+      this.dbService.getAllMessages().then((messages: Message[]) => {
         // Add the messages to the messages array
         this.messagesSubject.next(messages);
       });
@@ -45,7 +45,7 @@ export class ChatService {
     };
 
     // Add the message to the database
-    this.dataService.addMessage(newMessage);
+    this.dbService.addMessage(newMessage);
 
     // Add the message to the messages array
     this.messagesSubject.next([...this.messagesSubject.getValue(), newMessage]);

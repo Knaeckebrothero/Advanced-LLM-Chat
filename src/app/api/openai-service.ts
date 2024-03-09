@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { DataService } from '../data/data.service';
+import { DBService } from '../data/db.service';
+import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
 
 
 @Injectable({
@@ -9,17 +10,36 @@ import { DataService } from '../data/data.service';
 export class OpenAIService {
   // Variables 
   private baseUrl: string = 'https://api.openai.com/v1'; // https://api.openai.com/v1/chat/completions
-  private settings: {} = {};
+  private apiKey: string | undefined = undefined;
+  private chatCompleteBody: OpenAIChatCompleteRequest = {
+    model: 'gpt-3.5-turbo',
+    messages: [],
+    max_tokens: 256,
+    temperature: 0.7,
+  };
   
-
   // Inject the DataService and load the api key from the database
-  constructor(private http: HttpClient, private dataService: DataService) {
+  constructor(private http: HttpClient, private dbService: DBService) {
     // Wait for the database to be ready
-    this.dataService.getDatabaseReadyPromise().then(() => {
-      // Load the api key from the database
-      this.settings = this.dataService.getLLMConfig('openai-default');
-      });
-      console.log("API set up!");
+    this.dbService.getDatabaseReadyPromise().then(async () => {
+      // Fetch the OpenAI settings from the database
+      const defaultSettings = await this.dbService.getLLMConfig('openai-default');
+  
+      // If the settings are found initialize the component
+      if (defaultSettings) {
+        // Set API key
+        this.apiKey = defaultSettings.apiKey;
+
+        // Remove id and apiKey from the the body
+        const { id, apiKey, ...rest } = defaultSettings;
+
+        // Populate chatCompleteBody with the rest of the properties
+        this.chatCompleteBody = { ...rest };
+        console.log("API set up!");
+      } else {
+        console.error('API settings not found!');
+      }
+    });
   }
 
   // Send a request to the OpenAI API
@@ -27,7 +47,7 @@ export class OpenAIService {
     const endpoint: string = `${this.baseUrl}/engines/davinci-codex/completions`; // You can change the engine as needed
     const headers = new HttpHeaders({
       'Content-Type': 'application/json',
-      //'Authorization': `Bearer ${this.apiKey}`,
+      'Authorization': `Bearer ${this.apiKey}`,
     });
 
     const body = {

@@ -1,10 +1,12 @@
 // Interface for OpenAI chat request
-export interface OpenAIChatRequest {
+export interface OpenAIChatCompleteRequest {
     // The unique identifier, used as the key in the database
-    id: string | null;
+    id?: string | null;
+    // API key used for these settings (do not include in the body of the request)
+    apiKey?: string;
 
     // The prompt messages
-    messages?: OpenAIMessage[] | null;
+    messages?: OpenAIMessage[];
     // The model designation
     model: string;
     frequency_penalty?: number | null;
