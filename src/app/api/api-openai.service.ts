@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
+import { OpenAIMessage } from '../data/interfaces/api-openai-request';
 
 
 @Injectable({
@@ -9,11 +10,10 @@ import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request
 })
 export class OpenAIService {
   // Variables 
-  private baseUrl: string = 'https://api.openai.com/v1'; // https://api.openai.com/v1/chat/completions
+  private baseUrl: string = 'https://api.openai.com/v1';
   private apiKey: string | undefined = undefined;
   private chatCompleteBody: OpenAIChatCompleteRequest = {
     model: 'gpt-3.5-turbo',
-    messages: [],
     max_tokens: 256,
     temperature: 0.7,
   };
@@ -42,28 +42,38 @@ export class OpenAIService {
     });
   }
 
-  // Send a request to the OpenAI API
-  public async queryLLM(prompt: string): Promise<any> {
-    const endpoint: string = `${this.baseUrl}/engines/davinci-codex/completions`; // You can change the engine as needed
+  // Convert a conversation to an array of messages used by the openai API
+  private convertConversationToMessages(conversation: any): OpenAIMessage[] {
+    const messages: OpenAIMessage[] = [];
+    for (const message of conversation) {
+      messages.push({
+        role: message.role,
+        content: message.content
+      });
+    }
+    return messages;
+  }
+
+  // Send a chat complete request to the API
+  async chatComplete(messages: OpenAIMessage[]): Promise<any> {
+    // Set the endpoint
+    const endpoint: string = `${this.baseUrl}/chat/completions`;
+    
+    // Set the headers
     const headers = new HttpHeaders({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.apiKey}`,
+      'Authorization': `Bearer ${this.apiKey}`
     });
-
-    const body = {
-      prompt: prompt,
-      max_tokens: 150, // You can adjust the number of tokens
-      temperature: 0.7, // Adjust for creativity. Lower values make responses more deterministic.
-      top_p: 1.0, // Sampling probability
-      frequency_penalty: 0.0, // Discourages repetition
-      presence_penalty: 0.0, // Encourages new concepts
-    };
+    
+    // Set the body and add the prompt
+    const body = this.chatCompleteBody;
+    body.messages = messages;
 
     try {
       const response = await this.http.post(endpoint, body, { headers: headers }).toPromise();
       return response;
     } catch (error) {
-      console.error('Error querying OpenAI:', error);
+      console.error('Error querying OpenAI API: ', error);
       throw error;
     }
   }

@@ -14,15 +14,14 @@ export class ChatUiComponent {
   // Messages are managed by the ChatService and are passed to the ChatUiComponent via the observable.
   messages = this.chatService.messages;
   
-  constructor(private chatService: ChatService) {
-  }
+  constructor(private chatService: ChatService) {}
 
   // The inputUserMessage method is called when the user submits a new message.
   inputUserMessage() {
     // The inputField property is checked to ensure that it is not empty.
     if (this.inputField !== '') {
       // The ChatService is used to add a new usermessage to the history.
-      this.chatService.addMessage(this.inputField, true);
+      this.chatService.userInputMessage(this.inputField);
       console.log("Message sent!");
       
       // The input field is cleared.

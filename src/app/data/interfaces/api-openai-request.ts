@@ -28,7 +28,7 @@ export interface OpenAIChatCompleteRequest {
 }
   
 // Interface for a OpenAI message (as part of the chat complete chathistory array)
-interface OpenAIMessage {
+export interface OpenAIMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
 }
