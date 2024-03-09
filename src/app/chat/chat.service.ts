@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Message } from '../data/interfaces/message-interface';
+import { Message } from '../data/interfaces/chat-message';
 import { DataService } from '../data/data.service';
 
 

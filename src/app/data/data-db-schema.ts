@@ -1,6 +1,6 @@
 import { DBSchema } from 'idb';
-import { Message } from './message-interface';
-import { OpenAi } from './openai-settings-interface';
+import { Message } from './interfaces/chat-message';
+import { OpenAi } from './interfaces/api-config';
 
 export interface MainAppDB extends DBSchema {
   // Messages store

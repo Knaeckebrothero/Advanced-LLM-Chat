@@ -1,5 +1,5 @@
 import { Component, Input } from '@angular/core';
-import { Message } from '../../data/interfaces/message-interface';
+import { Message } from '../../data/interfaces/chat-message';
 
 @Component({
   selector: 'app-chat-ui-message',

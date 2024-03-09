@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { openDB, IDBPDatabase } from 'idb';
-import { Message } from './interfaces/message-interface';
-import { MainAppDB } from './interfaces/db-schema';
+import { Message } from './interfaces/chat-message';
+import { MainAppDB } from './data-db-schema';
 
 
 @Injectable({
