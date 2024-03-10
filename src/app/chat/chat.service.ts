@@ -50,7 +50,6 @@ export class ChatService {
     ]);
   }
   
-
   /*
   The ChatService exposes a veriety of methods for managing the message history.
   */

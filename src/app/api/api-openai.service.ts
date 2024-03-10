@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
 import { OpenAIMessage } from '../data/interfaces/api-openai-request';
@@ -31,7 +31,7 @@ export class OpenAIService {
         this.apiKey = defaultSettings.apiKey;
 
         // Remove id and apiKey from the the body
-        const { id, apiKey, ...rest } = defaultSettings;
+        const { id, apiKey, name, ...rest } = defaultSettings;
 
         // Populate chatCompleteBody with the rest of the properties
         this.chatCompleteBody = { ...rest };

@@ -117,16 +117,16 @@ export class DBService {
   CRUD operations for OpenAI LLM configurations
   */
 
-  async addLLMConfig(id: string, config: OpenAIChatCompleteRequest) {
-    return await this.db.add('llmConfigs', config, id);
+  async addLLMConfig(config: OpenAIChatCompleteRequest) {
+    return await this.db.add('llmConfigs', config);
   }
 
   async getLLMConfig(id: string) {
     return await this.db.get('llmConfigs', id);
   }
 
-  async updateLLMConfig(id: string, config: OpenAIChatCompleteRequest) {
-    return await this.db.put('llmConfigs', config, id);
+  async updateLLMConfig(config: OpenAIChatCompleteRequest) {
+    return await this.db.put('llmConfigs', config);
   }
 
   async deleteLLMConfig(id: string) {
