@@ -1,0 +1,52 @@
+.chat-ui-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; // Set the container to full viewport height
+  width: 100%; // Set the container to full viewport width
+  overflow: hidden;
+
+  .message-container {
+    flex: 0 0 87%; // Allocate 80% of the container height to the message container
+    overflow-y: auto; // Enable scrolling for overflowed content
+    padding: 10px;
+    background-color: #333232; // Light grey background for the message area
+
+    app-chat-ui-message {
+      display: block; // Ensure messages stack vertically
+      margin-bottom: 10px; // Space out messages
+      background-color: #333232; // White background for individual messages
+      padding: 10px;
+      border-radius: 8px; // Rounded corners for messages
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); // Subtle shadow for depth
+    }
+  }
+
+  .input-container {
+    flex: 0 0 10%; // Allocate 20% of the container height to the input container
+    padding: 10px;
+    background-color: #181717; // Slightly darker grey for the input area
+    display: flex;
+    align-items: center;
+    justify-content: space-between; // Space out the input field and send button
+
+    mat-form-field {
+      flex-grow: 1; // Allow the input field to fill available space
+      margin-right: 10px; // Space between the input field and the send button
+
+      input {
+        padding: 10px;
+        border-radius: 4px; // Rounded corners for the input field
+      }
+    }
+
+    button {
+      padding: 10px 20px; // Padding for a larger click area
+      border-radius: 4px; // Rounded corners for the button
+      cursor: pointer; // Change cursor to pointer on hover
+      font-weight: bold; // Make the send button text bold
+      &:hover {
+        background-color: darken(#007bff, 5%); // Slightly darken the button on hover for feedback
+      }
+    }
+  }
+}
