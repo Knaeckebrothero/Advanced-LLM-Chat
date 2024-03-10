@@ -9,5 +9,5 @@ export interface Message {
     // Whether the message was sent by the user (important for styling and alignment)
     user: string;
     // Timestamp of the message (used for sorting and display)
-    time: Date | number; // Date object (or ISO timestamp when sent over the api)
+    time: Date; // Date object
 }

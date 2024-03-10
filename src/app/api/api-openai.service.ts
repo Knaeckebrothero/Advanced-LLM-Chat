@@ -3,6 +3,7 @@ import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
 import { OpenAIMessage } from '../data/interfaces/api-openai-request';
+import { lastValueFrom } from 'rxjs';
 
 
 @Injectable({
@@ -12,11 +13,7 @@ export class OpenAIService {
   // Variables 
   private baseUrl: string = 'https://api.openai.com/v1';
   private apiKey: string | undefined = undefined;
-  private chatCompleteBody: OpenAIChatCompleteRequest = {
-    model: 'gpt-3.5-turbo',
-    max_tokens: 256,
-    temperature: 0.7,
-  };
+  private chatCompleteBody: OpenAIChatCompleteRequest = {};
   
   // Inject the DataService and load the api key from the database
   constructor(private http: HttpClient, private dbService: DBService) {
@@ -69,9 +66,16 @@ export class OpenAIService {
     const body = this.chatCompleteBody;
     body.messages = messages;
 
+    // Send the request
     try {
-      const response = await this.http.post(endpoint, body, { headers: headers }).toPromise();
-      return response;
+      console.log('Sending request to OpenAI...');
+
+      // Send the request and wait for the response
+      const response = this.http.post(endpoint, body, { headers: headers });
+      
+      // Convert the Observable to Promise and return it instead
+      const result = await lastValueFrom(response);
+      return result;
     } catch (error) {
       console.error('Error querying OpenAI API: ', error);
       throw error;

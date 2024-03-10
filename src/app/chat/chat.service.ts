@@ -37,17 +37,35 @@ export class ChatService {
 
   // Generate a new message
   private generate() {
+    console.log("Preparing to generate a message...");
+    
     // Extract the messages not part of the conversation summery
     const messages = this.messagesSubject.getValue();
     const messagesNotInSummary = messages.slice(messages.length - this.conversation.messagesPartOfSummery).map((message: Message) => {
       return {role: message.user, content: message.content};
     });
   
-    // Generate a message using the OpenAI API, including only the last 10 messages
+    // Generate a message using the OpenAI API
     this.apiService.chatComplete([
       {role: "system", content: this.conversation.conversationPromt},
       ...messagesNotInSummary
-    ]);
+    ]).then((response) => {
+      console.log("Message generated!");
+      console.log(response);
+      
+      // Create a new message object
+      const newMessage = {
+        content: response.choices[0].message.content,
+        user: response.choices[0].message.role,
+        time: new Date()
+      };
+
+      // Add the message to the messages array
+      this.messagesSubject.next([...this.messagesSubject.getValue(), newMessage]);
+
+      // Save the message in the database
+      this.dbService.addMessage(newMessage);
+    });
   }
   
   /*
@@ -63,14 +81,12 @@ export class ChatService {
       time: new Date()
     };
 
-    // Add the message to the database
+    // Add the message to the database and messages array
     this.dbService.addMessage(newMessage);
-
-    // Add the message to the messages array
     this.messagesSubject.next([...this.messagesSubject.getValue(), newMessage]);
+    console.log("Usermessage added!");
 
     // Generate a response
-    const response = this.generate();
-    console.log(response);
+    this.generate();
   }
 }

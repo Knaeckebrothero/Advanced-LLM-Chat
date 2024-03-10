@@ -22,7 +22,6 @@ export class ChatUiComponent {
     if (this.inputField !== '') {
       // The ChatService is used to add a new usermessage to the history.
       this.chatService.userInputMessage(this.inputField);
-      console.log("Message sent!");
       
       // The input field is cleared.
       this.inputField = '';

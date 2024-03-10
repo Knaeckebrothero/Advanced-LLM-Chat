@@ -12,7 +12,7 @@ import { DBService } from '../data/db.service';
 export class SettingsComponent implements OnInit{
   // Settings form
   settingsForm = new FormGroup({
-    id: new FormControl({value: 'openai-default', disabled: true}),
+    id: new FormControl('openai-default'),
     name: new FormControl(),
     apiKey: new FormControl(),
     model: new FormControl(),

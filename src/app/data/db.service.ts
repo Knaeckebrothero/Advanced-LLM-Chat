@@ -36,6 +36,15 @@ export class DBService {
     console.log("Database started!");
   }
 
+  private generateID(newEntry: any) {
+    // Check if the message has an 'id' and it's not null
+    if (!newEntry.id && newEntry.id !== null) {
+      // Assign a unique ID using the current timestamp
+      newEntry.id = new Date().toString() + "-" + Math.random().toString();
+    }
+    return newEntry;
+  }
+
   // Get a promise that resolves when the database is ready
   public getDatabaseReadyPromise() {
     console.log("Waiting for database to be ready...");
@@ -94,7 +103,7 @@ export class DBService {
   */
 
   async addMessage(message: Message) {
-    return await this.db.add('chatMessages', message);
+    return await this.db.add('chatMessages', this.generateID(message));
   }
 
   async getMessage(id: string) {
@@ -118,7 +127,7 @@ export class DBService {
   */
 
   async addLLMConfig(config: OpenAIChatCompleteRequest) {
-    return await this.db.add('llmConfigs', config);
+    return await this.db.add('llmConfigs', this.generateID(config));
   }
 
   async getLLMConfig(id: string) {
