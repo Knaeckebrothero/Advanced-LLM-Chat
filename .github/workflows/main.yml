@@ -5,10 +5,10 @@ on:
       - main
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Main
         uses: actions/checkout@v2.3.4
 
       - name: Set up Node.js
@@ -22,10 +22,21 @@ jobs:
       - name: Install Angular CLI
         run: npm install -g @angular/cli
 
-      - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@4.1.5
+      - name: Build
+        run: ng build --configuration production --base-href "/LLM-Chat/"
+
+      - name: Checkout GitHub Pages Branch
+        uses: actions/checkout@v2.3.4
         with:
-          branch: gh-pages
-          folder: dist/advanced-llm-chat 
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-          pre-deploy-command: ng build --configuration production # --base-href "/Advanced-LLM-Chat"
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Copy Build to GitHub Pages Branch
+        run: |
+          cp -r dist/Advanced-LLM-Chat/* gh-pages/
+          cd gh-pages
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .
+          git commit -m "Deploy Angular App"
+          git push origin gh-pages
