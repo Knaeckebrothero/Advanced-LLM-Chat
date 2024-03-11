@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Main
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
 
       - name: Set up Node.js
         uses: actions/setup-node@v2
@@ -26,17 +26,19 @@ jobs:
         run: ng build --configuration production --base-href "/"
 
       - name: Checkout GitHub Pages Branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
         with:
           ref: gh-pages
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           path: gh-pages
 
       - name: Copy Build to GitHub Pages Branch
         run: |
+          rm -rf gh-pages/*
           cp -r dist/advanced-llm-chat/* gh-pages/
           cd gh-pages
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add .
-          git commit -m "Deploy Angular App" -a
+          git commit -m "Deploy Angular App" || echo "No changes to commit"
           git push origin gh-pages
