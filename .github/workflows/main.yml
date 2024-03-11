@@ -23,7 +23,7 @@ jobs:
         run: npm install -g @angular/cli
 
       - name: Build
-        run: ng build --configuration production --base-href "/LLM-Chat/"
+        run: ng build --configuration production --base-href "/"
 
       - name: Checkout GitHub Pages Branch
         uses: actions/checkout@v3
@@ -33,10 +33,10 @@ jobs:
 
       - name: Copy Build to GitHub Pages Branch
         run: |
-          cp -r /* gh-pages/
+          cp -r dist/Advanced-LLM-Chat/* gh-pages/
           cd gh-pages
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add .
-          git commit -m "Deploy Angular App"
+          git commit -m "Deploy Angular App" -a
           git push origin gh-pages
