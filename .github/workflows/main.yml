@@ -28,4 +28,4 @@ jobs:
           branch: gh-pages
           folder: dist/advanced-llm-chat 
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-          pre-deploy-command: ng build --configuration production --base-href "/Advanced-LLM-Chat"
+          pre-deploy-command: ng build --configuration production # --base-href "/Advanced-LLM-Chat"
