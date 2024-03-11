@@ -1,6 +1,6 @@
 {
-  "name": "Advanced-LLM-Chat",
-  "short_name": "Advanced-LLM-Chat",
+  "name": "Advanced LLM Chat",
+  "short_name": "Chat",
   "theme_color": "#1976d2",
   "background_color": "#fafafa",
   "display": "standalone",
