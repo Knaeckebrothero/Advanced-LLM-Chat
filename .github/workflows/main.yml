@@ -23,7 +23,7 @@ jobs:
         run: npm install -g @angular/cli
 
       - name: Build
-        run: ng build --configuration production --base-href "/"
+        run: ng build --configuration production --base-href "/Advanced-LLM-Chat/"
 
       - name: Checkout GitHub Pages Branch
         uses: actions/checkout@v2
