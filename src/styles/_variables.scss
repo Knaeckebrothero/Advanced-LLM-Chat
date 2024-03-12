@@ -1,13 +1,13 @@
-// Color Palette
-$color-primary: #007bff;
-$color-secondary: #6c757d;
-$color-background: #f8f9fa;
-$color-font: #212529;
+// Color Palette - https://www.canva.com/colors/color-palette-generator/
+$color-primary: #8E9BAC; // Bali Hai
+$color-secondary: #99A5A6; // Edward
+$color-background: #474B51; // Abbey
+$color-font: #C9C6C1; // Cloud
 
-$color-accent: #17a2b8;
-$color-accent-success: #28a745;
-$color-accent-warning: #ffc107;
-$color-accent-danger: #dc3545;
+$color-accent: #8E9BAC; // Bali Hai
+$color-accent-success: #28a745; // Green
+$color-accent-warning: #ffc107; // Yellow
+$color-accent-danger: #dc3545; // Red
 
 $color-neutral-100: #f8f9fa;
 $color-neutral-600: #6c757d;
@@ -46,3 +46,10 @@ $breakpoint-sm: 576px;
 $breakpoint-md: 768px;
 $breakpoint-lg: 992px;
 $breakpoint-xl: 1200px;
+/*
+$breakpoints: (
+  'mobile': 320px,
+  'tablet': 768px,
+  'desktop': 1024px
+);
+*/
