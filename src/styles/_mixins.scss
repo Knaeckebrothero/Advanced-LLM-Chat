@@ -1,0 +1,21 @@
+// Common flexbox centering pattern
+@mixin flex-center($direction: row) {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: $direction;
+}
+
+// Adjusts the font size based on the screen width
+@mixin responsive-font($size-mobile, $size-desktop) {
+    font-size: $size-mobile;
+    
+    @media (min-width: $breakpoint-md) {
+      font-size: $size-desktop;
+    }
+}
+
+// Consistent box shadow for elements
+@mixin box-shadow($color: $color-neutral-600) {
+box-shadow: 0 2px 4px rgba($color, 0.1), 0 4px 8px rgba($color, 0.1);
+}

@@ -1,0 +1,131 @@
+// Color Palette - https://www.canva.com/colors/color-palette-generator/
+$color-primary: #8E9BAC; // Bali Hai
+$color-secondary: #99A5A6; // Edward
+$color-background: #474B51; // Abbey
+$color-font: #C9C6C1; // Cloud
+
+$color-accent: #8E9BAC; // Bali Hai
+$color-accent-success: #28a745; // Green
+$color-accent-warning: #ffc107; // Yellow
+$color-accent-danger: #dc3545; // Red
+
+$color-neutral-100: #f8f9fa;
+$color-neutral-600: #6c757d;
+$color-neutral-900: #343a40;
+
+$color-primary-light: lighten($color-primary, 10%);
+$color-primary-dark: darken($color-primary, 10%);
+
+// Typography
+$font-family-base: 'Open Sans', sans-serif;
+$font-size-base: 1rem; // 16px
+$font-size-sm: 0.875rem; // 14px
+$font-size-lg: 1.25rem; // 20px
+$font-weight-normal: 400;
+$font-weight-bold: 700;
+$line-height-base: 1.5;
+
+// Spacing
+$space-xs: 0.25rem;
+$space-sm: 0.5rem;
+$space-md: 1rem;
+$space-lg: 1.5rem;
+$space-xl: 3rem;
+
+// Border Radii
+$border-radius-sm: 0.2rem;
+$border-radius-md: 0.4rem;
+$border-radius-lg: 0.8rem;
+
+// Shadows
+$shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+$shadow-md: 0 4px 6px rgba(0, 0, 0, 0.12), 0 3px 6px rgba(0, 0, 0, 0.24);
+
+// Breakpoints
+$breakpoint-sm: 576px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 992px;
+$breakpoint-xl: 1200px;
+/*
+$breakpoints: (
+  'mobile': 320px,
+  'tablet': 768px,
+  'desktop': 1024px
+);
+*/
+
+// Custom palettes using color variables
+$custom-primary-palette: (
+  50: $color-primary,
+  100: $color-primary,
+  200: $color-primary,
+  300: $color-primary,
+  400: $color-primary,
+  500: $color-primary,
+  600: $color-primary,
+  700: $color-primary,
+  800: $color-primary,
+  900: $color-primary,
+ contrast: (
+  50: $color-font,
+  100: $color-font,
+  200: $color-font,
+  300: $color-font,
+  400: $color-font,
+  500: $color-font,
+  600: $color-font,
+  700: $color-font,
+  800: $color-font,
+  900: $color-font,
+ )
+);
+
+$custom-secondary-palette: (
+  50: $color-secondary,
+  100: $color-secondary,
+  200: $color-secondary,
+  300: $color-secondary,
+  400: $color-secondary,
+  500: $color-secondary,
+  600: $color-secondary,
+  700: $color-secondary,
+  800: $color-secondary,
+  900: $color-secondary,
+ contrast: (
+  50: $color-font,
+  100: $color-font,
+  200: $color-font,
+  300: $color-font,
+  400: $color-font,
+  500: $color-font,
+  600: $color-font,
+  700: $color-font,
+  800: $color-font,
+  900: $color-font,
+ )
+);
+
+$custom-warn-palette: (
+  50: $color-accent-warning,
+  100: $color-accent-warning,
+  200: $color-accent-warning,
+  300: $color-accent-warning,
+  400: $color-accent-warning,
+  500: $color-accent-warning,
+  600: $color-accent-warning,
+  700: $color-accent-warning,
+  800: $color-accent-warning,
+  900: $color-accent-warning,
+ contrast: (
+  50: $color-font,
+  100: $color-font,
+  200: $color-font,
+  300: $color-font,
+  400: $color-font,
+  500: $color-font,
+  600: $color-font,
+  700: $color-font,
+  800: $color-font,
+  900: $color-font,
+ )
+);
