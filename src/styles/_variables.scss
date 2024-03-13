@@ -2,7 +2,8 @@
 $color-primary: #8E9BAC; // Bali Hai
 $color-secondary: #99A5A6; // Edward
 $color-background: #474B51; // Abbey
-$color-font: #C9C6C1; // Cloud
+$color-font-light: #C9C6C1; // Cloud
+$color-font-dark: #343A40; // Charcoal
 
 $color-accent: #8E9BAC; // Bali Hai
 $color-accent-success: #28a745; // Green
@@ -67,16 +68,16 @@ $custom-primary-palette: (
   800: $color-primary,
   900: $color-primary,
  contrast: (
-  50: $color-font,
-  100: $color-font,
-  200: $color-font,
-  300: $color-font,
-  400: $color-font,
-  500: $color-font,
-  600: $color-font,
-  700: $color-font,
-  800: $color-font,
-  900: $color-font,
+  50: $color-font-light,
+  100: $color-font-light,
+  200: $color-font-light,
+  300: $color-font-light,
+  400: $color-font-light,
+  500: $color-font-light,
+  600: $color-font-light,
+  700: $color-font-light,
+  800: $color-font-light,
+  900: $color-font-light,
  )
 );
 
@@ -92,16 +93,16 @@ $custom-secondary-palette: (
   800: $color-secondary,
   900: $color-secondary,
  contrast: (
-  50: $color-font,
-  100: $color-font,
-  200: $color-font,
-  300: $color-font,
-  400: $color-font,
-  500: $color-font,
-  600: $color-font,
-  700: $color-font,
-  800: $color-font,
-  900: $color-font,
+  50: $color-font-light,
+  100: $color-font-light,
+  200: $color-font-light,
+  300: $color-font-light,
+  400: $color-font-light,
+  500: $color-font-light,
+  600: $color-font-light,
+  700: $color-font-light,
+  800: $color-font-light,
+  900: $color-font-light,
  )
 );
 
@@ -117,15 +118,15 @@ $custom-warn-palette: (
   800: $color-accent-warning,
   900: $color-accent-warning,
  contrast: (
-  50: $color-font,
-  100: $color-font,
-  200: $color-font,
-  300: $color-font,
-  400: $color-font,
-  500: $color-font,
-  600: $color-font,
-  700: $color-font,
-  800: $color-font,
-  900: $color-font,
+  50: $color-font-light,
+  100: $color-font-light,
+  200: $color-font-light,
+  300: $color-font-light,
+  400: $color-font-light,
+  500: $color-font-light,
+  600: $color-font-light,
+  700: $color-font-light,
+  800: $color-font-light,
+  900: $color-font-light,
  )
 );
