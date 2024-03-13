@@ -1,6 +1,6 @@
 @import 'src/styles/variables';
 
-// Component-Level Styles
+// Message component styles
 .message {
   // 
   display: flex;
@@ -12,13 +12,42 @@
   padding: 8px;
   // Gives the message rounded corners
   border-radius: 20px;
+  // Elevates the message from the background
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   // Adds space between messages
   margin-bottom: 10px;
   // Set the font color
   color: $color-font-dark;
+  // 
+  text-align: left;
+  // 
+  word-wrap: normal;
+
+  // Message username
+  .message-user {
+    // Space between username and message text
+    margin-bottom: 4px;
+    // Slightly smaller font for username 
+    font-size: 0.80em;
+  }
+
+  // Message content
+  .message-body {
+    // Font size for message text content
+    font-size: 1em;
+  }
+
+  // Message timestamp
+  .message-timestamp {
+    align-self: flex-end;
+    // Smaller font for timestamp
+    font-size: 0.50em;
+    // Space between message text and timestamp
+    margin-top: 4px;
+  }
 
   // Adjusts the messages for the user
-  &.messageUser {
+  &.message-user {
     // Aligns the message to the right side of the screen
     align-self: flex-end;
     // Flattens the top left corner
@@ -27,42 +56,19 @@
     background-color: $color-secondary;
 
     // Hide the username
-    .messageUser {
+    .message-user {
       display: none;
     }
   }
 
   // Adjusts the messages for others
-  &.messageNotUser {
+  &.message-not-user {
     // Aligns the message to the left side of the screen
     align-self: flex-start;
     // Flattens the top right corner
     border-top-left-radius: 0;
     // Primary color background for messages of others
     background-color: $color-primary;
-  }
-
-  // Message username
-  .messageUser {
-    // Space between username and message text
-    margin-bottom: 4px;
-    // Slightly smaller font for username 
-    font-size: 0.80em;
-  }
-
-  // Message content
-  .messageBody {
-    // Font size for message text content
-    font-size: 1em;
-  }
-
-  // Message timestamp
-  .messageTimestamp {
-    align-self: flex-end;
-    // Smaller font for timestamp
-    font-size: 0.50em;
-    // Space between message text and timestamp
-    margin-top: 4px;
   }
 }
 

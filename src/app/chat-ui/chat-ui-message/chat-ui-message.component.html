@@ -1,6 +1,6 @@
 <!-- Message to be used within the Chat UI component -->
-<div class="message" [class.messageUser]="message.user === 'user'" [class.messageNotUser]="message.user !== 'user'">
-    <span class="messageUser">{{ message.user }}</span>
-    <span class="messageBody">{{ message.content }}</span>
-    <span class="messageTimestamp">{{ message.time | date:'shortTime' }}</span>
+<div class="message" [class.message-user]="message.user === 'user'" [class.message-not-user]="message.user !== 'user'">
+    <span class="message-user">{{ message.user }}</span>
+    <span class="message-body">{{ message.content }}</span>
+    <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
 </div>
