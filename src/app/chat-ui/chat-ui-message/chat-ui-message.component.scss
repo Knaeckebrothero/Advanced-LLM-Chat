@@ -7,9 +7,10 @@
   // Aligns the message to the left or right side of the screen
   flex-direction: column;
   // Prevents the message from taking full width on larger screens
-  max-width: 60%;
+  max-width: 80vw;
   // Adds space between the message and the edge of the screen
-  padding: 8px;
+  padding: 10px;
+  padding-right: 5px;
   // Gives the message rounded corners
   border-radius: 20px;
   // Elevates the message from the background
@@ -18,8 +19,6 @@
   margin-bottom: 10px;
   // Set the font color
   color: $color-font-dark;
-  // 
-  text-align: left;
   // 
   word-wrap: normal;
 
@@ -48,12 +47,14 @@
 
   // Adjusts the messages for the user
   &.message-user {
+    margin-left: 40%;
     // Aligns the message to the right side of the screen
     align-self: flex-end;
     // Flattens the top left corner
     border-top-right-radius: 0;
     // Secondary color background for messages of the user
     background-color: $color-secondary;
+    text-align: left;
 
     // Hide the username
     .message-user {
@@ -63,12 +64,14 @@
 
   // Adjusts the messages for others
   &.message-not-user {
+    margin-right: 40%;
     // Aligns the message to the left side of the screen
     align-self: flex-start;
     // Flattens the top right corner
     border-top-left-radius: 0;
     // Primary color background for messages of others
     background-color: $color-primary;
+    text-align: left;
   }
 }
 
