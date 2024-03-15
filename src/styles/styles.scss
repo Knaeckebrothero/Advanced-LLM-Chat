@@ -6,16 +6,12 @@
 @import 'mixins';
 
 
+// Set the default Material Design color palette
 $custom-primary: mat.define-palette($custom-primary-palette, 500);
 $custom-accent: mat.define-palette($custom-secondary-palette, 500);
 $custom-warn: mat.define-palette($custom-warn-palette, 500);
 
-/*
-$custom-primary: mat.define-palette(mat.$indigo-palette);
-$custom-accent: mat.define-palette(mat.$pink-palette, A200, A100, A400);
-$custom-warn: mat.define-palette(mat.$red-palette);
-*/
-
+// Create a theme using the custom palettes
 $custom-theme: mat.define-dark-theme((
   color: (
     primary: $custom-primary,
@@ -28,6 +24,9 @@ $custom-theme: mat.define-dark-theme((
 html, body {
   height: 100%;
   margin: 0;
+  padding: 0;
+  width: 100%;
+  //overflow: hidden;
   font-family: $font-family-base;
   background-color: $color-background;
 }

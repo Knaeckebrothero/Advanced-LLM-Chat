@@ -1,4 +1,26 @@
-.example-spacer {
-    flex: 1 1 auto;
+// In your app.component.scss
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; // Use the viewport height to fill the screen
+
+  mat-tab-group {
+    flex-grow: 1; // Allows the tab group to expand and fill the available space
+    display: flex;
+
+    .mat-tab-body-wrapper {
+      overflow: hidden;
+    }
   }
-  
+}
+
+.mat-tab-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+// Ensure your mat-tab-group does not have any unnecessary overflow or is constrained in height
+.mat-tab-group {
+  overflow: hidden; // This prevents any additional scrollbars from appearing
+}

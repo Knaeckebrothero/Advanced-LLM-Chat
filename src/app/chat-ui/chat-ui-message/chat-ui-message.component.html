@@ -1,4 +1,8 @@
-<div class="message" [class.user]="message.user === 'user'" [class.notUser]="message.user !== 'user'">
-    <p>{{ message.content }}</p>
-    <span class="timestamp">{{ message.time | date:'shortTime' }}</span>
+<!-- Message to be used within the Chat UI component -->
+<div class="message-display-container">
+    <div class="message" [class.message-user]="message.user === 'user'" [class.message-not-user]="message.user !== 'user'">
+        <span class="message-user-name">{{ message.user }}</span>
+        <span class="message-body">{{ message.content }}</span>
+        <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
+    </div>
 </div>

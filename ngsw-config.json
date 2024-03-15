@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@angular/service-worker/config/schema.json",
-  "index": "/Advanced-LLM-Chat/index.html",
+  "index": "/index.html",
   "assetGroups": [
     {
       "name": "app",
