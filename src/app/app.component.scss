@@ -9,7 +9,7 @@
     display: flex;
 
     .mat-tab-body-wrapper {
-      height: 100%; // Ensures the tab content also fills the available space
+      overflow: hidden;
     }
   }
 }
@@ -17,7 +17,7 @@
 .mat-tab-body {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  overflow: hidden;
 }
 
 // Ensure your mat-tab-group does not have any unnecessary overflow or is constrained in height

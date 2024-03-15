@@ -4,15 +4,15 @@
 .chat-ui {
   display: flex;
   flex-direction: column;
-  height: 95.5vh;
+  height: 95.3vh;
+  overflow: hidden;
+
   background-color: $color-background;
 
   .message-container {
-    flex-grow: 1;
-    height: 100%;
     width: 100%;
     // Make the container scrollable
-    overflow-y: auto;
+    overflow-y: scroll;
     // 
     padding: 10px;
     // Space between messages and input container
@@ -35,6 +35,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px;
+    padding-bottom: 0px;
     // Give some contrast with the chat UI background
     background-color: $color-secondary;
 
@@ -55,14 +56,17 @@
       min-height: 55px;
       margin-bottom: 1.5%;
     }
+  }
+}
 
-    // Responsive adjustments
-    @media (max-width: 768px) {
+// Responsive adjustments
+@media (max-width: 768px) {
+  .chat-ui{
+    height: 94.3vh;
+    .input-container {
       button {
         margin-bottom: 5.7%;
       }
     }
   }
 }
-
-
