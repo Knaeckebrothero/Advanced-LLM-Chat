@@ -56,11 +56,14 @@ export class SettingsComponent implements OnInit{
   resetMessages(){
     // Get all the messages from the database
     this.dbService.getAllMessages().then((messages) => {
+      const conversation = this.dbService.getConversation("default-conv-01").then((conversation) => {return conversation;});
+      const conversationJson = JSON.stringify(conversation);
+
       // Convert messages to JSON format
       const messagesJson = JSON.stringify(messages);
 
       // Create a blob with the JSON content
-      const blob = new Blob([messagesJson], { type: 'application/json' });
+      const blob = new Blob([conversationJson, messagesJson], { type: 'application/json' });
 
       // Create a link element to download the blob
       const a = document.createElement('a');
@@ -72,6 +75,9 @@ export class SettingsComponent implements OnInit{
 
       // Delete all the messages after backup
       this.dbService.deleteAllMessages().then(() => {
+        this.dbService.deleteConversation("default-conv-01").then(() => {
+          console.log('Conversation deleted!');
+        });
         console.log('All messages deleted!');
       });
     });

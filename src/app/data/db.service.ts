@@ -31,6 +31,9 @@ export class DBService {
 
         // Create a store for API configurations with 'id' as the key path
         db.createObjectStore('llmConfigs', { keyPath: 'id' });
+
+        // Create a store for conversations with 'id' as the key path
+        db.createObjectStore('conversations', { keyPath: 'id' });
       }
     });
     console.log("Database started!");
@@ -148,5 +151,25 @@ export class DBService {
 
   async getAllLLMConfigs() {
     return await this.db.getAll('llmConfigs');
+  }
+
+  /*
+  CRUD operations for conversations
+  */
+
+  async addConversation(conversation: any) {
+    return await this.db.add('conversations', this.generateID(conversation));
+  }
+
+  async getConversation(id: string) {
+    return await this.db.get('conversations', id);
+  }
+
+  async updateConversation(conversation: any) {
+    return await this.db.put('conversations', conversation);
+  }
+
+  async deleteConversation(id: string) {
+    return await this.db.delete('conversations', id);
   }
 }

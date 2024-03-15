@@ -7,6 +7,9 @@ interface EnviorementVariable {
 
 // Interface for conversation data
 export interface ConversationData {
+  // ID used to identify the conversation in the database
+  id?: string;
+
   // The number of messages part of the conversation summery
   messagesPartOfSummery: number;
   // Summary of the conversation
@@ -18,6 +21,7 @@ export interface ConversationData {
 }
 
 export class Conversation implements ConversationData {
+  id: string;
   messagesPartOfSummery: number;
   enviorementVariables: EnviorementVariable[];
   summary: string;
@@ -25,10 +29,13 @@ export class Conversation implements ConversationData {
   conversationPromt: string;
 
   // Constructor
-  constructor(messagesPartOfSummery: number, 
+  constructor(
+    id: string,
+    messagesPartOfSummery: number, 
     enviorementVariables: EnviorementVariable[], 
     summary: string,
     participants: string[]) {
+    this.id = id;
     this.messagesPartOfSummery = messagesPartOfSummery;
     this.enviorementVariables = enviorementVariables;
     this.summary = summary;
@@ -64,12 +71,12 @@ export class Conversation implements ConversationData {
     
     // Assemble the conversation promt
     var promt: string = 
-    `The following data is about the course of the conversation. To stay within the context window and provide some additional information to keep the conversation consistent, the conversation will be summarized and only the last few messages will be provided. Keep in mind that these may or may not be part of the following conversation summery or variables.\n\n
-    A list of the characters participating in the conversation or scenario:\n
+    `The following data is about the course of the conversation. To stay within the context window and provide some additional information to keep the conversation consistent, the conversation will be summarized and only the last few messages will be provided. Keep in mind that these may or may not be part of the following conversation summery or variables. If any of the values are empty they have not been set yet.\n\n
+    A list of the characters participating in the conversation or scenario:
     ${this.participants}\n\n
-    A list of environment variables up to this point:\n
+    A list of environment variables up to this point:
     ${envVarStr}\n\n
-    Summary of the conversation up to this point:\n
+    Summary of the conversation up to this point:
     ${this.summary}\n\n
     The last 10 messages exchanged by the participants:\n`;
     return promt;

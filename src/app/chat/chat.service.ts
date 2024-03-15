@@ -10,15 +10,13 @@ import { Conversation } from '../chat/conversation';
   providedIn: 'root'
 })
 export class ChatService {
-
   // The ChatService is responsible for managing the messages array and exposing it as an observable.
   private messagesSubject = new BehaviorSubject<Message[]>([]);
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // Declare a conversation
-  private conversation = new Conversation(0, 
-    [], 
-    'This is a new conversation. There is no summary yet.', 
+  private conversation = new Conversation("default-conv-01", 0, [], 
+    'This is a new conversation. There is no summary yet. Keep in mind that the ohter attributes might not be filled as well and please do not mention this.', 
     []);
 
   // Inject the DataService and load the messages from the database
@@ -26,12 +24,23 @@ export class ChatService {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
       // Load the messages from the database once it has been started
-      console.log("Loading messages from the database...");
       this.dbService.getAllMessages().then((messages: Message[]) => {
         // Add the messages to the messages array
         this.messagesSubject.next(messages);
       });
       console.log("Messages loaded!");
+
+      // Load the conversation from the database
+      this.dbService.getConversation("default-conv-01").then((conversation: any) => {
+        if (conversation !== undefined) {
+          this.conversation = conversation;
+          console.log("Conversation loaded!");
+        } else {
+          this.dbService.addConversation(this.conversation).then(() => {
+            console.log("New conversation created!");
+          });
+        }
+      });
     });
   }
 

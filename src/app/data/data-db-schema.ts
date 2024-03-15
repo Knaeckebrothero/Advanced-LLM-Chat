@@ -1,6 +1,7 @@
 import { DBSchema } from 'idb';
 import { Message } from './interfaces/chat-message';
 import { OpenAIChatCompleteRequest } from './interfaces/api-openai-request';
+import { ConversationData } from '../chat/conversation';
 
 export interface MainAppDB extends DBSchema {
   // Messages store
@@ -20,5 +21,10 @@ export interface MainAppDB extends DBSchema {
   llmConfigs: {
     key: string;
     value: OpenAIChatCompleteRequest;
+  };
+  // Conversations store
+  conversations: {
+    key: string;
+    value: ConversationData;
   };
 }
