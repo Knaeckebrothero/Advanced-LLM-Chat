@@ -51,4 +51,29 @@ export class SettingsComponent implements OnInit{
     this.dbService.addLLMConfig(this.settingsForm.value);
     console.log('Settings ' + this.settingsForm.value.id + ' saved!');
   }
+
+  // Delete messages from the database
+  resetMessages(){
+    // Get all the messages from the database
+    this.dbService.getAllMessages().then((messages) => {
+      // Convert messages to JSON format
+      const messagesJson = JSON.stringify(messages);
+
+      // Create a blob with the JSON content
+      const blob = new Blob([messagesJson], { type: 'application/json' });
+
+      // Create a link element to download the blob
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'messages_backup.json'; // Name of the file to be downloaded
+      document.body.appendChild(a); // Append the link to the document
+      a.click(); // Simulate click on the link to trigger the download
+      document.body.removeChild(a); // Remove the link from the document
+
+      // Delete all the messages after backup
+      this.dbService.deleteAllMessages().then(() => {
+        console.log('All messages deleted!');
+      });
+    });
+  }
 }

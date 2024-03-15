@@ -118,6 +118,10 @@ export class DBService {
     return await this.db.delete('chatMessages', id);
   }
 
+  async deleteAllMessages() {
+    return await this.db.clear('chatMessages');
+  }
+
   async getAllMessages() {
     return await this.db.getAll('chatMessages');
   }

@@ -1,5 +1,5 @@
 <div class="chat-ui">
-    <div class="message-container">
+    <div class="message-container" #messageContainer>
         <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
     </div>  
     <div class="input-container">
