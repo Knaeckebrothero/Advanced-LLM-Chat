@@ -68,7 +68,7 @@ export class OpenAIService {
 
     // Send the request
     try {
-      console.log('Sending request to OpenAI...');
+      console.log('Sending request to OpenAI...\n', messages);
 
       // Send the request and wait for the response
       const response = this.http.post(endpoint, body, { headers: headers });

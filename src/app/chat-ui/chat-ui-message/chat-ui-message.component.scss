@@ -1,83 +1,93 @@
 @import 'src/styles/variables';
 
+.message-display-container {
+  flex-grow: 1;
+  width: 100%;
+  // Make the container scrollable
+  overflow-y: auto;
+}
+
 // Message component styles
 .message {
   // 
   display: flex;
   // Aligns the message to the left or right side of the screen
   flex-direction: column;
-  // Prevents the message from taking full width on larger screens
-  max-width: 80vw;
+  max-width: 60%;
   // Adds space between the message and the edge of the screen
   padding: 10px;
-  padding-right: 5px;
   // Gives the message rounded corners
   border-radius: 20px;
   // Elevates the message from the background
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   // Adds space between messages
-  margin-bottom: 10px;
+  margin-bottom: 20px;
   // Set the font color
   color: $color-font-dark;
   // 
-  word-wrap: normal;
-
-  // Message username
-  .message-user {
-    // Space between username and message text
-    margin-bottom: 4px;
-    // Slightly smaller font for username 
-    font-size: 0.80em;
-  }
-
-  // Message content
-  .message-body {
-    // Font size for message text content
-    font-size: 1em;
-  }
-
-  // Message timestamp
-  .message-timestamp {
-    align-self: flex-end;
-    // Smaller font for timestamp
-    font-size: 0.50em;
-    // Space between message text and timestamp
-    margin-top: 4px;
-  }
+  word-wrap: break-word;
+  text-align: left;
 
   // Adjusts the messages for the user
   &.message-user {
-    margin-left: 40%;
+    float: right;
+    margin-right: 1.5%;
     // Aligns the message to the right side of the screen
     align-self: flex-end;
     // Flattens the top left corner
     border-top-right-radius: 0;
     // Secondary color background for messages of the user
     background-color: $color-secondary;
-    text-align: left;
 
     // Hide the username
-    .message-user {
+    .message-user-name {
       display: none;
     }
   }
 
   // Adjusts the messages for others
   &.message-not-user {
-    margin-right: 40%;
+    float: left;
+
     // Aligns the message to the left side of the screen
     align-self: flex-start;
     // Flattens the top right corner
     border-top-left-radius: 0;
     // Primary color background for messages of others
     background-color: $color-primary;
-    text-align: left;
   }
+}
+
+// Message username
+.message-user-name {
+  // Space between username and message text
+  margin-bottom: 4px;
+  // Slightly smaller font for username 
+  font-size: 0.80em;
+}
+
+// Message content
+.message-body {
+  // Font size for message text content
+  font-size: 1em;
+}
+
+// Message timestamp
+.message-timestamp {
+  align-self: flex-end;
+  // Smaller font for timestamp
+  font-size: 0.50em;
+  // Space between message text and timestamp
+  margin-top: 4px;
 }
 
 // Responsive adjustment, allowing the message to take more space on smaller screens
 @media (max-width: 768px) {
   .message {
-    max-width: 80%;
+    max-width: 75%;
+    
+    &.message-user {
+      margin-right: 5%;
+    }
   }
 }

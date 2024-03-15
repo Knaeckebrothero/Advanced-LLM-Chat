@@ -25,6 +25,9 @@
       background: $color-primary;
       border-radius: 5px;
     }
+    .message{
+      width: 100%;
+    }
   }
 
   .input-container {
@@ -49,6 +52,17 @@
     button {
       // Make sure the button is easily clickable
       min-width: 90px;
+      min-height: 55px;
+      margin-bottom: 1.5%;
+    }
+
+    // Responsive adjustments
+    @media (max-width: 768px) {
+      button {
+        margin-bottom: 5.7%;
+      }
     }
   }
 }
+
+
