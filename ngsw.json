@@ -1,7 +1,7 @@
 {
   "configVersion": 1,
-  "timestamp": 1710259231274,
-  "index": "/Advanced-LLM-Chat/Advanced-LLM-Chat/index.html",
+  "timestamp": 1710524157613,
+  "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
       "name": "app",
@@ -13,11 +13,11 @@
       "urls": [
         "/Advanced-LLM-Chat/favicon.ico",
         "/Advanced-LLM-Chat/index.html",
-        "/Advanced-LLM-Chat/main.dc270ec888006dd5.js",
+        "/Advanced-LLM-Chat/main.32348b2de2c3e8fe.js",
         "/Advanced-LLM-Chat/manifest.webmanifest",
         "/Advanced-LLM-Chat/polyfills.73d12d8384249e30.js",
         "/Advanced-LLM-Chat/runtime.d8778fadc19d2802.js",
-        "/Advanced-LLM-Chat/styles.72d02597c420761d.css"
+        "/Advanced-LLM-Chat/styles.cbb80e0645a66e39.css"
       ],
       "patterns": []
     },
@@ -48,12 +48,12 @@
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-72-72.png": "a337715d48ff4708860e9fdcb91358117ad83680",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-96-96.png": "785ff6437f1e82e4eeff8f931de2ef3e2f3af12e",
     "/Advanced-LLM-Chat/favicon.ico": "22f6a4a3bcaafafb0254e0f2fa4ceb89e505e8b2",
-    "/Advanced-LLM-Chat/index.html": "692a82076999eda9862877f5ab5787bcb155f2c7",
-    "/Advanced-LLM-Chat/main.dc270ec888006dd5.js": "01bebb38331a1e115d3e0c15ac5f548075ed16d1",
-    "/Advanced-LLM-Chat/manifest.webmanifest": "66c2de4d23bd89cbd082cd423fac9211327f7d18",
+    "/Advanced-LLM-Chat/index.html": "d7a5021fc55caeafeef81f5f5ae36c8cfe679471",
+    "/Advanced-LLM-Chat/main.32348b2de2c3e8fe.js": "949164efee10b104bf8fb24ea00e80037ccdc51a",
+    "/Advanced-LLM-Chat/manifest.webmanifest": "a81d65b6133d5367d68f9d650c1117eae6c0de62",
     "/Advanced-LLM-Chat/polyfills.73d12d8384249e30.js": "da13f1ce18af73b1495a29271fbc916a0b7ae5cf",
     "/Advanced-LLM-Chat/runtime.d8778fadc19d2802.js": "50a6ad543d9a89f21e71dbd3944ddf2c1442f795",
-    "/Advanced-LLM-Chat/styles.72d02597c420761d.css": "bfbe33f25d81a479f4338f41393cc58e699e2262"
+    "/Advanced-LLM-Chat/styles.cbb80e0645a66e39.css": "6f6d5f764607919a88f134dbbf395c855446ad40"
   },
   "navigationUrls": [
     {
