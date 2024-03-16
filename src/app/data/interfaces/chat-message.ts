@@ -4,10 +4,17 @@ export interface Message {
     // Surrogate Key referencing a conversation interface
     conversationID?: string; // Optional if not used within the database
 
+    // Whether the message was sent by the user (important for styling and alignment)
+    role: string;
     // The message contents (text, image, etc.)
     content: any;
-    // Whether the message was sent by the user (important for styling and alignment)
-    user: string;
     // Timestamp of the message (used for sorting and display)
-    time: Date; // Date object
+    time?: Date; // Date object
+}
+
+export interface OpenAIMessage extends Message {
+    // Whether the message was sent by the user (important for styling and alignment)
+    role: string;
+    // The message contents (text, image, etc.)
+    content: any;
 }

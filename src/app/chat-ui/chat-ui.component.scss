@@ -4,7 +4,7 @@
 .chat-ui {
   display: flex;
   flex-direction: column;
-  height: 95.3vh;
+  height: 94.3vh;
   overflow: hidden;
 
   background-color: $color-background;
@@ -32,6 +32,7 @@
   }
 
   .input-container {
+    float: bottom;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -66,7 +67,7 @@
     height: 94.3vh;
     .input-container {
       button {
-        margin-bottom: 5.7%;
+        margin-bottom: 5.5%;
       }
     }
   }

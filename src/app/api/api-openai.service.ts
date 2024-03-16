@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
-import { OpenAIMessage } from '../data/interfaces/api-openai-request';
+import { Message } from '../data/interfaces/chat-message';
 import { lastValueFrom } from 'rxjs';
 
 
@@ -40,8 +40,8 @@ export class OpenAIService {
   }
 
   // Convert a conversation to an array of messages used by the openai API
-  private convertConversationToMessages(conversation: any): OpenAIMessage[] {
-    const messages: OpenAIMessage[] = [];
+  private convertToMessages(conversation: any): Message[] {
+    const messages: Message[] = [];
     for (const message of conversation) {
       messages.push({
         role: message.role,
@@ -51,8 +51,14 @@ export class OpenAIService {
     return messages;
   }
 
+  /*
+  {role: "system", content: this.conversation.conversationPromt},
+      ...messagesNotInSummary
+      messages: OpenAIMessage[]
+  */
+
   // Send a chat complete request to the API
-  async chatComplete(messages: OpenAIMessage[]): Promise<any> {
+  async chatComplete(systemMessages: ): Promise<any> {
     // Set the endpoint
     const endpoint: string = `${this.baseUrl}/chat/completions`;
     

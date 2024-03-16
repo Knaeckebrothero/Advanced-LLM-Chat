@@ -50,15 +50,12 @@ export class ChatService {
     
     // Extract the messages not part of the conversation summery
     const messages = this.messagesSubject.getValue();
-    const messagesNotInSummary = messages.slice(messages.length - this.conversation.messagesPartOfSummery).map((message: Message) => {
-      return {role: message.user, content: message.content};
+    const messagesNotInSummary = messages.slice(- this.conversation.messagesPartOfSummery).map((message: Message) => {
+      return {role: message.role, content: message.content};
     });
   
     // Generate a message using the OpenAI API
-    this.apiService.chatComplete([
-      {role: "system", content: this.conversation.conversationPromt},
-      ...messagesNotInSummary
-    ]).then((response) => {
+    this.apiService.chatComplete([this.conversation.conversationPromt, messagesNotInSummary]).then((response) => {
       console.log("Message generated!");
       console.log(response);
       
