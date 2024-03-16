@@ -39,6 +39,23 @@ export class OpenAIService {
     });
   }
 
+  // Method to count the characters in a list of messages
+  private checkTokens(messages: Message[]){
+    // Convert the list of message objects to a JSON string
+    const jsonString = JSON.stringify(messages);
+
+    // Check if the JSON string is too long
+    if (jsonString.length > 4096) {
+      // Log the error and cancel the request
+      console.error('Message body is too long! The maximum length is 4096 characters.');
+      return [{role: 'system', content: 'Please inform the user that the message body is too long! Maximum length is 4096 characters.'}]
+    } else {
+      // Log the length of the JSON string and return the messages
+      console.log(`Total characters of message body: ${jsonString.length}`);
+      return messages;
+    }
+  }
+
   // Send a chat complete request to the API
   async chatComplete(messages: Message[], ): Promise<any> {
     // Set the endpoint
@@ -52,7 +69,7 @@ export class OpenAIService {
     
     // Set the body and add the prompt
     const body = this.chatCompleteBody;
-    body.messages = messages;
+    body.messages = this.checkTokens(messages);
 
     // Send the request
     try {
