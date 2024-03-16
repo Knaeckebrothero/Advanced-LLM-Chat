@@ -51,10 +51,9 @@ export class ChatService {
 
   // Extract the messages not part of the conversation summery
   private getNonSummarizedMessages(messages: Message[]){
-    const messagesNotInSummary = messages.slice(- this.conversation.messagesPartOfSummery).map((message: Message) => {
+    return messages.slice(- this.conversation.messagesPartOfSummery).map((message: Message) => {
       return {role: message.role, content: message.content};
     });
-    return messagesNotInSummary;
   }
 
   // Method to check if and update the conversation summary
@@ -71,10 +70,11 @@ export class ChatService {
         {role: "system", content: "The conversation is summarized periodically to avoid going above the context window. You will now be provided with the current summary (of the previous conversation) and the messages that need to be summarized and incorporated into the summary. You will do your best to summarize the given messages and either add them to or incorporate them into the summary. Please be careful to not cut or alter any details of the previous summary when updating it."},
         {role: "system", content: `The current summary: ${this.conversation.summary}`}
       ];
-      
+
       // Add the messages that are not part of the conversation summary to the summary package
       const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue());
-      summaryPackage.concat(messagesNotInSummary);
+      summaryPackage = summaryPackage.concat(messagesNotInSummary);
+      console.log(summaryPackage);
 
       // Generate a summary
       await this.apiService.chatComplete(summaryPackage).then((response) => {
