@@ -63,11 +63,11 @@ export class ChatService {
     };
 
     // Convert the conversation variables to system messages
-    messages.push({role: "system", content: "The following data is about the course of the conversation. To stay within the context window and provide some additional information to keep the conversation consistent, the conversation will be summarized and only the last few messages will be provided."});
-    messages.push({role: "system", content: `A list of the characters participating in the conversation or scenario: ${this.conversation.participants}`});
-    messages.push({role: "system", content: `Summary of the conversation up to this point: ${this.conversation.summary}`});
-    messages.push({role: "system", content: envVarStr});
-    messages.push({role: "system", content: "The last few messages of the conversation (these are not part of the summary):"});
+    // messages.push({role: "system", content: "The following data is about the course of the conversation. To stay within the context window and provide some additional information to keep the conversation consistent, the conversation will be summarized and only the last few messages will be provided."});
+    // messages.push({role: "system", content: `A list of the characters participating in the conversation or scenario: ${this.conversation.participants}`});
+    // messages.push({role: "system", content: `Summary of the conversation up to this point: ${this.conversation.summary}`});
+    // messages.push({role: "system", content: envVarStr});
+    // messages.push({role: "system", content: "The last few messages of the conversation (these are not part of the summary):"});
 
     return messages;
   }
@@ -75,6 +75,8 @@ export class ChatService {
   // Generate a new message
   private generate() {
     console.log("Preparing to generate a message...");
+    // Update the conversation
+    this.conversationPromt = this.convertConversation()
     
     // Extract the messages not part of the conversation summery
     var messages = this.messagesSubject.getValue();
@@ -82,7 +84,7 @@ export class ChatService {
       return {role: message.role, content: message.content};
     });
 
-    // Combine all messages
+    // Combine the messages
     messages = this.conversationPromt.concat(messagesNotInSummary);
 
     // Generate a message using the OpenAI API
@@ -121,10 +123,7 @@ export class ChatService {
     this.messagesSubject.next([...this.messagesSubject.getValue(), generatedMessage]);
 
     // Save the message in the database
-    this.dbService.addMessage(newMessage);
-
-    // Update the conversation
-    this.conversationPromt = this.convertConversation()
+    this.dbService.addMessage(generatedMessage);
     });
   }
 }
