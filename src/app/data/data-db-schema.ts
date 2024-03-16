@@ -1,5 +1,5 @@
 import { DBSchema } from 'idb';
-import { Message } from './interfaces/chat-message';
+import { Message } from './interfaces/message';
 import { OpenAIChatCompleteRequest } from './interfaces/api-openai-request';
 import { ConversationData } from '../chat/conversation';
 

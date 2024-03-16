@@ -1,38 +1,17 @@
-// Interface for enviorement variables
-interface EnviorementVariable {
-  name: string
-  value: string
-  optional: boolean
-}
-
-// Interface for conversation data
-export interface ConversationData {
-  // ID used to identify the conversation in the database
-  id?: string;
-
-  // The number of messages part of the conversation summery
-  messagesPartOfSummery: number;
-  // Summary of the conversation
-  summary: string;
-  // List holding enviorement variables
-  enviorementVariables: EnviorementVariable[];
-  // Characters participating in the conversation
-  participants: string[];
-}
+import { ConversationData, ConversationVariable } from '../data/interfaces/conversation';
 
 export class Conversation implements ConversationData {
   id: string;
   messagesPartOfSummery: number;
-  enviorementVariables: EnviorementVariable[];
+  enviorementVariables: ConversationVariable[];
   summary: string;
   participants: string[];
-  conversationPromt: string;
 
   // Constructor
   constructor(
     id: string,
     messagesPartOfSummery: number, 
-    enviorementVariables: EnviorementVariable[], 
+    enviorementVariables: ConversationVariable[], 
     summary: string,
     participants: string[]) {
     this.id = id;
@@ -40,14 +19,13 @@ export class Conversation implements ConversationData {
     this.enviorementVariables = enviorementVariables;
     this.summary = summary;
     this.participants = participants;
-    this.conversationPromt = this.updateConversationPromt();
   }
 
   // Update the conversation
   public updateConversation(
     summary: string, 
     messagesPartOfSummery: number, 
-    enviorementVariables: EnviorementVariable[], 
+    enviorementVariables: ConversationVariable[], 
     participants: string[]) {
     // Update the summary and recent messages
     this.updateSummary(summary, messagesPartOfSummery);
@@ -55,10 +33,6 @@ export class Conversation implements ConversationData {
     // Update the enviorement variables and participants
     this.enviorementVariables = enviorementVariables;
     this.participants = participants;
-    
-    // Update and return the conversation promt
-    this.conversationPromt = this.updateConversationPromt();
-    return this.conversationPromt;
   }
 
   // Get conversation promt

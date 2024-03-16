@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Message } from '../data/interfaces/chat-message';
+import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
 import { OpenAIService } from '../api/api-openai.service';
 import { Conversation } from '../chat/conversation';
@@ -14,10 +14,9 @@ export class ChatService {
   private messagesSubject = new BehaviorSubject<Message[]>([]);
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
-  // Declare a conversation
-  private conversation = new Conversation("default-conv-01", 0, [], 
-    'This is a new conversation. There is no summary yet. Keep in mind that the ohter attributes might not be filled as well and please do not mention this.', 
-    []);
+  // Variables
+  conversation = new Conversation("default-conv-01", 0, [], 'This is a new conversation. There is no summary yet.', []);
+  conversationPromt: Message[] = [];  
 
   // Inject the DataService and load the messages from the database
   constructor(private dbService: DBService, private apiService: OpenAIService) {
@@ -44,46 +43,70 @@ export class ChatService {
     });
   }
 
+  // Convert a message to the format used by the openai API
+  private converMessage(message: Message) {
+    return {
+      role: message.role,
+      content: message.content
+    };
+  }
+
+  // Convert a conversation to an array of messages used by the openai API
+  private convertConversation(): Message[] {
+    // Prepare the messages array
+    const messages: Message[] = [];
+
+    // Prepare the enviorement variables
+    var envVarStr: string = 'A list of environment variables up to this point:\n';
+    for(let i = 0; i < this.conversation.enviorementVariables.length; i++) {
+      envVarStr += `${this.conversation.enviorementVariables[i].name}: ${this.conversation.enviorementVariables[i].value}\n`;
+    };
+
+    // Convert the conversation variables to system messages
+    messages.push({role: "system", content: "The following data is about the course of the conversation. To stay within the context window and provide some additional information to keep the conversation consistent, the conversation will be summarized and only the last few messages will be provided."});
+    messages.push({role: "system", content: `A list of the characters participating in the conversation or scenario: ${this.conversation.participants}`});
+    messages.push({role: "system", content: `Summary of the conversation up to this point: ${this.conversation.summary}`});
+    messages.push({role: "system", content: envVarStr});
+    messages.push({role: "system", content: "The last few messages of the conversation (these are not part of the summary):"});
+
+    return messages;
+  }
+
   // Generate a new message
   private generate() {
     console.log("Preparing to generate a message...");
     
     // Extract the messages not part of the conversation summery
-    const messages = this.messagesSubject.getValue();
+    var messages = this.messagesSubject.getValue();
     const messagesNotInSummary = messages.slice(- this.conversation.messagesPartOfSummery).map((message: Message) => {
       return {role: message.role, content: message.content};
     });
-  
+
+    // Combine all messages
+    messages = this.conversationPromt.concat(messagesNotInSummary);
+
     // Generate a message using the OpenAI API
-    this.apiService.chatComplete([this.conversation.conversationPromt, messagesNotInSummary]).then((response) => {
+    const newMessage = this.apiService.chatComplete(messages).then((response) => {
       console.log("Message generated!");
       console.log(response);
-      
+
       // Create a new message object
-      const newMessage = {
+      const message = {
         content: response.choices[0].message.content,
-        user: response.choices[0].message.role,
+        role: response.choices[0].message.role,
         time: new Date()
       };
-
-      // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), newMessage]);
-
-      // Save the message in the database
-      this.dbService.addMessage(newMessage);
+      return message;
     });
+    return newMessage;
   }
-  
-  /*
-  The ChatService exposes a veriety of methods for managing the message history.
-  */
 
   // Add a new message to the messages array and save it in the db
   public userInputMessage(content: any) {
     // Create a new message object
     const newMessage = {
       content: content,
-      user: 'user',
+      role: 'user',
       time: new Date()
     };
 
@@ -93,6 +116,15 @@ export class ChatService {
     console.log("Usermessage added!");
 
     // Generate a response
-    this.generate();
+    this.generate().then((generatedMessage) => {
+    // Add the message to the messages array
+    this.messagesSubject.next([...this.messagesSubject.getValue(), generatedMessage]);
+
+    // Save the message in the database
+    this.dbService.addMessage(newMessage);
+
+    // Update the conversation
+    this.conversationPromt = this.convertConversation()
+    });
   }
 }

@@ -4,7 +4,7 @@ Defines the interface for the OpenAI chat request.
 Documentation:
 https://platform.openai.com/docs/api-reference/chat/create?lang=node.js
 */
-import { Message } from './chat-message';
+import { Message } from './message';
 
 
 // Interface for OpenAI chat request
