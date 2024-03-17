@@ -16,7 +16,7 @@ export class ChatService {
 
   // Variables
   conversation = new Conversation("default-conv-01", 0, [], '', []);
-  conversationPromt: Message[] = [];  
+  conversationPromt: Message[] = [];
 
   // Inject the DataService and load the messages from the database
   constructor(private dbService: DBService, private apiService: OpenAIService) {
@@ -49,22 +49,24 @@ export class ChatService {
     });
   }
 
-  // Extract the messages not part of the conversation summery
-  private getNonSummarizedMessages(){
+  private getNonSummarizedMessages() {
     const messages = this.messagesSubject.getValue();
-
-    return messages.slice(messages.length + 1 - this.conversation.messagesPartOfSummery).map((message: Message) => {
+    // Start slicing from the index after the last summarized message
+    return messages.slice(this.conversation.messagesPartOfSummery).map((message: Message) => {
       return {role: message.role, content: message.content};
     });
   }
+  
 
   // Method to check if and update the conversation summary
   private async updateSummary(){
+
+    console.log(this.getNonSummarizedMessages())
     // Convert the list of message objects to a JSON string
     const jsonString = JSON.stringify(this.getNonSummarizedMessages());
 
     // Check if the JSON string is long enough to be summarized
-    if (jsonString.length > 2048) {
+    if (jsonString.length > 16384) {
       console.log('Summarizing the conversation...');
 
       // Create a summary package to be sent to the API
@@ -81,7 +83,6 @@ export class ChatService {
       await this.apiService.chatComplete(summaryPackage).then((response) => {
         // Update the conversation summary
         this.conversation.updateSummary(response.choices[0].message.content, messagesNotInSummary.length);
-        console.log(this.conversation.messagesPartOfSummery)
         console.log("Conversation summary updated!");
       });
     }
@@ -97,9 +98,7 @@ export class ChatService {
     const messagesNotInSummary = this.getNonSummarizedMessages()
 
     // Combine the messages
-    generationMessages = this.conversationPromt.concat();
-    // messages.push({role: "system", content: "The last few messages of the conversation (these are not part of the summary):"});
-    // messages.push({role: "system", content: "The following data is about the course of the conversation. To stay within the context window and provide some additional information to keep the conversation consistent, the conversation will be summarized and only the last few messages will be provided."});
+    generationMessages = this.conversationPromt.concat(messagesNotInSummary);
 
     // Generate a message using the OpenAI API
     const newMessage = this.apiService.chatComplete(generationMessages).then((response) => {

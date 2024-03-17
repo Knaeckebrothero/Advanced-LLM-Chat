@@ -45,9 +45,9 @@ export class OpenAIService {
     const jsonString = JSON.stringify(messages);
 
     // Check if the JSON string is too long
-    if (jsonString.length > 4096) {
+    if (jsonString.length > 32768) {
       // Log the error and cancel the request
-      console.error('Message body is too long! The maximum length is 4096 characters.');
+      console.error('Message body is too long! The maximum length is 32.768 characters.');
       return [{role: 'system', content: 'Please inform the user that the message body is too long! Maximum length is 4096 characters.'}]
     } else {
       // Log the length of the JSON string and return the messages
