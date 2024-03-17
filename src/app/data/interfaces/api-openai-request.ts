@@ -4,6 +4,8 @@ Defines the interface for the OpenAI chat request.
 Documentation:
 https://platform.openai.com/docs/api-reference/chat/create?lang=node.js
 */
+import { Message } from './message';
+
 
 // Interface for OpenAI chat request
 export interface OpenAIChatCompleteRequest {
@@ -48,13 +50,7 @@ export interface OpenAIChatCompleteRequest {
     tool_choice?: ToolChoice | string | null;
 
     // List of messages for the model to do the chat completion for (aka the prompt)
-    messages?: OpenAIMessage[];
-}
-  
-// Interface for a OpenAI message (as part of the chat complete chathistory array)
-export interface OpenAIMessage {
-    role: string; //'system' | 'user' | 'assistant';
-    content: string;
+    messages?: Message[];
 }
 
 // Interface for the OpenAI response format

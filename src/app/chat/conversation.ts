@@ -1,38 +1,19 @@
-// Interface for enviorement variables
-interface EnviorementVariable {
-  name: string
-  value: string
-  optional: boolean
-}
+import { ConversationData, ConversationVariable } from '../data/interfaces/conversation';
+import { Message } from '../data/interfaces/message';
 
-// Interface for conversation data
-export interface ConversationData {
-  // ID used to identify the conversation in the database
-  id?: string;
-
-  // The number of messages part of the conversation summery
-  messagesPartOfSummery: number;
-  // Summary of the conversation
-  summary: string;
-  // List holding enviorement variables
-  enviorementVariables: EnviorementVariable[];
-  // Characters participating in the conversation
-  participants: string[];
-}
 
 export class Conversation implements ConversationData {
   id: string;
   messagesPartOfSummery: number;
-  enviorementVariables: EnviorementVariable[];
+  enviorementVariables: ConversationVariable[];
   summary: string;
   participants: string[];
-  conversationPromt: string;
 
   // Constructor
   constructor(
     id: string,
     messagesPartOfSummery: number, 
-    enviorementVariables: EnviorementVariable[], 
+    enviorementVariables: ConversationVariable[], 
     summary: string,
     participants: string[]) {
     this.id = id;
@@ -40,25 +21,6 @@ export class Conversation implements ConversationData {
     this.enviorementVariables = enviorementVariables;
     this.summary = summary;
     this.participants = participants;
-    this.conversationPromt = this.updateConversationPromt();
-  }
-
-  // Update the conversation
-  public updateConversation(
-    summary: string, 
-    messagesPartOfSummery: number, 
-    enviorementVariables: EnviorementVariable[], 
-    participants: string[]) {
-    // Update the summary and recent messages
-    this.updateSummary(summary, messagesPartOfSummery);
-
-    // Update the enviorement variables and participants
-    this.enviorementVariables = enviorementVariables;
-    this.participants = participants;
-    
-    // Update and return the conversation promt
-    this.conversationPromt = this.updateConversationPromt();
-    return this.conversationPromt;
   }
 
   // Get conversation promt
@@ -83,8 +45,52 @@ export class Conversation implements ConversationData {
   }
 
   // Update the summary and recent messages
-  private updateSummary(summary: string, messagesPartOfSummery: number) {
+  public updateSummary(summary: string, messagesPartOfSummery: number) {
     this.summary = summary;
     this.messagesPartOfSummery = messagesPartOfSummery;
+  }
+
+  // Update the conversation
+  public updateConversation(
+    summary: string, 
+    messagesPartOfSummery: number, 
+    enviorementVariables: ConversationVariable[], 
+    participants: string[]) {
+    // Update the summary and recent messages
+    this.updateSummary(summary, messagesPartOfSummery);
+
+    // Update the enviorement variables and participants
+    this.enviorementVariables = enviorementVariables;
+    this.participants = participants;
+  }
+  
+  // Convert a conversation to an array of messages used by the openai API
+  public getAsMessages(){
+    // Prepare the messages array
+    const messages: Message[] = [];
+
+    // Add the enviorement variables to the messages
+    if (this.enviorementVariables.length > 0) {
+      // Prepare the enviorement variables
+      var envVarStr: string = 'A list of environment variables up to this point:\n';
+      for(let i = 0; i < this.enviorementVariables.length; i++) {
+        envVarStr += `${this.enviorementVariables[i].name}: ${this.enviorementVariables[i].value}\n`;
+      };
+      
+      // Add the concatinated enviorement variables to the messages
+      messages.push({role: "system", content: envVarStr});
+    }
+
+    // Add the summary to the messages
+    if (this.summary !== '') {
+      messages.push({role: "system", content: `Summary of the conversation up to this point: ${this.summary}`});
+    }
+
+    // Add the participants to the messages
+    if (this.participants.length > 0) {
+      messages.push({role: "system", content: `A list of the characters participating in the conversation or scenario: ${this.participants}`});
+    }
+
+    return messages;
   }
 }

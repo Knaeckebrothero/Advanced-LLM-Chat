@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { openDB, IDBPDatabase } from 'idb';
-import { Message } from './interfaces/chat-message';
+import { Message } from './interfaces/message';
 import { MainAppDB } from './data-db-schema';
 import { OpenAIChatCompleteRequest } from './interfaces/api-openai-request';
 
@@ -34,6 +34,9 @@ export class DBService {
 
         // Create a store for conversations with 'id' as the key path
         db.createObjectStore('conversations', { keyPath: 'id' });
+
+        // Create a store for LLM agents with 'id' as the key path
+        db.createObjectStore('llmAgents', { keyPath: 'id' });
       }
     });
     console.log("Database started!");
@@ -171,5 +174,29 @@ export class DBService {
 
   async deleteConversation(id: string) {
     return await this.db.delete('conversations', id);
+  }
+
+  /*
+  CRUD operations for LLM agents
+  */
+
+  async addAgent(agent: any) {
+    return await this.db.add('llmAgents', this.generateID(agent));
+  }
+
+  async getAgent(id: string) {
+    return await this.db.get('llmAgents', id);
+  }
+
+  async updateAgent(agent: any) {
+    return await this.db.put('llmAgents', agent);
+  }
+
+  async deleteAgent(id: string) {
+    return await this.db.delete('llmAgents', id);
+  }
+
+  async getAllAgents() {
+    return await this.db.getAll('llmAgents');
   }
 }

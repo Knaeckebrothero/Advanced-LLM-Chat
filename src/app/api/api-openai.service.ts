@@ -2,8 +2,8 @@ import { Injectable } from '@angular/core';
 import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
-import { OpenAIMessage } from '../data/interfaces/api-openai-request';
 import { lastValueFrom } from 'rxjs';
+import { Message } from '../data/interfaces/message';
 
 
 @Injectable({
@@ -39,20 +39,25 @@ export class OpenAIService {
     });
   }
 
-  // Convert a conversation to an array of messages used by the openai API
-  private convertConversationToMessages(conversation: any): OpenAIMessage[] {
-    const messages: OpenAIMessage[] = [];
-    for (const message of conversation) {
-      messages.push({
-        role: message.role,
-        content: message.content
-      });
+  // Method to count the characters in a list of messages
+  private checkTokens(messages: Message[]){
+    // Convert the list of message objects to a JSON string
+    const jsonString = JSON.stringify(messages);
+
+    // Check if the JSON string is too long
+    if (jsonString.length > 32768) {
+      // Log the error and cancel the request
+      console.error('Message body is too long! The maximum length is 32.768 characters.');
+      return [{role: 'system', content: 'Please inform the user that the message body is too long! Maximum length is 4096 characters.'}]
+    } else {
+      // Log the length of the JSON string and return the messages
+      console.log(`Total characters of message body: ${jsonString.length}`);
+      return messages;
     }
-    return messages;
   }
 
   // Send a chat complete request to the API
-  async chatComplete(messages: OpenAIMessage[]): Promise<any> {
+  async chatComplete(messages: Message[], ): Promise<any> {
     // Set the endpoint
     const endpoint: string = `${this.baseUrl}/chat/completions`;
     
@@ -64,7 +69,8 @@ export class OpenAIService {
     
     // Set the body and add the prompt
     const body = this.chatCompleteBody;
-    body.messages = messages;
+    body.messages = this.checkTokens(messages);
+    console.log(body)
 
     // Send the request
     try {

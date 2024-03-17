@@ -1,7 +1,9 @@
 import { DBSchema } from 'idb';
-import { Message } from './interfaces/chat-message';
+import { Message } from './interfaces/message';
 import { OpenAIChatCompleteRequest } from './interfaces/api-openai-request';
-import { ConversationData } from '../chat/conversation';
+import { ConversationData } from './interfaces/conversation';
+import { Agent } from './interfaces/agent';
+
 
 export interface MainAppDB extends DBSchema {
   // Messages store
@@ -10,13 +12,11 @@ export interface MainAppDB extends DBSchema {
     value: Message;
     indexes: { 'by-time': Date };
   };
-  /*
   // LLM Agents store
-  chatAgents: {
+  llmAgents: {
     key: string;
-    value: any;
+    value: Agent;
   };
-  */
   // OpenAI settings store
   llmConfigs: {
     key: string;
