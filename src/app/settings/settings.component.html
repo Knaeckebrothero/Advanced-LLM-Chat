@@ -85,6 +85,21 @@
         <button type="submit" mat-raised-button color="primary">Save & Apply</button>
     </form>
 
+    <form class="agent-form" [formGroup]="agentForm" (ngSubmit)="addAgent()">
+        <!-- Prompt -->
+        <mat-form-field class="settings-field">
+            <mat-label>Agent name</mat-label>
+            <input matInput type="text" formControlName="role">
+        </mat-form-field>
+        <mat-form-field class="settings-field">
+            <mat-label>Agent prompt</mat-label>
+            <input matInput type="text" formControlName="prompt">
+        </mat-form-field>
+
+        <!-- Save Settings Button -->
+        <button type="submit" mat-raised-button color="primary">Add Agent</button>
+    </form>
+
     <!-- Delete Messages Button -->
     <button mat-raised-button color="primary" (click)="resetMessages()">Reset Conversation</button>
 </div>

@@ -24,7 +24,12 @@ export class SettingsComponent implements OnInit{
     seed: new FormControl(),
     temperature: new FormControl(),
     top_p: new FormControl(),
-    user: new FormControl()
+    user: new FormControl(),
+  });
+
+  agentForm = new FormGroup({
+    role: new FormControl(),
+    prompt: new FormControl()
   });
 
   constructor(private dbService: DBService) { }
@@ -50,6 +55,11 @@ export class SettingsComponent implements OnInit{
   saveSettings() {
     this.dbService.addLLMConfig(this.settingsForm.value);
     console.log('Settings ' + this.settingsForm.value.id + ' saved!');
+  }
+
+  addAgent() {
+    this.dbService.addAgent({id: "default-agent-01", role: this.agentForm.value.role, prompt: this.agentForm.value.prompt});
+    console.log('Agent added!');
   }
 
   // Delete messages from the database

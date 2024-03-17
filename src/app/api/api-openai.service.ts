@@ -70,6 +70,7 @@ export class OpenAIService {
     // Set the body and add the prompt
     const body = this.chatCompleteBody;
     body.messages = this.checkTokens(messages);
+    console.log(body)
 
     // Send the request
     try {
