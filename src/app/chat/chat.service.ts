@@ -50,8 +50,10 @@ export class ChatService {
   }
 
   // Extract the messages not part of the conversation summery
-  private getNonSummarizedMessages(messages: Message[]){
-    return messages.slice(- this.conversation.messagesPartOfSummery).map((message: Message) => {
+  private getNonSummarizedMessages(){
+    const messages = this.messagesSubject.getValue();
+
+    return messages.slice(messages.length + 1 - this.conversation.messagesPartOfSummery).map((message: Message) => {
       return {role: message.role, content: message.content};
     });
   }
@@ -59,7 +61,7 @@ export class ChatService {
   // Method to check if and update the conversation summary
   private async updateSummary(){
     // Convert the list of message objects to a JSON string
-    const jsonString = JSON.stringify(this.getNonSummarizedMessages(this.messagesSubject.getValue()));
+    const jsonString = JSON.stringify(this.getNonSummarizedMessages());
 
     // Check if the JSON string is long enough to be summarized
     if (jsonString.length > 2048) {
@@ -72,14 +74,14 @@ export class ChatService {
       ];
 
       // Add the messages that are not part of the conversation summary to the summary package
-      const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue());
-      summaryPackage = summaryPackage.concat(messagesNotInSummary);
-      console.log(summaryPackage);
+      const messagesNotInSummary = this.getNonSummarizedMessages();
+      summaryPackage = summaryPackage.concat();
 
       // Generate a summary
       await this.apiService.chatComplete(summaryPackage).then((response) => {
         // Update the conversation summary
         this.conversation.updateSummary(response.choices[0].message.content, messagesNotInSummary.length);
+        console.log(this.conversation.messagesPartOfSummery)
         console.log("Conversation summary updated!");
       });
     }
@@ -92,10 +94,10 @@ export class ChatService {
     this.conversationPromt = this.conversation.getAsMessages()
     
     var generationMessages: Message[] = [];
-    const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue())
+    const messagesNotInSummary = this.getNonSummarizedMessages()
 
     // Combine the messages
-    generationMessages = this.conversationPromt.concat(messagesNotInSummary);
+    generationMessages = this.conversationPromt.concat();
     // messages.push({role: "system", content: "The last few messages of the conversation (these are not part of the summary):"});
     // messages.push({role: "system", content: "The following data is about the course of the conversation. To stay within the context window and provide some additional information to keep the conversation consistent, the conversation will be summarized and only the last few messages will be provided."});
 
