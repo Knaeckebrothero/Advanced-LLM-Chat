@@ -81,6 +81,10 @@
   margin-top: 4px;
 }
 
+em {
+  font-style: italic;
+}
+
 // Responsive adjustment, allowing the message to take more space on smaller screens
 @media (max-width: 768px) {
   .message {

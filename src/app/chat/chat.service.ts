@@ -16,7 +16,13 @@ export class ChatService {
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // Variables
-  conversation = new Conversation("default-conv-01", 4, [], '', []);
+  conversation = new Conversation(
+    "default-conv-01", 
+    0, 
+    [], 
+    'This is a new conversation, there is no summary of prior messages!', 
+    []
+  );
   conversationPromt: Message[] = [];
   agent: Agent = {role: "assistant", prompt: "You are a helpfull Assistant."};
 
@@ -33,10 +39,10 @@ export class ChatService {
 
       // Load the conversation from the database
       this.dbService.getConversation("default-conv-01").then((conversation: any) => {
-        if (conversation !== undefined) {
+        if (conversation != undefined) {
           this.conversation = new Conversation(
             conversation.id,
-            conversation.messagesPartOfSummery,
+            conversation.messagesPartOfSummary,
             conversation.enviorementVariables,
             conversation.summary,
             conversation.participants
@@ -61,39 +67,46 @@ export class ChatService {
     });
   }
 
-  private getNonSummarizedMessages() {
-    const messages = this.messagesSubject.getValue();
+  private getNonSummarizedMessages(messages: Message[]) {
     // Start slicing from the index after the last summarized message
-    return messages.slice(this.conversation.messagesPartOfSummery - 4).map((message: Message) => {
+    return messages.slice(this.conversation.messagesPartOfSummary).map((message: Message) => {
       return {role: message.role, content: message.content};
     });
   }
   
-
   // Method to check if and update the conversation summary
   private async updateSummary(){
-    // Convert the list of message objects to a JSON string
-    const jsonString = JSON.stringify(this.getNonSummarizedMessages());
+    const currentMessages = this.messagesSubject.getValue();
+    const messagesNotInSummary = this.getNonSummarizedMessages(currentMessages);
+
+    // Log the current state of the conversation
+    console.log({
+      totalMessages: currentMessages.length, 
+      messagesInSummary: this.conversation.messagesPartOfSummary, 
+      messagesNotInSummary: messagesNotInSummary.length,
+    });
 
     // Check if the JSON string is long enough to be summarized
-    if (jsonString.length > 16384) {
+    if (JSON.stringify(messagesNotInSummary).length > 10240 && currentMessages.length - this.conversation.messagesPartOfSummary > 4) {
       console.log('Summarizing the conversation...');
 
       // Create a summary package to be sent to the API
-      var summaryPackage = [
-        {role: "system", content: this.agent.prompt},
-        {role: "system", content: "Your task now is to generate a summary of the ongoing conversation. This involves periodically updating the summary to include new information while ensuring the coherence and accuracy of the overall context. When updating, carefully integrate new details into the existing summary without omitting crucial elements or introducing inaccuracies. Maintain the essence of the conversation, focusing on key points, decisions, and insights."},
-        {role: "system", content: `Current summary: [${this.conversation.summary}].\n Please update this summary by incorporating the most recent exchanges, highlighting any new developments or conclusions. Ensure the updated summary remains clear and succinct.`}
-      ];
+      var summaryPackage = [{role: "system", content: this.agent.prompt}];
 
       // Add the messages that are not part of the conversation summary to the summary package
-      const messagesNotInSummary = this.getNonSummarizedMessages();
-      summaryPackage = summaryPackage.concat();
+      summaryPackage = summaryPackage.concat(messagesNotInSummary.concat([
+        {role: "system", content: `Your task now is to generate a summary of the ongoing conversation. 
+        This involves periodically updating the summary to include new information while ensuring the coherence and accuracy of the overall context. 
+        When updating, carefully integrate new details into the existing summary without omitting crucial elements or introducing inaccuracies. 
+        Maintain the essence of the conversation, focusing on key points, decisions, and insights. \n
+        Current summary: [${this.conversation.summary}].\n Please update this summary by incorporating the most recent exchanges, highlighting any new developments or conclusions. 
+        Ensure the updated summary remains clear and succinct.`}
+      ]));
 
       // Generate a summary
       await this.apiService.chatComplete(summaryPackage).then((response) => {
         // Update the conversation summary
-        this.conversation.updateSummary(response.choices[0].message.content, messagesNotInSummary.length);
+        this.conversation.updateSummary(response.choices[0].message.content, currentMessages.length);
         console.log("Conversation summary updated!");
       });
     }
@@ -107,10 +120,19 @@ export class ChatService {
     
     var generationMessages: Message[] = [
       {role: "system", content: this.agent.prompt}];
-    const messagesNotInSummary = this.getNonSummarizedMessages()
+    const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue())
 
-    // Combine the messages
-    generationMessages = generationMessages.concat(this.conversationPromt.concat(messagesNotInSummary));
+    if (messagesNotInSummary.length < 4) {
+      // Get the last 4 messages
+      generationMessages = generationMessages.concat(
+        this.conversationPromt.concat(
+          this.messagesSubject.getValue().slice(-4).map((message: Message) => {
+            return {role: message.role, content: message.content};
+          })));
+    } else {
+      // Combine the messages
+      generationMessages = generationMessages.concat(this.conversationPromt.concat(messagesNotInSummary));
+    }
 
     // Generate a message using the OpenAI API
     const newMessage = this.apiService.chatComplete(generationMessages).then((response) => {
@@ -119,7 +141,7 @@ export class ChatService {
 
       // Create a new message object
       const message = {
-        content: response.choices[0].message.content,
+        content: response.choices[0].message.content.replace(/\{\{user\}\}/g, 'Simon'),
         role: response.choices[0].message.role,
         time: new Date()
       };
@@ -144,14 +166,16 @@ export class ChatService {
 
     // Generate a response
     this.generate().then((generatedMessage) => {
-    // Add the message to the messages array
-    this.messagesSubject.next([...this.messagesSubject.getValue(), generatedMessage]);
+      // Add the message to the messages array
+      this.messagesSubject.next([...this.messagesSubject.getValue(), generatedMessage]);
 
-    // Save the message in the database
-    this.dbService.addMessage(generatedMessage);
+      // Save the message in the database
+      this.dbService.addMessage(generatedMessage);
 
-    // Update the conversation
-    this.updateSummary()
+      // Update the conversation
+      this.updateSummary().then(() => {
+        this.dbService.updateConversation(this.conversation);
+      });
     });
   }
 }
