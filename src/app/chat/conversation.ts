@@ -4,7 +4,7 @@ import { Message } from '../data/interfaces/message';
 
 export class Conversation implements ConversationData {
   id: string;
-  messagesPartOfSummery: number;
+  messagesPartOfSummary: number;
   enviorementVariables: ConversationVariable[];
   summary: string;
   participants: string[];
@@ -12,12 +12,12 @@ export class Conversation implements ConversationData {
   // Constructor
   constructor(
     id: string,
-    messagesPartOfSummery: number, 
+    messagesPartOfSummary: number, 
     enviorementVariables: ConversationVariable[], 
     summary: string,
     participants: string[]) {
     this.id = id;
-    this.messagesPartOfSummery = messagesPartOfSummery;
+    this.messagesPartOfSummary = messagesPartOfSummary;
     this.enviorementVariables = enviorementVariables;
     this.summary = summary;
     this.participants = participants;
@@ -45,19 +45,19 @@ export class Conversation implements ConversationData {
   }
 
   // Update the summary and recent messages
-  public updateSummary(summary: string, messagesPartOfSummery: number) {
+  public updateSummary(summary: string, messagesPartOfSummary: number) {
     this.summary = summary;
-    this.messagesPartOfSummery = messagesPartOfSummery;
+    this.messagesPartOfSummary = messagesPartOfSummary;
   }
 
   // Update the conversation
   public updateConversation(
     summary: string, 
-    messagesPartOfSummery: number, 
+    messagesPartOfSummary: number, 
     enviorementVariables: ConversationVariable[], 
     participants: string[]) {
     // Update the summary and recent messages
-    this.updateSummary(summary, messagesPartOfSummery);
+    this.updateSummary(summary, messagesPartOfSummary);
 
     // Update the enviorement variables and participants
     this.enviorementVariables = enviorementVariables;
@@ -83,7 +83,8 @@ export class Conversation implements ConversationData {
 
     // Add the summary to the messages
     if (this.summary !== '') {
-      messages.push({role: "system", content: `Summary of the conversation up to this point: ${this.summary}`});
+      messages.push({role: "system", content: `Summary of the conversation up to this point: ${this.summary}\n 
+      Keep in mind that the last 4 messages will always be provided even if they are part of the summary.`});
     }
 
     // Add the participants to the messages

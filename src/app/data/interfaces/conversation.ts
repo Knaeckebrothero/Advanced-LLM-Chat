@@ -3,7 +3,7 @@ export interface ConversationData {
     // ID used to identify the conversation in the database
     id?: string;
     // The number of messages part of the conversation summery
-    messagesPartOfSummery: number;
+    messagesPartOfSummary: number;
     // Summary of the conversation
     summary: string;
     // List holding enviorement variables
