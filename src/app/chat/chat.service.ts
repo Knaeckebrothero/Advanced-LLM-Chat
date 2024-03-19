@@ -119,7 +119,7 @@ export class ChatService {
 
       // Create a new message object
       const message = {
-        content: response.choices[0].message.content,
+        content: response.choices[0].message.content.replace(/\{\{user\}\}/g, 'Simon'),
         role: response.choices[0].message.role,
         time: new Date()
       };
