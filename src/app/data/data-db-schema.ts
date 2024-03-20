@@ -10,7 +10,7 @@ export interface MainAppDB extends DBSchema {
   chatMessages: {
     key: string;
     value: Message;
-    indexes: { 'by-time': Date };
+    indexes: { 'by-time': 'time', 'by-conversationID': 'conversationID' };
   };
   // LLM Agents store
   llmAgents: {

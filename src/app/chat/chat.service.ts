@@ -11,44 +11,45 @@ import { Agent } from '../data/interfaces/agent';
   providedIn: 'root'
 })
 export class ChatService {
-  // The ChatService is responsible for managing the messages array and exposing it as an observable.
-  private messagesSubject = new BehaviorSubject<Message[]>([]);
-  public messages: Observable<Message[]> = this.messagesSubject.asObservable();
-
   // Variables
-  conversation = new Conversation(
-    "default-conv-01", 
-    0, 
-    [], 
-    'This is a new conversation, there is no summary of prior messages!', 
-    []
-  );
-  conversationPromt: Message[] = [];
-  agent: Agent = {role: "assistant", prompt: "You are a helpfull Assistant."};
+  private conversation!: Conversation;
+  private agent!: Agent;
+  conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
-  // Inject the DataService and load the messages from the database
+  // The ChatService is responsible for exposing the messages as an observable.
+  public messages!: Observable<Message[]>;
+
+  // Constructor
   constructor(private dbService: DBService, private apiService: OpenAIService) {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
-      // Load the messages from the database once it has been started
-      this.dbService.getAllMessages().then((messages: Message[]) => {
-        // Add the messages to the messages array
-        this.messagesSubject.next(messages);
-      });
-      console.log("Messages loaded!");
-
-      // Load the conversation from the database
+      // Load the default conversation from the database
       this.dbService.getConversation("default-conv-01").then((conversation: any) => {
+        // Check if the conversation exists
         if (conversation != undefined) {
-          this.conversation = new Conversation(
-            conversation.id,
-            conversation.messagesPartOfSummary,
-            conversation.enviorementVariables,
-            conversation.summary,
-            conversation.participants
-          );
-          console.log("Conversation loaded!");
+          // Load the conversation messages from the database
+          this.dbService.getAllMessages(conversation.id).then((messages: Message[]) => {
+            // Check if the conversation has any messages
+            if(messages == undefined) {
+              messages = []
+            }
+
+            // Initialize the conversation
+            this.conversation = new Conversation(
+              conversation.id,
+              messages,
+              conversation.messagesPartOfSummary,
+              conversation.enviorementVariables,
+              conversation.summary,
+              conversation.participants
+            );
+            console.log("Conversation loaded!");
+          });
         } else {
+          // Create a new conversation
+          this.conversation = new Conversation("default-conv-01", [], 0, [], "", []);
+          
+          // Add the new conversation to the database
           this.dbService.addConversation(this.conversation).then(() => {
             console.log("New conversation created!");
           });
@@ -57,13 +58,24 @@ export class ChatService {
 
       // Load the agent from the database
       this.dbService.getAgent("default-agent-01").then((agent: any) => {
+        // Check if the agent exists
         if (agent !== undefined) {
+          // Initialize the agent
           this.agent = agent;
           console.log("Agent loaded!");
         } else {
-          console.log("Agent not found!");
+          // Create a new agent
+          this.agent = {
+            id: "default-agent-01",
+            role: "Assistant",
+            prompt: "You are a helpfull assistant."
+          };
+          console.error("Agent not found!");
         }
       });
+
+      // Initialize the messages observable once everything is setup.
+      this.messages = this.conversation.messagesObservable;
     });
   }
 
@@ -76,7 +88,7 @@ export class ChatService {
   
   // Method to check if and update the conversation summary
   private async updateSummary(){
-    const currentMessages = this.messagesSubject.getValue();
+    const currentMessages = this.messages.getValue();
     const messagesNotInSummary = this.getNonSummarizedMessages(currentMessages);
 
     // Log the current state of the conversation

@@ -1,26 +1,33 @@
 import { ConversationData, ConversationVariable } from '../data/interfaces/conversation';
 import { Message } from '../data/interfaces/message';
+import { BehaviorSubject, Observable } from 'rxjs';
 
 
 export class Conversation implements ConversationData {
+  // Variables inherited from the ConversationData interface
   id: string;
   messagesPartOfSummary: number;
   enviorementVariables: ConversationVariable[];
   summary: string;
   participants: string[];
 
+  // The conversation is responsible for managing the messages array.
+  private messages: BehaviorSubject<Message[]>;
+  public messagesObservable: Observable<Message[]>;
+
   // Constructor
-  constructor(
-    id: string,
-    messagesPartOfSummary: number, 
-    enviorementVariables: ConversationVariable[], 
-    summary: string,
-    participants: string[]) {
-    this.id = id;
-    this.messagesPartOfSummary = messagesPartOfSummary;
-    this.enviorementVariables = enviorementVariables;
-    this.summary = summary;
-    this.participants = participants;
+  constructor(id: string, messages: Message[], messagesPartOfSummary: number, 
+    enviorementVariables: ConversationVariable[], summary: string, participants: string[]) {
+      // Initialize the conversation variables
+      this.id = id;
+      this.messagesPartOfSummary = messagesPartOfSummary;
+      this.enviorementVariables = enviorementVariables;
+      this.summary = summary;
+      this.participants = participants;
+
+      // Initialize the messages array and expose it as an observable.
+      this.messages = new BehaviorSubject<Message[]>(messages); 
+      this.messagesObservable = this.messages.asObservable();
   }
 
   // Get conversation promt

@@ -128,8 +128,12 @@ export class DBService {
     return await this.db.clear('chatMessages');
   }
 
-  async getAllMessages() {
-    return await this.db.getAll('chatMessages');
+  async getAllMessages(conversationID = null) {
+    if(conversationID) {
+      return this.db.getAllFromIndex('chatMessages', 'by-conversationID', conversationID)
+    } else {
+      return await this.db.getAll('chatMessages');
+    }
   }
 
   /*

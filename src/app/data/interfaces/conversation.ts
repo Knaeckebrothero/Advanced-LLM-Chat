@@ -1,3 +1,6 @@
+import { BehaviorSubject } from 'rxjs';
+import { Message } from './message';
+
 // Interface for conversation data
 export interface ConversationData {
     // ID used to identify the conversation in the database
