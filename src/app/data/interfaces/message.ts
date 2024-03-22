@@ -1,6 +1,6 @@
 export interface Message {
     // The unique identifier, used as the key in the database
-    id?: string | null;
+    id?: number;
     // Surrogate Key referencing a conversation interface
     conversationID?: string;
     // Whether the message was sent by the user (important for styling and alignment)

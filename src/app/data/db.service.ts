@@ -28,6 +28,7 @@ export class DBService {
         // Create a store for messages with 'id' as the key path and an index on 'time'
         const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
         messageStore.createIndex('by-time', 'time');
+        messageStore.createIndex('by-conversationID', 'conversationID');
 
         // Create a store for API configurations with 'id' as the key path
         db.createObjectStore('llmConfigs', { keyPath: 'id' });
@@ -46,7 +47,7 @@ export class DBService {
     // Check if the message has an 'id' and it's not null
     if (!newEntry.id && newEntry.id !== null) {
       // Assign a unique ID using the current timestamp
-      newEntry.id = new Date().toString() + "-" + Math.random().toString();
+      newEntry.id = Math.floor(new Date().getTime() / 1000);
     }
     return newEntry;
   }
@@ -130,7 +131,7 @@ export class DBService {
 
   async getAllMessages(conversationID = null) {
     if(conversationID) {
-      return this.db.getAllFromIndex('chatMessages', 'by-conversationID', conversationID)
+      return this.db.getAllFromIndex('chatMessages', 'by-conversationID', conversationID);
     } else {
       return await this.db.getAll('chatMessages');
     }

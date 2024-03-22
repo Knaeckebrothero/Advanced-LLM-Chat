@@ -12,8 +12,8 @@ import { Agent } from '../data/interfaces/agent';
 })
 export class ChatService {
   // Variables
-  private conversation: Conversation;
-  private agent!: Agent;
+  private conversation: Conversation = new Conversation("default-conv-01", [], 0, [], "", []);
+  private agent: Agent = {id: "default-agent-01", role: "Assistant", prompt: "You are a helpfull assistant."};
   conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
   // The ChatService is responsible for exposing the messages as an observable.
@@ -33,7 +33,6 @@ export class ChatService {
             if(messages == undefined) {
               messages = []
             }
-
             // Initialize the conversation
             this.conversation = new Conversation(
               conversation.id,
@@ -45,12 +44,9 @@ export class ChatService {
             );
             console.log("Conversation loaded!");
           });
-        } else {
-          // Create a new conversation
-          this.conversation = new Conversation("default-conv-01", [], 0, [], "", []);
-          
-          // Add the new conversation to the database
-          this.dbService.addConversation(this.conversation).then(() => {
+        } else {          
+          // Add the default conversation to the database
+          this.dbService.addConversation(this.conversation.toConversationData()).then(() => {
             console.log("New conversation created!");
           });
         }
@@ -64,18 +60,12 @@ export class ChatService {
           this.agent = agent;
           console.log("Agent loaded!");
         } else {
-          // Create a new agent
-          this.agent = {
-            id: "default-agent-01",
-            role: "Assistant",
-            prompt: "You are a helpfull assistant."
-          };
           console.error("Agent not found!");
         }
       });
 
       // Initialize the messages observable once everything is setup.
-      this.messages = this.conversation.messagesObservable;
+      // this.messages = this.conversation.messagesObservable;
     });
   }
 
@@ -103,6 +93,7 @@ export class ChatService {
   public userInputMessage(content: any) {
     // Create a new message object
     const newMessage = {
+      conversationID: this.conversation.id,
       content: content,
       role: 'user',
       time: new Date()
@@ -123,7 +114,7 @@ export class ChatService {
 
       // Update the conversation
       this.conversation.updateSummary(this.agent.prompt, this.apiService).then(() => {
-        this.dbService.updateConversation(this.conversation);
+        this.dbService.updateConversation(this.conversation.toConversationData());
       });
     });
   }

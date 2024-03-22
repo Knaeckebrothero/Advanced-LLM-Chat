@@ -105,6 +105,17 @@ export class Conversation implements ConversationData {
     return generationMessages;
   }
 
+  // Method to extract data conforming to ConversationData for storage
+  public toConversationData(): ConversationData {
+    return {
+      id: this.id,
+      messagesPartOfSummary: this.messagesPartOfSummary,
+      enviorementVariables: this.enviorementVariables,
+      summary: this.summary,
+      participants: this.participants,
+    };
+  }
+
   // Method to check if and update the conversation summary
   public async updateSummary(prompt: string, summaryApi: any){
     const currentMessages = this.messagesSubject.getValue();
