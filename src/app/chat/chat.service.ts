@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { Observable } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
 import { OpenAIService } from '../api/api-openai.service';
@@ -85,44 +85,6 @@ export class ChatService {
       return {role: message.role, content: message.content};
     });
   }
-  
-  // Method to check if and update the conversation summary
-  private async updateSummary(){
-    const currentMessages = this.messages.getValue();
-    const messagesNotInSummary = this.getNonSummarizedMessages(currentMessages);
-
-    // Log the current state of the conversation
-    console.log({
-      totalMessages: currentMessages.length, 
-      messagesInSummary: this.conversation.messagesPartOfSummary, 
-      messagesNotInSummary: messagesNotInSummary.length,
-    });
-
-    // Check if the JSON string is long enough to be summarized
-    if (JSON.stringify(messagesNotInSummary).length > 10240 && currentMessages.length - this.conversation.messagesPartOfSummary > 4) {
-      console.log('Summarizing the conversation...');
-
-      // Create a summary package to be sent to the API
-      var summaryPackage = [{role: "system", content: this.agent.prompt}];
-
-      // Add the messages that are not part of the conversation summary to the summary package
-      summaryPackage = summaryPackage.concat(messagesNotInSummary.concat([
-        {role: "system", content: `Your task now is to generate a summary of the ongoing conversation. 
-        This involves periodically updating the summary to include new information while ensuring the coherence and accuracy of the overall context. 
-        When updating, carefully integrate new details into the existing summary without omitting crucial elements or introducing inaccuracies. 
-        Maintain the essence of the conversation, focusing on key points, decisions, and insights. \n
-        Current summary: [${this.conversation.summary}].\n Please update this summary by incorporating the most recent exchanges, highlighting any new developments or conclusions. 
-        Ensure the updated summary remains clear and succinct.`}
-      ]));
-
-      // Generate a summary
-      await this.apiService.chatComplete(summaryPackage).then((response) => {
-        // Update the conversation summary
-        this.conversation.updateSummary(response.choices[0].message.content, currentMessages.length);
-        console.log("Conversation summary updated!");
-      });
-    }
-  }
 
   // Generate a new message
   private generate() {
@@ -132,7 +94,7 @@ export class ChatService {
     
     var generationMessages: Message[] = [
       {role: "system", content: this.agent.prompt}];
-    const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue())
+    const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue());
 
     if (messagesNotInSummary.length < 4) {
       // Get the last 4 messages
@@ -185,7 +147,7 @@ export class ChatService {
       this.dbService.addMessage(generatedMessage);
 
       // Update the conversation
-      this.updateSummary().then(() => {
+      this.conversation.updateSummary().then(() => {
         this.dbService.updateConversation(this.conversation);
       });
     });

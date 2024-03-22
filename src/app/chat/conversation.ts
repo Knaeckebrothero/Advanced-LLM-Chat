@@ -12,7 +12,7 @@ export class Conversation implements ConversationData {
   participants: string[];
 
   // The conversation is responsible for managing the messages array.
-  private messages: BehaviorSubject<Message[]>;
+  private messagesSubject: BehaviorSubject<Message[]>;
   public messagesObservable: Observable<Message[]>;
 
   // Constructor
@@ -26,8 +26,53 @@ export class Conversation implements ConversationData {
       this.participants = participants;
 
       // Initialize the messages array and expose it as an observable.
-      this.messages = new BehaviorSubject<Message[]>(messages); 
-      this.messagesObservable = this.messages.asObservable();
+      this.messagesSubject = new BehaviorSubject<Message[]>(messages.sort((a, b) => a.time!.getTime() - b.time!.getTime())); 
+      this.messagesObservable = this.messagesSubject.asObservable();
+  }
+
+  public addMessage(message: Message) {
+    // Add the message to the messages array
+    this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
+  }
+
+  // Method to check if and update the conversation summary
+  public async updateSummary(){
+    const currentMessages = this.messagesSubject.getValue();
+    const messagesNotInSummary = this.getNonSummarizedMessages(currentMessages);
+
+    // Log the current state of the conversation
+    console.log({
+      totalMessages: currentMessages.length, 
+      messagesInSummary: this.conversation.messagesPartOfSummary, 
+      messagesNotInSummary: messagesNotInSummary.length,
+    });
+
+    // Check if the JSON string is long enough to be summarized
+    if (JSON.stringify(messagesNotInSummary).length > 10240 && currentMessages.length - this.conversation.messagesPartOfSummary > 4) {
+      console.log('Summarizing the conversation...');
+
+      // Create a summary package to be sent to the API
+      var summaryPackage = [{role: "system", content: this.agent.prompt}];
+
+      // Add the messages that are not part of the conversation summary to the summary package
+      summaryPackage = summaryPackage.concat(messagesNotInSummary.concat([
+        {role: "system", content: `Your task now is to generate a summary of the ongoing conversation. 
+        This involves periodically updating the summary to include new information while ensuring the coherence and accuracy of the overall context. 
+        When updating, carefully integrate new details into the existing summary without omitting crucial elements or introducing inaccuracies. 
+        Maintain the essence of the conversation, focusing on key points, decisions, and insights. \n
+        Current summary: [${this.conversation.summary}].\n Please update this summary by incorporating the most recent exchanges, highlighting any new developments or conclusions. 
+        Ensure the updated summary remains clear and succinct.`}
+      ]));
+
+      // Generate a summary
+      await this.apiService.chatComplete(summaryPackage).then((response) => {
+        // Update the conversation summary
+        this.summary = response.choices[0].message.content;
+        // Update the number of messages that are part of the summary
+        this.messagesPartOfSummary = currentMessages.length;
+        console.log("Conversation summary updated!");
+      });
+    }
   }
 
   // Get conversation promt
@@ -49,12 +94,6 @@ export class Conversation implements ConversationData {
     ${this.summary}\n\n
     The last 10 messages exchanged by the participants:\n`;
     return promt;
-  }
-
-  // Update the summary and recent messages
-  public updateSummary(summary: string, messagesPartOfSummary: number) {
-    this.summary = summary;
-    this.messagesPartOfSummary = messagesPartOfSummary;
   }
 
   // Update the conversation
