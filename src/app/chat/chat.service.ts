@@ -12,12 +12,12 @@ import { Agent } from '../data/interfaces/agent';
 })
 export class ChatService {
   // Variables
-  private conversation!: Conversation;
+  private conversation: Conversation;
   private agent!: Agent;
   conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
   // The ChatService is responsible for exposing the messages as an observable.
-  public messages!: Observable<Message[]>;
+  public messages: Observable<Message[]> = this.conversation.messagesObservable;
 
   // Constructor
   constructor(private dbService: DBService, private apiService: OpenAIService) {
@@ -79,37 +79,12 @@ export class ChatService {
     });
   }
 
-  private getNonSummarizedMessages(messages: Message[]) {
-    // Start slicing from the index after the last summarized message
-    return messages.slice(this.conversation.messagesPartOfSummary).map((message: Message) => {
-      return {role: message.role, content: message.content};
-    });
-  }
-
   // Generate a new message
   private generate() {
-    console.log("Preparing to generate a message...");
-    // Update the conversation
-    this.conversationPromt = this.conversation.getAsMessages()
-    
-    var generationMessages: Message[] = [
-      {role: "system", content: this.agent.prompt}];
-    const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue());
-
-    if (messagesNotInSummary.length < 4) {
-      // Get the last 4 messages
-      generationMessages = generationMessages.concat(
-        this.conversationPromt.concat(
-          this.messagesSubject.getValue().slice(-4).map((message: Message) => {
-            return {role: message.role, content: message.content};
-          })));
-    } else {
-      // Combine the messages
-      generationMessages = generationMessages.concat(this.conversationPromt.concat(messagesNotInSummary));
-    }
+    const messagePrompt = this.conversation.getMessagePrompt(this.agent.prompt)
 
     // Generate a message using the OpenAI API
-    const newMessage = this.apiService.chatComplete(generationMessages).then((response) => {
+    const newMessage = this.apiService.chatComplete(messagePrompt).then((response) => {
       console.log("Message generated!");
       console.log(response);
 
@@ -135,19 +110,19 @@ export class ChatService {
 
     // Add the message to the database and messages array
     this.dbService.addMessage(newMessage);
-    this.messagesSubject.next([...this.messagesSubject.getValue(), newMessage]);
+    this.conversation.addMessage(newMessage);
     console.log("Usermessage added!");
 
     // Generate a response
     this.generate().then((generatedMessage) => {
       // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), generatedMessage]);
+      this.conversation.addMessage(generatedMessage);
 
       // Save the message in the database
       this.dbService.addMessage(generatedMessage);
 
       // Update the conversation
-      this.conversation.updateSummary().then(() => {
+      this.conversation.updateSummary(this.agent.prompt, this.apiService).then(() => {
         this.dbService.updateConversation(this.conversation);
       });
     });

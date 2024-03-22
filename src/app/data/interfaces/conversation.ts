@@ -1,5 +1,4 @@
-import { BehaviorSubject } from 'rxjs';
-import { Message } from './message';
+import { Agent } from './agent';
 
 // Interface for conversation data
 export interface ConversationData {
@@ -13,6 +12,8 @@ export interface ConversationData {
     enviorementVariables: ConversationVariable[];
     // Characters participating in the conversation
     participants: string[];
+    // Agents used in the conversation
+    //agents: Agent[];
 }
 
 // Interface for enviorement variables used in the conversation
