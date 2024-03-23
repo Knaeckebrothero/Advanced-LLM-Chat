@@ -13,7 +13,7 @@ import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request
 export class SettingsComponent implements OnInit{
   // Settings form
   settingsForm = new FormGroup({
-    id: new FormControl(),
+    id: new FormControl(1),
     name: new FormControl(),
     apiKey: new FormControl(),
     model: new FormControl(),
@@ -40,7 +40,7 @@ export class SettingsComponent implements OnInit{
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(async () => {
       // Get the settings from the database
-      const settings = await this.dbService.getLLMConfig(0);
+      const settings = await this.dbService.getLLMConfig(1);
   
       // Check if the settings are found
       if (settings === undefined) {
@@ -59,7 +59,7 @@ export class SettingsComponent implements OnInit{
   }
 
   addAgent() {
-    this.dbService.addAgent({id: 0, role: this.agentForm.value.role, prompt: this.agentForm.value.prompt});
+    this.dbService.addAgent({id: 1, role: this.agentForm.value.role, prompt: this.agentForm.value.prompt});
     console.log('Agent added!');
   }
 
@@ -67,7 +67,7 @@ export class SettingsComponent implements OnInit{
   resetMessages(){
     // Get all the messages from the database
     this.dbService.getAllMessages().then((messages) => {
-      const conversation = this.dbService.getConversation(0).then((conversation) => {return conversation;});
+      const conversation = this.dbService.getConversation(1).then((conversation) => {return conversation;});
       const conversationJson = JSON.stringify(conversation);
 
       // Convert messages to JSON format
@@ -79,14 +79,14 @@ export class SettingsComponent implements OnInit{
       // Create a link element to download the blob
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'messages_backup.json'; // Name of the file to be downloaded
+      a.download = new Date().getDate.toString + '_messages.json'; // Name of the file to be downloaded
       document.body.appendChild(a); // Append the link to the document
       a.click(); // Simulate click on the link to trigger the download
       document.body.removeChild(a); // Remove the link from the document
 
       // Delete all the messages after backup
       this.dbService.deleteAllMessages().then(() => {
-        this.dbService.deleteConversation(0).then(() => {
+        this.dbService.deleteConversation(1).then(() => {
           console.log('Conversation deleted!');
         });
         console.log('All messages deleted!');

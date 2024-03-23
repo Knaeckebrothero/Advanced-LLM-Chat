@@ -48,7 +48,7 @@ export class DBService {
   // Method to add a new entry and generate an ID if needed
   private async addEntry(collectionName: any, newEntry: any) {
     // Check if the message has an 'id' and it's not null
-    if (!newEntry.id || newEntry.id !== null) {
+    if (!newEntry.id && newEntry.id !== null) {
       // Variables
       let entryNotAdded = true;
       let retries = 0;
