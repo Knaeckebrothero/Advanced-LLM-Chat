@@ -8,23 +8,23 @@ import { Agent } from './interfaces/agent';
 export interface MainAppDB extends DBSchema {
   // Messages store
   chatMessages: {
-    key: string;
+    key: number;
     value: Message;
     indexes: { 'by-time': 'time', 'by-conversationID': 'conversationID' };
   };
   // LLM Agents store
   llmAgents: {
-    key: string;
+    key: number;
     value: Agent;
   };
   // OpenAI settings store
   llmConfigs: {
-    key: string;
+    key: number;
     value: OpenAIChatCompleteRequest;
   };
   // Conversations store
   conversations: {
-    key: string;
+    key: number;
     value: ConversationData;
   };
 }

@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { OnInit } from '@angular/core';
 import { DBService } from '../data/db.service';
+import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
 
 
 @Component({
@@ -12,7 +13,7 @@ import { DBService } from '../data/db.service';
 export class SettingsComponent implements OnInit{
   // Settings form
   settingsForm = new FormGroup({
-    id: new FormControl('openai-default'),
+    id: new FormControl(),
     name: new FormControl(),
     apiKey: new FormControl(),
     model: new FormControl(),
@@ -39,7 +40,7 @@ export class SettingsComponent implements OnInit{
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(async () => {
       // Get the settings from the database
-      const settings = await this.dbService.getLLMConfig(this.settingsForm.value.id!);
+      const settings = await this.dbService.getLLMConfig(0);
   
       // Check if the settings are found
       if (settings === undefined) {
@@ -53,12 +54,12 @@ export class SettingsComponent implements OnInit{
 
   // Save settings to the database
   saveSettings() {
-    this.dbService.addLLMConfig(this.settingsForm.value);
+    this.dbService.addLLMConfig(this.settingsForm.value as OpenAIChatCompleteRequest);
     console.log('Settings ' + this.settingsForm.value.id + ' saved!');
   }
 
   addAgent() {
-    this.dbService.addAgent({id: "default-agent-01", role: this.agentForm.value.role, prompt: this.agentForm.value.prompt});
+    this.dbService.addAgent({id: 0, role: this.agentForm.value.role, prompt: this.agentForm.value.prompt});
     console.log('Agent added!');
   }
 
@@ -66,7 +67,7 @@ export class SettingsComponent implements OnInit{
   resetMessages(){
     // Get all the messages from the database
     this.dbService.getAllMessages().then((messages) => {
-      const conversation = this.dbService.getConversation("default-conv-01").then((conversation) => {return conversation;});
+      const conversation = this.dbService.getConversation(0).then((conversation) => {return conversation;});
       const conversationJson = JSON.stringify(conversation);
 
       // Convert messages to JSON format
@@ -85,7 +86,7 @@ export class SettingsComponent implements OnInit{
 
       // Delete all the messages after backup
       this.dbService.deleteAllMessages().then(() => {
-        this.dbService.deleteConversation("default-conv-01").then(() => {
+        this.dbService.deleteConversation(0).then(() => {
           console.log('Conversation deleted!');
         });
         console.log('All messages deleted!');

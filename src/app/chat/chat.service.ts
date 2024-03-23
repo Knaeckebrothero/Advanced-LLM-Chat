@@ -12,8 +12,8 @@ import { Agent } from '../data/interfaces/agent';
 })
 export class ChatService {
   // Variables
-  private conversation: Conversation = new Conversation("default-conv-01", [], 0, [], "", []);
-  private agent: Agent = {id: "default-agent-01", role: "Assistant", prompt: "You are a helpfull assistant."};
+  private conversation: Conversation = new Conversation(0, [], 0, [], "", []);
+  private agent: Agent = {id: 0, role: "Assistant", prompt: "You are a helpfull assistant."};
   conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
   // The ChatService is responsible for exposing the messages as an observable.
@@ -24,7 +24,7 @@ export class ChatService {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
       // Load the default conversation from the database
-      this.dbService.getConversation("default-conv-01").then((conversation: any) => {
+      this.dbService.getConversation(0).then((conversation: any) => {
         // Check if the conversation exists
         if (conversation != undefined) {
           // Load the conversation messages from the database
@@ -53,7 +53,7 @@ export class ChatService {
       });
 
       // Load the agent from the database
-      this.dbService.getAgent("default-agent-01").then((agent: any) => {
+      this.dbService.getAgent(0).then((agent: any) => {
         // Check if the agent exists
         if (agent !== undefined) {
           // Initialize the agent

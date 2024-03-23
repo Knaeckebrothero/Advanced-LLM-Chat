@@ -3,7 +3,7 @@ import { Agent } from './agent';
 // Interface for conversation data
 export interface ConversationData {
     // ID used to identify the conversation in the database
-    id?: string;
+    id?: number;
     // The number of messages part of the conversation summery
     messagesPartOfSummary: number;
     // Summary of the conversation

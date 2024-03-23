@@ -6,7 +6,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 
 export class Conversation implements ConversationData {
   // Variables inherited from the ConversationData interface
-  id: string;
+  id: number;
   messagesPartOfSummary: number;
   enviorementVariables: ConversationVariable[];
   summary: string;
@@ -17,7 +17,7 @@ export class Conversation implements ConversationData {
   public messagesObservable: Observable<Message[]>;
 
   // Constructor
-  constructor(id: string, messages: Message[], messagesPartOfSummary: number, 
+  constructor(id: number, messages: Message[], messagesPartOfSummary: number, 
     enviorementVariables: ConversationVariable[], summary: string, participants: string[]) {
       // Initialize the conversation variables
       this.id = id;

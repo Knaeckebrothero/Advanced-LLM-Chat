@@ -1,6 +1,6 @@
 export interface Agent {
     // The ID used by the database
-    id?: string;
+    id?: number;
     // Name of the Agent
     role: string;
     // Agent prompt

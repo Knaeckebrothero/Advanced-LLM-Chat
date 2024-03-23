@@ -20,7 +20,7 @@ export class OpenAIService {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
       // Fetch the OpenAI settings from the database
-      this.dbService.getLLMConfig('openai-default').then((defaultSettings: any) => {
+      this.dbService.getLLMConfig(0).then((defaultSettings: any) => {
     
         // If the settings are found initialize the component
         if (defaultSettings) {
