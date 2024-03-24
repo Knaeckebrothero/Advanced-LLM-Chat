@@ -1,0 +1,10 @@
+.metrics-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px; // Adjust the gap between elements as needed
+  
+  .mat-form-field {
+    width: 100%; // Adjust the width as needed
+    height: 60vh;
+  }
+}

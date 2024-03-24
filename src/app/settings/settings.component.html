@@ -2,6 +2,10 @@
     <!-- Titel -->
     <h3>Set the settings for the LLM</h3>
 
+    <div class="upload-container">
+        <input type="file" (change)="onFileSelected($event)" accept=".json">
+    </div>
+
     <form class="settings-form" [formGroup]="settingsForm" (ngSubmit)="saveSettings()">
         <!-- ID -->
         <mat-form-field class="settings-field">

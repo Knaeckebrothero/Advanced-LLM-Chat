@@ -52,6 +52,19 @@ export class SettingsComponent implements OnInit{
     });
   }
 
+  onFileSelected(event: any) {
+    const file: File = event.target.files[0];
+
+    if (file) {
+      const fileReader = new FileReader();
+      fileReader.onload = (e) => {
+        // This will print the file content to the console
+        console.log(JSON.parse(fileReader.result as string));
+      };
+      fileReader.readAsText(file);
+    }
+  }
+
   // Save settings to the database
   saveSettings() {
     this.dbService.addLLMConfig(this.settingsForm.value as OpenAIChatCompleteRequest);
