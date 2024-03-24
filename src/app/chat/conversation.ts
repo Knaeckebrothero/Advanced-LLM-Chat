@@ -1,7 +1,5 @@
-import { Agent } from '../data/interfaces/agent';
 import { ConversationData, ConversationVariable } from '../data/interfaces/conversation';
 import { Message } from '../data/interfaces/message';
-import { BehaviorSubject, Observable } from 'rxjs';
 
 
 export class Conversation implements ConversationData {
