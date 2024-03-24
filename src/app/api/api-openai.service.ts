@@ -18,24 +18,25 @@ export class OpenAIService {
   // Inject the DataService and load the api key from the database
   constructor(private http: HttpClient, private dbService: DBService) {
     // Wait for the database to be ready
-    this.dbService.getDatabaseReadyPromise().then(async () => {
+    this.dbService.getDatabaseReadyPromise().then(() => {
       // Fetch the OpenAI settings from the database
-      const defaultSettings = await this.dbService.getLLMConfig('openai-default');
-  
-      // If the settings are found initialize the component
-      if (defaultSettings) {
-        // Set API key
-        this.apiKey = defaultSettings.apiKey;
+      this.dbService.getLLMConfig(1).then((defaultSettings: any) => {
+    
+        // If the settings are found initialize the component
+        if (defaultSettings) {
+          // Set API key
+          this.apiKey = defaultSettings.apiKey;
 
-        // Remove id and apiKey from the the body
-        const { id, apiKey, name, ...rest } = defaultSettings;
+          // Remove id and apiKey from the the body
+          const { id, apiKey, name, ...rest } = defaultSettings;
 
-        // Populate chatCompleteBody with the rest of the properties
-        this.chatCompleteBody = { ...rest };
-        console.log("API set up!");
-      } else {
-        console.error('API settings not found!');
-      }
+          // Populate chatCompleteBody with the rest of the properties
+          this.chatCompleteBody = { ...rest };
+          console.log("API set up!");
+        } else {
+          console.error('API settings not found!');
+        }
+      });
     });
   }
 

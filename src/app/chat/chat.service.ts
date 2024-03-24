@@ -11,131 +11,110 @@ import { Agent } from '../data/interfaces/agent';
   providedIn: 'root'
 })
 export class ChatService {
-  // The ChatService is responsible for managing the messages array and exposing it as an observable.
-  private messagesSubject = new BehaviorSubject<Message[]>([]);
+  // Variables
+  private conversation: Conversation = new Conversation(1, 0, [], "", []);
+  private summaryAgent: Agent = {id: 1, role: "Assistant", prompt: "You are an assistant that specializes in summarizing conversations."};
+  private agentA: Agent = {id: 2, role: "GoodAssistant", prompt: "You are a good assistant, like an angel on the users left shoulder."};
+  private agentB: Agent = {id: 3, role: "BadAssistant", prompt: "You are an evil assistant, like the devil on the users right shoulder."};
+  conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
+
+  // The ChatService is responsible for managing and exposing the messages.
+  private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
-  // Variables
-  conversation = new Conversation(
-    "default-conv-01", 
-    0, 
-    [], 
-    'This is a new conversation, there is no summary of prior messages!', 
-    []
-  );
-  conversationPromt: Message[] = [];
-  agent: Agent = {role: "assistant", prompt: "You are a helpfull Assistant."};
-
-  // Inject the DataService and load the messages from the database
+  // Constructor
   constructor(private dbService: DBService, private apiService: OpenAIService) {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
-      // Load the messages from the database once it has been started
-      this.dbService.getAllMessages().then((messages: Message[]) => {
-        // Add the messages to the messages array
-        this.messagesSubject.next(messages);
-      });
-      console.log("Messages loaded!");
-
-      // Load the conversation from the database
-      this.dbService.getConversation("default-conv-01").then((conversation: any) => {
+      // Load the default conversation from the database
+      this.dbService.getConversation(1).then((conversation: any) => {
+        // Check if the conversation exists
         if (conversation != undefined) {
-          this.conversation = new Conversation(
-            conversation.id,
-            conversation.messagesPartOfSummary,
-            conversation.enviorementVariables,
-            conversation.summary,
-            conversation.participants
-          );
-          console.log("Conversation loaded!");
-        } else {
-          this.dbService.addConversation(this.conversation).then(() => {
+          // Load the conversation messages from the database
+          this.dbService.getAllMessages(conversation.id).then((messages: Message[]) => {
+            // Check if the conversation has any messages
+            if(messages !== undefined) {
+              this.addMessage(messages);
+            }
+
+            // Initialize the conversation
+            this.conversation = new Conversation(
+              conversation.id,
+              conversation.messagesPartOfSummary,
+              conversation.enviorementVariables,
+              conversation.summary,
+              conversation.participants
+            );
+            console.log("Conversation loaded!");
+          });
+        } else {          
+          // Add the default conversation to the database
+          this.dbService.addConversation(this.conversation.toConversationData()).then(() => {
             console.log("New conversation created!");
           });
         }
       });
 
       // Load the agent from the database
-      this.dbService.getAgent("default-agent-01").then((agent: any) => {
+      this.dbService.getAgent(1).then((agent: any) => {
+        // Check if the agent exists
         if (agent !== undefined) {
-          this.agent = agent;
+          // Initialize the agent
+          this.summaryAgent = agent;
           console.log("Agent loaded!");
         } else {
-          console.log("Agent not found!");
+          console.error("Agent not found!");
+        }
+      });
+
+      // Load the agent from the database
+      this.dbService.getAgent(2).then((agent: any) => {
+        // Check if the agent exists
+        if (agent !== undefined) {
+          // Initialize the agent
+          this.agentA = agent;
+          console.log("Agent loaded!");
+        } else {
+          console.error("Agent not found!");
+        }
+      });
+
+      // Load the second agent from the database
+      this.dbService.getAgent(3).then((agent: any) => {
+        // Check if the agent exists
+        if (agent !== undefined) {
+          // Initialize the agent
+          this.agentB = agent;
+          console.log("Agent loaded!");
+        } else {
+          console.error("Agent not found!");
         }
       });
     });
   }
 
-  private getNonSummarizedMessages(messages: Message[]) {
-    // Start slicing from the index after the last summarized message
-    return messages.slice(this.conversation.messagesPartOfSummary).map((message: Message) => {
-      return {role: message.role, content: message.content};
-    });
-  }
-  
-  // Method to check if and update the conversation summary
-  private async updateSummary(){
-    const currentMessages = this.messagesSubject.getValue();
-    const messagesNotInSummary = this.getNonSummarizedMessages(currentMessages);
+  // Add one or more messages to the conversation
+  private addMessage(message: Message | Message[]) {
+    // Check if the message is an array
+    if (Array.isArray(message)) {
+      // Sort the messages by time
+      message.sort((a, b) => a.time!.getTime() - b.time!.getTime())
 
-    // Log the current state of the conversation
-    console.log({
-      totalMessages: currentMessages.length, 
-      messagesInSummary: this.conversation.messagesPartOfSummary, 
-      messagesNotInSummary: messagesNotInSummary.length,
-    });
-
-    // Check if the JSON string is long enough to be summarized
-    if (JSON.stringify(messagesNotInSummary).length > 10240 && currentMessages.length - this.conversation.messagesPartOfSummary > 4) {
-      console.log('Summarizing the conversation...');
-
-      // Create a summary package to be sent to the API
-      var summaryPackage = [{role: "system", content: this.agent.prompt}];
-
-      // Add the messages that are not part of the conversation summary to the summary package
-      summaryPackage = summaryPackage.concat(messagesNotInSummary.concat([
-        {role: "system", content: `Your task now is to generate a summary of the ongoing conversation. 
-        This involves periodically updating the summary to include new information while ensuring the coherence and accuracy of the overall context. 
-        When updating, carefully integrate new details into the existing summary without omitting crucial elements or introducing inaccuracies. 
-        Maintain the essence of the conversation, focusing on key points, decisions, and insights. \n
-        Current summary: [${this.conversation.summary}].\n Please update this summary by incorporating the most recent exchanges, highlighting any new developments or conclusions. 
-        Ensure the updated summary remains clear and succinct.`}
-      ]));
-
-      // Generate a summary
-      await this.apiService.chatComplete(summaryPackage).then((response) => {
-        // Update the conversation summary
-        this.conversation.updateSummary(response.choices[0].message.content, currentMessages.length);
-        console.log("Conversation summary updated!");
-      });
+      // Add each message to the messages array
+      this.messagesSubject.next([...this.messagesSubject.getValue(), ...message]);
+    } else {
+    // Add the message to the messages array
+    this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
     }
   }
 
   // Generate a new message
-  private generate() {
-    console.log("Preparing to generate a message...");
-    // Update the conversation
-    this.conversationPromt = this.conversation.getAsMessages()
-    
-    var generationMessages: Message[] = [
-      {role: "system", content: this.agent.prompt}];
-    const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue())
-
-    if (messagesNotInSummary.length < 4) {
-      // Get the last 4 messages
-      generationMessages = generationMessages.concat(
-        this.conversationPromt.concat(
-          this.messagesSubject.getValue().slice(-4).map((message: Message) => {
-            return {role: message.role, content: message.content};
-          })));
-    } else {
-      // Combine the messages
-      generationMessages = generationMessages.concat(this.conversationPromt.concat(messagesNotInSummary));
-    }
+  private generate(agentPrompt: string) {
+    const messagePrompt = this.conversation.getMessagePrompt(agentPrompt, this.messagesSubject.getValue());
+    console.log(this.messages)
 
     // Generate a message using the OpenAI API
-    const newMessage = this.apiService.chatComplete(generationMessages).then((response) => {
+    const newMessage = this.apiService.chatComplete(messagePrompt).then((response) => {
       console.log("Message generated!");
       console.log(response);
 
@@ -154,28 +133,56 @@ export class ChatService {
   public userInputMessage(content: any) {
     // Create a new message object
     const newMessage = {
+      conversationID: this.conversation.id,
       content: content,
       role: 'user',
       time: new Date()
     };
-
+  
     // Add the message to the database and messages array
     this.dbService.addMessage(newMessage);
-    this.messagesSubject.next([...this.messagesSubject.getValue(), newMessage]);
+    this.addMessage(newMessage);
     console.log("Usermessage added!");
-
-    // Generate a response
-    this.generate().then((generatedMessage) => {
-      // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), generatedMessage]);
-
-      // Save the message in the database
-      this.dbService.addMessage(generatedMessage);
-
+  
+    // Generate a response for agent a
+    const responseA = this.generate(this.agentA.prompt).then((generatedMessage) => {
+      // Check if the agent has decided to say something
+      if (generatedMessage.content !== 'NO_MESSAGE') {
+        // Add the message to the messages array and save it in the database
+        this.addMessage(generatedMessage);
+        this.dbService.addMessage(generatedMessage);
+      }
+    });
+  
+    // Generate a response for agent b
+    const responseB = this.generate(this.agentB.prompt).then((generatedMessage) => {
+      // Check if the agent has decided to say something
+      if (generatedMessage.content !== 'NO_MESSAGE') {
+        // Add the message to the messages array and save it in the database
+        this.addMessage(generatedMessage);
+        this.dbService.addMessage(generatedMessage);
+      }
+    });
+  
+    // Trigger conversation update once both agents have responded
+    Promise.all([responseA, responseB]).then(() => {
+      // This code is executed once both agents have responded
+      console.log("Both agents have responded. Updating conversation...");
+  
       // Update the conversation
-      this.updateSummary().then(() => {
-        this.dbService.updateConversation(this.conversation);
+      this.conversation.updateSummary(this.summaryAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
+        this.dbService.updateConversation(this.conversation.toConversationData());
       });
     });
+  }
+
+  // Get summary
+  public getSummary(): string{
+    return this.conversation.summary;
+  }
+
+  // Set summary
+  public setSummary(summary: string) {
+    this.conversation.summary = summary;
   }
 }

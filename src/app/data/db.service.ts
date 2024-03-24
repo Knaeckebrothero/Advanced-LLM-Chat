@@ -3,6 +3,8 @@ import { openDB, IDBPDatabase } from 'idb';
 import { Message } from './interfaces/message';
 import { MainAppDB } from './data-db-schema';
 import { OpenAIChatCompleteRequest } from './interfaces/api-openai-request';
+import { Agent } from './interfaces/agent';
+import { ConversationData } from './interfaces/conversation';
 
 
 @Injectable({
@@ -28,6 +30,7 @@ export class DBService {
         // Create a store for messages with 'id' as the key path and an index on 'time'
         const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
         messageStore.createIndex('by-time', 'time');
+        messageStore.createIndex('by-conversationID', 'conversationID');
 
         // Create a store for API configurations with 'id' as the key path
         db.createObjectStore('llmConfigs', { keyPath: 'id' });
@@ -42,14 +45,44 @@ export class DBService {
     console.log("Database started!");
   }
 
-  private generateID(newEntry: any) {
+  // Method to add a new entry and generate an ID if needed
+  private async addEntry(collectionName: any, newEntry: any) {
     // Check if the message has an 'id' and it's not null
     if (!newEntry.id && newEntry.id !== null) {
+      // Variables
+      let entryNotAdded = true;
+      let retries = 0;
+
       // Assign a unique ID using the current timestamp
-      newEntry.id = new Date().toString() + "-" + Math.random().toString();
+      newEntry.id = Math.floor(new Date().getTime() / 1000);
+  
+      // Start a loop to retry if an error occurs
+      do {
+        try {
+          // Attempt to add the entry to the database
+          await this.db.add(collectionName, newEntry);
+          console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
+
+           // If successful, exit the loop by setting the flag to false
+          entryNotAdded = false;
+        } catch (error) {
+          // Increment the ID and try again
+          newEntry.id += 1;
+          retries += 1;
+        }
+        // Limit retries to avoid infinite loop
+      } while (entryNotAdded && retries < 10);
+  
+      // If the entry was not added after multiple attempts, throw an error
+      if (entryNotAdded) {
+        throw new Error('Failed to add entry after multiple attempts.');
+      }
+    } else {
+      // If the message already has an ID, add it to the database
+      await this.db.add(collectionName, newEntry);
+      console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
     }
-    return newEntry;
-  }
+  }  
 
   // Get a promise that resolves when the database is ready
   public getDatabaseReadyPromise() {
@@ -109,10 +142,10 @@ export class DBService {
   */
 
   async addMessage(message: Message) {
-    return await this.db.add('chatMessages', this.generateID(message));
+    return await this.addEntry('chatMessages', message);
   }
 
-  async getMessage(id: string) {
+  async getMessage(id: number) {
     return await this.db.get('chatMessages', id);
   }
 
@@ -120,7 +153,7 @@ export class DBService {
     return await this.db.put('chatMessages', message);
   }
 
-  async deleteMessage(id: string) {
+  async deleteMessage(id: number) {
     return await this.db.delete('chatMessages', id);
   }
 
@@ -128,8 +161,12 @@ export class DBService {
     return await this.db.clear('chatMessages');
   }
 
-  async getAllMessages() {
-    return await this.db.getAll('chatMessages');
+  async getAllMessages(conversationID = null) {
+    if(conversationID) {
+      return this.db.getAllFromIndex('chatMessages', 'by-conversationID', conversationID);
+    } else {
+      return await this.db.getAll('chatMessages');
+    }
   }
 
   /*
@@ -137,10 +174,10 @@ export class DBService {
   */
 
   async addLLMConfig(config: OpenAIChatCompleteRequest) {
-    return await this.db.add('llmConfigs', this.generateID(config));
+    return await this.addEntry('llmConfigs', config);
   }
 
-  async getLLMConfig(id: string) {
+  async getLLMConfig(id: number) {
     return await this.db.get('llmConfigs', id);
   }
 
@@ -148,7 +185,7 @@ export class DBService {
     return await this.db.put('llmConfigs', config);
   }
 
-  async deleteLLMConfig(id: string) {
+  async deleteLLMConfig(id: number) {
     return await this.db.delete('llmConfigs', id);
   }
 
@@ -160,19 +197,19 @@ export class DBService {
   CRUD operations for conversations
   */
 
-  async addConversation(conversation: any) {
-    return await this.db.add('conversations', this.generateID(conversation));
+  async addConversation(conversation: ConversationData) {
+    return await this.addEntry('conversations', conversation);
   }
 
-  async getConversation(id: string) {
+  async getConversation(id: number) {
     return await this.db.get('conversations', id);
   }
 
-  async updateConversation(conversation: any) {
+  async updateConversation(conversation: ConversationData) {
     return await this.db.put('conversations', conversation);
   }
 
-  async deleteConversation(id: string) {
+  async deleteConversation(id: number) {
     return await this.db.delete('conversations', id);
   }
 
@@ -180,19 +217,19 @@ export class DBService {
   CRUD operations for LLM agents
   */
 
-  async addAgent(agent: any) {
-    return await this.db.add('llmAgents', this.generateID(agent));
+  async addAgent(agent: Agent) {
+    return await this.addEntry('llmAgents', agent);
   }
 
-  async getAgent(id: string) {
+  async getAgent(id: number) {
     return await this.db.get('llmAgents', id);
   }
 
-  async updateAgent(agent: any) {
+  async updateAgent(agent: Agent) {
     return await this.db.put('llmAgents', agent);
   }
 
-  async deleteAgent(id: string) {
+  async deleteAgent(id: number) {
     return await this.db.delete('llmAgents', id);
   }
 

@@ -10,7 +10,7 @@ import { Message } from './message';
 // Interface for OpenAI chat request
 export interface OpenAIChatCompleteRequest {
     // The unique identifier, used as the key in the database
-    id?: string | null;
+    id?: number;
     // API key used for these settings (do not include in the body of the request)
     apiKey?: string;
     // Config name set by the user to identify/describe the settings
