@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
 import { OpenAIService } from '../api/api-openai.service';
@@ -12,12 +12,13 @@ import { Agent } from '../data/interfaces/agent';
 })
 export class ChatService {
   // Variables
-  private conversation: Conversation = new Conversation(1, [], 0, [], "", []);
+  private conversation: Conversation = new Conversation(1, 0, [], "", []);
   private agent: Agent = {id: 1, role: "Assistant", prompt: "You are a helpfull assistant."};
   conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
-  // The ChatService is responsible for exposing the messages as an observable.
-  public messages: Observable<Message[]> = this.conversation.messagesObservable;
+  // The ChatService is responsible for managing and exposing the messages.
+  private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
+  public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // Constructor
   constructor(private dbService: DBService, private apiService: OpenAIService) {
@@ -30,13 +31,13 @@ export class ChatService {
           // Load the conversation messages from the database
           this.dbService.getAllMessages(conversation.id).then((messages: Message[]) => {
             // Check if the conversation has any messages
-            if(messages == undefined) {
-              messages = []
+            if(messages !== undefined) {
+              this.addMessage(messages);
             }
+
             // Initialize the conversation
             this.conversation = new Conversation(
               conversation.id,
-              messages,
               conversation.messagesPartOfSummary,
               conversation.enviorementVariables,
               conversation.summary,
@@ -63,15 +64,28 @@ export class ChatService {
           console.error("Agent not found!");
         }
       });
-
-      // Initialize the messages observable once everything is setup.
-      // this.messages = this.conversation.messagesObservable;
     });
+  }
+
+  // Add one or more messages to the conversation
+  private addMessage(message: Message | Message[]) {
+    // Check if the message is an array
+    if (Array.isArray(message)) {
+      // Sort the messages by time
+      message.sort((a, b) => a.time!.getTime() - b.time!.getTime())
+
+      // Add each message to the messages array
+      this.messagesSubject.next([...this.messagesSubject.getValue(), ...message]);
+    } else {
+    // Add the message to the messages array
+    this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
+    }
   }
 
   // Generate a new message
   private generate() {
-    const messagePrompt = this.conversation.getMessagePrompt(this.agent.prompt)
+    const messagePrompt = this.conversation.getMessagePrompt(this.agent.prompt, this.messagesSubject.getValue());
+    console.log(this.messages)
 
     // Generate a message using the OpenAI API
     const newMessage = this.apiService.chatComplete(messagePrompt).then((response) => {
@@ -101,19 +115,19 @@ export class ChatService {
 
     // Add the message to the database and messages array
     this.dbService.addMessage(newMessage);
-    this.conversation.addMessage(newMessage);
+    this.addMessage(newMessage);
     console.log("Usermessage added!");
 
     // Generate a response
     this.generate().then((generatedMessage) => {
       // Add the message to the messages array
-      this.conversation.addMessage(generatedMessage);
+      this.addMessage(generatedMessage);
 
       // Save the message in the database
       this.dbService.addMessage(generatedMessage);
 
       // Update the conversation
-      this.conversation.updateSummary(this.agent.prompt, this.apiService).then(() => {
+      this.conversation.updateSummary(this.agent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
         this.dbService.updateConversation(this.conversation.toConversationData());
       });
     });

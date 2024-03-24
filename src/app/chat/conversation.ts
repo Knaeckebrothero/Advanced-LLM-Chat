@@ -12,12 +12,9 @@ export class Conversation implements ConversationData {
   summary: string;
   participants: string[];
 
-  // The conversation is responsible for managing the messages array.
-  private messagesSubject: BehaviorSubject<Message[]>;
-  public messagesObservable: Observable<Message[]>;
 
   // Constructor
-  constructor(id: number, messages: Message[], messagesPartOfSummary: number, 
+  constructor(id: number, messagesPartOfSummary: number, 
     enviorementVariables: ConversationVariable[], summary: string, participants: string[]) {
       // Initialize the conversation variables
       this.id = id;
@@ -25,11 +22,8 @@ export class Conversation implements ConversationData {
       this.enviorementVariables = enviorementVariables;
       this.summary = summary;
       this.participants = participants;
-
-      // Initialize the messages array and expose it as an observable.
-      this.messagesSubject = new BehaviorSubject<Message[]>(messages.sort((a, b) => a.time!.getTime() - b.time!.getTime())); 
-      this.messagesObservable = this.messagesSubject.asObservable();
   }
+
 
   // Get those messages that are not part of the conversation summary
   private getNonSummarizedMessages(messages: Message[]) {
@@ -69,33 +63,19 @@ export class Conversation implements ConversationData {
     return messages;
   }
 
-  // Add one or more messages to the conversation
-  public addMessage(message: Message | Message[]) {
-    if (Array.isArray(message)) {
-      // Sort the messages by time
-      message.sort((a, b) => a.time!.getTime() - b.time!.getTime());
-
-      // Add the messages to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), ...message]);
-    } else {
-      // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
-    }
-  }
-
   // Generate a new message
-  public getMessagePrompt(agentPrompt: string): Message[] {
+  public getMessagePrompt(agentPrompt: string, messagesArray: Message[]): Message[] {
     console.log("Preparing to generate a message...");
     var conversationPromt = this.getAsMessages()
     var generationMessages: Message[] = [
       {role: "system", content: agentPrompt}];
-    const messagesNotInSummary = this.getNonSummarizedMessages(this.messagesSubject.getValue());
+    const messagesNotInSummary = this.getNonSummarizedMessages(messagesArray);
 
     if (messagesNotInSummary.length < 4) {
       // Get the last 4 messages
       generationMessages = generationMessages.concat(
         conversationPromt.concat(
-          this.messagesSubject.getValue().slice(-4).map((message: Message) => {
+          messagesArray.slice(-4).map((message: Message) => {
             return {role: message.role, content: message.content};
           })));
     } else {
@@ -117,19 +97,18 @@ export class Conversation implements ConversationData {
   }
 
   // Method to check if and update the conversation summary
-  public async updateSummary(prompt: string, summaryApi: any){
-    const currentMessages = this.messagesSubject.getValue();
-    const messagesNotInSummary = this.getNonSummarizedMessages(currentMessages);
+  public async updateSummary(prompt: string, summaryApi: any, messagesArray: Message[]){
+    const messagesNotInSummary = this.getNonSummarizedMessages(messagesArray);
 
     // Log the current state of the conversation
     console.log({
-      totalMessages: currentMessages.length, 
+      totalMessages: messagesArray.length, 
       messagesInSummary: this.messagesPartOfSummary, 
       messagesNotInSummary: messagesNotInSummary.length,
     });
 
     // Check if the JSON string is long enough to be summarized
-    if (JSON.stringify(messagesNotInSummary).length > 10240 && currentMessages.length - this.messagesPartOfSummary > 4) {
+    if (JSON.stringify(messagesNotInSummary).length > 10240 && messagesArray.length - this.messagesPartOfSummary > 4) {
       console.log('Summarizing the conversation...');
 
       // Create a summary package to be sent to the API
@@ -150,7 +129,7 @@ export class Conversation implements ConversationData {
         // Update the conversation summary
         this.summary = response.choices[0].message.content;
         // Update the number of messages that are part of the summary
-        this.messagesPartOfSummary = currentMessages.length;
+        this.messagesPartOfSummary = messagesArray.length;
         console.log("Conversation summary updated!");
       });
     }
@@ -182,9 +161,11 @@ export class Conversation implements ConversationData {
     summary: string, 
     messagesPartOfSummary: number, 
     enviorementVariables: ConversationVariable[], 
-    participants: string[]) {
+    participants: string[],
+    messages: Message[]
+  ) {
     // Update the summary and recent messages
-    this.updateSummary(summary, messagesPartOfSummary);
+    this.updateSummary(summary, messagesPartOfSummary, messages);
 
     // Update the enviorement variables and participants
     this.enviorementVariables = enviorementVariables;
