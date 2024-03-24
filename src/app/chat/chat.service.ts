@@ -2,9 +2,10 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
-import { OpenAIService } from '../api/api-openai.service';
+import { ApiOpenAi } from '../api/api-open-ai';
 import { Conversation } from '../chat/conversation';
 import { Agent } from '../data/interfaces/agent';
+import { HttpClient } from '@angular/common/http';
 
 
 @Injectable({
@@ -15,13 +16,16 @@ export class ChatService {
   private conversation: Conversation = new Conversation(1, 0, [], "", []);
   private agent: Agent = {id: 1, role: "Assistant", prompt: "You are a helpfull assistant."};
   conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
+  private summaryApi: ApiOpenAi;
+  private mainApi: ApiOpenAi;
+  private sideApi: ApiOpenAi;
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // Constructor
-  constructor(private dbService: DBService, private apiService: OpenAIService) {
+  constructor(private dbService: DBService, private chatServiceHttpClient: HttpClient) {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
       // Load the default conversation from the database
@@ -53,6 +57,17 @@ export class ChatService {
         }
       });
 
+      // Load the API Settings from the database
+      this.dbService.getLLMConfig(1).then((config: any) => {
+        // Setup the summary API
+        this.summaryApi = new ApiOpenAi(config.apiKey, config.summaryBody, chatServiceHttpClient);
+        
+        
+        this.mainApi = new ApiOpenAi(configs[1].apiKey, configs[1].mainBody, configs[1].mainUrl, configs[1].mainHeaders);
+        this.sideApi = new ApiOpenAi(configs[2].apiKey, configs[2].sideBody, configs[2].sideUrl, configs[2].sideHeaders);
+        console.log("API settings loaded!");
+      });
+
       // Load the agent from the database
       this.dbService.getAgent(1).then((agent: any) => {
         // Check if the agent exists
@@ -64,6 +79,8 @@ export class ChatService {
           console.error("Agent not found!");
         }
       });
+
+      
     });
   }
 
