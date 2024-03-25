@@ -13,10 +13,9 @@ import { Agent } from '../data/interfaces/agent';
 export class ChatService {
   // Variables
   private conversation: Conversation = new Conversation(1, 0, [], "", []);
-  private summaryAgent: Agent = {id: 1, role: "Assistant", prompt: "You are an assistant that specializes in summarizing conversations."};
-  private agentA: Agent = {id: 2, role: "GoodAssistant", prompt: "You are a good assistant, like an angel on the users left shoulder."};
-  private agentB: Agent = {id: 3, role: "BadAssistant", prompt: "You are an evil assistant, like the devil on the users right shoulder."};
-  conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
+  private summaryAgent: Agent = {id: 1, role: "Summary Assistant", prompt: "You are an assistant that specializes in summarizing conversations."};
+  private mainAgent: Agent = {id: 2, role: "Assistant", prompt: "You are a helpful assistant."};
+  // conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
@@ -72,19 +71,7 @@ export class ChatService {
         // Check if the agent exists
         if (agent !== undefined) {
           // Initialize the agent
-          this.agentA = agent;
-          console.log("Agent loaded!");
-        } else {
-          console.error("Agent not found!");
-        }
-      });
-
-      // Load the second agent from the database
-      this.dbService.getAgent(3).then((agent: any) => {
-        // Check if the agent exists
-        if (agent !== undefined) {
-          // Initialize the agent
-          this.agentB = agent;
+          this.mainAgent = agent;
           console.log("Agent loaded!");
         } else {
           console.error("Agent not found!");
@@ -120,6 +107,7 @@ export class ChatService {
 
       // Create a new message object
       const message = {
+        conversationID: this.conversation.id,
         content: response.choices[0].message.content.replace(/\{\{user\}\}/g, 'Simon'),
         role: response.choices[0].message.role,
         time: new Date()
@@ -145,32 +133,11 @@ export class ChatService {
     console.log("Usermessage added!");
   
     // Generate a response for agent a
-    const responseA = this.generate(this.agentA.prompt).then((generatedMessage) => {
-      // Check if the agent has decided to say something
-      if (generatedMessage.content !== 'NO_MESSAGE') {
-        // Add the message to the messages array and save it in the database
-        this.addMessage(generatedMessage);
-        this.dbService.addMessage(generatedMessage);
-      }
-    });
-
-    Promise.all([responseA]).then(() => {
-      // Generate a response for agent b
-      const responseB = this.generate(this.agentB.prompt).then((generatedMessage) => {
-        // Check if the agent has decided to say something
-        if (generatedMessage.content !== 'NO_MESSAGE') {
-          // Add the message to the messages array and save it in the database
-          this.addMessage(generatedMessage);
-          this.dbService.addMessage(generatedMessage);
-        }
-      });
-
-      // Trigger conversation update once both agents have responded
-      Promise.all([responseA, responseB]).then(() => {
-        // This code is executed once both agents have responded
-        console.log("Both agents have responded. Updating conversation...");
-    
-        // Update the conversation
+    this.generate(this.mainAgent.prompt).then((generatedMessage) => {
+      // Add the message to the messages array and save it in the database
+      this.addMessage(generatedMessage);
+      this.dbService.addMessage(generatedMessage).then(() => {
+        // Update the conversation 
         this.conversation.updateSummary(this.summaryAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
           this.dbService.updateConversation(this.conversation.toConversationData());
         });
