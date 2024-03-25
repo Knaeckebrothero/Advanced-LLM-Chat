@@ -19,6 +19,7 @@ import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { HttpClientModule } from '@angular/common/http';
 import { ReactiveFormsModule } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
+import { MetricsComponent } from './metrics/metrics.component';
 
 
 @NgModule({
@@ -27,6 +28,7 @@ import { FormsModule } from '@angular/forms';
     ChatUiComponent,
     ChatUiMessageComponent,
     SettingsComponent,
+    MetricsComponent,
   ],
   imports: [
     BrowserModule,

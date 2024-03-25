@@ -1,6 +1,4 @@
 import { Component } from '@angular/core';
-import { FormControl, FormGroup } from '@angular/forms';
-import { OnInit } from '@angular/core';
 import { DBService } from '../data/db.service';
 import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
 
@@ -10,57 +8,38 @@ import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']
 })
-export class SettingsComponent implements OnInit{
-  // Settings form
-  settingsForm = new FormGroup({
-    id: new FormControl(1),
-    name: new FormControl(),
-    apiKey: new FormControl(),
-    model: new FormControl(),
-    frequency_penalty: new FormControl(),
-    top_logprobs: new FormControl(),
-    max_tokens: new FormControl(),
-    n: new FormControl(),
-    presence_penalty: new FormControl(),
-    seed: new FormControl(),
-    temperature: new FormControl(),
-    top_p: new FormControl(),
-    user: new FormControl(),
-  });
-
-  agentForm = new FormGroup({
-    role: new FormControl(),
-    prompt: new FormControl()
-  });
+export class SettingsComponent {
 
   constructor(private dbService: DBService) { }
 
-  // Initialize the input fields on component start
-  ngOnInit() {
-    // Wait for the database to be ready
-    this.dbService.getDatabaseReadyPromise().then(async () => {
-      // Get the settings from the database
-      const settings = await this.dbService.getLLMConfig(1);
-  
-      // Check if the settings are found
-      if (settings === undefined) {
-        console.error("Settings " + this.settingsForm.value.id + " not found!");
-      } else {
-        // Values need to be converted to string for the form to accept them
-        this.settingsForm.patchValue(settings);
-      }
-    });
-  }
+  onFileSelected(event: any) {
+    const file: File = event.target.files[0];
 
-  // Save settings to the database
-  saveSettings() {
-    this.dbService.addLLMConfig(this.settingsForm.value as OpenAIChatCompleteRequest);
-    console.log('Settings ' + this.settingsForm.value.id + ' saved!');
-  }
+    if (file) {
+      const fileReader = new FileReader();
+      fileReader.onload = async (e) => {
+        // Parse the uploaded file content
+        const jsonConfig = JSON.parse(fileReader.result as string);
 
-  addAgent() {
-    this.dbService.addAgent({id: 1, role: this.agentForm.value.role, prompt: this.agentForm.value.prompt});
-    console.log('Agent added!');
+        if (jsonConfig.settings) {
+          await this.dbService.addLLMConfig(jsonConfig.settings);
+          console.log('Settings added!');
+        }
+
+        if (jsonConfig.agents) {
+          for (const agent of jsonConfig.agents) {
+            await this.dbService.addAgent(agent);
+          }
+          console.log('Agents added!');
+        }
+
+        if (jsonConfig.conversation) {
+          await this.dbService.addConversation(jsonConfig.conversation);
+          console.log('Conversation added!');
+        }
+      };
+      fileReader.readAsText(file);
+    }
   }
 
   // Delete messages from the database

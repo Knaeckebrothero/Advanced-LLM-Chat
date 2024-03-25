@@ -13,7 +13,9 @@ import { Agent } from '../data/interfaces/agent';
 export class ChatService {
   // Variables
   private conversation: Conversation = new Conversation(1, 0, [], "", []);
-  private agent: Agent = {id: 1, role: "Assistant", prompt: "You are a helpfull assistant."};
+  private summaryAgent: Agent = {id: 1, role: "Assistant", prompt: "You are an assistant that specializes in summarizing conversations."};
+  private agentA: Agent = {id: 2, role: "GoodAssistant", prompt: "You are a good assistant, like an angel on the users left shoulder."};
+  private agentB: Agent = {id: 3, role: "BadAssistant", prompt: "You are an evil assistant, like the devil on the users right shoulder."};
   conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
   // The ChatService is responsible for managing and exposing the messages.
@@ -58,7 +60,31 @@ export class ChatService {
         // Check if the agent exists
         if (agent !== undefined) {
           // Initialize the agent
-          this.agent = agent;
+          this.summaryAgent = agent;
+          console.log("Agent loaded!");
+        } else {
+          console.error("Agent not found!");
+        }
+      });
+
+      // Load the agent from the database
+      this.dbService.getAgent(2).then((agent: any) => {
+        // Check if the agent exists
+        if (agent !== undefined) {
+          // Initialize the agent
+          this.agentA = agent;
+          console.log("Agent loaded!");
+        } else {
+          console.error("Agent not found!");
+        }
+      });
+
+      // Load the second agent from the database
+      this.dbService.getAgent(3).then((agent: any) => {
+        // Check if the agent exists
+        if (agent !== undefined) {
+          // Initialize the agent
+          this.agentB = agent;
           console.log("Agent loaded!");
         } else {
           console.error("Agent not found!");
@@ -83,8 +109,8 @@ export class ChatService {
   }
 
   // Generate a new message
-  private generate() {
-    const messagePrompt = this.conversation.getMessagePrompt(this.agent.prompt, this.messagesSubject.getValue());
+  private generate(agentPrompt: string) {
+    const messagePrompt = this.conversation.getMessagePrompt(agentPrompt, this.messagesSubject.getValue());
     console.log(this.messages)
 
     // Generate a message using the OpenAI API
@@ -112,24 +138,53 @@ export class ChatService {
       role: 'user',
       time: new Date()
     };
-
+  
     // Add the message to the database and messages array
     this.dbService.addMessage(newMessage);
     this.addMessage(newMessage);
     console.log("Usermessage added!");
+  
+    // Generate a response for agent a
+    const responseA = this.generate(this.agentA.prompt).then((generatedMessage) => {
+      // Check if the agent has decided to say something
+      if (generatedMessage.content !== 'NO_MESSAGE') {
+        // Add the message to the messages array and save it in the database
+        this.addMessage(generatedMessage);
+        this.dbService.addMessage(generatedMessage);
+      }
+    });
 
-    // Generate a response
-    this.generate().then((generatedMessage) => {
-      // Add the message to the messages array
-      this.addMessage(generatedMessage);
+    Promise.all([responseA]).then(() => {
+      // Generate a response for agent b
+      const responseB = this.generate(this.agentB.prompt).then((generatedMessage) => {
+        // Check if the agent has decided to say something
+        if (generatedMessage.content !== 'NO_MESSAGE') {
+          // Add the message to the messages array and save it in the database
+          this.addMessage(generatedMessage);
+          this.dbService.addMessage(generatedMessage);
+        }
+      });
 
-      // Save the message in the database
-      this.dbService.addMessage(generatedMessage);
-
-      // Update the conversation
-      this.conversation.updateSummary(this.agent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
-        this.dbService.updateConversation(this.conversation.toConversationData());
+      // Trigger conversation update once both agents have responded
+      Promise.all([responseA, responseB]).then(() => {
+        // This code is executed once both agents have responded
+        console.log("Both agents have responded. Updating conversation...");
+    
+        // Update the conversation
+        this.conversation.updateSummary(this.summaryAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
+          this.dbService.updateConversation(this.conversation.toConversationData());
+        });
       });
     });
+  }
+
+  // Get summary
+  public getSummary(): string{
+    return this.conversation.summary;
+  }
+
+  // Set summary
+  public setSummary(summary: string) {
+    this.conversation.summary = summary;
   }
 }
