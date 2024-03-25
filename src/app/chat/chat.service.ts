@@ -153,25 +153,27 @@ export class ChatService {
         this.dbService.addMessage(generatedMessage);
       }
     });
-  
-    // Generate a response for agent b
-    const responseB = this.generate(this.agentB.prompt).then((generatedMessage) => {
-      // Check if the agent has decided to say something
-      if (generatedMessage.content !== 'NO_MESSAGE') {
-        // Add the message to the messages array and save it in the database
-        this.addMessage(generatedMessage);
-        this.dbService.addMessage(generatedMessage);
-      }
-    });
-  
-    // Trigger conversation update once both agents have responded
-    Promise.all([responseA, responseB]).then(() => {
-      // This code is executed once both agents have responded
-      console.log("Both agents have responded. Updating conversation...");
-  
-      // Update the conversation
-      this.conversation.updateSummary(this.summaryAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
-        this.dbService.updateConversation(this.conversation.toConversationData());
+
+    Promise.all([responseA]).then(() => {
+      // Generate a response for agent b
+      const responseB = this.generate(this.agentB.prompt).then((generatedMessage) => {
+        // Check if the agent has decided to say something
+        if (generatedMessage.content !== 'NO_MESSAGE') {
+          // Add the message to the messages array and save it in the database
+          this.addMessage(generatedMessage);
+          this.dbService.addMessage(generatedMessage);
+        }
+      });
+
+      // Trigger conversation update once both agents have responded
+      Promise.all([responseA, responseB]).then(() => {
+        // This code is executed once both agents have responded
+        console.log("Both agents have responded. Updating conversation...");
+    
+        // Update the conversation
+        this.conversation.updateSummary(this.summaryAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
+          this.dbService.updateConversation(this.conversation.toConversationData());
+        });
       });
     });
   }
