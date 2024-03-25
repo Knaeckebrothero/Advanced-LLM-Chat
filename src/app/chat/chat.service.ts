@@ -12,6 +12,7 @@ import { Agent } from '../data/interfaces/agent';
 })
 export class ChatService {
   // Variables
+  private user: string = "Simon";
   private conversation: Conversation = new Conversation(1, 0, [], "", []);
   private summaryAgent: Agent = {id: 1, role: "Summary Assistant", prompt: "You are an assistant that specializes in summarizing conversations."};
   private mainAgent: Agent = {id: 2, role: "Assistant", prompt: "You are a helpful assistant."};
@@ -108,8 +109,8 @@ export class ChatService {
       // Create a new message object
       const message = {
         conversationID: this.conversation.id,
-        content: response.choices[0].message.content.replace(/\{\{user\}\}/g, 'Simon'),
-        role: response.choices[0].message.role,
+        content: response.choices[0].message.content.replace(/\{\{user\}\}/g, this.user).replace(this.mainAgent.role + ':', ''),
+        role: response.choices[0].message.role, // this.mainAgent.role
         time: new Date()
       };
       return message;
@@ -138,7 +139,7 @@ export class ChatService {
       this.addMessage(generatedMessage);
       this.dbService.addMessage(generatedMessage).then(() => {
         // Update the conversation 
-        this.conversation.updateSummary(this.summaryAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
+        this.conversation.updateSummary(this.mainAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
           this.dbService.updateConversation(this.conversation.toConversationData());
         });
       });
