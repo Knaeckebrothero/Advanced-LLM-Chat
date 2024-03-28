@@ -1,6 +1,5 @@
 import { Component } from '@angular/core';
 import { DBService } from '../data/db.service';
-import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
 
 
 @Component({
@@ -46,19 +45,27 @@ export class SettingsComponent {
   resetMessages(){
     // Get all the messages from the database
     this.dbService.getAllMessages().then((messages) => {
-      const conversation = this.dbService.getConversation(1).then((conversation) => {return conversation;});
-      const conversationJson = JSON.stringify(conversation);
+      this.dbService.getConversation(1).then((conversation) => {
+      // Convert messages to JSON format
+      if(conversation === undefined){
+        conversation = {id: 1,
+            messagesPartOfSummary: 0,
+            enviorementVariables: [],
+            summary: '',
+            participants: []
+          }
+      }
 
       // Convert messages to JSON format
       const messagesJson = JSON.stringify(messages);
 
       // Create a blob with the JSON content
-      const blob = new Blob([conversationJson, messagesJson], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(conversation), messagesJson], { type: 'application/json' });
 
       // Create a link element to download the blob
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = new Date().getDate.toString + '_messages.json'; // Name of the file to be downloaded
+      a.download = 'Conversation_' + new Date().getUTCDate().toString() +'.'+ new Date().getMonth().toString() +'.'+ new Date().getFullYear().toString() + '_messages.json'; // Name of the file to be downloaded
       document.body.appendChild(a); // Append the link to the document
       a.click(); // Simulate click on the link to trigger the download
       document.body.removeChild(a); // Remove the link from the document
@@ -71,5 +78,6 @@ export class SettingsComponent {
         console.log('All messages deleted!');
       });
     });
+  });
   }
 }
