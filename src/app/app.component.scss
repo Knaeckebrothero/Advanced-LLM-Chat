@@ -1,13 +1,8 @@
 // In your app.component.scss
 :host {
-  display: flex;
-  flex-direction: column;
   height: 100vh; // Use the viewport height to fill the screen
 
   mat-tab-group {
-    flex-grow: 1; // Allows the tab group to expand and fill the available space
-    display: flex;
-
     .mat-tab-body-wrapper {
       overflow: hidden;
     }
@@ -15,12 +10,19 @@
 }
 
 .mat-tab-body {
-  display: static;
+  height: 100%; // Fill the height of the parent container
+  display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: hidden; // Prevent any additional scrollbars from appearing
 }
 
 // Ensure your mat-tab-group does not have any unnecessary overflow or is constrained in height
 .mat-tab-group {
+  height: 100vh;
   overflow: hidden; // This prevents any additional scrollbars from appearing
+}
+
+.chat-ui-component-container{
+  //height: 100vh;
+  overflow: hidden;
 }
