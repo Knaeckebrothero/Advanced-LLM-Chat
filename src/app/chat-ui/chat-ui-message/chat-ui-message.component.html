@@ -2,9 +2,26 @@
 <div class="message-display-container">
     <div class="message" [class.message-user]="message.role === 'user'" [class.message-not-user]="message.role !== 'user'">
         <span class="message-user-name">{{ message.role }}</span>
+        
         <span class="message-body">
             <div [innerHTML]="formatMessage(message.content)"></div>
         </span>
-        <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
+        
+        <div class="message-footer">
+            <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
+
+            <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
+            <div class="message-actions">
+                <button mat-icon-button (click)="editMessage()" aria-label="Edit message">
+                    <mat-icon>edit</mat-icon>
+                </button>
+                <button mat-icon-button (click)="regenerateMessage()" aria-label="Regenerate message">
+                    <mat-icon>autorenew</mat-icon>
+                </button>
+                <button mat-icon-button (click)="insertMessageAbove()" aria-label="Insert message">
+                    <mat-icon>add</mat-icon>
+                </button>
+            </div>
+        </div>
     </div>
 </div>
