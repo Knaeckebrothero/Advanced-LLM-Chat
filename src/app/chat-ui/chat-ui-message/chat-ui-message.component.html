@@ -8,8 +8,6 @@
         </span>
         
         <div class="message-footer">
-            <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
-
             <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
             <div class="message-actions">
                 <button mat-icon-button (click)="editMessage()" aria-label="Edit message">
@@ -22,6 +20,7 @@
                     <mat-icon>add</mat-icon>
                 </button>
             </div>
+            <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
         </div>
     </div>
 </div>
