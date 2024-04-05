@@ -1,4 +1,4 @@
-<div class="chat-ui">
+<div class="chat-ui-container">
     <div class="message-container" #messageContainer>
         <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
     </div>  
@@ -9,4 +9,6 @@
         </mat-form-field>          
         <button mat-raised-button color="primary" (click)="inputUserMessage()">Send</button>
     </div>
+    <p>Test</p>
+    <p>Test</p>
 </div>

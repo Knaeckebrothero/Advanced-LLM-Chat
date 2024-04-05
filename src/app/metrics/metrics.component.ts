@@ -13,6 +13,10 @@ export class MetricsComponent implements OnInit {
   constructor(private serviceChat: ChatService) { }
 
   ngOnInit(): void {
+    this.refreshSummary()
+  }
+
+  refreshSummary() {
     this.summary = this.serviceChat.getSummary();
   }
 
