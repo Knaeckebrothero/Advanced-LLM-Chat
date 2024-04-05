@@ -15,7 +15,6 @@ export class ChatService {
   private conversation: Conversation = new Conversation(1, 0, [], "", []);
   private summaryAgent: Agent = {id: 1, role: "Summary Assistant", prompt: "You are an assistant that specializes in summarizing conversations."};
   private mainAgent: Agent = {id: 2, role: "Assistant", prompt: "You are a helpful assistant."};
-  // conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);

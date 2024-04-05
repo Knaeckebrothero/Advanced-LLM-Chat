@@ -1,14 +1,17 @@
 @import 'src/styles/variables';
 
 // Chat component styles
-.chat-ui {
-  max-height: 100%;
+.chat-ui-container {
+
+  display: flex;
+  flex-direction: column;
   background-color: $color-background;
 }
 
 .message-container {
+  flex-grow: 1;
   width: 100%;
-  height: auto;
+  // height: auto;
   // Make the container scrollable
   overflow-y: scroll;
   // 
@@ -29,9 +32,8 @@
 }
 
 .input-container {
-  height: 20%;
-  float: bottom;
-  display: flex;
+  align-self: flex-end;
+  height: 15%;
   align-items: center;
   justify-content: space-between;
   padding: 10px;
