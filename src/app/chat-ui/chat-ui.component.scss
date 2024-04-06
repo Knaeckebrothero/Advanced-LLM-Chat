@@ -2,7 +2,8 @@
 
 // Chat component styles
 .chat-ui-container {
-
+  height: 100%;
+  width: 100%;
   display: flex;
   flex-direction: column;
   background-color: $color-background;
@@ -10,17 +11,17 @@
 
 .message-container {
   flex-grow: 1;
-  width: 100%;
-  // height: auto;
+  width: auto;
   // Make the container scrollable
   overflow-y: scroll;
-  // 
-  padding: 10px;
-  // Space between messages and input container
-  margin-bottom: 10px; 
+
+  padding: 2%;
+  padding-bottom: 1%;
+  padding-top: 1%;
+
 
   ::-webkit-scrollbar {
-    width: 5px;
+    width: 10px;
   }
   ::-webkit-scrollbar-thumb {
     background: $color-primary;
@@ -32,9 +33,11 @@
 }
 
 .input-container {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
   align-self: flex-end;
-  height: 15%;
-  align-items: center;
+  height: auto;
   justify-content: space-between;
   padding: 10px;
   padding-bottom: 0px;
@@ -44,30 +47,15 @@
   mat-form-field {
     flex-grow: 1;
     // Space between input field and send button
-    margin-right: 10px;
-
-    .mat-form-field-wrapper {
-      // Remove the extra padding at the bottom of the input field
-      padding-bottom: 0;
-    }
+    margin-left: 5%;
+    margin-right: 3%;
   }
 
   button {
+    align-self: flex-end;
     // Make sure the button is easily clickable
-    min-width: 90px;
+    min-width: 55px;
     min-height: 55px;
-    margin-bottom: 1.5%;
-  }
-}
-
-// Responsive adjustments
-@media (max-width: 768px) {
-  .chat-ui{
-    //height: 93.8vh;
-    .input-container {
-      button {
-        margin-bottom: 5.5%;
-      }
-    }
+    margin-bottom: 5.5%;
   }
 }

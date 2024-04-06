@@ -8,7 +8,6 @@ import { StatusBarComponent } from './status-bar/status-bar.component';
 // Angular Material
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
-import { MatTabsModule } from '@angular/material/tabs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSidenavModule } from '@angular/material/sidenav';
@@ -24,9 +23,6 @@ import { HttpClientModule } from '@angular/common/http';
 import { ReactiveFormsModule } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, Routes } from '@angular/router';
-
-
-
 
 
 // Routes
@@ -50,7 +46,6 @@ const routes: Routes = [
     MatIconModule,
     MatInputModule,
     FormsModule,
-    MatTabsModule,
     HttpClientModule,
     ReactiveFormsModule,
     MatButtonModule,
