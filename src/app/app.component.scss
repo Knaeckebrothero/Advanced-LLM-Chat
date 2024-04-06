@@ -13,13 +13,18 @@
     width: auto;
     // Position mat-icon absolutely on the top left
     position: absolute; 
-    top: 2%;
-    left: 2%;
     // Ensure it's on top of other components.
-    z-index: 999;
+    z-index: 998;
     // Change the cursor to a pointer when hovering over the button
     cursor: pointer;
     color: $color-secondary;
     font-size: 50px;
+  }
+}
+
+// Hide the button on screens smaller than 768px wide
+@media (max-width: 768px) {
+  mat-icon {
+    display: none;
   }
 }

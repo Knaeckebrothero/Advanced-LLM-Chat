@@ -59,3 +59,15 @@
     margin-bottom: 5.5%;
   }
 }
+
+// Hide the button on screens smaller than 768px wide
+@media (min-width: 768px) {
+  .message-container { 
+    padding: 4%;
+  }
+  .input-container {
+    button {
+      display: none;
+    }
+  }
+}
