@@ -1,14 +1,5 @@
-<mat-tab-group mat-stretch-tabs="false" mat-align-tabs="start">
-    <!-- Chat UI -->
-    <mat-tab label="Chat">
-        <app-chat-ui></app-chat-ui>
-    </mat-tab>
-    <!-- Metrics -->
-    <mat-tab label="Metrics">
-        <app-metrics></app-metrics>
-    </mat-tab>
-    <!-- Chat settings -->
-    <mat-tab label="Settings">
-        <app-settings></app-settings>
-    </mat-tab>
-</mat-tab-group>
+<div class="main-ui-container">
+    <mat-icon aria-hidden="false" aria-label="Example home icon" fontIcon="menu" (click)="toggleNavbar()"></mat-icon>
+    <app-status-bar></app-status-bar>
+    <router-outlet></router-outlet>
+</div>

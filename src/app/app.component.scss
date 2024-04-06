@@ -1,26 +1,30 @@
-// In your app.component.scss
-:host {
-  display: flex;
-  flex-direction: column;
-  height: 100vh; // Use the viewport height to fill the screen
+@import 'src/styles/variables';
 
-  mat-tab-group {
-    flex-grow: 1; // Allows the tab group to expand and fill the available space
-    display: flex;
+.main-ui-container {
+  // Make the positioning of the mat-icon relative to this container
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
 
-    .mat-tab-body-wrapper {
-      overflow: hidden;
-    }
+  // Button styling
+  mat-icon {
+    height: auto;
+    width: auto;
+    // Position mat-icon absolutely on the top left
+    position: absolute; 
+    // Ensure it's on top of other components.
+    z-index: 998;
+    // Change the cursor to a pointer when hovering over the button
+    cursor: pointer;
+    color: $color-secondary;
+    font-size: 50px;
   }
 }
 
-.mat-tab-body {
-  display: static;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-// Ensure your mat-tab-group does not have any unnecessary overflow or is constrained in height
-.mat-tab-group {
-  overflow: hidden; // This prevents any additional scrollbars from appearing
+// Hide the button on screens smaller than 768px wide
+@media (max-width: 768px) {
+  //mat-icon {
+  //  display: none;
+  //}
 }

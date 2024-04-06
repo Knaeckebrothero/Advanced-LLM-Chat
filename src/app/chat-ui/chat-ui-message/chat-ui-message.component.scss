@@ -1,9 +1,12 @@
 @import 'src/styles/variables';
 
+
+// Ensure the message display container takes up the full width so that the messages are displayed in a column.
 .message-display-container {
+  display: flex;
+  flex-direction: column;
   flex-grow: 1;
   width: 100%;
-  // Make the container scrollable
   overflow-y: auto;
 }
 
@@ -27,18 +30,16 @@
   // 
   word-wrap: break-word;
   text-align: left;
+  position: relative;
 
   // Adjusts the messages for the user
   &.message-user {
-    float: right;
-    margin-right: 1.5%;
     // Aligns the message to the right side of the screen
     align-self: flex-end;
     // Flattens the top left corner
     border-top-right-radius: 0;
     // Secondary color background for messages of the user
     background-color: $color-secondary;
-
     // Hide the username
     .message-user-name {
       display: none;
@@ -47,8 +48,6 @@
 
   // Adjusts the messages for others
   &.message-not-user {
-    float: left;
-
     // Aligns the message to the left side of the screen
     align-self: flex-start;
     // Flattens the top right corner
@@ -72,6 +71,13 @@
   font-size: 1em;
 }
 
+// Message footer
+.message-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 // Message timestamp
 .message-timestamp {
   align-self: flex-end;
@@ -81,6 +87,28 @@
   margin-top: 4px;
 }
 
+// Message actions
+.message-actions {
+  display: flex;
+  align-items: center;
+  // This ensures the buttons are on the same level as the timestamp
+  margin-bottom: -10px;
+  
+  button {
+    // Reduce the size of the icons
+    mat-icon {
+      font-size: 15px;
+      height: 15px;
+      width: 15px;
+    }
+    // Adjust padding to ensure icons are not too close to each other
+    &:not(:last-child) {
+      margin-right: 3px;
+    }
+  }
+}
+
+// Display parts of the message in italic if wrapped in <em> tags
 em {
   font-style: italic;
 }
@@ -89,9 +117,9 @@ em {
 @media (max-width: 768px) {
   .message {
     max-width: 75%;
-    
     &.message-user {
       margin-right: 5%;
     }
   }
 }
+

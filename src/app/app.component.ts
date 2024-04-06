@@ -1,4 +1,6 @@
 import { Component } from '@angular/core';
+import { StatusBarService } from './status-bar/status-bar.service';
+
 
 @Component({
   selector: 'app-root',
@@ -7,4 +9,10 @@ import { Component } from '@angular/core';
 })
 export class AppComponent {
   title = 'Advanced LLM Chat';
+
+  constructor(private statusService: StatusBarService) { }
+
+  toggleNavbar() {
+    this.statusService.toggleSidenav();
+  }
 }

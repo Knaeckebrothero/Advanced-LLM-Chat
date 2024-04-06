@@ -12,11 +12,9 @@ import { Agent } from '../data/interfaces/agent';
 })
 export class ChatService {
   // Variables
-  private user: string = "Simon";
   private conversation: Conversation = new Conversation(1, 0, [], "", []);
   private summaryAgent: Agent = {id: 1, role: "Summary Assistant", prompt: "You are an assistant that specializes in summarizing conversations."};
   private mainAgent: Agent = {id: 2, role: "Assistant", prompt: "You are a helpful assistant."};
-  // conversationPromt: Message[] = []; // Old way of converting messages, should be removed later on!
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
@@ -109,7 +107,7 @@ export class ChatService {
       // Create a new message object
       const message = {
         conversationID: this.conversation.id,
-        content: response.choices[0].message.content.replace(/\{\{user\}\}/g, this.user).replace(this.mainAgent.role + ':', ''),
+        content: response.choices[0].message.content,
         role: response.choices[0].message.role, // this.mainAgent.role
         time: new Date()
       };
@@ -144,6 +142,11 @@ export class ChatService {
         });
       });
     });
+  }
+
+  // Get conversation credentials
+  public getConversationCredentials() {
+    return {user: this.summaryAgent.role, ai: this.mainAgent.role};
   }
 
   // Get summary

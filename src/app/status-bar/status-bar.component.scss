@@ -1,0 +1,39 @@
+@import '../../styles/variables';
+
+
+.sidenav {
+  position: fixed;
+  height: auto;
+  width: max-content;
+  align-self: center;
+  margin: 2%;
+  border-radius: 25px;
+  z-index: 999;
+  background-color: $color-secondary;
+}
+
+h3 {
+  color: $color-font-dark;
+}
+
+mat-list-item {
+  text-align: center;
+  width: calc(100% - 16px);
+  border-radius: 12px;
+  margin: 8px;
+  background-color: $color-primary;
+  cursor: pointer;
+
+  &:hover {
+    color: $color-primary;
+    background-color: lighten($color-secondary, 15%);
+  }
+}
+
+// Hide the button on screens smaller than 768px wide
+@media (min-width: 768px) {
+  .sidenav {
+    margin-top: 4%;
+    min-width: 30%;
+  }
+}

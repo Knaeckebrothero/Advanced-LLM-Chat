@@ -1,0 +1,16 @@
+<div *ngIf="statusService.showSidenav$ | async" class="sidenav">
+    <mat-nav-list>
+        <!-- Landingpage -->
+        <mat-list-item (click)="navigate('/')">
+            <h3 matLine>Chat</h3>
+        </mat-list-item>
+        <!-- Metrics -->
+        <mat-list-item (click)="navigate('/metrics')">
+            <h3 matLine>Metrics</h3>
+        </mat-list-item>
+        <!-- Settings -->
+        <mat-list-item (click)="navigate('/settings')">
+            <h3 matLine>Settings</h3>
+        </mat-list-item>
+    </mat-nav-list>
+</div>
