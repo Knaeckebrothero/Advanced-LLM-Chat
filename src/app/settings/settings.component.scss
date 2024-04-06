@@ -1,5 +1,21 @@
+@import 'src/styles/variables';
+
 .settings-ui {
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 94.3vh;
+  gap: 40px; // Adjust the gap between elements as needed
+
+  .upload-container {
+    margin-top: 25%;
+    align-self: center;
+    color: $color-secondary;
+  }
+
+  button {
+    align-self: center;
+    width: 50%;
+    height: 50px;
+  }
 }
