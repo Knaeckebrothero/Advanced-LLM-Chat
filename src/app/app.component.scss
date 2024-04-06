@@ -1,13 +1,25 @@
-:host {
-  height: 100vh;
+@import 'src/styles/variables';
 
-  .app-root {
-    height: 100%;
-  }
+.main-ui-container {
+  // Make the positioning of the mat-icon relative to this container
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
 
-  // Ensure your mat-tab-group does not have any unnecessary overflow or is constrained in height
-  .mat-tab-group {
-    height: 100%;
-    overflow: hidden;
+  // Button styling
+  mat-icon {
+    height: auto;
+    width: auto;
+    // Position mat-icon absolutely on the top left
+    position: absolute; 
+    top: 2%;
+    left: 2%;
+    // Ensure it's on top of other components.
+    z-index: 999;
+    // Change the cursor to a pointer when hovering over the button
+    cursor: pointer;
+    color: $color-secondary;
+    font-size: 50px;
   }
 }
