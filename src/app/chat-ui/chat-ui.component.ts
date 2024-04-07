@@ -1,5 +1,6 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
+import { Message } from '../data/interfaces/message';
 
 @Component({
   selector: 'app-chat-ui',
@@ -52,5 +53,11 @@ export class ChatUiComponent implements AfterViewChecked {
       // The input field is cleared.
       this.inputField = '';
     }
+  }
+
+  // Method to change a message
+  changeMessage(message: Message) {
+    // Call the ChatService to alter the message
+    this.chatService.alterMessage(message)
   }
 }
