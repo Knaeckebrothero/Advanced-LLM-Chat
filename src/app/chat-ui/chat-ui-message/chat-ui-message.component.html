@@ -2,14 +2,18 @@
 <div class="message-display-container">
     <div class="message" [class.message-user]="message.role === 'user'" [class.message-not-user]="message.role !== 'user'">
         <span class="message-user-name">{{ message.role }}</span>
-        
-        <span class="message-body">
-            <div [innerHTML]="formatMessage(message.content)"></div>
-        </span>
+
+        <div class="message-body">
+            <div *ngIf="!editing" [innerHTML]="formatMessage(message.content)"></div>
+            <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv 
+                [innerText]="message.content!" 
+                (blur)="updateContent(editableDiv.innerText)">
+            </div>
+        </div>
         
         <div class="message-footer">
             <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
-            <div class="message-actions">
+            <div *ngIf="!editing" class="message-actions">
                 <button mat-icon-button (click)="editMessage()" aria-label="Edit message">
                     <mat-icon>edit</mat-icon>
                 </button>
@@ -18,6 +22,14 @@
                 </button>
                 <button mat-icon-button (click)="insertMessageAbove()" aria-label="Insert message">
                     <mat-icon>add</mat-icon>
+                </button>
+            </div>
+            <div *ngIf="editing" class="message-actions">
+                <button mat-icon-button (click)="doneEditing()" aria-label="Done editing">
+                    <mat-icon>done</mat-icon>
+                </button>
+                <button mat-icon-button (click)="abortEditing()" aria-label="Abort editing">
+                    <mat-icon>clear</mat-icon>
                 </button>
             </div>
             <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>

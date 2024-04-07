@@ -144,6 +144,34 @@ export class ChatService {
     });
   }
 
+  // Alter message
+  public alterMessage(updatedMessage: Message) {
+    console.log('Altering Message: ', updatedMessage.id);
+    var logOutput = 'Message was not found in message array!'
+
+    // Create new array with the altered message
+    const updatedMessages = this.messagesSubject.getValue().map(message => {
+      if (message.id === updatedMessage.id) {
+        logOutput = 'Message altered!';
+
+        // Update the message in the database
+        this.dbService.updateMessage(updatedMessage);
+
+        // Return updated message if the id matches
+        return updatedMessage;
+      } else {
+        // Return the message as is if the id does not match
+        return message;
+      }
+    });
+
+    // Emit the updated messages array through the BehaviorSubject
+    this.messagesSubject.next(updatedMessages);
+
+    // Log the result
+    console.log(logOutput);
+  }
+
   // Get conversation credentials
   public getConversationCredentials() {
     return {user: this.summaryAgent.role, ai: this.mainAgent.role};
