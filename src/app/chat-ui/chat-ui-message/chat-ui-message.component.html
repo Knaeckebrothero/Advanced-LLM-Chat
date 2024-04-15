@@ -1,6 +1,6 @@
 <!-- Message to be used within the Chat UI component -->
 <div class="message-display-container">
-    <div class="message" [class.message-user]="message.role === 'user'" [class.message-not-user]="message.role !== 'user'">
+    <div class="message" [class.message-user]="message.role === 'user'" [class.message-not-user]="message.role !== 'user'" [class.message-system]="message.role === 'system'">
         <span class="message-user-name">{{ message.role }}</span>
 
         <div class="message-body">
@@ -17,11 +17,11 @@
                 <button mat-icon-button (click)="editMessage()" aria-label="Edit message">
                     <mat-icon>edit</mat-icon>
                 </button>
-                <button mat-icon-button (click)="regenerateMessage()" aria-label="Regenerate message">
-                    <mat-icon>autorenew</mat-icon>
-                </button>
                 <button mat-icon-button (click)="insertMessageAbove()" aria-label="Insert message">
                     <mat-icon>add</mat-icon>
+                </button>
+                <button mat-icon-button (click)="deleteMessage()" aria-label="Regenerate message">
+                    <mat-icon>delete</mat-icon>
                 </button>
             </div>
             <div *ngIf="editing" class="message-actions">

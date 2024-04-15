@@ -42,17 +42,17 @@ export class ChatUiMessageComponent {
   }
 
   // Regenerate message button
-  regenerateMessage() {
-    // Logic for regenerating the message content, perhaps with AI assistance
-    console.log('Regenerating message:', this.message.id);
+  deleteMessage() {
+    console.log('Deleting message:', this.message.id);
+
+    
   }
 
   // Insert message above and regenerate button
   insertMessageAbove() {
-    // Logic for inserting a new message below the current one
+    // Creates a new message above the current message
+    this.chatUI.inputSystemMessage(this.message.id!);
     console.log('Inserting message above:', this.message.id);
-
-    this.regenerateMessage();
   }
 
   /*

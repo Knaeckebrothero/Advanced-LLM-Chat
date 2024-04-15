@@ -55,6 +55,24 @@
     // Primary color background for messages of others
     background-color: $color-primary;
   }
+
+  // Adjusts the messages for the system
+  &.message-system {
+    // Center the message
+    align-self: center;
+    border-radius: 0px;
+    background-color: $color-secondary;
+    .message-user-name {
+      display: none;
+    }
+
+    .message-footer {
+      align-self: center;
+      .message-timestamp {
+        display: none;
+      }
+    }
+  }
 }
 
 // Message username

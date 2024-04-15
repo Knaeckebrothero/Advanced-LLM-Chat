@@ -55,6 +55,18 @@ export class ChatUiComponent implements AfterViewChecked {
     }
   }
 
+  // The inputSystemMessage method is called to add a new system message
+  inputSystemMessage(messageId: number) {
+    // The ChatService is used to add a new system message to the history.
+    this.chatService.systemAddMessage(messageId);
+  }
+
+  // Method to delete a message
+  deleteMessage(messageId: number) {
+    // Call the ChatService to delete the message
+    this.chatService.deleteMessage(messageId);
+  }
+
   // Method to change a message
   changeMessage(message: Message) {
     // Call the ChatService to alter the message
