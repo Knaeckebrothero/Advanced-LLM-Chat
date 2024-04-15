@@ -116,6 +116,29 @@ export class ChatService {
     return newMessage;
   }
 
+  // Function to adjust message time and id by 1
+  private decrementMessage(message: Message): Message {
+    if (message.time === undefined) {
+      return message;
+    } else {
+      // Convert original time to Unix timestamp (milliseconds since epoch)
+      let timestamp = message.time!.getTime();
+
+      // Subtract 1 millisecond
+      timestamp -= 1;
+
+      // Convert back to JavaScript Date object
+      message.time = new Date(timestamp);
+
+      if (message.id === null) {
+        return message;
+      } else {
+        message.id = message.id! - 1;
+        return message;
+      }
+    }
+  }
+
   // Add a new message to the messages array and save it in the db
   public userInputMessage(content: any) {
     // Create a new message object
@@ -162,6 +185,73 @@ export class ChatService {
       } else {
         // Return the message as is if the id does not match
         return message;
+      }
+    });
+
+    // Emit the updated messages array through the BehaviorSubject
+    this.messagesSubject.next(updatedMessages);
+
+    // Log the result
+    console.log(logOutput);
+  }
+
+  // Add a new system message to the messages array
+  public systemAddMessage(messageId: number) {
+    console.log('Inserting Systemmessage above: ', messageId);
+    var logOutput = 'Message was not found in message array!';
+
+    // Create new array with the altered message
+    const updatedMessages = this.messagesSubject.getValue().reduce<Message[]>((acc, message) => {
+      // If the message ID matches, insert both the new and old message
+      if (message.id === messageId) {
+        logOutput = 'Message inserted!';
+
+        // Create an empty system message object and decrement the message id and time by 1 to set it above the current message
+        const newMessage = this.decrementMessage({
+          id: message.id,
+          conversationID: this.conversation.id,
+          content: "",
+          role: 'system',
+          time: message.time
+        });
+
+        // Update the message in the database
+        this.dbService.addMessage(newMessage);
+
+        // Add both the new system message and the original message to the accumulator
+        acc.push(newMessage, message);
+      } else {
+        // Add the current message to the accumulator
+        acc.push(message);
+      }
+      return acc;
+    }, []);
+
+    // Emit the updated messages array through the BehaviorSubject
+    this.messagesSubject.next(updatedMessages);
+
+    // Log the result
+    console.log(logOutput);
+  }
+
+  // Delete a message from the messages array
+  public deleteMessage(messageId: number) {
+    console.log('Deleting message: ', messageId);
+    var logOutput = 'Message was not found in message array!';
+
+    // Create new array without the deleted message
+    const updatedMessages = this.messagesSubject.getValue().filter(message => {
+      if (message.id === messageId) {
+        logOutput = 'Message deleted!';
+
+        // Delete the message from the database
+        this.dbService.deleteMessage(messageId);
+
+        // Return false if the id matches to remove the message
+        return false;
+      } else {
+        // Return true if the id does not match to keep the message
+        return true;
       }
     });
 

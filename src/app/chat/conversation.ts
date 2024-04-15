@@ -105,8 +105,8 @@ export class Conversation implements ConversationData {
       messagesNotInSummary: messagesNotInSummary.length,
     });
 
-    // Check if the JSON string is long enough to be summarized (1024, 2048, 4096, 8192, 10240, 16384)
-    if (JSON.stringify(messagesNotInSummary).length > 8192 && messagesArray.length - this.messagesPartOfSummary > 4) {
+    // Check if the JSON string is long enough to be summarized (1024, 2048, 4096, 6144, 8192, 10240, 16384)
+    if (JSON.stringify(messagesNotInSummary).length > 6144 && messagesArray.length - this.messagesPartOfSummary > 4) {
       console.log('Summarizing the conversation...');
 
       // Create a summary package to be sent to the API
