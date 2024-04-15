@@ -235,7 +235,7 @@ export class ChatService {
   }
 
   // Delete a message from the messages array
-  deleteMessage(messageId: number) {
+  public deleteMessage(messageId: number) {
     console.log('Deleting message: ', messageId);
     var logOutput = 'Message was not found in message array!';
 
