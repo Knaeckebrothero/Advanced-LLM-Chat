@@ -1,4 +1,5 @@
 @import 'src/styles/variables';
+@import 'src/styles/mixins';
 
 // Chat component styles
 .chat-ui-container {
@@ -50,13 +51,34 @@
     margin-left: 5%;
     margin-right: 3%;
   }
+}
+
+.button-container {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-end;
 
   button {
-    align-self: flex-end;
-    // Make sure the button is easily clickable
-    min-width: 55px;
-    min-height: 55px;
-    margin-bottom: 5.5%;
+    @include button-style ($color-primary, $color-font-dark);
+    width: 80px;
+    height: 80px;
+  }
+}
+
+.input-field {
+
+  .chat-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    //resize: none; // Prevent resizing the textarea
+    background-color: $color-background;
+  }
+
+  .chat-input:focus {
+    //border-color: #66afe9;
+    outline: none;
   }
 }
 
@@ -64,10 +86,5 @@
 @media (min-width: 768px) {
   .message-container { 
     padding: 4%;
-  }
-  .input-container {
-    button {
-      display: none;
-    }
   }
 }

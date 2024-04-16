@@ -55,6 +55,10 @@ export class ChatUiComponent implements AfterViewChecked {
     }
   }
 
+  generateMessage() {
+    console.log('Generating message');
+  }
+
   // The inputSystemMessage method is called to add a new system message
   inputSystemMessage(messageId: number) {
     // The ChatService is used to add a new system message to the history.

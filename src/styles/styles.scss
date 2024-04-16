@@ -1,10 +1,8 @@
 // Angular Material Theming
 @use '@angular/material' as mat;
 
-// Variables and Mixins
+// Variables
 @import 'variables';
-// @import 'mixins';
-
 
 // Set the default Material Design color palette
 $custom-primary: mat.define-palette($custom-primary-palette, 500);
