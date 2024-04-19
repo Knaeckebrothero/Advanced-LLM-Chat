@@ -40,8 +40,6 @@
   align-self: flex-end;
   height: auto;
   justify-content: space-between;
-  padding: 10px;
-  padding-bottom: 0px;
   // Give some contrast with the chat UI background
   background-color: $color-secondary;
 
@@ -53,6 +51,33 @@
   }
 }
 
+.textfield-container{
+  height: 100%;
+  width: 85%;
+  margin: 5px;
+}
+.chat-input {
+  height: 90%;
+  width: 90%;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  //width: 100%;
+  //padding: 30px;
+  // border: 1px solid #ccc;
+  //border-radius: 5px;
+  //resize: none; // Prevent resizing the textarea
+  background-color: $color-background;
+  color: $color-font-light;
+
+}
+
+.chat-input:focus {
+  //border-color: #66afe9;
+  outline: none;
+}
+
 .button-container {
   display: flex;
   flex-direction: column;
@@ -61,24 +86,14 @@
   button {
     @include button-style ($color-primary, $color-font-dark);
     width: 80px;
-    height: 80px;
-  }
-}
+    height: 50px;
+    align-self: center;
 
-.input-field {
-
-  .chat-input {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    //resize: none; // Prevent resizing the textarea
-    background-color: $color-background;
-  }
-
-  .chat-input:focus {
-    //border-color: #66afe9;
-    outline: none;
+    &.generate-button {
+      width: 65px;
+      height: 65px;
+      border-radius: 100%;
+    }
   }
 }
 
