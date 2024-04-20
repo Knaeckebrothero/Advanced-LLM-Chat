@@ -52,22 +52,22 @@
 }
 
 .textfield-container{
-  height: 100%;
+  height: 85%;
   width: 85%;
   margin: 5px;
 }
 .chat-input {
-  height: 90%;
-  width: 90%;
   flex-grow: 1;
   display: flex;
   flex-direction: column;
   align-self: flex-start;
-  //width: 100%;
+  font-size: 1.3em;
+  width: 100%;
+  height: 100%;
   //padding: 30px;
   // border: 1px solid #ccc;
   //border-radius: 5px;
-  //resize: none; // Prevent resizing the textarea
+  resize: vertical; // Let the textarea resize vertically
   background-color: $color-background;
   color: $color-font-light;
 
@@ -85,13 +85,13 @@
 
   button {
     @include button-style ($color-primary, $color-font-dark);
-    width: 80px;
-    height: 50px;
+    min-width: 40px;
+    min-height: 40px;
     align-self: center;
 
     &.generate-button {
-      width: 65px;
-      height: 65px;
+      width: 45px;
+      height: 45px;
       border-radius: 100%;
     }
   }

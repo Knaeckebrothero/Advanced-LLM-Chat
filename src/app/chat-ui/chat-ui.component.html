@@ -4,12 +4,12 @@
     </div>  
     <div class="input-container">
         <div class="textfield-container">
-            <textarea [(ngModel)]="inputField" class="chat-input" rows="3" placeholder="Type your message..." (keydown.enter)="inputUserMessage(); $event.preventDefault()"></textarea>
+            <textarea [(ngModel)]="inputField" class="chat-input" rows="1" placeholder="Type your message..." (keydown.enter)="inputUserMessage(); $event.preventDefault()"></textarea>
         </div>
 
         <div class="button-container">
-            <button class="generate-button" mat-raised-button color="warn" (click)="generateMessage()">Generate</button>         
-            <button class="send-button" mat-raised-button color="primary" (click)="inputUserMessage()">Send</button>
+            <button class="generate-button" mat-raised-button color="primary" (click)="generateMessage()">GEN</button>         
+            <button class="send-button" mat-raised-button color="primary" (click)="inputUserMessage()">SND</button>
         </div>
     </div>
 </div>
