@@ -139,6 +139,22 @@ export class ChatService {
     }
   }
 
+  // Generate a new message
+  public generateMessage() {  
+    // Generate a response for main agent
+    this.generate(this.mainAgent.prompt).then((generatedMessage) => {
+      // Add the message to the messages array and save it in the database
+      this.addMessage(generatedMessage);
+      
+      this.dbService.addMessage(generatedMessage).then(() => {
+        // Update the conversation 
+        this.conversation.updateSummary(this.summaryAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
+          this.dbService.updateConversation(this.conversation.toConversationData());
+        });
+      });
+    });
+  }
+
   // Add a new message to the messages array and save it in the db
   public userInputMessage(content: any) {
     // Create a new message object
@@ -153,18 +169,8 @@ export class ChatService {
     this.dbService.addMessage(newMessage);
     this.addMessage(newMessage);
     console.log("Usermessage added!");
-  
-    // Generate a response for agent a
-    this.generate(this.mainAgent.prompt).then((generatedMessage) => {
-      // Add the message to the messages array and save it in the database
-      this.addMessage(generatedMessage);
-      this.dbService.addMessage(generatedMessage).then(() => {
-        // Update the conversation 
-        this.conversation.updateSummary(this.mainAgent.prompt, this.apiService, this.messagesSubject.getValue()).then(() => {
-          this.dbService.updateConversation(this.conversation.toConversationData());
-        });
-      });
-    });
+
+
   }
 
   // Alter message

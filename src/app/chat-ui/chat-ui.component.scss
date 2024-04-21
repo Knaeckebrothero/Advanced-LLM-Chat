@@ -1,4 +1,5 @@
 @import 'src/styles/variables';
+@import 'src/styles/mixins';
 
 // Chat component styles
 .chat-ui-container {
@@ -34,13 +35,13 @@
 
 .input-container {
   width: 100%;
+  min-height: fit-content;
+  height: fit-content;
   display: flex;
   flex-direction: row;
   align-self: flex-end;
-  height: auto;
+
   justify-content: space-between;
-  padding: 10px;
-  padding-bottom: 0px;
   // Give some contrast with the chat UI background
   background-color: $color-secondary;
 
@@ -50,13 +51,53 @@
     margin-left: 5%;
     margin-right: 3%;
   }
+}
+
+.textfield-container{
+  height: 85%;
+  width: 85%;
+  margin: 5px;
+}
+
+.chat-input {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  font-size: 1.3em;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  //padding: 30px;
+  // border: 1px solid #ccc;
+  //border-radius: 5px;
+  resize: vertical; // Let the textarea resize vertically
+  background-color: $color-background;
+  color: $color-font-light;
+
+}
+
+.chat-input:focus {
+  //border-color: #66afe9;
+  outline: none;
+}
+
+.button-container {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-end;
 
   button {
-    align-self: flex-end;
-    // Make sure the button is easily clickable
-    min-width: 55px;
-    min-height: 55px;
-    margin-bottom: 5.5%;
+    @include button-style ($color-primary, $color-font-dark);
+    min-width: 40px;
+    min-height: 40px;
+    align-self: center;
+
+    &.generate-button {
+      width: 45px;
+      height: 45px;
+      border-radius: 100%;
+    }
   }
 }
 
@@ -65,9 +106,24 @@
   .message-container { 
     padding: 4%;
   }
+  
   .input-container {
+    min-height: 13%;
+  }
+
+  .button-container {
     button {
-      display: none;
+      @include button-style ($color-primary, $color-font-dark);
+
+      &.generate-button {
+        align-self: center;
+        min-width: 100px;
+        min-height: 100px;
+      }
+
+      &.send-button {
+        display: none;
+      }
     }
   }
 }
