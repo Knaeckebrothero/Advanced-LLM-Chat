@@ -41,6 +41,25 @@ export class ChatUiComponent implements AfterViewChecked {
     this.scrollToBottom();
   }
 
+  // Utility function to detect mobile devices
+  isMobileDevice(): boolean {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+
+  // Function to handle Enter key in textarea
+  handleEnterKeyPress(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      if (this.isMobileDevice()) {
+        // It's a mobile device, allow line breaks on Enter
+        event.preventDefault(); // This line might be removed if you want to allow new lines
+      } else {
+        // It's not a mobile device, send the message
+        this.inputUserMessage();
+        event.preventDefault(); // Prevents new line even on desktop after sending message
+      }
+    }
+  }
+
   // The inputUserMessage method is called when the user submits a new message.
   inputUserMessage() {
     // The inputField property is checked to ensure that it is not empty.
@@ -55,8 +74,10 @@ export class ChatUiComponent implements AfterViewChecked {
     }
   }
 
+  // Generate a new message
   generateMessage() {
     console.log('Generating message');
+    this.chatService.generateMessage();
   }
 
   // The inputSystemMessage method is called to add a new system message
