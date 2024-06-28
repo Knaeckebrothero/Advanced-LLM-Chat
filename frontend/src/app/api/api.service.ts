@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
-import { OpenAIChatCompleteRequest } from '../data/interfaces/api-openai-request';
 import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 
@@ -9,11 +8,10 @@ import { Message } from '../data/interfaces/message';
 @Injectable({
   providedIn: 'root'
 })
-export class OpenAIService {
+export class ApiService {
   // Variables 
-  private baseUrl: string = 'https://api.openai.com/v1';
-  private apiKey: string | undefined = undefined;
-  private chatCompleteBody: OpenAIChatCompleteRequest = {};
+  private baseUrl: string = 'http://localhost:8080/';
+  private apiKey: string = '';
   
   // Inject the DataService and load the api key from the database
   constructor(private http: HttpClient, private dbService: DBService) {
@@ -26,12 +24,6 @@ export class OpenAIService {
         if (defaultSettings) {
           // Set API key
           this.apiKey = defaultSettings.apiKey;
-
-          // Remove id and apiKey from the the body
-          const { id, apiKey, name, ...rest } = defaultSettings;
-
-          // Populate chatCompleteBody with the rest of the properties
-          this.chatCompleteBody = { ...rest };
           console.log("API set up!");
         } else {
           console.error('API settings not found!');
@@ -58,33 +50,37 @@ export class OpenAIService {
   }
 
   // Send a chat complete request to the API
-  async chatComplete(messages: Message[], ): Promise<any> {
+  async chatComplete(message: Message): Promise<any> {
     // Set the endpoint
     const endpoint: string = `${this.baseUrl}/chat/completions`;
-    
+
     // Set the headers
     const headers = new HttpHeaders({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.apiKey}`
+      'Authorization': this.apiKey,
+      'Response-Expected': 1
     });
     
     // Set the body and add the prompt
-    const body = this.chatCompleteBody;
-    body.messages = this.checkTokens(messages);
+    const body = message;
     console.log(body)
 
     // Send the request
     try {
-      console.log('Sending request to OpenAI...\n', messages);
+      console.log('Sending message...\n');
 
-      // Send the request and wait for the response
-      const response = this.http.post(endpoint, body, { headers: headers });
+      // Send the message and wait for the response
+      // const response = this.http.post(endpoint, body, { headers: headers });
       
       // Convert the Observable to Promise and return it instead
-      const result = await lastValueFrom(response);
+      // const result = await lastValueFrom(response);
+
+      // Return a dummy response for testing
+      const result = body;
+
       return result;
     } catch (error) {
-      console.error('Error querying OpenAI API: ', error);
+      console.error('Error while sending request to backend: ', error);
       throw error;
     }
   }

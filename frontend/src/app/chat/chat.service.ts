@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
-import { OpenAIService } from '../api/api-openai.service';
+import { OpenAIService } from '../api/api.service';
 import { Conversation } from '../chat/conversation';
 import { Agent } from '../data/interfaces/agent';
 
