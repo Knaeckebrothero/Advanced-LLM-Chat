@@ -48,7 +48,8 @@ export class ChatUiMessageComponent {
 
   // Insert message above and regenerate button
   insertMessageAbove() {
-    this.chatUI.inputSystemMessage(this.message.id!);
+    console.log('Inserting message above:', this.message.id);
+    //this.chatUI.inputSystemMessage(this.message.id!);
   }
 
   /*
@@ -66,7 +67,7 @@ export class ChatUiMessageComponent {
     this.editing = false;
 
     // Trigger a request to update the message
-    this.chatUI.changeMessage(this.message);
+    this.chatUI.patchMessage(this.message.content);
   }
 
   abortEditing() {

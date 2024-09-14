@@ -23,11 +23,7 @@ export class ChatUiComponent implements AfterViewChecked {
   messages = this.chatService.messages;
   
   // Constructor
-  constructor(private chatService: ChatService) { 
-    const credentials = this.chatService.getConversationCredentials();
-    this.userName = credentials.user;
-    this.aiName = credentials.ai;
-  }
+  constructor(private chatService: ChatService) {}
 
   // Method to scroll to the bottom of the chat window.
   private scrollToBottom(): void {
@@ -60,12 +56,16 @@ export class ChatUiComponent implements AfterViewChecked {
     }
   }
 
-  // The inputUserMessage method is called when the user submits a new message.
+  // The addMessage method is called when the user submits a new message.
   inputUserMessage() {
     // The inputField property is checked to ensure that it is not empty.
     if (this.inputField !== '') {
       // The ChatService is used to add a new usermessage to the history.
-      this.chatService.userInputMessage(this.inputField);
+      this.chatService.addMessage({
+        role: 'user',
+        content: this.inputField,
+        time: new Date()
+      });
 
       this.scrollToBottom();
       
@@ -80,11 +80,15 @@ export class ChatUiComponent implements AfterViewChecked {
     this.chatService.generateMessage();
   }
 
+  /*
+
   // The inputSystemMessage method is called to add a new system message
   inputSystemMessage(messageId: number) {
     // The ChatService is used to add a new system message to the history.
     this.chatService.systemAddMessage(messageId);
   }
+
+  */
 
   // Method to delete a message
   deleteMessage(messageId: number) {
@@ -93,8 +97,8 @@ export class ChatUiComponent implements AfterViewChecked {
   }
 
   // Method to change a message
-  changeMessage(message: Message) {
+  patchMessage(message: Message) {
     // Call the ChatService to alter the message
-    this.chatService.alterMessage(message)
+    this.chatService.patchMessage("New message content");
   }
 }

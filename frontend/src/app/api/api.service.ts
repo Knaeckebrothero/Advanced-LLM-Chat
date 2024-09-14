@@ -18,17 +18,6 @@ export class ApiService {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
       // Fetch the OpenAI settings from the database
-      this.dbService.getLLMConfig(1).then((defaultSettings: any) => {
-    
-        // If the settings are found initialize the component
-        if (defaultSettings) {
-          // Set API key
-          this.apiKey = defaultSettings.apiKey;
-          console.log("API set up!");
-        } else {
-          console.error('API settings not found!');
-        }
-      });
     });
   }
 
