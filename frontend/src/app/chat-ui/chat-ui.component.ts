@@ -66,6 +66,7 @@ export class ChatUiComponent implements AfterViewChecked {
         content: this.inputField,
         time: new Date()
       });
+      console.log('User added message:');
 
       this.scrollToBottom();
       
