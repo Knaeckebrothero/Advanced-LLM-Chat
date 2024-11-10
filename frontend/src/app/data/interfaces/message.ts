@@ -7,6 +7,7 @@ export interface Message {
     role: string;
     // The message contents (text, image, etc.)
     content: any;
-    // Timestamp of the message (used for sorting and display)
+    // Timestamp of the message (used for sorting and display, can be a Date or a unix timestamp as a number)
+    //time?: Date | number;
     time?: Date;
 }

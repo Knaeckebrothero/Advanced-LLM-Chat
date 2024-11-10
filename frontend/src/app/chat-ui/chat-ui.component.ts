@@ -77,7 +77,6 @@ export class ChatUiComponent implements AfterViewChecked {
 
   // Generate a new message
   generateMessage() {
-    console.log('Generating message');
     this.chatService.generateMessage();
   }
 
@@ -100,6 +99,6 @@ export class ChatUiComponent implements AfterViewChecked {
   // Method to change a message
   patchMessage(message: Message) {
     // Call the ChatService to alter the message
-    this.chatService.patchMessage("New message content");
+    this.chatService.patchMessage(message.id!, "New message content");
   }
 }

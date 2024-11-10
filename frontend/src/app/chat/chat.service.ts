@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
+import { ApiService } from '../api/api.service';
 
 
 @Injectable({
@@ -16,7 +17,10 @@ export class ChatService {
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
   // Constructor
-  constructor(private dbService: DBService) {
+  constructor(
+    private dbService: DBService, 
+    private apiService: ApiService
+  ) {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
       // Load the default conversation from the database
@@ -51,7 +55,7 @@ export class ChatService {
       });
 
       // Sort the messages by time
-      message.sort((a, b) => a.time!.getTime() - b.time!.getTime())
+      message.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
 
       // Add each message to the messages array
       this.messagesSubject.next([...this.messagesSubject.getValue(), ...message]);
@@ -72,27 +76,66 @@ export class ChatService {
     }
   }
 
+  // Generate a message
+  public async generateMessage(participant?: string) {
+    try {
+      const generatedMessage = await this.apiService.generateMessage(this.conversation.id, participant);
+      
+      // Add timestamp if not provided by backend
+      if (!generatedMessage.time) {
+        generatedMessage.time = new Date();
+      }
+      
+      // Add to local state and database
+      this.addMessage(generatedMessage);
+    } catch (error) {
+      console.error('Error generating message:', error);
+      throw error;
+    }
+  }
+
   // Patch a message in the conversation
-  public patchMessage(content: string) {
-    console.log('Editing message content');
+  public async patchMessage(messageId: number, content: string) {
+    try {
+      const updatedMessage = await this.apiService.patchMessage(messageId, content);
+      
+      // Update the message in the local state
+      const currentMessages = this.messagesSubject.getValue();
+      const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
+      
+      if (messageIndex !== -1) {
+        currentMessages[messageIndex] = { ...currentMessages[messageIndex], ...updatedMessage };
+        this.messagesSubject.next([...currentMessages]);
+        
+        // Update in database
+        await this.dbService.updateMessage(currentMessages[messageIndex]);
+      }
+    } catch (error) {
+      console.error('Error patching message:', error);
+      throw error;
+    }
+  }
+
+  // Delete a message from the conversation
+  public async deleteMessage(messageId: number) {
+    try {
+      await this.apiService.deleteMessage(messageId);
+      
+      // Remove from local state
+      const currentMessages = this.messagesSubject.getValue();
+      const updatedMessages = currentMessages.filter(msg => msg.id !== messageId);
+      this.messagesSubject.next(updatedMessages);
+      
+      // Remove from database
+      await this.dbService.deleteMessage(messageId);
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      throw error;
+    }
   }
 
   // Regenerate a message in the conversation
   public regenerateMessage(message: Message) {
     console.log('Regenerating message');
-  }
-
-  // Delete a message from the conversation
-  public deleteMessage(messageId: number) {
-    console.log('Deleting message with ID:', messageId);
-  }
-
-  // Generate a message
-  public generateMessage(participant?: string) {
-    if (participant) {
-      console.log(`Generating message for ${participant}`);
-    } else {
-    console.log('Generating message');
-    }
   }
 }

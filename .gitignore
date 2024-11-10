@@ -3,6 +3,7 @@
 
 # Local environment
 .env
+.venv
 
 # Yaml
 *.yaml
