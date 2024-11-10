@@ -1,13 +1,9 @@
-from tinydb import TinyDB
+import os
+from dotenv import load_dotenv
+#from tinydb import TinyDB
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from llm_session import Session
-
-
-import os
-import guidance
-from dotenv import load_dotenv
 
 
 # Class to manage a conversation
@@ -85,7 +81,6 @@ conversation = Session(
     llm_model="gpt-3.5-turbo",
     assistant_description="You are a helpful assistant."
     )
-
 
 # Define the app
 app = FastAPI()

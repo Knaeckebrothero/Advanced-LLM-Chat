@@ -1,1 +1,5 @@
-langchain
+python-dotenv
+fastapi
+uvicorn
+#tinydb
+#langchain
