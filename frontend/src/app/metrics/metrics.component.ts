@@ -17,11 +17,11 @@ export class MetricsComponent implements OnInit {
   }
 
   refreshSummary() {
-    this.summary = this.serviceChat.getSummary();
+    console.log("Refreshing summary");
   }
 
   updateSummary() {
-    this.serviceChat.setSummary(this.summary);
+    console.log("Updating summary");
   }
 
   onFileSelected(event: any) {

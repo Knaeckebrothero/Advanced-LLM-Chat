@@ -13,12 +13,79 @@ One Paragraph of project description goes here. Explain what the project is abou
 
 ## Installation
 
-Describe the installation process here. Include any pre-requisites, required libraries, and how to get the development environment running.
+### Frontend
+
+#### Setup Developement Backend Mockup
+To simplify frontend development this repository includes a mockup backend written in Python.
 
 ```bash
-# Example command line instructions
+# Create a virtual environment
+python -m venv venv
+
+# Activate the virtual environment
+# On Windows:
+.\venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+# Install the requirements
 pip install -r requirements.txt
+
+# Start the development server
+uvicorn backend_mockup:app --reload --host 0.0.0.0 --port 8080
 ```
+
+#### Setup Frontend
+The frontend is built with Angular. Make sure you have Node.js and npm installed on your system.
+
+1. Install Angular CLI globally if you haven't already:
+```bash
+npm install -g @angular/cli
+```
+
+2. Install project dependencies:
+```bash
+# Navigate to the project directory
+cd frontend-directory
+
+# Install dependencies
+npm install
+```
+
+3. Start the development server:
+```bash
+ng serve
+```
+
+The application will be available at `http://localhost:4200` by default.
+
+#### Development Dependencies
+- Node.js (v16 or higher recommended)
+- npm (comes with Node.js)
+- Python 3.8 or higher
+- Angular CLI (@latest)
+
+#### Additional Commands
+```bash
+# Create a production build
+ng build --production
+
+# Run tests
+ng test
+
+# Check for package updates
+npm outdated
+
+# Update packages (careful with major version updates)
+npm update
+```
+
+#### Common Issues
+- If you encounter CORS issues, make sure the backend server is running and the CORS middleware is properly configured
+- If npm install fails, try deleting the node_modules folder and package-lock.json, then run npm install again
+- Make sure your Node.js version is compatible with the Angular version used in the project
+
+### Backend
 
 ## License
 
