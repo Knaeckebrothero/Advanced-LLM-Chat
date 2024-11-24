@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 pydantic
-#python-dotenv
+trustme
+python-dotenv
+
 #tinydb
 #langchain

@@ -31,8 +31,11 @@ source venv/bin/activate
 # Install the requirements
 pip install -r requirements.txt
 
+# Run the script first to generate the certificates if needed
+# backend_mockup.py
+
 # Start the development server
-uvicorn backend_mockup:app --reload --host 0.0.0.0 --port 8080
+uvicorn backend_mockup:app --reload --host 0.0.0.0 --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
 ```
 
 #### Setup Frontend

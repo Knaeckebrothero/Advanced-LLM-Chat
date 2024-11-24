@@ -123,7 +123,7 @@ export class ChatService {
   // Delete a message from the conversation
   public async deleteMessage(messageId: number) {
     try {
-      await this.apiService.deleteMessage(messageId);
+      await this.apiService.deleteMessage(this.conversation.id, messageId);
       
       // Remove from local state
       const currentMessages = this.messagesSubject.getValue();

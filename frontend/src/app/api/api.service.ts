@@ -3,22 +3,28 @@ import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/interfaces/message';
+import { environment } from '../environments/environment';
 
 
 @Injectable({
   providedIn: 'root'
 })
 export class ApiService {
-  // Base URL for the backend API
-  private baseUrl: string = 'http://localhost:8080/api';
-  
-  constructor(private http: HttpClient) {}
+  // Use the environment configuration
+  private baseUrl: string = environment.apiUrl;
+
+  constructor(private http: HttpClient) {
+    // Development only - handle self-signed certificates
+    //if (!environment.production) {
+    //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
+    //}
+  }
 
   // Headers setup method
   private getHeaders(): HttpHeaders {
     return new HttpHeaders({
       'Content-Type': 'application/json',
-      // We can add authentication headers here later
+      // Add any other headers here
     });
   }
 
@@ -26,7 +32,7 @@ export class ApiService {
   async generateMessage(conversationId: number, participant?: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/message/generate`;
     const body = {
-      conversation_id: conversationId,
+      conversationId: conversationId,
       participant: participant
     };
 
@@ -43,10 +49,10 @@ export class ApiService {
 
   // Patch/edit an existing message
   async patchMessage(conversationId: number, messageId: number, content: string): Promise<Message> {
-    const endpoint = `${this.baseUrl}/message/${messageId}`;
+    const endpoint = `${this.baseUrl}/message/patch`;
     const body = {
-      conversation_id: conversationId,
-      message_id: messageId,
+      messageId: messageId,
+      conversationId: conversationId,
       content: content
     };
 
@@ -62,8 +68,8 @@ export class ApiService {
   }
 
   // Delete a message
-  async deleteMessage(messageId: number): Promise<void> {
-    const endpoint = `${this.baseUrl}/message/${messageId}`;
+  async deleteMessage(conversationId: number, messageId: number): Promise<void> {
+    const endpoint = `${this.baseUrl}/message/delete/${conversationId}/${messageId}`;
 
     try {
       await lastValueFrom(
