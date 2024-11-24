@@ -42,9 +42,10 @@ export class ApiService {
   }
 
   // Patch/edit an existing message
-  async patchMessage(messageId: number, content: string): Promise<Message> {
+  async patchMessage(conversationId: number, messageId: number, content: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/message/${messageId}`;
     const body = {
+      conversation_id: conversationId,
       message_id: messageId,
       content: content
     };

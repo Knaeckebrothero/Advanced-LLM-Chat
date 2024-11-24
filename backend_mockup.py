@@ -40,12 +40,13 @@ async def generate_message(request: MessageGenerate):
         "time": "2024-03-10T12:00:00Z"
     }
 
-@app.patch("/api/message/{message_id}")
-async def patch_message(message_id: int, request: MessagePatch):
-    print(f"Patch message called for message {message_id}")
+@app.patch("/api/message/{conversationId}/{messageId}")
+async def patch_message(conversationId: int, messageId: int, request: MessagePatch):
+    print(f"Patch message called for message {messageId}")
     # Mock response
     return {
-        "id": message_id,
+        "id": messageId,
+        "conversationId": conversationId,
         "content": request.content,
         "time": "2024-03-10T12:00:00Z"
     }

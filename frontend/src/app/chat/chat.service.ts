@@ -97,7 +97,11 @@ export class ChatService {
   // Patch a message in the conversation
   public async patchMessage(messageId: number, content: string) {
     try {
-      const updatedMessage = await this.apiService.patchMessage(messageId, content);
+      // Get the conversation ID
+      const conversationId = this.conversation.id;
+
+      // Call the API to patch the message
+      const updatedMessage = await this.apiService.patchMessage(conversationId, messageId, content);
       
       // Update the message in the local state
       const currentMessages = this.messagesSubject.getValue();
