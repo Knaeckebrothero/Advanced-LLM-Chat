@@ -45,6 +45,12 @@ export class ChatService {
     });
   }
 
+  /*
+  TODO: Create a function to sync the conversation with the backend.
+  This function should be called every 8 seconds while the app is open, 
+  or when the user logs in / logs out.
+  */
+
   // Add one or more messages to the conversation
   public addMessage(message: Message | Message[]) {
     // Check if the message is an array
@@ -73,6 +79,9 @@ export class ChatService {
 
       // Add the message to the database
       this.dbService.addMessage(message);
+
+      // Send the messages to the backend
+      this.apiService.sendMessage(this.conversation.id, "user", message.content);
     }
   }
 

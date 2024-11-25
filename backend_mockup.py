@@ -9,6 +9,14 @@ from pathlib import Path
 
 
 # Pydantic models for request validation
+class Message(BaseModel):
+    messageId: Optional[int] = None
+    conversationId: int
+    role: str
+    content: str
+    #time: int
+
+
 class MessageGenerate(BaseModel):
     conversationId: int
     participant: Optional[str] = None
@@ -45,6 +53,13 @@ def setup_development_certificates():
 
 
 # Mock endpoints for debugging purposes
+@app.post("/api/message/send")
+async def send_message(request: Message):
+    print(f"Send message called for conversation {request.conversationId}")
+    # Mock response
+    return {"status": "created", "message": f"Message added to conversation {request.conversationId}"}
+
+
 @app.post("/api/message/generate")
 async def generate_message(request: MessageGenerate):
     print(f"Generate message called for conversation {request.conversationId}")

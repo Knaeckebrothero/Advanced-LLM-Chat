@@ -5,6 +5,9 @@
 .env
 .venv
 
+# Development certificates
+devcerts/
+
 # Yaml
 *.yaml
 

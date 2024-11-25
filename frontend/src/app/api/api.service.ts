@@ -29,6 +29,26 @@ export class ApiService {
   }
 
   // Generate a new message
+  async sendMessage(conversationId: number, role: string, content: string): Promise<Message> {
+    const endpoint = `${this.baseUrl}/message/send`;
+    const body = {
+      conversationId: conversationId,
+      role: role,
+      content: content
+    };
+
+    try {
+      const response = await lastValueFrom(
+        this.http.post<Message>(endpoint, body, { headers: this.getHeaders() })
+      );
+      return response;
+    } catch (error) {
+      console.error('Error generating message:', error);
+      throw error;
+    }
+  }
+
+  // Generate a new message
   async generateMessage(conversationId: number, participant?: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/message/generate`;
     const body = {
