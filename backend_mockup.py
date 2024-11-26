@@ -6,6 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 
+
 # Error response model
 class ErrorResponse(BaseModel):
     error: str

@@ -8,7 +8,7 @@ export interface Message {
 }
 
 // API Message interfaces
-export interface ApiMessageBase {
+interface ApiMessageBase {
   //  id: number;  // ID of the message
   conversationId: number;  // ID of the conversation
   // roleName: string;  // Name of the sender
@@ -19,6 +19,13 @@ export interface ApiMessageBase {
 // Interface for sending messages to API
 export interface ApiMessageSend extends ApiMessageBase {
   roleName: string;
+}
+
+// Interface for sending messages to API
+export interface ApiMessageGenerate {
+  conversationId: number,
+  roleName: string,
+  lastTimestamp: number
 }
 
 // Interface for receiving messages from API
@@ -43,7 +50,13 @@ export class MessageConverter {
     };
   }
 
-  static toApiGenerate(message: )
+  static toApiMessageGenerate(message: Message, participant: string): ApiMessageGenerate {
+    return {
+      conversationId: message.conversationId,
+      roleName: participant,
+      lastTimestamp: Math.floor(message.time.getTime() / 1000)  // Convert Date to Unix timestamp
+    };
+  }
   
   static fromApiReceive(apiMessage: ApiMessageReceive): Message {
     return {
