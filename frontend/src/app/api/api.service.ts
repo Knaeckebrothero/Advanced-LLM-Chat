@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
-import { Message } from '../data/interfaces/message';
+import { Message } from '../data/interfaces/messages';
 import { environment } from '../environments/environment';
 
 

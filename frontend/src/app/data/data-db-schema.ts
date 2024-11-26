@@ -1,5 +1,5 @@
 import { DBSchema } from 'idb';
-import { Message } from './interfaces/message';
+import { Message } from './interfaces/messages';
 import { Conversation } from './interfaces/conversation';
 
 

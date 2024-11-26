@@ -1,6 +1,6 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
-import { Message } from '../data/interfaces/message';
+import { Message } from '../data/interfaces/messages';
 
 @Component({
   selector: 'app-chat-ui',
