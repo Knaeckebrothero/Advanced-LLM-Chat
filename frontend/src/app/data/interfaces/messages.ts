@@ -1,75 +1,67 @@
 // Frontend Message interface
 export interface Message {
-  // The unique identifier, used as the key in the database
-  id: number;
-  // Surrogate Key referencing a conversation
-  conversationId: number;
-  // Whether the message was sent by the user (important for styling and alignment)
-  roleName: string;
-  // The message contents (text, image, etc.)
-  content: any;
-  // Timestamp of the message (used for sorting and display)
-  time: Date;
+  id: number;  // ID of the message
+  conversationId: number;  // ID of the conversation
+  roleName: string;  // Name of the sender
+  content: any;  // Content of the message
+  time: Date;  // Timestamp of the message
 }
 
 // API Message interfaces
 export interface ApiMessageBase {
-  // The identifier of the conversation this message belongs to
-  conversationId: number;
-  // The content of the message
-  content: string;
+  // messageId: number;  // ID of the message
+  conversationId: number;  // ID of the conversation
+  // roleName: string;  // Name of the sender
+  content: string;  // Text content of the message
+  time: number;   // ISO timestamp string from backend
 }
-  
+
 // Interface for sending messages to API
-export interface ApiMessageRequest extends ApiMessageBase {
-  // The timestamp of the message
-  time: string;
-}
-  
-// Interface for receiving messages from API
-export interface ApiMessageResponse extends ApiMessageBase {
-  // The unique identifier of the message
-  messageId: number;
-  // The role of the message sender
+export interface ApiMessageSend extends ApiMessageBase {
   roleName: string;
-  // The timestamp of the message
-  time: string;
 }
 
+// Interface for receiving messages from API
+export interface ApiMessageReceive extends ApiMessageBase {
+  messageId: number;
+  roleName: string;
+}
 
+// Interface for patching a message via the API
+export interface ApiMessagePatch extends ApiMessageBase {
+  messageId: number;
+}
   
-// Message conversion utilities
+// Class to convert between frontend and API message formats
 export class MessageConverter {
-  // Convert frontend Message to API request format
-  static toApiRequest(message: Message, conversationId: number): ApiMessageRequest {
+  static toApiSend(message: Message): ApiMessageSend {
     return {
-      conversationId: conversationId,
+      conversationId: message.conversationId,
       roleName: message.roleName,
-      content: message.content
+      content: message.content,
+      time: Math.floor(message.time.getTime() / 1000)  // Convert Date to Unix timestamp
     };
   }
   
-  // Convert API response to frontend Message format
-  static fromApiResponse(apiMessage: ApiMessageResponse): Message {
+  static fromApiReceive(apiMessage: ApiMessageReceive): Message {
     return {
       id: apiMessage.messageId,
       conversationId: apiMessage.conversationId,
       roleName: apiMessage.roleName,
       content: apiMessage.content,
-      time: new Date(apiMessage.time)
+      time : new Date(apiMessage.time * 1000)  // Convert Unix timestamp to Date
     };
   }
   
-  // Convert frontend Message to API patch request format
-  static toApiPatchRequest(message: Message, conversationId: number): ApiMessageRequest & { messageId: number } {
+  static toApiPatch(message: Message): ApiMessagePatch & { messageId: number } {
     if (!message.id) {
       throw new Error('Cannot patch message without ID');
     }
     return {
       messageId: message.id,
-      conversationId: conversationId,
-      roleName: message.roleName,
-      content: message.content
+      conversationId: message.conversationId,
+      content: message.content,
+      time: Math.floor(new Date().getTime() / 1000)  // Convert Date to Unix timestamp
     };
   }
 }

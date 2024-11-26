@@ -1,20 +1,22 @@
-import uvicorn
 import trustme
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 
+# Error response model
+class ErrorResponse(BaseModel):
+    error: str
+
 
 # Pydantic models for request validation
-class Message(BaseModel):
-    messageId: Optional[int] = None
+class ApiMessageSend(BaseModel):
     conversationId: int
-    role: str
+    roleName: str
     content: str
-    #time: int
+    time: int
 
 
 class MessageGenerate(BaseModel):
@@ -54,23 +56,49 @@ def setup_development_certificates():
 
 # Mock endpoints for debugging purposes
 @app.post("/api/message/send")
-async def send_message(request: Message):
-    print(f"Send message called for conversation {request.conversationId}")
-    # Mock response
-    return {"status": "created", "message": f"Message added to conversation {request.conversationId}"}
+async def user_send_message(request: ApiMessageSend, response: Response):
+    print("Message send called")
 
+    try:
+        # Error case
+        if not request.content:
+            response.status_code = status.HTTP_400_BAD_REQUEST
+            return ErrorResponse(error="Message content cannot be empty")
 
-@app.post("/api/message/generate")
-async def generate_message(request: MessageGenerate):
-    print(f"Generate message called for conversation {request.conversationId}")
-    # Mock response
-    return {
-        "id": 1234,
-        "role": "assistant",
-        "conversationId": request.conversationId,
-        "content": "This is a mock response from the backend!",
-        "time": "2024-03-10T12:00:00Z"
+        # Success case
+        message_id = 12345
+        response.status_code = status.HTTP_201_CREATED
+        return {"messageId": message_id}
+        
+    except Exception as e:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return ErrorResponse(error=str(e))
+
+@app.post("/api/message/generate/{conversation_id}")
+async def generate_message(conversation_id: int, response: Response):
+    print("Generate message called")
+
+    try:
+        # Error case
+        if not conversation_id:
+            response.status_code = status.HTTP_400_BAD_REQUEST
+            return ErrorResponse(error="Conversation ID missing")
+
+        # Success case
+        message_id = 12345
+        response.status_code = status.HTTP_201_CREATED
+        return {
+            "id": 1234,
+            "role": "assistant",
+            "conversationId": conversation_id,
+            "roleName": "Assistant",
+            "content": "This is a mock response from the backend!",
+            "time": 1234567890
     }
+        
+    except Exception as e:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return ErrorResponse(error=str(e))
 
 
 @app.patch("/api/message/patch")

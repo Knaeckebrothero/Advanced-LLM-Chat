@@ -4,6 +4,7 @@ import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/interfaces/messages';
 import { environment } from '../environments/environment';
+import { MessageConverter } from '../data/interfaces/messages';
 
 
 @Injectable({
@@ -28,25 +29,30 @@ export class ApiService {
     });
   }
 
-  // Generate a new message
-  async sendMessage(conversationId: number, role: string, content: string): Promise<Message> {
+  async sendMessage(message: Message): Promise<Message> {
     const endpoint = `${this.baseUrl}/message/send`;
-    const body = {
-      conversationId: conversationId,
-      role: role,
-      content: content
-    };
-
+    const body = MessageConverter.toApiSend(message);
+  
     try {
       const response = await lastValueFrom(
-        this.http.post<Message>(endpoint, body, { headers: this.getHeaders() })
+        this.http.post<{ messageId: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
       );
-      return response;
+  
+      if (response.status === 201) {
+        message.id = response.body!.messageId;
+        return message;
+      } else if (response.status === 400) {
+        throw new Error('Bad Request: Please check the input data');
+      } else if (response.status === 500) {
+        throw new Error('Server Error: Please try again later');
+      } else {
+        throw new Error(`Unexpected response: ${response.status}`);
+      }
     } catch (error) {
-      console.error('Error generating message:', error);
+      console.error('Error sending message:', error);
       throw error;
     }
-  }
+  }  
 
   // Generate a new message
   async generateMessage(conversationId: number, participant?: string): Promise<Message> {
