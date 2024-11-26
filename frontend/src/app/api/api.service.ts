@@ -54,12 +54,12 @@ export class ApiService {
     }
   }  
 
-  // Generate a new message
-  async generateMessage(conversationId: number, participant?: string): Promise<Message> {
+  async generateMessage(lastMessage: Message, participant: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/message/generate`;
     const body = {
-      conversationId: conversationId,
-      participant: participant
+      conversationId: lastMessage.conversationId,
+      participant: participant,
+      lastTimestamp: lastMessage.time
     };
 
     try {

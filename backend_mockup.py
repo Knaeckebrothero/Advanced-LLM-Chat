@@ -19,9 +19,10 @@ class ApiMessageSend(BaseModel):
     time: int
 
 
-class MessageGenerate(BaseModel):
+class ApiMessageGenerate(BaseModel):
     conversationId: int
-    participant: Optional[str] = None
+    participant: str
+    lastTimestamp: int
 
 
 class MessagePatch(BaseModel):
@@ -54,6 +55,10 @@ def setup_development_certificates():
     return str(cert_dir / "server.pem"), str(cert_dir / "server.key")
 
 
+# TODO: Create a endpoint who takes conversation hashes to check for new content.
+# Perhaps you want to send the timestamp of the last message instead to check for changes.
+
+
 # Mock endpoints for debugging purposes
 @app.post("/api/message/send")
 async def user_send_message(request: ApiMessageSend, response: Response):
@@ -74,26 +79,25 @@ async def user_send_message(request: ApiMessageSend, response: Response):
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
 
-@app.post("/api/message/generate/{conversation_id}")
-async def generate_message(conversation_id: int, response: Response):
+@app.post("/api/message/generate")
+async def generate_message(request: ApiMessageGenerate, response: Response):
     print("Generate message called")
+    # TODO: Make the request also send the conversation hash to check if anything changed
 
     try:
         # Error case
-        if not conversation_id:
+        if not request:
             response.status_code = status.HTTP_400_BAD_REQUEST
             return ErrorResponse(error="Conversation ID missing")
 
         # Success case
-        message_id = 12345
         response.status_code = status.HTTP_201_CREATED
         return {
             "id": 1234,
-            "role": "assistant",
-            "conversationId": conversation_id,
-            "roleName": "Assistant",
+            "conversationId": request.conversationId,
+            "roleName": request.roleName,
             "content": "This is a mock response from the backend!",
-            "time": 1234567890
+            "time": request.lastTimestamp
     }
         
     except Exception as e:

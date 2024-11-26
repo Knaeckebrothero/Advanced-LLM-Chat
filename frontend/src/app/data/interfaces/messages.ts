@@ -9,7 +9,7 @@ export interface Message {
 
 // API Message interfaces
 export interface ApiMessageBase {
-  // messageId: number;  // ID of the message
+  //  id: number;  // ID of the message
   conversationId: number;  // ID of the conversation
   // roleName: string;  // Name of the sender
   content: string;  // Text content of the message
@@ -23,13 +23,13 @@ export interface ApiMessageSend extends ApiMessageBase {
 
 // Interface for receiving messages from API
 export interface ApiMessageReceive extends ApiMessageBase {
-  messageId: number;
+  id: number;
   roleName: string;
 }
 
 // Interface for patching a message via the API
 export interface ApiMessagePatch extends ApiMessageBase {
-  messageId: number;
+  id: number;
 }
   
 // Class to convert between frontend and API message formats
@@ -42,10 +42,12 @@ export class MessageConverter {
       time: Math.floor(message.time.getTime() / 1000)  // Convert Date to Unix timestamp
     };
   }
+
+  static toApiGenerate(message: )
   
   static fromApiReceive(apiMessage: ApiMessageReceive): Message {
     return {
-      id: apiMessage.messageId,
+      id: apiMessage.id,
       conversationId: apiMessage.conversationId,
       roleName: apiMessage.roleName,
       content: apiMessage.content,
@@ -53,12 +55,12 @@ export class MessageConverter {
     };
   }
   
-  static toApiPatch(message: Message): ApiMessagePatch & { messageId: number } {
+  static toApiPatch(message: Message): ApiMessagePatch & {  id: number } {
     if (!message.id) {
       throw new Error('Cannot patch message without ID');
     }
     return {
-      messageId: message.id,
+      id: message.id,
       conversationId: message.conversationId,
       content: message.content,
       time: Math.floor(new Date().getTime() / 1000)  // Convert Date to Unix timestamp
