@@ -13,8 +13,9 @@ export class ChatUiComponent implements AfterViewChecked {
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
   
   // Variables
-  userName: string = 'User';
+  userName: string = 'user';
   aiName: string = 'Assistant';
+  conversationId: number = 1;
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
@@ -62,7 +63,8 @@ export class ChatUiComponent implements AfterViewChecked {
     if (this.inputField !== '') {
       // The ChatService is used to add a new usermessage to the history.
       this.chatService.addMessage({
-        role: 'user',
+        conversationId: this.conversationId,
+        roleName: this.userName,
         content: this.inputField,
         time: new Date()
       });
@@ -77,7 +79,7 @@ export class ChatUiComponent implements AfterViewChecked {
 
   // Generate a new message
   generateMessage() {
-    this.chatService.generateMessage();
+    this.chatService.generateMessage(this.aiName);
   }
 
   /*

@@ -107,21 +107,33 @@ async def generate_message(request: ApiMessageGenerate, response: Response):
 
 
 @app.patch("/api/message/patch")
-async def patch_message(request: MessagePatch):
-    print(f"Patch message called for message {request.messageId}")
-    # Mock response
-    return {
-        "id": request.messageId,
-        "conversationId": request.conversationId,
-        "content": request.content,
-        "time": "2024-03-10T12:00:00Z"
-    }
+async def patch_message(request: MessagePatch, status_code=status.HTTP_200_OK):
+    print("Patch message called")
+
+    try:
+        if not request.id:
+            return Response(status_code=status.HTTP_400_BAD_REQUEST)
+        
+        # Success case - return none for empty response with 200 OK
+        return None
+        
+    except Exception as e:
+        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @app.delete("/api/message/delete/{coversation_id}/{message_id}")
-async def delete_message(coversation_id: str, message_id: str):
-    print(f"Delete message called for message {message_id}")
-    return {"status": "success", "message": f"Message {message_id} deleted"}
+async def delete_message(coversation_id: str, message_id: str, status_code=status.HTTP_200_OK):
+    print("Delete message called")
+
+    try:
+        if not coversation_id and not message_id:
+            return Response(status_code=status.HTTP_400_BAD_REQUEST)
+        
+        # Success case - return none for empty response with 200 OK
+        return None
+        
+    except Exception as e:
+        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # load_dotenv(find_dotenv())

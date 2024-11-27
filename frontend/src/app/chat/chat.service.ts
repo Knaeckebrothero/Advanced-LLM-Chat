@@ -57,7 +57,7 @@ export class ChatService {
     if (Array.isArray(message)) {
       // Add the conversation ID to each message
       message.forEach((message) => {
-        message.conversationID = this.conversation.id;
+        message.conversationId = this.conversation.id;
       });
 
       // Sort the messages by time
@@ -72,7 +72,7 @@ export class ChatService {
       });
     } else {
       // Add the conversation ID to the message
-      message.conversationID = this.conversation.id;
+      message.conversationId = this.conversation.id;
 
       // Add the message to the messages array
       this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
@@ -81,19 +81,17 @@ export class ChatService {
       this.dbService.addMessage(message);
 
       // Send the messages to the backend
-      this.apiService.sendMessage(this.conversation.id, "user", message.content);
+      this.apiService.sendMessage(message);
     }
   }
 
   // Generate a message
-  public async generateMessage(participant?: string) {
+  public async generateMessage(participant: string) {
+    const currentMessages = this.messagesSubject.getValue();
+    const lastMessage = currentMessages[currentMessages.length - 1];
+
     try {
-      const generatedMessage = await this.apiService.generateMessage(this.conversation.id, participant);
-      
-      // Add timestamp if not provided by backend
-      if (!generatedMessage.time) {
-        generatedMessage.time = new Date();
-      }
+      const generatedMessage = await this.apiService.generateMessage(lastMessage, participant);
       
       // Add to local state and database
       this.addMessage(generatedMessage);

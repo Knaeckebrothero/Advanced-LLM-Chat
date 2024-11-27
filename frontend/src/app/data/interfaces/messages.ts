@@ -1,6 +1,6 @@
 // Frontend Message interface
 export interface Message {
-  id: number;  // ID of the message
+  id?: number;  // ID of the message
   conversationId: number;  // ID of the conversation
   roleName: string;  // Name of the sender
   content: any;  // Content of the message
@@ -9,34 +9,38 @@ export interface Message {
 
 // API Message interfaces
 interface ApiMessageBase {
-  //  id: number;  // ID of the message
+  // id: number;  // ID of the message
   conversationId: number;  // ID of the conversation
   // roleName: string;  // Name of the sender
-  content: string;  // Text content of the message
-  time: number;   // ISO timestamp string from backend
+  // content: string;  // Text content of the message
+  // time: number;   // ISO timestamp string from backend
 }
 
 // Interface for sending messages to API
 export interface ApiMessageSend extends ApiMessageBase {
   roleName: string;
+  content: string;
+  time: number;
 }
 
 // Interface for sending messages to API
-export interface ApiMessageGenerate {
-  conversationId: number,
-  roleName: string,
-  lastTimestamp: number
+export interface ApiMessageGenerate extends ApiMessageBase {
+  roleName: string;
+  time: number;
 }
 
 // Interface for receiving messages from API
 export interface ApiMessageReceive extends ApiMessageBase {
   id: number;
   roleName: string;
+  content: string;
+  time: number;
 }
 
 // Interface for patching a message via the API
 export interface ApiMessagePatch extends ApiMessageBase {
   id: number;
+  content: string;
 }
   
 // Class to convert between frontend and API message formats
@@ -54,7 +58,7 @@ export class MessageConverter {
     return {
       conversationId: message.conversationId,
       roleName: participant,
-      lastTimestamp: Math.floor(message.time.getTime() / 1000)  // Convert Date to Unix timestamp
+      time: Math.floor(message.time.getTime() / 1000)  // Convert Date to Unix timestamp
     };
   }
   
@@ -76,7 +80,6 @@ export class MessageConverter {
       id: message.id,
       conversationId: message.conversationId,
       content: message.content,
-      time: Math.floor(new Date().getTime() / 1000)  // Convert Date to Unix timestamp
     };
   }
 }

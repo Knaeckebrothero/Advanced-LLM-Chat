@@ -30,7 +30,7 @@ export class ApiService {
   }
 
   async sendMessage(message: Message): Promise<Message> {
-    const endpoint = `${this.baseUrl}/message/send`;
+    const endpoint = `${this.baseUrl}/api/message/send`;
     const body = MessageConverter.toApiSend(message);
   
     try {
@@ -55,7 +55,7 @@ export class ApiService {
   }  
 
   async generateMessage(lastMessage: Message, participant: string): Promise<Message> {
-    const endpoint = `${this.baseUrl}/message/generate`;
+    const endpoint = `${this.baseUrl}/api/message/generate`;
     const body = {
       conversationId: lastMessage.conversationId,
       participant: participant,
@@ -73,9 +73,9 @@ export class ApiService {
     }
   }
 
-  // Patch/edit an existing message
+  // Patch an existing message
   async patchMessage(conversationId: number, messageId: number, content: string): Promise<Message> {
-    const endpoint = `${this.baseUrl}/message/patch`;
+    const endpoint = `${this.baseUrl}/api/message/patch`;
     const body = {
       messageId: messageId,
       conversationId: conversationId,
@@ -95,7 +95,7 @@ export class ApiService {
 
   // Delete a message
   async deleteMessage(conversationId: number, messageId: number): Promise<void> {
-    const endpoint = `${this.baseUrl}/message/delete/${conversationId}/${messageId}`;
+    const endpoint = `${this.baseUrl}/api/message/delete/${conversationId}/${messageId}`;
 
     try {
       await lastValueFrom(
