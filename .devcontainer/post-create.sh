@@ -12,3 +12,6 @@ fi
 
 # Create development certificates directory
 mkdir -p devcerts
+
+# Run the backend mockup once to generate the certificates
+python backend_mockup.py

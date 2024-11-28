@@ -56,8 +56,28 @@ def setup_development_certificates():
     return str(cert_dir / "server.pem"), str(cert_dir / "server.key")
 
 
-# TODO: Create a endpoint who takes conversation hashes to check for new content.
-# Perhaps you want to send the timestamp of the last message instead to check for changes.
+# Mock endpoints for debugging purposes
+@app.get("/api/conversation/refresh/{conversation_id}/{latest_timestamp}")
+async def refresh_conversation(conversation_id, latest_timestamp, response: Response):
+    print("Refresh conversation called")
+
+    try:
+        # Error case
+        if not conversation_id and latest_timestamp:
+            response.status_code = status.HTTP_400_BAD_REQUEST
+            return ErrorResponse(error="Conversation ID and latest timestamp are required")
+        elif latest_timestamp == 12345:
+            response.status_code = status.HTTP_200_OK
+            # TODO: Return all the new messages after the given timestamp
+            return None
+        
+        # No new messages
+        response.status_code = status.HTTP_204_NO_CONTENT
+        return None
+        
+    except Exception as e:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return ErrorResponse(error=str(e))
 
 
 # Mock endpoints for debugging purposes

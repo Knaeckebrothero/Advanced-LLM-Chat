@@ -45,11 +45,25 @@ export class ChatService {
     });
   }
 
-  /*
-  TODO: Create a function to sync the conversation with the backend.
-  This function should be called every 8 seconds while the app is open, 
-  or when the user logs in / logs out.
-  */
+  // Refresh the conversation
+  private async refreshConversation() {
+    try {
+      // Get the latest message timestamp
+      const latestMessage = this.messagesSubject.getValue().slice(-1)[0];
+      const latestTimestamp = latestMessage ? latestMessage.time : new Date(0);
+
+      // Call the API to refresh the conversation
+      const messages = await this.apiService.refreshConversation(this.conversation.id, latestTimestamp);
+
+      // Add the messages to the conversation
+      this.addMessage(messages);
+    } catch (error) {
+      console.error('Error refreshing conversation:', error);
+      throw error;
+    }
+  }
+
+  // TODO: Implement a way to call the refreshConversation method at regular intervals (e.g. every minute and when the app is opened)
 
   // Add one or more messages to the conversation
   public addMessage(message: Message | Message[]) {

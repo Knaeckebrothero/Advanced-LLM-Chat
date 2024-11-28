@@ -29,6 +29,30 @@ export class ApiService {
     });
   }
 
+  async refreshConversation(conversationId: number, latestTimestamp: Date): Promise<Message[]> {
+    const endpoint = `${this.baseUrl}/api/conversation/refresh/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}`;
+
+    try {
+      const response = await lastValueFrom(
+        this.http.get<Message[]>(endpoint, { 
+          headers: this.getHeaders(), 
+          observe: 'response' 
+        })
+      );
+
+      if (response.status === 200) {
+        return response.body ?? [];
+      } else if (response.status === 204) {
+        return [];
+      } else {
+        throw new Error(`Unexpected response: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Error refreshing conversation:', error);
+      throw error;
+    }
+  }
+
   async sendMessage(message: Message): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/send`;
     const body = MessageConverter.toApiSend(message);
