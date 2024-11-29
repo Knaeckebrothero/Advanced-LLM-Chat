@@ -34,6 +34,9 @@ export class ChatService {
               this.addMessage(messages);
             }
             console.log("Conversation loaded!");
+            
+            // Check for new messages
+            this.refreshConversation();
           });
         } else {          
           // Add the default conversation to the database

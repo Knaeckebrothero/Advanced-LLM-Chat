@@ -28,8 +28,8 @@ export class DBService {
         // Create a store for messages with 'id' as the key path and a compound index
         const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
         messageStore.createIndex('by-time', 'time');
-        messageStore.createIndex('by-conversationID', 'conversationID');
-        messageStore.createIndex('by-conversationID-time', ['conversationID', 'time']);
+        messageStore.createIndex('by-conversationId', 'conversationId');
+        messageStore.createIndex('by-conversationId-time', ['conversationId', 'time']);
 
         // Create a store for conversations with 'id' as the key path
         db.createObjectStore('conversations', { keyPath: 'id' });
@@ -107,9 +107,9 @@ export class DBService {
     return await this.db.clear('chatMessages');
   }
 
-  async getMessagesByConversationId(conversationID = null) {
-    if(conversationID) {
-      return this.db.getAllFromIndex('chatMessages', 'by-conversationID', conversationID);
+  async getMessagesByConversationId(conversationId = null) {
+    if(conversationId) {
+      return this.db.getAllFromIndex('chatMessages', 'by-conversationId', conversationId);
     } else {
       return await this.db.getAll('chatMessages');
     }

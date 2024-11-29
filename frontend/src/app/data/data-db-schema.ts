@@ -10,8 +10,8 @@ export interface MainAppDB extends DBSchema {
     value: Message;
     indexes: {
       'by-time': 'time';
-      'by-conversationID': 'conversationID';
-      'by-conversationID-time': ['conversationID', 'time'];
+      'by-conversationId': 'conversationId';
+      'by-conversationId-time': ['conversationId', 'time'];
     };
   };
   // Conversations store
