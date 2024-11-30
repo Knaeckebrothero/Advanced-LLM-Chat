@@ -1,10 +1,12 @@
 import trustme
+import time
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
+from tinydb import TinyDB, Query
 
 
 # Error response model
@@ -13,6 +15,15 @@ class ErrorResponse(BaseModel):
 
 
 # Pydantic models for request validation
+class ConversationState(BaseModel):
+    id: int
+    hashsum: str
+
+
+class ApiConversationsCheck(BaseModel):
+    conversations: list[ConversationState]
+
+
 class ApiMessageSend(BaseModel):
     conversationId: int
     roleName: str
@@ -27,9 +38,15 @@ class ApiMessageGenerate(BaseModel):
 
 
 class MessagePatch(BaseModel):
-    messageId: int
+    id: int
     conversationId: int
     content: str
+
+
+# Initialize TinyDB
+db = TinyDB('mockup_db.json')
+messages = db.table('messages')
+Message = Query()
 
 
 # Setup FastAPI app
@@ -55,24 +72,43 @@ def setup_development_certificates():
     
     return str(cert_dir / "server.pem"), str(cert_dir / "server.key")
 
+# Generate a hashsum from the messages
+def generate_hash(messages):
+    # TODO: Implement a hash function that is compatible with the frontend
+    return str(hash(messages))
+
 
 # Mock endpoints for debugging purposes
-@app.get("/api/conversation/refresh/{conversation_id}/{latest_timestamp}")
-async def refresh_conversation(conversation_id, latest_timestamp, response: Response):
+@app.post("/api/conversation/check")
+async def check_conversations(request: ApiConversationsCheck, response: Response, status_code=status.HTTP_204_NO_CONTENT):
     print("Refresh conversation called")
 
     try:
         # Error case
-        if not conversation_id and latest_timestamp:
+        if not ApiConversationsCheck:
             response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Conversation ID and latest timestamp are required")
-        elif latest_timestamp == 12345:
-            response.status_code = status.HTTP_200_OK
-            # TODO: Return all the new messages after the given timestamp
-            return None
+            return ErrorResponse(error="Conversations are missing")
         
-        # No new messages
-        response.status_code = status.HTTP_204_NO_CONTENT
+        conversations = []
+
+        # Iterate over the conversations and check for new messages
+        for conversation in request.conversations:
+            messages = db.search(Message.conversationId == conversation.id)
+            hashsum = generate_hash(messages)
+
+            # Add the last 20 messages to the response if the hashsum don't match
+            if conversation.hashsum != hashsum:
+                conversations.append({
+                    'id': conversation.id,
+                    'messages': messages[-20:] 
+                })
+
+        # Success case
+        if len(conversations) > 0:
+            response.status_code = status.HTTP_200_OK
+            return conversations
+
+        # Return no content if no new messages (204 No Content)
         return None
         
     except Exception as e:
@@ -80,9 +116,45 @@ async def refresh_conversation(conversation_id, latest_timestamp, response: Resp
         return ErrorResponse(error=str(e))
 
 
-# Mock endpoints for debugging purposes
+@app.get("/api/conversation/load/{conversation_id}/{timestamp}/{messages_count}")
+async def refresh_conversation(conversation_id, timestamp, messages_count, response: Response, status_code=status.HTTP_200_OK):
+    print("Refresh conversation called")
+
+    try:
+        # Error case
+        if not conversation_id and timestamp:
+            response.status_code = status.HTTP_400_BAD_REQUEST
+            return ErrorResponse(error="Conversation ID and latest timestamp are required")
+
+        # Load the messages before the timestamp
+        messages = db.search(
+            (Message.conversationId == conversation_id) & 
+            (Message.time < timestamp)
+        )
+            
+        # Success case
+        if len(messages) > 0:
+            if messages_count > 30 & messages > 30:
+                # Limit the messages to 30
+                messages_count = 30
+                response.status_code = status.HTTP_206_PARTIAL_CONTENT
+                return messages[-messages_count:]
+            else:
+                # Return the messages
+                response.status_code = status.HTTP_200_OK
+                return messages[-messages_count:]
+        else:
+            # Return no content if no messages found
+            response.status_code = status.HTTP_204_NO_CONTENT
+            return None
+        
+    except Exception as e:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return ErrorResponse(error=str(e))
+
+
 @app.post("/api/message/send")
-async def user_send_message(request: ApiMessageSend, response: Response):
+async def user_send_message(request: ApiMessageSend, response: Response, status_code=status.HTTP_200_OK):
     print("Message send called")
 
     try:
@@ -92,18 +164,29 @@ async def user_send_message(request: ApiMessageSend, response: Response):
             return ErrorResponse(error="Message content cannot be empty")
 
         # Success case
-        message_id = 12345
+        message_id = int(time.time() * 1000)
+
+        # Insert a message document into database
+        messages.insert({
+            'id': message_id,
+            'conversationId': request.conversationId,
+            'roleName': request.roleName,
+            'content': request.content,
+            'time': request.time
+        })
+        
         response.status_code = status.HTTP_201_CREATED
-        return {"messageId": message_id}
+        return {"id": message_id}
         
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
 
+
 @app.post("/api/message/generate")
-async def generate_message(request: ApiMessageGenerate, response: Response):
+async def generate_message(request: ApiMessageGenerate, response: Response, status_code=status.HTTP_200_OK):
     print("Generate message called")
-    # TODO: Make the request also send the conversation hash to check if anything changed
+    # TODO: Make the request also send the conversation hash to check if anything changed (has still required since the user could have changed earlier messages on another device!)
 
     try:
         # Error case
@@ -112,14 +195,20 @@ async def generate_message(request: ApiMessageGenerate, response: Response):
             return ErrorResponse(error="Conversation ID missing")
 
         # Success case
+        message_doc = {
+            'id': int(time.time() * 1000),
+            'conversationId': request.conversationId,
+            'roleName': request.roleName,
+            'content': "This is a mock response from the backend!",
+            'time': int(time.time() * 1000)
+            # 'time': request.lastTimestamp + 100
+        }
+
+        # Insert the message document into database
+        messages.insert(message_doc)
+        
         response.status_code = status.HTTP_201_CREATED
-        return {
-            "id": 1234,
-            "conversationId": request.conversationId,
-            "roleName": request.roleName,
-            "content": "This is a mock response from the backend!",
-            "time": request.lastTimestamp
-    }
+        return message_doc
         
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -134,22 +223,35 @@ async def patch_message(request: MessagePatch, status_code=status.HTTP_200_OK):
         if not request.id:
             return Response(status_code=status.HTTP_400_BAD_REQUEST)
         
-        # Success case - return none for empty response with 200 OK
+        # Success case updates the message and returns an empty response
+        messages.update(
+            {'content': request.content},
+            (Message.conversationId == request.conversationId) &
+            (Message.id == request.id)
+        )
+
+        # Return with default status code (200 OK)
         return None
         
     except Exception as e:
         return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@app.delete("/api/message/delete/{coversation_id}/{message_id}")
-async def delete_message(coversation_id: str, message_id: str, status_code=status.HTTP_200_OK):
+@app.delete("/api/message/delete/{conversation_id}/{message_id}")
+async def delete_message(conversation_id: str, message_id: str, status_code=status.HTTP_200_OK):
     print("Delete message called")
 
     try:
-        if not coversation_id and not message_id:
+        if not conversation_id and not message_id:
             return Response(status_code=status.HTTP_400_BAD_REQUEST)
         
-        # Success case - return none for empty response with 200 OK
+        # Success case removes the message and returns an empty response
+        messages.remove(
+            (Message.conversationId == int(conversation_id)) & 
+            (Message.messageId == int(message_id))
+        )
+        
+        # Return with default status code (200 OK)
         return None
         
     except Exception as e:
