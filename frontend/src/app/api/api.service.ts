@@ -5,6 +5,8 @@ import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { environment } from '../environments/environment';
 import { MessageConverter } from '../data/interfaces/message';
+import { Conversation } from '../data/interfaces/conversation';
+import { ConversationConverter } from '../data/interfaces/conversation';
 
 
 @Injectable({
@@ -29,10 +31,16 @@ export class ApiService {
     });
   }
 
-  async checkConversation(list: ApiConversationsCheck[]): Promise<> {
+  async checkConversation(conversations: Conversation[]): Promise<> {
     const endpoint = `${this.baseUrl}/api/conversation/check`;
-
+    
     try {
+      const response = await lastValueFrom(
+        this.http.get<Message[]>(endpoint, { 
+          headers: this.getHeaders(), 
+          observe: 'response' 
+        })
+      );
 
     }}
 
