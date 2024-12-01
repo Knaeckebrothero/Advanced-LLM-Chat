@@ -1,5 +1,5 @@
 import { Component, Input } from '@angular/core';
-import { Message } from '../../data/interfaces/messages';
+import { Message } from '../../data/interfaces/message';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ChatUiComponent } from '../chat-ui.component';
 

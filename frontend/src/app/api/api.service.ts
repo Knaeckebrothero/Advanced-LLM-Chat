@@ -2,9 +2,9 @@ import { Injectable } from '@angular/core';
 import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
-import { Message } from '../data/interfaces/messages';
+import { Message } from '../data/interfaces/message';
 import { environment } from '../environments/environment';
-import { MessageConverter } from '../data/interfaces/messages';
+import { MessageConverter } from '../data/interfaces/message';
 
 
 @Injectable({
@@ -28,6 +28,13 @@ export class ApiService {
       // Add any other headers here
     });
   }
+
+  async checkConversation(list: ApiConversationsCheck[]): Promise<> {
+    const endpoint = `${this.baseUrl}/api/conversation/check`;
+
+    try {
+
+    }}
 
   async refreshConversation(conversationId: number, latestTimestamp: Date): Promise<Message[]> {
     const endpoint = `${this.baseUrl}/api/conversation/refresh/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}`;
