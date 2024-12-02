@@ -6,7 +6,7 @@ import { Conversation } from './interfaces/conversation';
 export interface MainAppDB extends DBSchema {
   // Messages store
   chatMessages: {
-    key: number;
+    key: [number, number];  // Composite key [conversationId, messageId]
     value: Message;
     indexes: {
       'by-time': 'time';
@@ -18,5 +18,13 @@ export interface MainAppDB extends DBSchema {
   conversations: {
     key: number;
     value: Conversation;
+    indexes: {
+      'by-userId': 'userId';
+    };
+  };
+  // User store
+  user: {
+    key: number;
+    value: any;
   };
 }
