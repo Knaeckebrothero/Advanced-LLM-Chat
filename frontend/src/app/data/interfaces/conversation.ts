@@ -13,7 +13,7 @@ interface ApiConversationBase {
 }
 
 export interface ApiConversationCheck extends ApiConversationBase {
-    hash: number;  // Hash based on the messages in the conversation
+    hashsum: number;  // Hash based on the messages in the conversation
 }
 
 export interface ApiConversationCheckResponse extends ApiConversationBase {
@@ -74,10 +74,7 @@ export class ConversationConverter {
     // Return the conversation
     return {
       id: conversation.id,
-      hash: hashValue
+      hashsum: hashValue
     };
   }
-
-  static fromApiConversationCheckResponse
 }
-

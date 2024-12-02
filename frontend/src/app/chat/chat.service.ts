@@ -51,12 +51,11 @@ export class ChatService {
   // Refresh the conversation
   private async refreshConversation() {
     try {
-      // Get the latest message timestamp
-      const latestMessage = this.messagesSubject.getValue().slice(-1)[0];
-      const latestTimestamp = latestMessage ? latestMessage.time : new Date(0);
-
       // Call the API to refresh the conversation
-      const messages = await this.apiService.refreshConversation(this.conversation.id, latestTimestamp);
+      const messages = await this.apiService.checkConversation(
+        this.conversation, 
+        this.messagesSubject.getValue().slice(-20)
+      );
 
       // Add the messages to the conversation
       this.addMessage(messages);

@@ -17,7 +17,7 @@ class ErrorResponse(BaseModel):
 # Pydantic models for request validation
 class ConversationState(BaseModel):
     id: int
-    hashsum: str
+    hashsum: int
 
 
 class ApiConversationsCheck(BaseModel):
@@ -117,6 +117,9 @@ def generate_hash(messages: list) -> int:
 @app.post("/api/conversation/check")
 async def check_conversations(request: ApiConversationsCheck, response: Response, status_code=status.HTTP_204_NO_CONTENT):
     print("Refresh conversation called")
+
+    print(request)
+    print(request.conversations)
 
     try:
         # Error case
