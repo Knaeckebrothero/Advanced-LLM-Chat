@@ -33,9 +33,8 @@ export class DBService {
         const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
         conversationStore.createIndex('by-userId', 'userId');
 
-        // Create a store for messages with 'id' as the key path and a compound index
+        // Create a store for messages with indexes and conversationId + id as a composite key
         const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
-        messageStore.createIndex('by-time', 'time');
         messageStore.createIndex('by-conversationId', 'conversationId');
         messageStore.createIndex('by-conversationId-time', ['conversationId', 'time']);
       }

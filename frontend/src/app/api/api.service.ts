@@ -8,6 +8,7 @@ import { MessageConverter } from '../data/interfaces/message';
 import { Conversation } from '../data/interfaces/conversation';
 import { ConversationConverter } from '../data/interfaces/conversation';
 import { ApiConversationCheckResponse } from '../data/interfaces/conversation';
+import { ApiConversationCheck } from '../data/interfaces/conversation';
 
 
 @Injectable({
@@ -30,6 +31,36 @@ export class ApiService {
       'Content-Type': 'application/json',
       // Add any other headers here
     });
+  }
+
+  async getConversationsByUser(userId: number): Promise<ApiConversationCheck[]>{
+    const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
+    console.log('Requesting conversations...');
+
+    try{
+      const response = await lastValueFrom(
+        this.http.get<ApiConversationCheck[]>(endpoint, { 
+          headers: this.getHeaders(), 
+          observe: 'response' 
+        })
+      );
+
+      if (response.status === 200) {
+        return response.body!;
+      } else if (response.status === 204) {
+        if (response.body) {
+          return [];
+        } else {
+          throw new Error('Unexpected response: No body');
+        }
+      } else {
+        throw new Error(`Unexpected response: ${response.status}`);
+      }
+
+    } catch (error) {
+      console.error('Error requesting conversations:', error);
+      throw error;
+    }
   }
 
   async checkConversation(conversation: Conversation, messages: Message[]): Promise<Message[]> {

@@ -3,6 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
+import { ConversationConverter } from '../data/interfaces/conversation';
 
 
 @Injectable({
@@ -10,7 +11,7 @@ import { ApiService } from '../api/api.service';
 })
 export class ChatService {
   // The conversation this service is managing
-  private conversation = {id: 1, name: "", participants: []};
+  private conversation = {id: 1, userId: 1, name: "default", participants: ["user"]}
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
@@ -34,36 +35,40 @@ export class ChatService {
               this.addMessage(messages);
             }
             console.log("Conversation loaded!");
-            
-            // Check for new messages
-            this.refreshConversation();
           });
         } else {          
           // Add the default conversation to the database
-          this.dbService.addConversation({id: 1, name: "default conversation", participants: ["user"]}).then(() => {
-            console.log("New conversation created!");
+          this.dbService.addConversation(conversation).then(() => {
+          console.log("New conversation created!");
           });
         }
+
+        // Check for new messages
+        this.refreshConversation();
       });
     });
   }
 
   // Refresh the conversation
-  private async refreshConversation() {
-    try {
-      // Call the API to refresh the conversation
-      const messages = await this.apiService.checkConversation(
-        this.conversation, 
-        this.messagesSubject.getValue().slice(-20)
-      );
+private async refreshConversation() {
+  try {
+    const currentMessages = this.messagesSubject.getValue();
+    const localHash = ConversationConverter.toApiConversationCheck(
+      this.conversation, 
+      currentMessages.slice(-20)
+    ).hashsum;
 
-      // Add the messages to the conversation
-      this.addMessage(messages);
-    } catch (error) {
-      console.error('Error refreshing conversation:', error);
-      throw error;
+    const conversations = await this.apiService.getConversationsByUser(1);
+    if (localHash !== conversations[0].hashsum) {
+      console.log('Conversation hashes didnt match!');
+      // TODO: Fetch the conversation
+      // this.addMessage(messages);
     }
+  } catch (error) {
+    console.error('Error refreshing conversation:', error);
+    throw error;
   }
+}
 
   // TODO: Implement a way to call the refreshConversation method at regular intervals (e.g. every minute and when the app is opened)
 

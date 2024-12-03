@@ -1,15 +1,15 @@
 import { DBSchema } from 'idb';
 import { Message } from './interfaces/message';
 import { Conversation } from './interfaces/conversation';
+import { User } from './interfaces/user';
 
 
 export interface MainAppDB extends DBSchema {
   // Messages store
   chatMessages: {
-    key: [number, number];  // Composite key [conversationId, messageId]
+    key: number;
     value: Message;
     indexes: {
-      'by-time': 'time';
       'by-conversationId': 'conversationId';
       'by-conversationId-time': ['conversationId', 'time'];
     };
@@ -25,6 +25,6 @@ export interface MainAppDB extends DBSchema {
   // User store
   user: {
     key: number;
-    value: any;
+    value: User;
   };
 }

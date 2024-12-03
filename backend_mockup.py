@@ -113,7 +113,72 @@ def generate_hash(messages: list) -> int:
     return hash_value
 
 
+"""
+@app.get("/api/conversation/load/{conversation_id}/{timestamp}/{messages_count}")
+async def refresh_conversation(conversation_id, timestamp, messages_count, response: Response, status_code=status.HTTP_200_OK):
+    print("Refresh conversation called")
+
+    try:
+        # Error case
+        if not conversation_id and timestamp:
+            response.status_code = status.HTTP_400_BAD_REQUEST
+            return ErrorResponse(error="Conversation ID and latest timestamp are required")
+
+        # Load the messages before the timestamp
+        messages = db.search(
+            (Message.conversationId == conversation_id) & 
+            (Message.time < timestamp)
+        )
+            
+        # Success case
+        if len(messages) > 0:
+            if messages_count > 30 & messages > 30:
+                # Limit the messages to 30
+                messages_count = 30
+                response.status_code = status.HTTP_206_PARTIAL_CONTENT
+                return messages[-messages_count:]
+            else:
+                # Return the messages
+                response.status_code = status.HTTP_200_OK
+                return messages[-messages_count:]
+        else:
+            # Return no content if no messages found
+            response.status_code = status.HTTP_204_NO_CONTENT
+            return None
+        
+    except Exception as e:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return ErrorResponse(error=str(e))
+"""
+
+
 # Mock endpoints for debugging purposes
+@app.get("/api/conversation/byuserid/{user_id}")
+async def get_conversations(user_id: int, response: Response, status_code=status.HTTP_200_OK):
+    print("Get conversations called")
+
+    try:
+        # Error case
+        if not user_id:
+            response.status_code = status.HTTP_400_BAD_REQUEST
+            return ErrorResponse(error="User id missing")
+        
+        messages = db.search(Message.conversationId == 1)
+        hashsum = generate_hash(messages)
+
+        # Return no content if no messages found
+        if hashsum == 0:
+            response.status_code = status.HTTP_204_NO_CONTENT
+            return None
+
+        # Success case
+        return [{'conversationId': 1, 'hashsum': hashsum}]
+        
+    except Exception as e:
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return ErrorResponse(error=str(e))
+
+
 @app.post("/api/conversation/check")
 async def check_conversations(request: ApiConversationsCheck, response: Response, status_code=status.HTTP_204_NO_CONTENT):
     print("Refresh conversation called")
@@ -148,43 +213,6 @@ async def check_conversations(request: ApiConversationsCheck, response: Response
 
         # Return no content if no new messages (204 No Content)
         return None
-        
-    except Exception as e:
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=str(e))
-
-
-@app.get("/api/conversation/load/{conversation_id}/{timestamp}/{messages_count}")
-async def refresh_conversation(conversation_id, timestamp, messages_count, response: Response, status_code=status.HTTP_200_OK):
-    print("Refresh conversation called")
-
-    try:
-        # Error case
-        if not conversation_id and timestamp:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Conversation ID and latest timestamp are required")
-
-        # Load the messages before the timestamp
-        messages = db.search(
-            (Message.conversationId == conversation_id) & 
-            (Message.time < timestamp)
-        )
-            
-        # Success case
-        if len(messages) > 0:
-            if messages_count > 30 & messages > 30:
-                # Limit the messages to 30
-                messages_count = 30
-                response.status_code = status.HTTP_206_PARTIAL_CONTENT
-                return messages[-messages_count:]
-            else:
-                # Return the messages
-                response.status_code = status.HTTP_200_OK
-                return messages[-messages_count:]
-        else:
-            # Return no content if no messages found
-            response.status_code = status.HTTP_204_NO_CONTENT
-            return None
         
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR

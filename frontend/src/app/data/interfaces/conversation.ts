@@ -3,7 +3,7 @@ import { Message } from './message';
 
 // Interface for conversation data
 export interface Conversation {
-    id: number;  // ID used to identify the conversation in the database
+    id?: number;  // ID used to identify the conversation in the database
     userId: number;  // ID of the user the conversation belongs to
     name: string;  // Conversation title
     participants: string[];  // Participants in the conversation
@@ -50,6 +50,9 @@ function hashConversation(messages: Message[]): number {
 // Class to convert between frontend and API message formats
 export class ConversationConverter {
   static toApiConversationCheck(conversation: Conversation, messages: Message[]): ApiConversationCheck {
+    if (conversation.id === undefined) {
+        throw new Error('Cannot convert conversation without ID');
+    }
     let hashValue = 0;
     
     // Check for empty conversations
