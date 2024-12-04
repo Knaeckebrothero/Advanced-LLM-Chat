@@ -1,25 +1,36 @@
 {
-    "name": "Python Tesseract Dev Container",
-    "image": "mcr.microsoft.com/devcontainers/python:3.11",
+    "name": "Angular-Python Development Environment",
+    "image": "mcr.microsoft.com/devcontainers/typescript-node:18",
     "features": {
-        "ghcr.io/devcontainers/features/python:1": {},
+        "ghcr.io/devcontainers/features/python:1": {
+            "version": "3.11"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "lts"
+        },
         "ghcr.io/devcontainers/features/common-utils:2": {},
-        "ghcr.io/devcontainers-contrib/features/apt-packages:1": {}
+        "ghcr.io/devcontainers-contrib/features/angular-cli:2": {}
     },
     "customizations": {
         "vscode": {
             "settings": {
-                "terminal.integrated.defaultProfile.linux": "bash"
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "python.defaultInterpreterPath": "/usr/local/bin/python"
             },
             "extensions": [
-                "ms-python.python"
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "angular.ng-template",
+                "dbaeumer.vscode-eslint",
+                "esbenp.prettier-vscode"
             ]
         }
     },
-    "postCreateCommand": "pip install -r requirements.txt",
-    "remoteUser": "vscode",
+    "forwardPorts": [4200, 8443],
+    "postCreateCommand": "sh .devcontainer/post-create.sh",
+    "remoteUser": "node",
     "mounts": [
-        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/node/.ssh,type=bind,consistency=cached"
     ],
     "remoteEnv": {
         "PYTHONPATH": "/workspace"

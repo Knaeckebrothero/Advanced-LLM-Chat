@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
 import { openDB, IDBPDatabase } from 'idb';
-import { Message } from './interfaces/messages';
-import { MainAppDB } from './data-db-schema';
+import { Message } from './interfaces/message';
+import { MainAppDB } from './db-schema';
 import { Conversation } from './interfaces/conversation';
+import { User } from './interfaces/user';
 
 
 @Injectable({
@@ -15,7 +16,7 @@ export class DBService {
   private status: Promise<void>;
 
   constructor() {
-    this.status = this.initDB();
+    this.status = this.initDB().then(() => this.initializeDefaultState());;
   }
 
   // Initialize the database
@@ -25,57 +26,38 @@ export class DBService {
     // Open the database
     this.db = await openDB<MainAppDB>('main', 1, {
       upgrade(db) {
-        // Create a store for messages with 'id' as the key path and a compound index
-        const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
-        messageStore.createIndex('by-time', 'time');
-        messageStore.createIndex('by-conversationID', 'conversationID');
-        messageStore.createIndex('by-conversationID-time', ['conversationID', 'time']);
+        // Create a store for the user
+        db.createObjectStore('user', { keyPath: 'id' });
 
-        // Create a store for conversations with 'id' as the key path
-        db.createObjectStore('conversations', { keyPath: 'id' });
+        // Create a store for conversations with 'id' as the key path and an index
+        const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
+        conversationStore.createIndex('by-userId', 'userId');
+
+        // Create a store for messages with indexes and conversationId + id as a composite key
+        const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
+        messageStore.createIndex('by-conversationId', 'conversationId');
+        messageStore.createIndex('by-conversationId-time', ['conversationId', 'time']);
       }
     });
     console.log("Database started!");
   }
 
-  // Method to add a new entry and generate an ID if needed
-  private async addEntry(collectionName: any, newEntry: any) {
-    // Check if the message has an 'id' and it's not null
-    if (!newEntry.id && newEntry.id !== null) {
-      // Variables
-      let entryNotAdded = true;
-      let retries = 0;
-
-      // Assign a unique ID using the current timestamp
-      newEntry.id = Math.floor(new Date().getTime() / 1000);
-  
-      // Start a loop to retry if an error occurs
-      do {
-        try {
-          // Attempt to add the entry to the database
-          await this.db.add(collectionName, newEntry);
-          console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
-
-           // If successful, exit the loop by setting the flag to false
-          entryNotAdded = false;
-        } catch (error) {
-          // Increment the ID and try again
-          newEntry.id += 1;
-          retries += 1;
-        }
-        // Limit retries to avoid infinite loop
-      } while (entryNotAdded && retries < 10);
-  
-      // If the entry was not added after multiple attempts, throw an error
-      if (entryNotAdded) {
-        throw new Error('Failed to add entry after multiple attempts.');
-      }
-    } else {
-      // If the message already has an ID, add it to the database
-      await this.db.add(collectionName, newEntry);
-      console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
+  private async initializeDefaultState() {
+    console.log("Checking db state...");
+    
+    // Check if user exists
+    const user = await this.getAllUsers();
+    if (!user) {
+      console.log("Creating default user...");
+      const defaultUser = {
+        id: 0,
+        accessToken: "defaultUser",
+        email: "defaultUser",
+        name: "defaultUser"
+      };
+      await this.addUser(defaultUser);
     }
-  }  
+  }
 
   // Get a promise that resolves when the database is ready
   public getDatabaseReadyPromise() {
@@ -83,12 +65,39 @@ export class DBService {
     return this.status
   }
 
+  // Method to add an entry to the collection
+  private async addEntry(collectionName: any, newEntry: any) {
+    if (!newEntry.id && newEntry.id !== null) {
+      let entryNotAdded = true;
+      let retries = 0;
+      newEntry.id = Math.floor(new Date().getTime() / 1000);
+  
+      do {
+        try {
+          await this.db.add(collectionName, newEntry);
+          console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
+          entryNotAdded = false;
+        } catch (error) {
+          newEntry.id += 1;
+          retries += 1;
+        }
+      } while (entryNotAdded && retries < 10);
+  
+      if (entryNotAdded) {
+        throw new Error('Failed to add entry after multiple attempts.');
+      }
+    } else {
+      await this.db.add(collectionName, newEntry);
+      console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
+    }
+  }
+
   /*
   CRUD operations for messages
   */
 
   async addMessage(message: Message) {
-    return await this.addEntry('chatMessages', message);
+    return await this.db.add('chatMessages', message);
   }
 
   async getMessage(id: number) {
@@ -107,9 +116,9 @@ export class DBService {
     return await this.db.clear('chatMessages');
   }
 
-  async getMessagesByConversationId(conversationID = null) {
-    if(conversationID) {
-      return this.db.getAllFromIndex('chatMessages', 'by-conversationID', conversationID);
+  async getMessagesByConversationId(conversationId: any = null) {
+    if(conversationId) {
+      return this.db.getAllFromIndex('chatMessages', 'by-conversationId', conversationId);
     } else {
       return await this.db.getAll('chatMessages');
     }
@@ -120,7 +129,7 @@ export class DBService {
   */
 
   async addConversation(conversation: Conversation) {
-    return await this.addEntry('conversations', conversation);
+    return await this.db.add('conversations', conversation);
   }
 
   async getConversation(id: number) {
@@ -133,5 +142,37 @@ export class DBService {
 
   async deleteConversation(id: number) {
     return await this.db.delete('conversations', id);
+  }
+
+  async getConversationsByUserId(userId: any = null) {
+    if(userId) {
+      return this.db.getAllFromIndex('conversations', 'by-userId', userId);
+    } else {
+      return await this.db.getAll('conversations');
+    }
+  }
+
+  /*
+  CRUD operations for the user
+  */
+
+  async addUser(user: User) {
+    return await this.db.add('user', user);
+  }
+
+  async getUser(id: number) {
+    return await this.db.get('user', id);
+  }
+
+  async updateUser(user: any) {
+    return await this.db.put('user', user);
+  }
+
+  async deleteUser(id: number) {
+    return await this.db.delete('user', id);
+  }
+
+  async getAllUsers() {
+    return await this.db.getAll('user');
   }
 }

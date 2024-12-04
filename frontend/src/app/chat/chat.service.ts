@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Message } from '../data/interfaces/messages';
+import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
+import { ConversationConverter } from '../data/interfaces/conversation';
 
 
 @Injectable({
@@ -10,7 +11,7 @@ import { ApiService } from '../api/api.service';
 })
 export class ChatService {
   // The conversation this service is managing
-  private conversation = {id: 1, name: "", participants: []};
+  private conversation = {id: 1, userId: 1, name: "default", participants: ["user"]}
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
@@ -31,25 +32,54 @@ export class ChatService {
           this.dbService.getMessagesByConversationId(conversation.id).then((messages: Message[]) => {
             // Check if the conversation has any messages
             if(messages !== undefined) {
-              this.addMessage(messages);
+              // Sort the messages by time
+              messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
+
+              // Add each message to the messages array
+              this.messagesSubject.next([...this.messagesSubject.getValue(), ...messages]);
             }
             console.log("Conversation loaded!");
           });
         } else {          
           // Add the default conversation to the database
-          this.dbService.addConversation({id: 1, name: "default conversation", participants: ["user"]}).then(() => {
-            console.log("New conversation created!");
+          this.dbService.addConversation(this.conversation).then(() => {
+          console.log("New conversation created!");
           });
         }
+
+        // Check for new messages
+        this.refreshConversation();
       });
     });
   }
 
-  /*
-  TODO: Create a function to sync the conversation with the backend.
-  This function should be called every 8 seconds while the app is open, 
-  or when the user logs in / logs out.
-  */
+  // Refresh the conversation
+private async refreshConversation() {
+  try {
+    const conversations = await this.apiService.getConversationsByUser(1);
+    if (conversations.length === 0) {
+      console.log('No conversation found.');
+      return;
+    }
+
+    const currentMessages = this.messagesSubject.getValue();
+    const localHash = ConversationConverter.toApiConversationCheck(
+      this.conversation, 
+      currentMessages.slice(-20)
+    ).hashsum;
+
+    if (localHash !== conversations[0].hashsum) {
+      console.log('Conversation hashes didnt match!');
+      // TODO: Fetch the conversation
+      // this.addMessage(messages);
+    }
+  } catch (error) {
+    console.error('Error refreshing conversation:', error);
+    throw error;
+  }
+}
+
+  // TODO: Implement a way to call the refreshConversation method at regular intervals (e.g. every minute and when the app is opened)
 
   // Add one or more messages to the conversation
   public addMessage(message: Message | Message[]) {
@@ -74,14 +104,14 @@ export class ChatService {
       // Add the conversation ID to the message
       message.conversationId = this.conversation.id;
 
-      // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
-
-      // Add the message to the database
-      this.dbService.addMessage(message);
-
       // Send the messages to the backend
-      this.apiService.sendMessage(message);
+      this.apiService.sendMessage(message).then((msg) => {
+        // Add the message to the database
+        this.dbService.addMessage(msg);
+
+        // Add the message to the messages array
+        this.messagesSubject.next([...this.messagesSubject.getValue(), msg]);
+      });
     }
   }
 

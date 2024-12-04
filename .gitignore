@@ -8,6 +8,9 @@
 # Development certificates
 devcerts/
 
+# Development database
+mockup_db.json
+
 # Yaml
 *.yaml
 

@@ -2,9 +2,14 @@ import { Injectable } from '@angular/core';
 import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
-import { Message } from '../data/interfaces/messages';
+import { Message } from '../data/interfaces/message';
 import { environment } from '../environments/environment';
-import { MessageConverter } from '../data/interfaces/messages';
+import { MessageConverter } from '../data/interfaces/message';
+import { Conversation } from '../data/interfaces/conversation';
+import { ConversationConverter } from '../data/interfaces/conversation';
+import { ApiConversationCheckResponse } from '../data/interfaces/conversation';
+import { ApiConversationCheck } from '../data/interfaces/conversation';
+import { ApiMessageGenerateResponse } from '../data/interfaces/message';
 
 
 @Injectable({
@@ -29,17 +34,98 @@ export class ApiService {
     });
   }
 
+  async getConversationsByUser(userId: number): Promise<ApiConversationCheck[]>{
+    const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
+    console.log('Requesting conversations...');
+
+    try{
+      const response = await lastValueFrom(
+        this.http.get<ApiConversationCheck[]>(endpoint, { 
+          headers: this.getHeaders(), 
+          observe: 'response' 
+        })
+      );
+
+      if (response.status === 200) {
+        return response.body!;
+      } else if (response.status === 204) {
+        return [];
+      } else {
+        throw new Error(`Unexpected response: ${response.status}`);
+      }
+
+    } catch (error) {
+      console.error('Error requesting conversations:', error);
+      throw error;
+    }
+  }
+
+  async checkConversation(conversation: Conversation, messages: Message[]): Promise<Message[]> {
+    const endpoint = `${this.baseUrl}/api/conversation/check`;
+    const body = {conversations: [ConversationConverter.toApiConversationCheck(conversation, messages)]};
+
+    console.log('Checking conversation:', body);
+
+    try {
+      const response = await lastValueFrom(
+        this.http.post<ApiConversationCheckResponse>(endpoint, body, { 
+          headers: this.getHeaders(), 
+          observe: 'response' 
+        })
+      );
+
+      if (response.status === 204) {
+        return [];
+      } else if (response.status === 200) {
+        if (response.body) {
+          return response.body.messages ?? [];
+        } else {
+          throw new Error('Unexpected response: No body');
+        }
+      } else {
+        throw new Error(`Unexpected response: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Error refreshing conversation:', error);
+      throw error;
+    }
+  }
+
+  async refreshConversation(conversationId: number, latestTimestamp: Date): Promise<Message[]> {
+    const endpoint = `${this.baseUrl}/api/conversation/refresh/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}`;
+
+    try {
+      const response = await lastValueFrom(
+        this.http.get<Message[]>(endpoint, { 
+          headers: this.getHeaders(), 
+          observe: 'response' 
+        })
+      );
+
+      if (response.status === 200) {
+        return response.body ?? [];
+      } else if (response.status === 204) {
+        return [];
+      } else {
+        throw new Error(`Unexpected response: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Error refreshing conversation:', error);
+      throw error;
+    }
+  }
+
   async sendMessage(message: Message): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/send`;
     const body = MessageConverter.toApiSend(message);
   
     try {
       const response = await lastValueFrom(
-        this.http.post<{ messageId: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
+        this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
       );
   
       if (response.status === 201) {
-        message.id = response.body!.messageId;
+        message.id = response.body!.id;
         return message;
       } else if (response.status === 400) {
         throw new Error('Bad Request: Please check the input data');
@@ -56,17 +142,13 @@ export class ApiService {
 
   async generateMessage(lastMessage: Message, participant: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/generate`;
-    const body = {
-      conversationId: lastMessage.conversationId,
-      participant: participant,
-      lastTimestamp: lastMessage.time
-    };
+    const body = MessageConverter.toApiMessageGenerate(lastMessage, participant);
 
     try {
       const response = await lastValueFrom(
-        this.http.post<Message>(endpoint, body, { headers: this.getHeaders() })
+        this.http.post<ApiMessageGenerateResponse>(endpoint, body, { headers: this.getHeaders() })
       );
-      return response;
+      return MessageConverter.fromApiMessageGenerateResponse(response);
     } catch (error) {
       console.error('Error generating message:', error);
       throw error;

@@ -3,6 +3,5 @@ uvicorn
 pydantic
 trustme
 python-dotenv
-
-#tinydb
+tinydb
 #langchain

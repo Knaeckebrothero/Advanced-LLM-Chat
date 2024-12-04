@@ -38,6 +38,8 @@ pip install -r requirements.txt
 uvicorn backend_mockup:app --reload --host 0.0.0.0 --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
 ```
 
+You might need to visit the https://localhost:8443/ in your browser and add a security exception, when using the self signed dev certificates.
+
 #### Setup Frontend
 The frontend is built with Angular. Make sure you have Node.js and npm installed on your system.
 
