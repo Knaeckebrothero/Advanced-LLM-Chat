@@ -32,13 +32,17 @@ export class ChatService {
           this.dbService.getMessagesByConversationId(conversation.id).then((messages: Message[]) => {
             // Check if the conversation has any messages
             if(messages !== undefined) {
-              this.addMessage(messages);
+              // Sort the messages by time
+              messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
+
+              // Add each message to the messages array
+              this.messagesSubject.next([...this.messagesSubject.getValue(), ...messages]);
             }
             console.log("Conversation loaded!");
           });
         } else {          
           // Add the default conversation to the database
-          this.dbService.addConversation(conversation).then(() => {
+          this.dbService.addConversation(this.conversation).then(() => {
           console.log("New conversation created!");
           });
         }
@@ -52,13 +56,18 @@ export class ChatService {
   // Refresh the conversation
 private async refreshConversation() {
   try {
+    const conversations = await this.apiService.getConversationsByUser(1);
+    if (conversations.length === 0) {
+      console.log('No conversation found.');
+      return;
+    }
+
     const currentMessages = this.messagesSubject.getValue();
     const localHash = ConversationConverter.toApiConversationCheck(
       this.conversation, 
       currentMessages.slice(-20)
     ).hashsum;
 
-    const conversations = await this.apiService.getConversationsByUser(1);
     if (localHash !== conversations[0].hashsum) {
       console.log('Conversation hashes didnt match!');
       // TODO: Fetch the conversation
@@ -95,14 +104,14 @@ private async refreshConversation() {
       // Add the conversation ID to the message
       message.conversationId = this.conversation.id;
 
-      // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
-
-      // Add the message to the database
-      this.dbService.addMessage(message);
-
       // Send the messages to the backend
-      this.apiService.sendMessage(message);
+      this.apiService.sendMessage(message).then((msg) => {
+        // Add the message to the database
+        this.dbService.addMessage(msg);
+
+        // Add the message to the messages array
+        this.messagesSubject.next([...this.messagesSubject.getValue(), msg]);
+      });
     }
   }
 

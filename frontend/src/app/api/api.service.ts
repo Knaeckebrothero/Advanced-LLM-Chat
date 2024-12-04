@@ -9,6 +9,7 @@ import { Conversation } from '../data/interfaces/conversation';
 import { ConversationConverter } from '../data/interfaces/conversation';
 import { ApiConversationCheckResponse } from '../data/interfaces/conversation';
 import { ApiConversationCheck } from '../data/interfaces/conversation';
+import { ApiMessageGenerateResponse } from '../data/interfaces/message';
 
 
 @Injectable({
@@ -48,11 +49,7 @@ export class ApiService {
       if (response.status === 200) {
         return response.body!;
       } else if (response.status === 204) {
-        if (response.body) {
-          return [];
-        } else {
-          throw new Error('Unexpected response: No body');
-        }
+        return [];
       } else {
         throw new Error(`Unexpected response: ${response.status}`);
       }
@@ -124,11 +121,11 @@ export class ApiService {
   
     try {
       const response = await lastValueFrom(
-        this.http.post<{ messageId: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
+        this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
       );
   
       if (response.status === 201) {
-        message.id = response.body!.messageId;
+        message.id = response.body!.id;
         return message;
       } else if (response.status === 400) {
         throw new Error('Bad Request: Please check the input data');
@@ -145,17 +142,13 @@ export class ApiService {
 
   async generateMessage(lastMessage: Message, participant: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/generate`;
-    const body = {
-      conversationId: lastMessage.conversationId,
-      participant: participant,
-      lastTimestamp: lastMessage.time
-    };
+    const body = MessageConverter.toApiMessageGenerate(lastMessage, participant);
 
     try {
       const response = await lastValueFrom(
-        this.http.post<Message>(endpoint, body, { headers: this.getHeaders() })
+        this.http.post<ApiMessageGenerateResponse>(endpoint, body, { headers: this.getHeaders() })
       );
-      return response;
+      return MessageConverter.fromApiMessageGenerateResponse(response);
     } catch (error) {
       console.error('Error generating message:', error);
       throw error;

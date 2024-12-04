@@ -3,7 +3,7 @@ import { Message } from './message';
 
 // Interface for conversation data
 export interface Conversation {
-    id?: number;  // ID used to identify the conversation in the database
+    id: number;  // ID used to identify the conversation in the database
     userId: number;  // ID of the user the conversation belongs to
     name: string;  // Conversation title
     participants: string[];  // Participants in the conversation

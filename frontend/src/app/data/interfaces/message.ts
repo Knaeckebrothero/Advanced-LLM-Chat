@@ -30,7 +30,7 @@ export interface ApiMessageGenerate extends ApiMessageBase {
 }
 
 // Interface for receiving messages from API
-export interface ApiMessageReceive extends ApiMessageBase {
+export interface ApiMessageGenerateResponse extends ApiMessageBase {
   id: number;
   roleName: string;
   content: string;
@@ -62,7 +62,7 @@ export class MessageConverter {
     };
   }
   
-  static fromApiReceive(apiMessage: ApiMessageReceive): Message {
+  static fromApiMessageGenerateResponse(apiMessage: ApiMessageGenerateResponse): Message {
     return {
       id: apiMessage.id,
       conversationId: apiMessage.conversationId,

@@ -33,8 +33,8 @@ class ApiMessageSend(BaseModel):
 
 class ApiMessageGenerate(BaseModel):
     conversationId: int
-    participant: str
-    lastTimestamp: int
+    roleName: str
+    time: int
 
 
 class MessagePatch(BaseModel):
