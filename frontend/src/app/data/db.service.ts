@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
 import { openDB, IDBPDatabase } from 'idb';
-import { Message } from './interfaces/message';
+import { Message } from './objects/message';
 import { MainAppDB } from './db-schema';
-import { Conversation } from './interfaces/conversation';
-import { User } from './interfaces/user';
+import { Conversation } from './objects/conversation';
+import { User } from './objects/user';
 
 
 @Injectable({

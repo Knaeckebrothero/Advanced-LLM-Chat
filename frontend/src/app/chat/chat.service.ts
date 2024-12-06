@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Message } from '../data/interfaces/message';
+import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
-import { Conversation } from '../data/interfaces/conversation';
+import { Conversation } from '../data/objects/conversation';
 
 
 @Injectable({
@@ -11,7 +11,7 @@ import { Conversation } from '../data/interfaces/conversation';
 })
 export class ChatService {
   // The conversation this service is managing
-  private conversation: Conversation = new Conversation({id: 1, userId: 1, name: "default", participants: ["user"], messages: []})
+  private conversation: Conversation = new Conversation(1, 1, "default", ["user"])
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
@@ -62,13 +62,7 @@ private async refreshConversation() {
       return;
     }
 
-    const currentMessages = this.messagesSubject.getValue();
-    const localHash = ConversationConverter.toApiConversationCheck(
-      this.conversation, 
-      currentMessages.slice(-20)
-    ).hashsum;
-
-    if (localHash !== conversations[0].hashsum) {
+    if (this.conversation.computeHash() !== conversations[0].hashsum) {
       console.log('Conversation hashes didnt match!');
       // TODO: Fetch the conversation
       // this.addMessage(messages);
@@ -145,7 +139,11 @@ private async refreshConversation() {
       const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
       
       if (messageIndex !== -1) {
-        currentMessages[messageIndex] = { ...currentMessages[messageIndex], ...updatedMessage };
+        currentMessages[messageIndex] = new Message({
+          ...currentMessages[messageIndex],
+          ...updatedMessage,
+        });
+        // currentMessages[messageIndex] = { ...currentMessages[messageIndex], ...updatedMessage };
         this.messagesSubject.next([...currentMessages]);
         
         // Update in database

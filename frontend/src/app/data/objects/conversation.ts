@@ -2,26 +2,24 @@ import { DBService } from '../db.service';
 import { Message } from './message';
 
 
-// Conversation class that works with Message instances
 export class Conversation {
+    private dbService: DBService = new DBService()
+    
     id: number;  // Id of the conversation
     userId: number;  // Id of the user the conversation belongs to
     name: string;  // Name or title of the conversation
     participants: string[];  // Characters or Agents participating in the conversation
 
     constructor(
-        private dbService: DBService,
-        data: {
-            id: number,
-            userId: number,
-            name: string,
-            participants: string[]
-        }
+        id: number,
+        userId: number,
+        name: string,
+        participants: string[],
     ) {
-        this.id = data.id;
-        this.userId = data.userId;
-        this.name = data.name;
-        this.participants = data.participants;
+        this.id = id;
+        this.userId = userId;
+        this.name = name;
+        this.participants = participants;
     }
 
     // Get latest messages

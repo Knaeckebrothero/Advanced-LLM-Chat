@@ -2,14 +2,9 @@ import { Injectable } from '@angular/core';
 import { HttpClient , HttpHeaders } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
-import { Message } from '../data/interfaces/message';
+import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
-import { MessageConverter } from '../data/interfaces/message';
-import { Conversation } from '../data/interfaces/conversation';
-import { ConversationConverter } from '../data/interfaces/conversation';
-import { ApiConversationCheckResponse } from '../data/interfaces/conversation';
-import { ApiConversationCheck } from '../data/interfaces/conversation';
-import { ApiMessageGenerateResponse } from '../data/interfaces/message';
+import { Conversation } from '../data/objects/conversation';
 
 
 @Injectable({
@@ -19,7 +14,7 @@ export class ApiService {
   // Use the environment configuration
   private baseUrl: string = environment.apiUrl;
 
-  constructor(private http: HttpClient) {
+  constructor(private http: HttpClient, private dbService: DBService) {
     // Development only - handle self-signed certificates
     //if (!environment.production) {
     //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
@@ -30,30 +25,33 @@ export class ApiService {
   private getHeaders(): HttpHeaders {
     return new HttpHeaders({
       'Content-Type': 'application/json',
+      // 'Authorization': `Bearer ${this.user.accessToken}`  // Add any kind of authorization here
       // Add any other headers here
     });
   }
 
-  async getConversationsByUser(userId: number): Promise<ApiConversationCheck[]>{
+  async getConversationsByUser(): Promise<Conversation[]>{
+    // TODO: Use the authorization token from the headers instead of the userId
+    const userId = 1;
     const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
     console.log('Requesting conversations...');
 
     try{
       const response = await lastValueFrom(
-        this.http.get<ApiConversationCheck[]>(endpoint, { 
+        this.http.get<Conversation[]>(endpoint, { 
           headers: this.getHeaders(), 
           observe: 'response' 
         })
       );
+      
 
-      if (response.status === 200) {
-        return response.body!;
+      if (response.status === 200 && response.body) {
+        return response.body;
       } else if (response.status === 204) {
         return [];
       } else {
         throw new Error(`Unexpected response: ${response.status}`);
       }
-
     } catch (error) {
       console.error('Error requesting conversations:', error);
       throw error;
