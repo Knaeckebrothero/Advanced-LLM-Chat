@@ -3,7 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/interfaces/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
-import { ConversationConverter } from '../data/interfaces/conversation';
+import { Conversation } from '../data/interfaces/conversation';
 
 
 @Injectable({
@@ -11,7 +11,7 @@ import { ConversationConverter } from '../data/interfaces/conversation';
 })
 export class ChatService {
   // The conversation this service is managing
-  private conversation = {id: 1, userId: 1, name: "default", participants: ["user"]}
+  private conversation: Conversation = new Conversation({id: 1, userId: 1, name: "default", participants: ["user"], messages: []})
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
