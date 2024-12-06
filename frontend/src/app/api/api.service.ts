@@ -43,7 +43,6 @@ export class ApiService {
           observe: 'response' 
         })
       );
-      
 
       if (response.status === 200 && response.body) {
         return response.body;
@@ -58,39 +57,12 @@ export class ApiService {
     }
   }
 
-  async checkConversation(conversation: Conversation, messages: Message[]): Promise<Message[]> {
-    const endpoint = `${this.baseUrl}/api/conversation/check`;
-    const body = {conversations: [ConversationConverter.toApiConversationCheck(conversation, messages)]};
-
-    console.log('Checking conversation:', body);
-
-    try {
-      const response = await lastValueFrom(
-        this.http.post<ApiConversationCheckResponse>(endpoint, body, { 
-          headers: this.getHeaders(), 
-          observe: 'response' 
-        })
-      );
-
-      if (response.status === 204) {
-        return [];
-      } else if (response.status === 200) {
-        if (response.body) {
-          return response.body.messages ?? [];
-        } else {
-          throw new Error('Unexpected response: No body');
-        }
-      } else {
-        throw new Error(`Unexpected response: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Error refreshing conversation:', error);
-      throw error;
+  async getConversationMessages(conversationId: number, count: number, latestTimestamp: Date | null = null): Promise<Message[]> {
+    // Use the current time if no timestamp is provided
+    if (latestTimestamp === null) {
+      latestTimestamp = new Date();
     }
-  }
-
-  async refreshConversation(conversationId: number, latestTimestamp: Date): Promise<Message[]> {
-    const endpoint = `${this.baseUrl}/api/conversation/refresh/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}`;
+    const endpoint = `${this.baseUrl}/api/conversation/messages/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}/${count}`;
 
     try {
       const response = await lastValueFrom(

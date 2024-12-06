@@ -54,24 +54,30 @@ export class ChatService {
   }
 
   // Refresh the conversation
-private async refreshConversation() {
-  try {
-    const conversations = await this.apiService.getConversationsByUser(1);
-    if (conversations.length === 0) {
-      console.log('No conversation found.');
-      return;
-    }
+  private async refreshConversation() {
+    // TODO: Add a way to handle / load conversations that don't exist on the client side
+    try {
+      const conversations = await this.apiService.getConversationsByUser();
+      if (conversations.length === 0) {
+        console.log('No conversation found.');
+        return;
+      }
+      const hashsum = await this.conversation.computeHash();
 
-    if (this.conversation.computeHash() !== conversations[0].hashsum) {
-      console.log('Conversation hashes didnt match!');
-      // TODO: Fetch the conversation
-      // this.addMessage(messages);
+      if (hashsum !== conversations[0].hashsum) {
+        console.log('Conversation hashes didnt match!');
+
+        // Get the latest messages and add them to the conversation
+        this.apiService.getConversationMessages(conversations[0].id, 20).then((messages) => {
+          console.log('Adding messages to conversation:', messages);
+          this.addMessage(messages);
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing conversation:', error);
+      throw error;
     }
-  } catch (error) {
-    console.error('Error refreshing conversation:', error);
-    throw error;
   }
-}
 
   // TODO: Implement a way to call the refreshConversation method at regular intervals (e.g. every minute and when the app is opened)
 

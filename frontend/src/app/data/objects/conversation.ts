@@ -3,12 +3,13 @@ import { Message } from './message';
 
 
 export class Conversation {
-    private dbService: DBService = new DBService()
-    
+    private dbService: DBService = new DBService();
+
     id: number;  // Id of the conversation
     userId: number;  // Id of the user the conversation belongs to
     name: string;  // Name or title of the conversation
     participants: string[];  // Characters or Agents participating in the conversation
+    hashsum?: number;  // Hashsum of the conversation
 
     constructor(
         id: number,
@@ -57,7 +58,9 @@ export class Conversation {
             
             hashValue += content.charCodeAt(0);
             hashValue += content.charCodeAt(content.length - 1);
-            hashValue += content.length;
+            hashValue *= content.length;
+
+            // Use modulo to stay within safe integer range
             hashValue %= (2**32);
         }
         return hashValue;

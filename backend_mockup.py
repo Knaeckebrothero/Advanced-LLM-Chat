@@ -101,7 +101,7 @@ def generate_hash(messages: list) -> int:
         # Add character codes and length
         hash_value += ord(content[0])
         hash_value += ord(content[-1])
-        hash_value += len(content)
+        hash_value *= len(content)
 
         # Note chars for debugging
         hash_chars += content[0] + content[-1] + str(len(content))
@@ -111,45 +111,6 @@ def generate_hash(messages: list) -> int:
 
     print(f"Generated hashsum: {hash_value} string rep: {hash_chars}")
     return hash_value
-
-
-"""
-@app.get("/api/conversation/load/{conversation_id}/{timestamp}/{messages_count}")
-async def refresh_conversation(conversation_id, timestamp, messages_count, response: Response, status_code=status.HTTP_200_OK):
-    print("Refresh conversation called")
-
-    try:
-        # Error case
-        if not conversation_id and timestamp:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Conversation ID and latest timestamp are required")
-
-        # Load the messages before the timestamp
-        messages = db.search(
-            (Message.conversationId == conversation_id) & 
-            (Message.time < timestamp)
-        )
-            
-        # Success case
-        if len(messages) > 0:
-            if messages_count > 30 & messages > 30:
-                # Limit the messages to 30
-                messages_count = 30
-                response.status_code = status.HTTP_206_PARTIAL_CONTENT
-                return messages[-messages_count:]
-            else:
-                # Return the messages
-                response.status_code = status.HTTP_200_OK
-                return messages[-messages_count:]
-        else:
-            # Return no content if no messages found
-            response.status_code = status.HTTP_204_NO_CONTENT
-            return None
-        
-    except Exception as e:
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=str(e))
-"""
 
 
 # Mock endpoints for debugging purposes
@@ -179,40 +140,38 @@ async def get_conversations(user_id: int, response: Response, status_code=status
         return ErrorResponse(error=str(e))
 
 
-@app.post("/api/conversation/check")
-async def check_conversations(request: ApiConversationsCheck, response: Response, status_code=status.HTTP_204_NO_CONTENT):
-    print("Refresh conversation called")
-
-    print(request)
-    print(request.conversations)
+@app.get("/api/conversation/messages/{conversation_id}/{timestamp}/{messages_count}")
+async def get_conversation_messages(conversation_id, timestamp, messages_count, 
+                                    response: Response, status_code=status.HTTP_200_OK):
+    print("Get conversation messages called")
 
     try:
         # Error case
-        if not ApiConversationsCheck:
+        if not conversation_id and timestamp:
             response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Conversations are missing")
-        
-        conversations = []
+            return ErrorResponse(error="Conversation ID and latest timestamp are required")
 
-        # Iterate over the conversations and check for new messages
-        for conversation in request.conversations:
-            messages = db.search(Message.conversationId == conversation.id)
-            hashsum = generate_hash(messages)
-
-            # Add the last 20 messages to the response if the hashsum don't match
-            if conversation.hashsum != hashsum:
-                conversations.append({
-                    'id': conversation.id,
-                    'messages': messages[-20:] 
-                })
-
+        # Load the messages before the timestamp
+        messages = db.search(
+            (Message.conversationId == conversation_id) & 
+            (Message.time < timestamp)
+        )
+            
         # Success case
-        if len(conversations) > 0:
-            response.status_code = status.HTTP_200_OK
-            return conversations
-
-        # Return no content if no new messages (204 No Content)
-        return None
+        if len(messages) > 0:
+            if messages_count > 30 & messages > 30:
+                # Limit the messages to 30
+                messages_count = 30
+                response.status_code = status.HTTP_206_PARTIAL_CONTENT
+                return messages[-messages_count:]
+            else:
+                # Return the messages
+                response.status_code = status.HTTP_200_OK
+                return messages[-messages_count:]
+        else:
+            # Return no content if no messages found
+            response.status_code = status.HTTP_204_NO_CONTENT
+            return None
         
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
