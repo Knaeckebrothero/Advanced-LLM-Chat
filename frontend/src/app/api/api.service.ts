@@ -87,7 +87,7 @@ export class ApiService {
 
   async sendMessage(message: Message): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/send`;
-    const body = MessageConverter.toApiSend(message);
+    const body = message.toApiSend();
   
     try {
       const response = await lastValueFrom(
@@ -108,17 +108,17 @@ export class ApiService {
       console.error('Error sending message:', error);
       throw error;
     }
-  }  
+  }
 
   async generateMessage(lastMessage: Message, participant: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/generate`;
-    const body = MessageConverter.toApiMessageGenerate(lastMessage, participant);
+    const body = lastMessage.toApiGenerate(participant);
 
     try {
       const response = await lastValueFrom(
-        this.http.post<ApiMessageGenerateResponse>(endpoint, body, { headers: this.getHeaders() })
+        this.http.post<any>(endpoint, body, { headers: this.getHeaders() })
       );
-      return MessageConverter.fromApiMessageGenerateResponse(response);
+      return Message.fromApiGenerate(response);
     } catch (error) {
       console.error('Error generating message:', error);
       throw error;

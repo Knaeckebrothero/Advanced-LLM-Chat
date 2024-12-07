@@ -1,7 +1,7 @@
 import { DBSchema } from 'idb';
-import { Message } from './interfaces/message';
-import { Conversation } from './interfaces/conversation';
-import { User } from './interfaces/user';
+import { Message } from './objects/message';
+import { Conversation } from './objects/conversation';
+import { User } from './objects/user';
 
 
 export interface MainAppDB extends DBSchema {

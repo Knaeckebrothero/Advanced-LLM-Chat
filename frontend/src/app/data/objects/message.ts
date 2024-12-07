@@ -1,12 +1,12 @@
 export class Message {
-  id?: number;  // Id of the message
+  id: number;  // Id of the message
   conversationId: number;  // Id of the conversation the message belongs to
   roleName: string;  // Role name of the participant who sent the message
   content: string;  // Content of the message
   time: Date;  // Time the message was sent (in Date format)
 
   constructor(data: {
-      id?: number,
+      id: number,
       conversationId: number,
       roleName: string,
       content: string,
@@ -45,6 +45,24 @@ export class Message {
           time: Math.floor(this.time.getTime() / 1000)
       };
   }
+  
+  // Convert from API send format
+  static fromApiSend(
+    data: {
+        id: number,
+        conversationId: number,
+        roleName: string,
+        content: string,
+        time: number
+    }): Message {
+        return new Message({
+            id: data.id,
+            conversationId: data.conversationId,
+            roleName: data.roleName,
+            content: data.content,
+            time: data.time
+        });
+    }
 
   // Convert to API generate format
   toApiGenerate(participant: string) {
@@ -54,6 +72,23 @@ export class Message {
           time: Math.floor(this.time.getTime() / 1000)
       };
   }
+  
+  // Convert from API generate format
+  static fromApiGenerate(data: {
+        id: number,
+        conversationId: number,
+        roleName: string,
+        content: string,
+        time: number
+    }): Message {
+        return new Message({
+            id: data.id,
+            conversationId: data.conversationId,
+            roleName: data.roleName,
+            content: data.content,
+            time: data.time
+        });
+    }
 
   // Convert to API patch format
   toApiPatch() {

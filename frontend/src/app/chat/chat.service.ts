@@ -82,13 +82,13 @@ export class ChatService {
   // TODO: Implement a way to call the refreshConversation method at regular intervals (e.g. every minute and when the app is opened)
 
   // Add one or more messages to the conversation
-  public addMessage(message: Message | Message[]) {
+  private addMessage(message: Message | Message[]) {
     // Check if the message is an array
     if (Array.isArray(message)) {
       // Add the conversation ID to each message
-      message.forEach((message) => {
-        message.conversationId = this.conversation.id;
-      });
+      //message.forEach((message) => {
+      //  message.conversationId = this.conversation.id;
+      //});
 
       // Sort the messages by time
       message.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
@@ -101,18 +101,42 @@ export class ChatService {
         this.dbService.addMessage(message);
       });
     } else {
-      // Add the conversation ID to the message
-      message.conversationId = this.conversation.id;
+      // Add the message to the database
+      this.dbService.addMessage(message);
 
-      // Send the messages to the backend
-      this.apiService.sendMessage(message).then((msg) => {
-        // Add the message to the database
-        this.dbService.addMessage(msg);
-
-        // Add the message to the messages array
-        this.messagesSubject.next([...this.messagesSubject.getValue(), msg]);
-      });
+      // Add the message to the messages array
+      this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
     }
+  }
+
+  // Send a message
+  public async sendMessage(content: string, roleName: string = 'user') {
+    // Create a new message object
+    const message = new Message({
+      id: Math.floor(new Date().getTime() / 1000) ,
+      conversationId: this.conversation.id,
+      roleName: roleName,
+      content: content,
+      time: new Date()
+    });
+
+    // Add the message to the conversation
+    this.addMessage(message);
+
+    // Send the message to the backend
+    this.apiService.sendMessage(message).then((response) => {
+      if(message.id != response.id){
+        console.error('Message ID mismatch:', message.id, response.id);
+
+        // Update the message in the local state
+        this.dbService.addMessage(response);
+        this.dbService.deleteMessage(message.id);
+
+        console.log('Message ID mismatch resolved:', message.id, response.id);
+      } else {
+        console.log('Message sent:', response);
+      }
+    });
   }
 
   // Generate a message
