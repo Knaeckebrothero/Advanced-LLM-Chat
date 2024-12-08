@@ -38,6 +38,7 @@ export class Message {
 
   // Convert to API send format
   toApiSend() {
+    console.log(Math.floor(this.time.getTime() / 1000))
       return {
           conversationId: this.conversationId,
           roleName: this.roleName,

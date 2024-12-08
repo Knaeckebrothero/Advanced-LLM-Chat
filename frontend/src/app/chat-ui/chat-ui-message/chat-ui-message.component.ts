@@ -1,5 +1,5 @@
 import { Component, Input } from '@angular/core';
-import { Message } from '../../data/interfaces/message';
+import { Message } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ChatUiComponent } from '../chat-ui.component';
 
@@ -67,7 +67,7 @@ export class ChatUiMessageComponent {
     this.editing = false;
 
     // Trigger a request to update the message
-    this.chatUI.patchMessage(this.message.content);
+    this.chatUI.patchMessage(this.message);
   }
 
   abortEditing() {

@@ -1,6 +1,7 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
-import { Message } from '../data/interfaces/message';
+import { Message } from '../data/objects/message';
+
 
 @Component({
   selector: 'app-chat-ui',
@@ -62,12 +63,7 @@ export class ChatUiComponent implements AfterViewChecked {
     // The inputField property is checked to ensure that it is not empty.
     if (this.inputField !== '') {
       // The ChatService is used to add a new usermessage to the history.
-      this.chatService.addMessage({
-        conversationId: this.conversationId,
-        roleName: this.userName,
-        content: this.inputField,
-        time: new Date()
-      });
+      this.chatService.sendMessage(this.inputField);
       console.log('User added message:');
 
       this.scrollToBottom();

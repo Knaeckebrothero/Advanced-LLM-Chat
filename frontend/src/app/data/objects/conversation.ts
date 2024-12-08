@@ -1,10 +1,9 @@
+import { inject } from '@angular/core';
 import { DBService } from '../db.service';
 import { Message } from './message';
 
 
 export class Conversation {
-    private dbService: DBService = new DBService();
-
     id: number;  // Id of the conversation
     userId: number;  // Id of the user the conversation belongs to
     name: string;  // Name or title of the conversation
@@ -26,7 +25,9 @@ export class Conversation {
     // Get latest messages
     async getLatestMessages(count: number = 20): Promise<Message[]> {
         try {
-            const messages = await this.dbService.getMessagesByConversationId(this.id);
+            // Use inject() to get the DBService instance
+            const db = inject(DBService);
+            const messages = await db.getMessagesByConversationId(this.id);
             
             // Check if the db returned any messages
             if (messages !== undefined) {
