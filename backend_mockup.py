@@ -46,6 +46,8 @@ class MessagePatch(BaseModel):
 # Initialize TinyDB
 db = TinyDB('mockup_db.json')
 messages = db.table('messages')
+#conversations = db.table('conversations')
+#users = db.table('users')
 Message = Query()
 
 
@@ -124,7 +126,11 @@ async def get_conversations(user_id: int, response: Response, status_code=status
             response.status_code = status.HTTP_400_BAD_REQUEST
             return ErrorResponse(error="User id missing")
         
-        messages = db.search(Message.conversationId == 1)
+        # Get the conversations for the user
+        messages = db.table('messages').search(Message.conversationId == 1)
+        print(f"Messages found: {len(messages)}")
+
+        # Calculate the hashsum of the messages
         hashsum = generate_hash(messages)
 
         # Return no content if no messages found
@@ -136,6 +142,7 @@ async def get_conversations(user_id: int, response: Response, status_code=status
         return [{'conversationId': 1, 'hashsum': hashsum}]
         
     except Exception as e:
+        print(f"Error: {str(e)}")
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
 
@@ -192,7 +199,7 @@ async def user_send_message(request: ApiMessageSend, response: Response, status_
         message_id = int(time.time() * 1000)
 
         # Insert a message document into database
-        messages.insert({
+        db.table('messages').insert({
             'id': message_id,
             'conversationId': request.conversationId,
             'roleName': request.roleName,
@@ -225,12 +232,12 @@ async def generate_message(request: ApiMessageGenerate, response: Response, stat
             'conversationId': request.conversationId,
             'roleName': request.roleName,
             'content': "This is a mock response from the backend!",
-            'time': int(time.time() * 1000)
+            'time': int(time.time())
             # 'time': request.lastTimestamp + 100
         }
 
         # Insert the message document into database
-        messages.insert(message_doc)
+        db.table('messages').insert(message_doc)
         
         response.status_code = status.HTTP_201_CREATED
         return message_doc

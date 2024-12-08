@@ -44,6 +44,8 @@ export class ApiService {
         })
       );
 
+      console.log('Response:', response);
+
       if (response.status === 200 && response.body) {
         return response.body;
       } else if (response.status === 204) {

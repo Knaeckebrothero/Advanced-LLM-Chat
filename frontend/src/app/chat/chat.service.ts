@@ -59,10 +59,10 @@ export class ChatService {
     try {
       const conversations = await this.apiService.getConversationsByUser();
       if (conversations.length === 0) {
-        console.log('No conversation found.');
+        console.log('No refresh of conversations nessessary!');
         return;
       }
-      const hashsum = await this.conversation.computeHash();
+      const hashsum = await this.conversation.computeHash(this.dbService);
 
       if (hashsum !== conversations[0].hashsum) {
         console.log('Conversation hashes didnt match!');
@@ -142,7 +142,12 @@ export class ChatService {
   // Generate a message
   public async generateMessage(participant: string) {
     const currentMessages = this.messagesSubject.getValue();
-    const lastMessage = currentMessages[currentMessages.length - 1];
+    // Convert the last message to a Message instance if it's not already one
+    const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message 
+    ? currentMessages[currentMessages.length - 1]
+    : new Message(currentMessages[currentMessages.length - 1]);
+
+    console.log('Generating message:', lastMessage, participant);
 
     try {
       const generatedMessage = await this.apiService.generateMessage(lastMessage, participant);

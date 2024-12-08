@@ -23,10 +23,8 @@ export class Conversation {
     }
 
     // Get latest messages
-    async getLatestMessages(count: number = 20): Promise<Message[]> {
+    async getLatestMessages(db: DBService, count: number = 20): Promise<Message[]> {
         try {
-            // Use inject() to get the DBService instance
-            const db = inject(DBService);
             const messages = await db.getMessagesByConversationId(this.id);
             
             // Check if the db returned any messages
@@ -44,8 +42,8 @@ export class Conversation {
     }
 
     // Compute conversation hash
-    async computeHash(): Promise<number> {
-        const messages = await this.getLatestMessages(20);
+    async computeHash(db: DBService): Promise<number> {
+        const messages = await this.getLatestMessages(db);
         
         if (!messages.length) return 0;
         
@@ -68,10 +66,10 @@ export class Conversation {
     }
 
     // Convert to API check format
-    toApiCheck() {
-        return {
-            id: this.id,
-            hashsum: this.computeHash()
-        };
-    }
+    //toApiCheck() {
+    //    return {
+    //        id: this.id,
+    //        hashsum: this.computeHash()
+    //    };
+    //}
 }
