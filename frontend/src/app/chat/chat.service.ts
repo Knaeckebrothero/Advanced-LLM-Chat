@@ -67,6 +67,8 @@ export class ChatService {
       if (hashsum !== conversations[0].hashsum) {
         console.log('Conversation hashes didnt match!');
 
+        console.log('Refreshing conversation:', conversations[0]);
+
         // Get the latest messages and add them to the conversation
         this.apiService.getConversationMessages(conversations[0].id, 20).then((messages) => {
           console.log('Adding messages to conversation:', messages);

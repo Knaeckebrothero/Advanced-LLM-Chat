@@ -139,7 +139,7 @@ async def get_conversations(user_id: int, response: Response, status_code=status
             return None
 
         # Success case
-        return [{'conversationId': 1, 'hashsum': hashsum}]
+        return [{'id': 1, 'hashsum': hashsum}]
         
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -159,10 +159,14 @@ async def get_conversation_messages(conversation_id, timestamp, messages_count,
             return ErrorResponse(error="Conversation ID and latest timestamp are required")
 
         # Load the messages before the timestamp
-        messages = db.search(
+        messages = db.table('messages').search(
             (Message.conversationId == conversation_id) & 
             (Message.time < timestamp)
         )
+        # TODO: Fix the timestamp comparison to include the last 20 messages that came before or after the timestamp
+        # NEBER MIND maybe I am stupid, check this again!!!
+
+        print(messages)
             
         # Success case
         if len(messages) > 0:
@@ -170,10 +174,12 @@ async def get_conversation_messages(conversation_id, timestamp, messages_count,
                 # Limit the messages to 30
                 messages_count = 30
                 response.status_code = status.HTTP_206_PARTIAL_CONTENT
+                print(f"Found: {len(messages)}")
                 return messages[-messages_count:]
             else:
                 # Return the messages
                 response.status_code = status.HTTP_200_OK
+                print(f"Messages found: {len(messages)}")
                 return messages[-messages_count:]
         else:
             # Return no content if no messages found
