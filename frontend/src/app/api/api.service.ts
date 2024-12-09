@@ -68,15 +68,16 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.get<Message[]>(endpoint, { 
+        this.http.get<any[]>(endpoint, { 
           headers: this.getHeaders(), 
           observe: 'response' 
         })
       );
 
-      if (response.status === 200) {
-        return response.body ?? [];
-      } else if (response.status === 204) {
+      if (response.status === 200 && response.body) {
+        // Convert all messages using map for efficiency
+        return response.body.map(messageData => Message.fromApiResponse(messageData));
+      } else if (response.status === 204 && !response.body) {
         return [];
       } else {
         throw new Error(`Unexpected response: ${response.status}`);
