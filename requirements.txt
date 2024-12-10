@@ -4,4 +4,5 @@ pydantic
 trustme
 python-dotenv
 tinydb
+replicate
 #langchain

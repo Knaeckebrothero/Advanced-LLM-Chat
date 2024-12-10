@@ -1,6 +1,7 @@
 import sqlite3
 import trustme
 import time
+import replicate
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -120,6 +121,59 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
     print(f"Generated hashsum: {hash_value} string rep: {hash_chars}")
     return hash_value
 
+
+# Generate a response using Replicate's API
+async def generate_llm_response(prompt: str) -> str:
+    try:
+        # Use Meta's Llama model through Replicate
+        output = replicate.run(
+            "meta/meta-llama-3.1-405b-instruct",
+            input={
+                "prompt": prompt,
+                "temperature": 0.6,
+                "top_p": 0.9,
+                "max_tokens": 1024,
+                "system_prompt": "You are a helpful AI assistant engaged in a natural conversation."
+            }
+        )
+        
+        # Replicate returns a generator, collect all tokens
+        return "".join(output)
+    except Exception as e:
+        print(f"Error generating response: {str(e)}")
+        return "I apologize, but I encountered an error generating a response."
+
+
+# Get conversation context
+async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT roleName, content 
+                FROM messages 
+                WHERE conversationId = ? 
+                ORDER BY time DESC 
+                LIMIT ?
+                """,
+                (conversation_id, limit)
+            )
+            messages = cur.fetchall()
+            
+            # Build context string
+            context = []
+            for msg in reversed(messages):
+                context.append(f"{msg['roleName']}: {msg['content']}")
+            
+            return "\n".join(context)
+    except Exception as e:
+        print(f"Error getting conversation context: {str(e)}")
+        return ""
+    
+
+# Load environment variables
+load_dotenv(find_dotenv())
 
 # Setup FastAPI app
 app = FastAPI()
@@ -246,6 +300,12 @@ async def generate_message(request: ApiMessageGenerate, response: Response, stat
             response.status_code = status.HTTP_400_BAD_REQUEST
             return ErrorResponse(error="Conversation ID missing")
 
+        # Get conversation context
+        context = await get_conversation_context(request.conversationId)
+        
+        # Generate response
+        ai_response = await generate_llm_response(context)
+        
         message_id = int(time.time() * 1000)
         current_time = int(time.time())
         
@@ -253,7 +313,7 @@ async def generate_message(request: ApiMessageGenerate, response: Response, stat
             'id': message_id,
             'conversationId': request.conversationId,
             'roleName': request.roleName,
-            'content': "This is a mock response from the backend!",
+            'content': ai_response,
             'time': current_time
         }
         

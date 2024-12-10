@@ -1,6 +1,8 @@
 import os
 import shutil
+from dotenv import load_dotenv
 from pathlib import Path
+
 
 class AngularProjectCopier:
     # Fixed configuration files that should be copied
@@ -11,7 +13,8 @@ class AngularProjectCopier:
         'tsconfig.app.json',
         'tsconfig.spec.json',
         'ngsw-config.json',
-        'manifest.webmanifest'
+        'manifest.webmanifest',
+        'backend_mockup.py'
     ]
     
     # File extensions to copy from src directory
@@ -72,13 +75,18 @@ class AngularProjectCopier:
                     print(f"Copying {rel_path} as {unique_filename}")
                     shutil.copy2(file_path, dest_file)
 
+# Load environment variables
+load_dotenv()
 
 # Get the script's directory
 script_dir = Path(__file__).parent
 
+# Get the copy path from env and convert to Path object
+copy_path = Path(os.getenv('COPY_PATH', '.'))
+
 # Define source and destination paths relative to script location
-source_path = script_dir / 'frontend'
-dest_path = script_dir / 'resulting_angular_project_files'
+source_path = script_dir
+dest_path = copy_path / 'resulting_angular_project_files'
 
 # Create and run the copier
 try:
