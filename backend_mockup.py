@@ -1,10 +1,10 @@
 import sqlite3
 import trustme
 import time
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import List
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 from contextlib import contextmanager
