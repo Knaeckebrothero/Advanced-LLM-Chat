@@ -1,3 +1,10 @@
+"""
+This is a mockup of a backend server for a chat application. 
+It provides a simple API for sending and receiving messages in a conversation. 
+The server uses SQLite as a database to store messages and conversation data. 
+The server also uses Replicate to generate AI responses to messages in a conversation.
+"""
+import os
 import sqlite3
 import trustme
 import time
@@ -409,9 +416,7 @@ app.add_middleware(
 )
 
 # Development certificate setup
-dev_certs = "True"
-
-if dev_certs == "True":
+if os.getenv("USE_DEV_CERTS") == "True":
     print("Starting in development mode with auto-generated certificates...")
     cert_file, key_file = setup_development_certificates()
 
