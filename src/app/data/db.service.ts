@@ -116,6 +116,13 @@ export class DBService {
     return await this.db.clear('chatMessages');
   }
 
+  async deleteMessagesByConversationId(conversationId: number) {
+    const messages = await this.getMessagesByConversationId(conversationId);
+    messages.forEach(async (message: any) => {
+      await this.deleteMessage(message.id);
+    });
+  }
+
   async getMessagesByConversationId(conversationId: any = null) {
     if(conversationId) {
       return this.db.getAllFromIndex('chatMessages', 'by-conversationId', conversationId);

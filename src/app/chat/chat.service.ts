@@ -71,6 +71,9 @@ export class ChatService {
 
         // Get the latest messages and add them to the conversation
         this.apiService.getConversationMessages(conversations[0].id, 20).then((messages) => {
+          console.log('Deleting old messages from conversation...');
+          this.dbService.deleteMessagesByConversationId(this.conversation.id);
+
           console.log('Adding messages to conversation:', messages);
           this.addMessage(messages);
         });
