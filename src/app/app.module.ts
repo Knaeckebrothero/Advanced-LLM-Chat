@@ -19,7 +19,7 @@ import { BrowserModule } from '@angular/platform-browser';
 import { AppComponent } from './app.component';
 import { ServiceWorkerModule } from '@angular/service-worker';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { HttpClientModule } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { ReactiveFormsModule } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, Routes } from '@angular/router';
@@ -32,34 +32,27 @@ const routes: Routes = [
   { path: 'settings', component: SettingsComponent }
 ];
 
-@NgModule({
-  declarations: [
-    AppComponent,
-    ChatUiComponent,
-    ChatUiMessageComponent,
-    SettingsComponent,
-    MetricsComponent,
-    StatusBarComponent,
-  ],
-  imports: [
-    BrowserModule,
-    MatIconModule,
-    MatInputModule,
-    FormsModule,
-    HttpClientModule,
-    ReactiveFormsModule,
-    MatButtonModule,
-    MatFormFieldModule,
-    MatSidenavModule,
-    MatListModule,
-    RouterModule.forRoot(routes),
-    ServiceWorkerModule.register('ngsw-worker.js', {
-      enabled: !isDevMode(),
-      registrationStrategy: 'registerWhenStable:30000'
-    }),
-    BrowserAnimationsModule
-  ],
-  providers: [],
-  bootstrap: [AppComponent]
-})
+@NgModule({ declarations: [
+        AppComponent,
+        ChatUiComponent,
+        ChatUiMessageComponent,
+        SettingsComponent,
+        MetricsComponent,
+        StatusBarComponent,
+    ],
+    bootstrap: [AppComponent], imports: [BrowserModule,
+        MatIconModule,
+        MatInputModule,
+        FormsModule,
+        ReactiveFormsModule,
+        MatButtonModule,
+        MatFormFieldModule,
+        MatSidenavModule,
+        MatListModule,
+        RouterModule.forRoot(routes),
+        ServiceWorkerModule.register('ngsw-worker.js', {
+            enabled: !isDevMode(),
+            registrationStrategy: 'registerWhenStable:30000'
+        }),
+        BrowserAnimationsModule], providers: [provideHttpClient(withInterceptorsFromDi())] })
 export class AppModule { }
