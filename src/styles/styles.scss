@@ -5,12 +5,12 @@
 @import 'variables';
 
 // Set the default Material Design color palette
-$custom-primary: mat.define-palette($custom-primary-palette, 500);
-$custom-accent: mat.define-palette($custom-secondary-palette, 500);
-$custom-warn: mat.define-palette($custom-warn-palette, 500);
+$custom-primary: mat.m2-define-palette($custom-primary-palette, 500);
+$custom-accent: mat.m2-define-palette($custom-secondary-palette, 500);
+$custom-warn: mat.m2-define-palette($custom-warn-palette, 500);
 
 // Create a theme using the custom palettes
-$custom-theme: mat.define-dark-theme((
+$custom-theme: mat.m2-define-dark-theme((
   color: (
     primary: $custom-primary,
     accent: $custom-accent,
