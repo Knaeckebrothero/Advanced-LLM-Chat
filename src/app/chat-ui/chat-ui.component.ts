@@ -4,9 +4,10 @@ import { Message } from '../data/objects/message';
 
 
 @Component({
-  selector: 'app-chat-ui',
-  templateUrl: './chat-ui.component.html',
-  styleUrls: ['./chat-ui.component.scss']
+    selector: 'app-chat-ui',
+    templateUrl: './chat-ui.component.html',
+    styleUrls: ['./chat-ui.component.scss'],
+    standalone: false
 })
 export class ChatUiComponent implements AfterViewChecked {
   

@@ -2,9 +2,10 @@ import { Component, OnInit } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
 
 @Component({
-  selector: 'app-metrics',
-  templateUrl: './metrics.component.html',
-  styleUrls: ['./metrics.component.scss']
+    selector: 'app-metrics',
+    templateUrl: './metrics.component.html',
+    styleUrls: ['./metrics.component.scss'],
+    standalone: false
 })
 export class MetricsComponent implements OnInit {
 

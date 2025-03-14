@@ -5,9 +5,10 @@ import { ChatUiComponent } from '../chat-ui.component';
 
 
 @Component({
-  selector: 'app-chat-ui-message',
-  templateUrl: './chat-ui-message.component.html',
-  styleUrls: ['./chat-ui-message.component.scss']
+    selector: 'app-chat-ui-message',
+    templateUrl: './chat-ui-message.component.html',
+    styleUrls: ['./chat-ui-message.component.scss'],
+    standalone: false
 })
 export class ChatUiMessageComponent {
   // Pass the message object from the parent component

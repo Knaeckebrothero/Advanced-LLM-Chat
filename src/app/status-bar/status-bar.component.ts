@@ -3,9 +3,10 @@ import { Router } from '@angular/router';
 import { StatusBarService } from './status-bar.service';
 
 @Component({
-  selector: 'app-status-bar',
-  templateUrl: './status-bar.component.html',
-  styleUrls: ['./status-bar.component.scss']
+    selector: 'app-status-bar',
+    templateUrl: './status-bar.component.html',
+    styleUrls: ['./status-bar.component.scss'],
+    standalone: false
 })
 export class StatusBarComponent {
 
