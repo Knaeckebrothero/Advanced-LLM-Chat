@@ -2,12 +2,12 @@
 @use '@angular/material' as mat;
 
 // Variables
-@import 'variables';
+@use 'variables' as vars;
 
 // Set the default Material Design color palette
-$custom-primary: mat.m2-define-palette($custom-primary-palette, 500);
-$custom-accent: mat.m2-define-palette($custom-secondary-palette, 500);
-$custom-warn: mat.m2-define-palette($custom-warn-palette, 500);
+$custom-primary: mat.m2-define-palette(vars.$custom-primary-palette, 500);
+$custom-accent: mat.m2-define-palette(vars.$custom-secondary-palette, 500);
+$custom-warn: mat.m2-define-palette(vars.$custom-warn-palette, 500);
 
 // Create a theme using the custom palettes
 $custom-theme: mat.m2-define-dark-theme((
@@ -25,8 +25,8 @@ html, body {
   margin: 0%;
   padding: 0%;
   overflow: hidden;
-  font-family: $font-family-base;
-  background-color: $color-background;
+  font-family: vars.$font-family-base;
+  background-color: vars.$color-background;
 }
 
 // Apply the theme to Angular Material components

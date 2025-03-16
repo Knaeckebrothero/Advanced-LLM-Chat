@@ -1,4 +1,4 @@
-@import 'src/styles/variables';
+@use 'src/styles/variables' as vars;
 
 .main-ui-container {
   // Make the positioning of the mat-icon relative to this container
@@ -17,7 +17,7 @@
     z-index: 998;
     // Change the cursor to a pointer when hovering over the button
     cursor: pointer;
-    color: $color-secondary;
+    color: vars.$color-secondary;
     font-size: 50px;
   }
 }

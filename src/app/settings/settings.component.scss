@@ -1,4 +1,4 @@
-@import 'src/styles/variables';
+@use 'src/styles/variables' as vars;
 
 .settings-ui {
   width: 100%;
@@ -10,7 +10,7 @@
   .upload-container {
     margin-top: 25%;
     align-self: center;
-    color: $color-secondary;
+    color: vars.$color-secondary;
   }
 
   button {

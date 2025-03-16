@@ -1,5 +1,5 @@
-@import 'src/styles/variables';
-@import 'src/styles/mixins';
+@use 'src/styles/variables' as vars;
+@use 'src/styles/mixins' as mixins;
 
 // Chat component styles
 .chat-ui-container {
@@ -7,7 +7,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-color: $color-background;
+  background-color: vars.$color-background;
 }
 
 .message-container {
@@ -25,7 +25,7 @@
     width: 10px;
   }
   ::-webkit-scrollbar-thumb {
-    background: $color-primary;
+    background: vars.$color-primary;
     border-radius: 5px;
   }
   .message{
@@ -43,7 +43,7 @@
 
   justify-content: space-between;
   // Give some contrast with the chat UI background
-  background-color: $color-secondary;
+  background-color: vars.$color-secondary;
 
   mat-form-field {
     flex-grow: 1;
@@ -72,8 +72,8 @@
   // border: 1px solid #ccc;
   //border-radius: 5px;
   resize: vertical; // Let the textarea resize vertically
-  background-color: $color-background;
-  color: $color-font-light;
+  background-color: vars.$color-background;
+  color: vars.$color-font-light;
 
 }
 
@@ -88,7 +88,7 @@
   align-self: flex-end;
 
   button {
-    @include button-style ($color-primary, $color-font-dark);
+    @include button-style (vars.$color-primary, vars.$color-font-dark);
     min-width: 40px;
     min-height: 40px;
     align-self: center;
@@ -113,7 +113,7 @@
 
   .button-container {
     button {
-      @include button-style ($color-primary, $color-font-dark);
+      @include button-style (vars.$color-primary, vars.$color-font-dark);
 
       &.generate-button {
         align-self: center;
