@@ -10,10 +10,10 @@ import { Message } from '../data/objects/message';
     standalone: false
 })
 export class ChatUiComponent implements AfterViewChecked {
-  
+
   // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
-  
+
   // Variables
   userName: string = 'user';
   aiName: string = 'Assistant';
@@ -24,7 +24,7 @@ export class ChatUiComponent implements AfterViewChecked {
 
   // Messages are managed by the ChatService and are passed to this component via observable.
   messages = this.chatService.messages;
-  
+
   // Constructor
   constructor(private chatService: ChatService) {}
 
@@ -44,6 +44,7 @@ export class ChatUiComponent implements AfterViewChecked {
   isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
+  // TODO: Do we want to move this to the app.component?
 
   // Function to handle Enter key in textarea
   handleEnterKeyPress(event: KeyboardEvent) {
@@ -68,7 +69,7 @@ export class ChatUiComponent implements AfterViewChecked {
       console.log('User added message:');
 
       this.scrollToBottom();
-      
+
       // The input field is cleared.
       this.inputField = '';
     }

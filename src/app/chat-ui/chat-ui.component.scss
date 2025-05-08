@@ -88,7 +88,7 @@
   align-self: flex-end;
 
   button {
-    @include button-style (vars.$color-primary, vars.$color-font-dark);
+    @include mixins.button-style(vars.$color-primary, vars.$color-font-dark);
     min-width: 40px;
     min-height: 40px;
     align-self: center;
@@ -103,17 +103,17 @@
 
 // Hide the button on screens smaller than 768px wide
 @media (min-width: 768px) {
-  .message-container { 
+  .message-container {
     padding: 4%;
   }
-  
+
   .input-container {
     min-height: 13%;
   }
 
   .button-container {
     button {
-      @include button-style (vars.$color-primary, vars.$color-font-dark);
+      @include mixins.button-style(vars.$color-primary, vars.$color-font-dark);
 
       &.generate-button {
         align-self: center;

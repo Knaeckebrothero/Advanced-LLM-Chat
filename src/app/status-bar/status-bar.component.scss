@@ -1,5 +1,5 @@
 @use '../../styles/variables' as vars;
-
+@use "sass:color";
 
 .sidenav {
   position: fixed;
@@ -26,7 +26,7 @@ mat-list-item {
 
   &:hover {
     color: vars.$color-primary;
-    background-color: lighten(vars.$color-secondary, 15%);
+    background-color: color.adjust(vars.$color-secondary, $lightness: 15%);
   }
 }
 

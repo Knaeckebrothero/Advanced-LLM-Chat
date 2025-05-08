@@ -1,5 +1,4 @@
-@import 'src/styles/variables';
-
+@use 'src/styles/variables' as vars;
 
 // Ensure the message display container takes up the full width so that the messages are displayed in a column.
 .message-display-container {
@@ -12,7 +11,7 @@
 
 // Message component styles
 .message {
-  // 
+  //
   display: flex;
   // Aligns the message to the left or right side of the screen
   flex-direction: column;
@@ -26,8 +25,8 @@
   // Adds space between messages
   margin-bottom: 20px;
   // Set the font color
-  color: $color-font-dark;
-  // 
+  color: vars.$color-font-dark;
+  //
   word-wrap: break-word;
   text-align: left;
   position: relative;
@@ -39,7 +38,7 @@
     // Flattens the top left corner
     border-top-right-radius: 0;
     // Secondary color background for messages of the user
-    background-color: $color-secondary;
+    background-color: vars.$color-secondary;
     // Hide the username
     .message-user-name {
       display: none;
@@ -53,7 +52,7 @@
     // Flattens the top right corner
     border-top-left-radius: 0;
     // Primary color background for messages of others
-    background-color: $color-primary;
+    background-color: vars.$color-primary;
   }
 
   // Adjusts the messages for the system
@@ -61,7 +60,7 @@
     // Center the message
     align-self: center;
     border-radius: 0px;
-    background-color: $color-secondary;
+    background-color: vars.$color-secondary;
     .message-user-name {
       display: none;
     }
@@ -79,7 +78,7 @@
 .message-user-name {
   // Space between username and message text
   margin-bottom: 4px;
-  // Slightly smaller font for username 
+  // Slightly smaller font for username
   font-size: 0.80em;
 }
 
@@ -111,7 +110,7 @@
   align-items: center;
   // This ensures the buttons are on the same level as the timestamp
   margin-bottom: -10px;
-  
+
   button {
     // Reduce the size of the icons
     mat-icon {
@@ -140,4 +139,3 @@ em {
     }
   }
 }
-

@@ -14,8 +14,12 @@ $color-neutral-100: #f8f9fa;
 $color-neutral-600: #6c757d;
 $color-neutral-900: #343a40;
 
-$color-primary-light: lighten($color-primary, 10%);
-$color-primary-dark: darken($color-primary, 10%);
+// Import Sass color module
+@use "sass:color";
+
+// Use color.adjust instead of lighten/darken
+$color-primary-light: color.adjust($color-primary, $lightness: 10%);
+$color-primary-dark: color.adjust($color-primary, $lightness: -10%);
 
 // Typography
 $font-family-base: 'Open Sans', sans-serif;
