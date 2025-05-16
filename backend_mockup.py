@@ -238,6 +238,7 @@ async def custom_openapi():
         routes=app.routes,
     )
 
+
 # Custom Swagger UI endpoint
 @app.get("/api/docs", include_in_schema=False)
 async def custom_swagger_ui_html(req: Request):
@@ -617,4 +618,3 @@ if __name__ == "__main__":
     uvicorn.run(f"{current_script_name}:app", **run_args)
     # If your script is named e.g. 'server.py', uvicorn will look for 'server:app'.
     # Ensure 'app' is the instance of your FastAPI application.
-
