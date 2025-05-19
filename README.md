@@ -82,7 +82,7 @@ The first time you run the backend, it will generate self-signed certificates fo
 python backend_mockup.py
 
 # Then start the server with uvicorn
-uvicorn backend_mockup:app --reload --host 0.0.0.0 --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
+uvicorn backend_mockup:app --reload --host localhost --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
 ```
 
 **Important:** You'll need to visit `https://localhost:8443` in your browser and accept the security exception for the self-signed certificate.
