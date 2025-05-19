@@ -13,6 +13,9 @@ A modern, Angular-based chat application for interacting with large language mod
 - [Usage](#usage)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+  - [Git Workflow](#git-workflow)
+  - [Branch Structure](#branch-structure)
+  - [Contribution Process](#contribution-process)
 - [License](#license)
 - [Contact](#contact)
 
@@ -32,7 +35,7 @@ Before you begin, ensure you have the following installed:
 - Node.js (v16.x or higher recommended)
 - npm (v8.x or higher)
 - Python 3.8+ (for backend mockup)
-- Angular CLI Version 19 (`npm install -g @angular/cli`)
+- Angular CLI (`npm install -g @angular/cli`)
 
 ## Installation
 
@@ -57,7 +60,7 @@ source venv/bin/activate
 #### 2. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install fastapi uvicorn[standard] trustme python-dotenv sqlalchemy
 ```
 
 #### 3. Create .env File
@@ -68,7 +71,7 @@ Create a `.env` file in the root directory with the following content:
 DEV_CERTS=True
 DB_PATH=chat.db
 ```
-**Tip:** You can use the [.env.example](.env.example) file to do this.
+**Tip:** You can use the [.env.example](.env.example) file to do so.
 
 #### 4. Run the Backend
 
@@ -190,19 +193,123 @@ If you encounter database issues:
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+This project follows the Git Flow workflow. For detailed information about our branching strategy, please refer to the [Git Flow](GitFlow.pdf) documentation included in the repository.
+
+### Git Workflow
+
+The project implements a strict Git Flow workflow with automated deployment through GitHub Actions.
+
+### Branch Structure
+
+* **`main`**: Production branch
+  * Protected branch - direct pushes not allowed
+  * When changes are merged into `main`, a GitHub Actions workflow automatically:
+    * Builds the Angular application
+    * Pushes the build artifacts to the `gh-pages` branch
+    * Triggers redeployment of the application
+  * Always contains stable, production-ready code
+
+* **`develop`**: Primary development branch
+  * Protected branch - requires pull request approval
+  * All feature development is integrated here first
+  * Pull requests require at least one approval from someone other than the author
+  * Used for testing features together before release
+
+* **`feature/*`**: Feature development branches
+  * Created from and merged back into `develop`
+  * No protection rules - developers can push directly
+  * Used for implementing new features or fixing non-critical bugs
+  * Example: `feature/user-authentication`, `feature/chat-ui-improvements`
+
+* **`release/*`**: Release preparation branches
+  * Created from `develop` when preparing for a release
+  * Used for final testing and bug fixes before production
+  * Merged into both `main` (to release) and `develop` (to incorporate fixes)
+  * Example: `release/v1.2.0`
+
+* **`hotfix/*`**: Production emergency fix branches
+  * Created from `main` when critical bugs are found in production
+  * Merged back into both `main` and `develop`
+  * Example: `hotfix/critical-auth-issue`
+
+* **`gh-pages`**: Deployment branch
+  * Protected branch - only updated by the GitHub Actions workflow
+  * Contains the built application that is deployed to GitHub Pages
+  * Automatically updated when changes are merged to `main`
+
+### Contribution Process
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/advanced-llm-chat.git
+   cd advanced-llm-chat
+   ```
+
+2. **Set up your development environment**
+   ```bash
+   # Make sure you have the develop branch
+   git checkout develop
+   git pull origin develop
+   
+   # Install dependencies
+   npm install
+   ```
+
+3. **Create a feature branch**
+   ```bash
+   # Always branch from develop, NOT main
+   git checkout -b feature/your-feature-name develop
+   ```
+
+4. **Develop your feature**
+  - Make your changes, following the project's coding standards
+  - Commit frequently with clear, descriptive messages
+   ```bash
+   git commit -m "Add feature: detailed description of changes"
+   ```
+
+5. **Keep your branch updated**
+   ```bash
+   # Regularly sync with develop to minimize merge conflicts
+   git checkout develop
+   git pull origin develop
+   git checkout feature/your-feature-name
+   git merge develop
+   # Resolve any conflicts that arise
+   ```
+
+6. **Push your feature branch**
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+7. **Create a pull request**
+  - Go to the repository on GitHub
+  - Create a pull request from your feature branch to the `develop` branch
+  - Provide a clear description of your changes
+  - Request reviews from team members
+  - Address any feedback or issues raised during review
+
+8. **After approval and merge**
+  - Once your PR is approved and merged into `develop`
+  - Delete your feature branch (can be done through GitHub or locally)
+   ```bash
+   git checkout develop
+   git pull origin develop
+   git branch -d feature/your-feature-name
+   ```
+
+**Important Notes:**
+- Never create branches directly from `main`
+- Never merge the `develop` branch into `main` directly
+- Always use a `release` branch for new releases
+- For critical production bugs, create a `hotfix` branch from `main`
 
 ## License
 
 This project is licensed under the terms of the MIT License. See the [LICENSE](LICENSE.txt) file for details.
 
 ## Contact
-
-Project Link: [https://github.com/knaeckebrothero/advanced-llm-chat](https://github.com/knaeckebrothero/advanced-llm-chat)
 
 [Github](https://github.com/Knaeckebrothero) <br>
 [Mail](mailto:OverlyGenericAddress@pm.me) <br>
