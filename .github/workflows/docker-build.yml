@@ -27,6 +27,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -50,32 +51,98 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/image.tar
 
       - name: Create deployment artifacts
+        if: success()
         run: |
+          echo "Creating deployment directory..."
           mkdir -p deployment
-          cp docker/docker-compose.yml deployment/
-          echo "IMAGE_TAG=${{ steps.meta.outputs.version }}" > deployment/.env
-          echo "# Deployment Instructions" > deployment/README.md
-          echo "" >> deployment/README.md
-          echo "## Pull and run the latest image:" >> deployment/README.md
-          echo "\`\`\`bash" >> deployment/README.md
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest" >> deployment/README.md
-          echo "docker run -d -p 8080:80 --name advanced-llm-chat ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest" >> deployment/README.md
-          echo "\`\`\`" >> deployment/README.md
-          echo "" >> deployment/README.md
-          echo "## Or use docker-compose:" >> deployment/README.md
-          echo "\`\`\`bash" >> deployment/README.md
-          echo "docker-compose up -d" >> deployment/README.md
-          echo "\`\`\`" >> deployment/README.md
+
+          # Create a docker-compose template
+          cat > deployment/docker-compose.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            angular-app:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest
+              container_name: advanced-llm-chat
+              ports:
+                - "8080:80"
+              restart: unless-stopped
+              environment:
+                - NODE_ENV=production
+              networks:
+                - app-network
+
+          networks:
+            app-network:
+              driver: bridge
+          EOF
+
+          # Create deployment instructions
+          cat > deployment/README.md << 'EOF'
+          # Deployment Instructions
+
+          ## Pull and run the latest image:
+
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest
+          docker run -d -p 8080:80 --name advanced-llm-chat ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest
+          ```
+
+          ## Or use docker-compose:
+
+          ```bash
+          docker-compose up -d
+          ```
+
+          ## Image Information
+
+          - Registry: ${{ env.REGISTRY }}
+          - Repository: ${{ env.IMAGE_NAME }}
+          - Tags: ${{ steps.meta.outputs.tags }}
+          EOF
+
+          # Create .env file
+          echo "IMAGE_TAG=develop-latest" > deployment/.env
+          echo "REGISTRY=${{ env.REGISTRY }}" >> deployment/.env
+          echo "IMAGE_NAME=${{ env.IMAGE_NAME }}" >> deployment/.env
+
+          # List deployment directory contents for verification
+          echo "Deployment directory contents:"
+          ls -la deployment/
+
+      - name: Verify deployment directory
+        if: success()
+        run: |
+          if [ ! -d "deployment" ]; then
+            echo "Error: Deployment directory not found!"
+            exit 1
+          fi
+          echo "Deployment directory exists with the following files:"
+          ls -la deployment/
 
       - name: Upload deployment artifacts
-        uses: actions/upload-artifact@v3
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: deployment-artifacts
           path: deployment/
+          retention-days: 7
+
+      - name: Load and test Docker image (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Loading Docker image from tar..."
+          docker load -i /tmp/image.tar
+          echo "Running basic container test..."
+          docker run --rm -d --name test-container ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
+          sleep 5
+          docker ps | grep test-container
+          docker stop test-container || true
