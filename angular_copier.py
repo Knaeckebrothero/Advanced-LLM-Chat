@@ -24,6 +24,12 @@ class AngularProjectCopier:
     'src/polyfills.ts',
     'src/test.ts',
     '.github/workflows/main.yml',
+    '.github/workflows/docker-build.yml',
+    'docker/docker-compose.yml',
+    'docker/Dockerfile',
+    'docker/nginx.conf',
+    'docker/README.md',
+    '.dockerignore'
     # Add any other files you want to copy (use relative paths)
   ]
 
