@@ -1,6 +1,5 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
@@ -11,22 +10,23 @@ import { Conversation } from '../data/objects/conversation';
   providedIn: 'root'
 })
 export class ApiService {
-  // Use the environment configuration
+  // Use the environment configuration to get
   private baseUrl: string = environment.apiUrl;
 
-  constructor(private http: HttpClient, private dbService: DBService) {
+  constructor(private http: HttpClient) {
     // Development only - handle self-signed certificates
     //if (!environment.production) {
     //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
     //}
+    // TODO: Either enable or remove this
   }
 
   // Headers setup method
   private getHeaders(): HttpHeaders {
     return new HttpHeaders({
       'Content-Type': 'application/json',
-      // 'Authorization': `Bearer ${this.user.accessToken}`  // Add any kind of authorization here
-      // Add any other headers here
+      // 'Authorization': `Bearer ${this.user.accessToken}`
+      // TODO: Implement a access token
     });
   }
 
@@ -38,9 +38,9 @@ export class ApiService {
 
     try{
       const response = await lastValueFrom(
-        this.http.get<Conversation[]>(endpoint, { 
-          headers: this.getHeaders(), 
-          observe: 'response' 
+        this.http.get<Conversation[]>(endpoint, {
+          headers: this.getHeaders(),
+          observe: 'response'
         })
       );
 
@@ -68,9 +68,9 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.get<any[]>(endpoint, { 
-          headers: this.getHeaders(), 
-          observe: 'response' 
+        this.http.get<any[]>(endpoint, {
+          headers: this.getHeaders(),
+          observe: 'response'
         })
       );
 
@@ -91,12 +91,12 @@ export class ApiService {
   async sendMessage(message: Message): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/send`;
     const body = message.toApiSend();
-  
+
     try {
       const response = await lastValueFrom(
         this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
       );
-  
+
       if (response.status === 201) {
         message.id = response.body!.id;
         return message;
