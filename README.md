@@ -43,7 +43,7 @@ Before you begin, ensure you have the following installed:
 
 The project includes a Python FastAPI backend mockup for development purposes.
 
-#### 1. Create a Virtual Environment
+#### 1. Create and activate a Virtual Environment
 
 **Windows:**
 ```bash
@@ -59,8 +59,10 @@ source venv/bin/activate
 
 #### 2. Install Dependencies
 
+Install the dependencies listed in `requirements.txt`
+
 ```bash
-pip install fastapi uvicorn[standard] trustme python-dotenv sqlalchemy
+pip install -r requirements.txt
 ```
 
 #### 3. Create .env File
@@ -69,7 +71,6 @@ Create a `.env` file in the root directory with the following content:
 
 ```
 DEV_CERTS=True
-DB_PATH=chat.db
 ```
 **Tip:** You can use the [.env.example](.env.example) file to do so.
 
@@ -78,10 +79,12 @@ DB_PATH=chat.db
 The first time you run the backend, it will generate self-signed certificates for HTTPS:
 
 ```bash
-# First run to generate certificates
+# First run the script to generate the certificates
 python backend_mockup.py
+```
 
-# Then start the server with uvicorn
+```bash
+# Start the backend server
 uvicorn backend_mockup:app --reload --host localhost --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
 ```
 
