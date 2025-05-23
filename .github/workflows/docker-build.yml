@@ -72,7 +72,7 @@ jobs:
             echo "Creating test Dockerfile to debug..."
             cat > test.Dockerfile << 'EOF'
           FROM alpine
-          COPY docker/nginx.conf /test-nginx.conf
+          COPY /docker/nginx.conf /test-nginx.conf
           RUN ls -la /test-nginx.conf
           EOF
             docker build -f test.Dockerfile -t test-context . || echo "Context test failed"

@@ -56,7 +56,8 @@ devcerts/
 .travis.yml
 
 # Docker files (when building)
-docker/
+# docker/
+docker/README.md
 Dockerfile
 docker-compose.yml
 .dockerignore
