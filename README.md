@@ -43,7 +43,7 @@ Before you begin, ensure you have the following installed:
 
 The project includes a Python FastAPI backend mockup for development purposes.
 
-#### 1. Create and activate a Virtual Environment
+#### 1. Create a Virtual Environment
 
 **Windows:**
 ```bash
