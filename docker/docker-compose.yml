@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  angular-app:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    image: advanced-llm-chat:latest
+    container_name: advanced-llm-chat
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+

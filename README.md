@@ -5,6 +5,12 @@ A modern, Angular-based chat application for interacting with large language mod
 ## Table of Contents
 
 - [Features](#features)
+- [Docker Deployment](#docker-deployment)
+  - [Quick Start with Docker](#quick-start-with-docker)
+  - [Using Docker Compose](#using-docker-compose)
+  - [Available Image Tags](#available-image-tags)
+  - [Integration with Backend](#integration-with-backend)
+  - [Building Your Own Image](#building-your-own-image)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
   - [Backend Setup](#backend-setup)
@@ -27,6 +33,98 @@ A modern, Angular-based chat application for interacting with large language mod
 - Analytics dashboard for tracking conversation metrics
 - Settings panel for customization
 - Progressive Web App (PWA) support
+
+## Docker Deployment
+
+The Angular application is available as a pre-built Docker container from GitHub Container Registry. This is the recommended deployment method for production environments.
+
+### Quick Start with Docker
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
+
+# Run the container
+docker run -d -p 8080:80 --name advanced-llm-chat ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
+```
+
+Access the application at `http://localhost:8080`
+
+### Using Docker Compose
+
+For easier container management, use Docker Compose:
+
+```yaml
+version: '3.8'
+
+services:
+  frontend:
+    image: ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
+    container_name: advanced-llm-chat
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+```
+
+Run with:
+```bash
+docker-compose up -d
+```
+
+### Available Image Tags
+
+- `ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest` - Latest develop branch build
+- `ghcr.io/knaeckebrothero/advanced-llm-chat:main-latest` - Latest main branch build (production)
+- `ghcr.io/knaeckebrothero/advanced-llm-chat:sha-<commit>` - Specific commit builds
+
+### Integration with Backend
+
+To deploy with your backend API service:
+
+```yaml
+version: '3.8'
+
+services:
+  frontend:
+    image: ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
+    ports:
+      - "80:80"
+    networks:
+      - app-network
+    depends_on:
+      - backend
+    
+  backend:
+    build: ./path-to-backend
+    ports:
+      - "8443:8443"
+    networks:
+      - app-network
+    environment:
+      - YOUR_ENV_VARS=values
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+### Building Your Own Image
+
+If you need to build the image locally with custom configurations:
+
+```bash
+# Clone the repository
+git clone https://github.com/knaeckebrothero/advanced-llm-chat.git
+cd advanced-llm-chat
+
+# Build the image
+docker build -f docker/Dockerfile -t my-custom-llm-chat:latest .
+
+# Run your custom build
+docker run -d -p 8080:80 my-custom-llm-chat:latest
+```
+
+**Note**: The container serves the production-built Angular application on port 80. Make sure to configure your backend API URL in the Angular environment before building if you're creating a custom image.
 
 ## Prerequisites
 

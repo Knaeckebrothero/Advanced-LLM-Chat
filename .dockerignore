@@ -1,0 +1,67 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+.angular/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+LICENSE.txt
+*.md
+
+# Testing
+e2e/
+karma.conf.js
+*.spec.ts
+
+# Development files
+.devcontainer/
+backend_mockup.py
+requirements.txt
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.Python
+
+# Certificates
+devcerts/
+*.pem
+*.key
+*.crt
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker files (when building)
+docker/
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+*.log

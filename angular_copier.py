@@ -23,7 +23,7 @@ class AngularProjectCopier:
     'src/main.ts',
     'src/polyfills.ts',
     'src/test.ts',
-    # Add any other files you want to copy (use relative paths)
+    '.github/workflows/main.yml',
   ]
 
   # File extensions to copy from the project
