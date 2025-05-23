@@ -199,30 +199,11 @@ jobs:
           echo "Available images:"
           docker images
 
-          echo "Looking for images matching: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          # For PR testing, we can use the test-build image created earlier
+          # This avoids the case sensitivity issues with the registry name
+          IMAGE_TAG="test-build:latest"
 
-          # Get the PR-specific tag
-          PR_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}"
-
-          echo "Looking for PR image: $PR_TAG"
-
-          # Check if the image exists
-          if docker image inspect "$PR_TAG" >/dev/null 2>&1; then
-            echo "✅ Found PR image: $PR_TAG"
-            IMAGE_TAG="$PR_TAG"
-          else
-            echo "PR-specific tag not found, looking for any matching image..."
-            IMAGE_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | grep -v "<none>" | head -1)
-          fi
-
-          if [ -z "$IMAGE_TAG" ]; then
-            echo "Error: No matching Docker image found!"
-            echo "Available images:"
-            docker images
-            exit 1
-          fi
-
-          echo "Using image: $IMAGE_TAG"
+          echo "Using locally built test image: $IMAGE_TAG"
 
           echo "Running basic container test..."
           docker run --rm -d --name test-container -p 8082:80 "$IMAGE_TAG"
@@ -236,15 +217,12 @@ jobs:
 
             # Test HTTP response
             echo "Testing HTTP response..."
-            if command -v curl >/dev/null 2>&1; then
-              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8082 || echo "000")
-              if [ "$HTTP_STATUS" = "200" ]; then
-                echo "✅ HTTP test passed (status: $HTTP_STATUS)"
-              else
-                echo "⚠️  HTTP test returned status: $HTTP_STATUS"
-              fi
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8082 || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ HTTP test passed (status: $HTTP_STATUS)"
             else
-              echo "Curl not available, skipping HTTP test"
+              echo "⚠️  HTTP test returned status: $HTTP_STATUS"
+              docker logs test-container || true
             fi
           else
             echo "❌ Container failed to start"
