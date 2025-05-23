@@ -26,6 +26,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Verify Docker directory
+        run: |
+          if [ ! -d "docker" ]; then
+            echo "Error: docker directory not found!"
+            echo "Please ensure the docker directory exists with Dockerfile and nginx.conf"
+            exit 1
+          fi
+          if [ ! -f "docker/Dockerfile" ]; then
+            echo "Error: docker/Dockerfile not found!"
+            exit 1
+          fi
+          echo "Docker directory contents:"
+          ls -la docker/
+
       - name: Log in to the Container registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -42,9 +56,9 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=sha,prefix={{branch}}-
+            type=sha,format=short,prefix=${{ github.event_name == 'pull_request' && 'pr-' || 'sha-' }}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=develop-latest,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=develop-latest,enable=${{ github.ref == 'refs/heads/develop' && github.event_name != 'pull_request' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -141,8 +155,13 @@ jobs:
         run: |
           echo "Loading Docker image from tar..."
           docker load -i /tmp/image.tar
+          echo "Available images:"
+          docker images | grep -E "(REPOSITORY|${{ env.IMAGE_NAME }})"
           echo "Running basic container test..."
-          docker run --rm -d --name test-container ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
+          # Use the first available tag from the loaded image
+          IMAGE_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | head -1)
+          echo "Using image: $IMAGE_TAG"
+          docker run --rm -d --name test-container $IMAGE_TAG
           sleep 5
           docker ps | grep test-container
           docker stop test-container || true
