@@ -26,19 +26,60 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Verify Docker directory
+      - name: Verify Docker directory and files
         run: |
+          echo "Current directory:"
+          pwd
+          echo ""
+          echo "Repository structure:"
+          ls -la
+          echo ""
+
           if [ ! -d "docker" ]; then
             echo "Error: docker directory not found!"
             echo "Please ensure the docker directory exists with Dockerfile and nginx.conf"
             exit 1
           fi
+
+          echo "Docker directory contents:"
+          ls -la docker/
+          echo ""
+
           if [ ! -f "docker/Dockerfile" ]; then
             echo "Error: docker/Dockerfile not found!"
             exit 1
           fi
-          echo "Docker directory contents:"
-          ls -la docker/
+
+          if [ ! -f "docker/nginx.conf" ]; then
+            echo "Error: docker/nginx.conf not found!"
+            exit 1
+          fi
+
+          echo "✅ All required Docker files found"
+          echo ""
+          echo "nginx.conf file size:"
+          ls -lh docker/nginx.conf
+          echo ""
+          echo "First few lines of nginx.conf:"
+          head -n 10 docker/nginx.conf
+
+      - name: Test Docker build locally
+        run: |
+          echo "Testing Docker build with standard docker command..."
+          docker build -f docker/Dockerfile -t test-build:latest . || {
+            echo "Docker build failed!"
+            echo "Checking if files are accessible from Docker context..."
+            echo "Creating test Dockerfile to debug..."
+            cat > test.Dockerfile << 'EOF'
+          FROM alpine
+          COPY docker/nginx.conf /test-nginx.conf
+          RUN ls -la /test-nginx.conf
+          EOF
+            docker build -f test.Dockerfile -t test-context . || echo "Context test failed"
+            rm test.Dockerfile
+            exit 1
+          }
+          echo "✅ Docker build successful"
 
       - name: Log in to the Container registry
         if: github.event_name != 'pull_request'

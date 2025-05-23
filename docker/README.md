@@ -86,7 +86,7 @@ version: '3.8'
 
 services:
   frontend:
-    image: ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
+    image: ghcr.io/knackebrothero/advanced-llm-chat:develop-latest
     ports:
       - "80:80"
     depends_on:
