@@ -72,7 +72,7 @@ jobs:
             echo "Creating test Dockerfile to debug..."
             cat > test.Dockerfile << 'EOF'
           FROM alpine
-          COPY /docker/nginx.conf /test-nginx.conf
+          COPY docker/nginx.conf /test-nginx.conf
           RUN ls -la /test-nginx.conf
           EOF
             docker build -f test.Dockerfile -t test-context . || echo "Context test failed"
@@ -111,7 +111,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=docker,dest=/tmp/image.tar
+          load: ${{ github.event_name == 'pull_request' }}
 
       - name: Create deployment artifacts
         if: success()
@@ -194,15 +194,65 @@ jobs:
       - name: Load and test Docker image (PR only)
         if: github.event_name == 'pull_request'
         run: |
-          echo "Loading Docker image from tar..."
-          docker load -i /tmp/image.tar
+          echo "Testing Docker image..."
+
           echo "Available images:"
-          docker images | grep -E "(REPOSITORY|${{ env.IMAGE_NAME }})"
-          echo "Running basic container test..."
-          # Use the first available tag from the loaded image
-          IMAGE_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | head -1)
+          docker images
+
+          echo "Looking for images matching: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          # Get the PR-specific tag
+          PR_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}"
+
+          echo "Looking for PR image: $PR_TAG"
+
+          # Check if the image exists
+          if docker image inspect "$PR_TAG" >/dev/null 2>&1; then
+            echo "✅ Found PR image: $PR_TAG"
+            IMAGE_TAG="$PR_TAG"
+          else
+            echo "PR-specific tag not found, looking for any matching image..."
+            IMAGE_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | grep -v "<none>" | head -1)
+          fi
+
+          if [ -z "$IMAGE_TAG" ]; then
+            echo "Error: No matching Docker image found!"
+            echo "Available images:"
+            docker images
+            exit 1
+          fi
+
           echo "Using image: $IMAGE_TAG"
-          docker run --rm -d --name test-container $IMAGE_TAG
+
+          echo "Running basic container test..."
+          docker run --rm -d --name test-container -p 8082:80 "$IMAGE_TAG"
+
+          echo "Waiting for container to start..."
           sleep 5
-          docker ps | grep test-container
+
+          echo "Checking container status..."
+          if docker ps | grep -q test-container; then
+            echo "✅ Container is running successfully"
+
+            # Test HTTP response
+            echo "Testing HTTP response..."
+            if command -v curl >/dev/null 2>&1; then
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8082 || echo "000")
+              if [ "$HTTP_STATUS" = "200" ]; then
+                echo "✅ HTTP test passed (status: $HTTP_STATUS)"
+              else
+                echo "⚠️  HTTP test returned status: $HTTP_STATUS"
+              fi
+            else
+              echo "Curl not available, skipping HTTP test"
+            fi
+          else
+            echo "❌ Container failed to start"
+            docker logs test-container || true
+            exit 1
+          fi
+
+          echo "Stopping test container..."
           docker stop test-container || true
+
+          echo "✅ PR test completed successfully!"
