@@ -4,6 +4,8 @@ import { ChatUiMessageComponent } from './chat-ui/chat-ui-message/chat-ui-messag
 import { SettingsComponent } from './settings/settings.component';
 import { MetricsComponent } from './metrics/metrics.component';
 import { StatusBarComponent } from './status-bar/status-bar.component';
+import { ConversationComponent } from './sidebar/conversation/conversation.component';
+
 
 // Angular Material
 import { MatIconModule } from '@angular/material/icon';
@@ -23,6 +25,9 @@ import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http'
 import { ReactiveFormsModule } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, Routes } from '@angular/router';
+import { SidebarComponent } from "./sidebar/sidebar.component";
+import { CommonModule } from '@angular/common';
+
 
 
 // Routes
@@ -39,20 +44,23 @@ const routes: Routes = [
         SettingsComponent,
         MetricsComponent,
         StatusBarComponent,
+
     ],
-    bootstrap: [AppComponent], imports: [BrowserModule,
-        MatIconModule,
-        MatInputModule,
-        FormsModule,
-        ReactiveFormsModule,
-        MatButtonModule,
-        MatFormFieldModule,
-        MatSidenavModule,
-        MatListModule,
-        RouterModule.forRoot(routes),
-        ServiceWorkerModule.register('ngsw-worker.js', {
-            enabled: !isDevMode(),
-            registrationStrategy: 'registerWhenStable:30000'
-        }),
-        BrowserAnimationsModule], providers: [provideHttpClient(withInterceptorsFromDi())] })
+    bootstrap: [AppComponent],
+  imports: [BrowserModule,
+    MatIconModule,
+    MatInputModule,
+    FormsModule,
+    ReactiveFormsModule,
+    MatButtonModule,
+    MatFormFieldModule,
+    MatSidenavModule,
+    MatListModule,
+    CommonModule,
+    RouterModule.forRoot(routes),
+    ServiceWorkerModule.register('ngsw-worker.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000'
+    }),
+    BrowserAnimationsModule, SidebarComponent, SidebarComponent, ConversationComponent], providers: [provideHttpClient(withInterceptorsFromDi())] })
 export class AppModule { }

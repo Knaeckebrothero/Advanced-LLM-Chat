@@ -4,6 +4,7 @@ import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
+import { DUMMY_CONVERSATIONS } from '../data/objects/dummy-conversation';
 
 
 @Injectable({
@@ -17,10 +18,14 @@ export class ChatService {
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
+  private conversationsSubject = new BehaviorSubject<Conversation[]>([]);
+  public conversations$: Observable<Conversation[]> = this.conversationsSubject.asObservable();
+
   // Constructor
   constructor(
-    private dbService: DBService, 
+    private dbService: DBService,
     private apiService: ApiService
+
   ) {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
@@ -40,11 +45,12 @@ export class ChatService {
             }
             console.log("Conversation loaded!");
           });
-        } else {          
+        } else {
           // Add the default conversation to the database
           this.dbService.addConversation(this.conversation).then(() => {
           console.log("New conversation created!");
           });
+        this.loadAllConversations();
         }
 
         // Check for new messages
@@ -148,7 +154,7 @@ export class ChatService {
   public async generateMessage(participant: string) {
     const currentMessages = this.messagesSubject.getValue();
     // Convert the last message to a Message instance if it's not already one
-    const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message 
+    const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message
     ? currentMessages[currentMessages.length - 1]
     : new Message(currentMessages[currentMessages.length - 1]);
 
@@ -156,7 +162,7 @@ export class ChatService {
 
     try {
       const generatedMessage = await this.apiService.generateMessage(lastMessage, participant);
-      
+
       // Add to local state and database
       this.addMessage(generatedMessage);
     } catch (error) {
@@ -173,11 +179,11 @@ export class ChatService {
 
       // Call the API to patch the message
       const updatedMessage = await this.apiService.patchMessage(conversationId, messageId, content);
-      
+
       // Update the message in the local state
       const currentMessages = this.messagesSubject.getValue();
       const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
-      
+
       if (messageIndex !== -1) {
         currentMessages[messageIndex] = new Message({
           ...currentMessages[messageIndex],
@@ -185,7 +191,7 @@ export class ChatService {
         });
         // currentMessages[messageIndex] = { ...currentMessages[messageIndex], ...updatedMessage };
         this.messagesSubject.next([...currentMessages]);
-        
+
         // Update in database
         await this.dbService.updateMessage(currentMessages[messageIndex]);
       }
@@ -199,12 +205,12 @@ export class ChatService {
   public async deleteMessage(messageId: number) {
     try {
       await this.apiService.deleteMessage(this.conversation.id, messageId);
-      
+
       // Remove from local state
       const currentMessages = this.messagesSubject.getValue();
       const updatedMessages = currentMessages.filter(msg => msg.id !== messageId);
       this.messagesSubject.next(updatedMessages);
-      
+
       // Remove from database
       await this.dbService.deleteMessage(messageId);
     } catch (error) {
@@ -217,4 +223,28 @@ export class ChatService {
   public regenerateMessage(message: Message) {
     console.log('Regenerating message');
   }
+
+
+  // Loads a specific conversation and its messages into memory
+  private async loadAllConversations() {
+    const conversations = await this.dbService.getAllConversations();
+    this.conversationsSubject.next(conversations);
+  }
+
+
+  // Loads a specific conversation and its messages into memory.
+  public async loadConversation(conversation: Conversation) {
+    this.conversation = conversation;
+
+    const messages = await this.dbService.getMessagesByConversationId(conversation.id);
+    messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
+
+    this.messagesSubject.next(messages);
+  }
+
+  // Returns a static list of mock conversations for UI development
+  getDummyConversations(): Conversation[] {
+    return DUMMY_CONVERSATIONS;
+  }
+
 }

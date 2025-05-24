@@ -1,0 +1,24 @@
+<div class="sidebar">
+  <div class="logo">
+    <img ngSrc="assets/icons/fra_uas_logo.png" alt="Logo" height="144" width="349"/>
+  </div>
+
+  <div class="conversation-list">
+    <!-- Zeitgruppen wie oben -->
+    <ng-container *ngFor="let label of ['Heute', 'Letzte 7 Tage', 'Diesen Monat', 'Älter']">
+      <ng-container *ngIf="groupedConversations[label]?.length">
+        <div class="group-label">{{ label }}</div>
+        <app-conversation
+          *ngFor="let conv of groupedConversations[label]"
+          [conversation]="conv"
+          (selected)="onSelectConversation($event)">
+        </app-conversation>
+      </ng-container>
+    </ng-container>
+  </div>
+
+  <div class="user">
+    <div class="avatar">MM</div>
+    <div class="username">Max Mustermann</div>
+  </div>
+</div>

@@ -44,7 +44,7 @@ export class DBService {
 
   private async initializeDefaultState() {
     console.log("Checking db state...");
-    
+
     // Check if user exists
     const user = await this.getAllUsers();
     if (!user) {
@@ -71,7 +71,7 @@ export class DBService {
       let entryNotAdded = true;
       let retries = 0;
       newEntry.id = Math.floor(new Date().getTime() / 1000);
-  
+
       do {
         try {
           await this.db.add(collectionName, newEntry);
@@ -82,7 +82,7 @@ export class DBService {
           retries += 1;
         }
       } while (entryNotAdded && retries < 10);
-  
+
       if (entryNotAdded) {
         throw new Error('Failed to add entry after multiple attempts.');
       }
@@ -142,6 +142,23 @@ export class DBService {
   async getConversation(id: number) {
     return await this.db.get('conversations', id);
   }
+
+  // Retrieves all conversations from the local IndexedDB, sorted by most recently updated first.
+  public async getAllConversations(): Promise<Conversation[]> {
+    const db = this.db;
+    await this.status;
+    const conversations = await this.db.getAll('conversations');
+
+    // Sort by updatedAt descending (newest first)
+    conversations.sort((a, b) => {
+      const dateA = new Date(a.updatedAt).getTime();
+      const dateB = new Date(b.updatedAt).getTime();
+      return dateB - dateA;
+    });
+
+    return conversations;
+  }
+
 
   async updateConversation(conversation: Conversation) {
     return await this.db.put('conversations', conversation);

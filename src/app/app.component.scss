@@ -12,7 +12,7 @@
     height: auto;
     width: auto;
     // Position mat-icon absolutely on the top left
-    position: absolute; 
+    position: absolute;
     // Ensure it's on top of other components.
     z-index: 998;
     // Change the cursor to a pointer when hovering over the button
@@ -20,6 +20,21 @@
     color: vars.$color-secondary;
     font-size: 50px;
   }
+}
+
+// Layout styling (Sidebar)
+.app-layout {
+  display: flex;
+  height: 100vh; /* vollständige Höhe */
+  overflow: hidden;
+}
+
+// Layout styling (Main content)
+.main-content {
+  flex: 1;
+  background-color: #f4f4f5;
+  padding: 1rem;
+  overflow-y: auto;
 }
 
 // Hide the button on screens smaller than 768px wide

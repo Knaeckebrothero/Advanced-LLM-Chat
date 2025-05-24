@@ -9,6 +9,8 @@ export class Conversation {
     name: string;  // Name or title of the conversation
     participants: string[];  // Characters or Agents participating in the conversation
     hashsum?: number;  // Hashsum of the conversation
+    createdAt: Date = new Date(); // Creation date of the conversation
+    updatedAt: Date = new Date(); // Last update date of the conversation
 
     constructor(
         id: number,
@@ -26,14 +28,14 @@ export class Conversation {
     async getLatestMessages(db: DBService, count: number = 20): Promise<Message[]> {
         try {
             const messages = await db.getMessagesByConversationId(this.id);
-            
+
             // Check if the db returned any messages
             if (messages !== undefined) {
                 // Sort the messages by time
                 messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
                 return [...messages.slice(-count)];
             }
-            
+
             return [];
         } catch (error) {
             console.error('Error getting messages:', error);
@@ -44,9 +46,9 @@ export class Conversation {
     // Compute conversation hash
     async computeHash(db: DBService): Promise<number> {
         const messages = await this.getLatestMessages(db);
-        
+
         if (!messages.length) return 0;
-        
+
         let hashValue = 0;
         for (const message of messages) {
             const content = message.content || '';
@@ -54,7 +56,7 @@ export class Conversation {
                 hashValue += 0;
                 continue;
             }
-            
+
             hashValue += content.charCodeAt(0);
             hashValue += content.charCodeAt(content.length - 1);
             hashValue *= content.length;

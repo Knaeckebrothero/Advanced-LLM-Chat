@@ -1,0 +1,24 @@
+button.conversation-button {
+  width: 100%;
+  text-align: left;
+  background-color: #2C8BCC;
+  border: none;
+  color: white;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+
+  &:hover {
+    background-color: #1A6DA8;
+  }
+
+  &.active {
+    background-color: #154D96;
+  }
+
+  div {
+    font-size: 14px;
+  }
+}
