@@ -5,4 +5,4 @@ trustme
 python-dotenv
 tinydb
 replicate
-#langchain
+# langchain
