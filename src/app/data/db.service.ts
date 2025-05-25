@@ -15,25 +15,20 @@ export class DBService {
   private db!: IDBPDatabase<MainAppDB>;
   private status: Promise<void>;
 
+  // User cookie key
+  private readonly USER_COOKIE_KEY = 'currentUserAppSession'; // Unique key
+
   constructor() {
-    this.status = this.initDB().then(() => this.initializeDefaultState());;
+    this.status = this.initDB().then(() => this.initializeDefaultState());
   }
 
-  // Initialize the database
   async initDB() {
     console.log("Starting database...");
-
-    // Open the database
     this.db = await openDB<MainAppDB>('main', 1, {
       upgrade(db) {
-        // Create a store for the user
         db.createObjectStore('user', { keyPath: 'id' });
-
-        // Create a store for conversations with 'id' as the key path and an index
         const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
         conversationStore.createIndex('by-userId', 'userId');
-
-        // Create a store for messages with indexes and conversationId + id as a composite key
         const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
         messageStore.createIndex('by-conversationId', 'conversationId');
         messageStore.createIndex('by-conversationId-time', ['conversationId', 'time']);
@@ -42,65 +37,94 @@ export class DBService {
     console.log("Database started!");
   }
 
-  private async initializeDefaultState() {
-    console.log("Checking db state...");
-    
-    // Check if user exists
-    const user = await this.getAllUsers();
-    if (!user) {
-      console.log("Creating default user...");
-      const defaultUser = {
-        id: 0,
-        accessToken: "defaultUser",
-        email: "defaultUser",
-        name: "defaultUser"
-      };
-      await this.addUser(defaultUser);
-    }
+  // --- Cookie Methods ---
+  private saveUserToCookie(user: User): void {
+    const cookieValue = JSON.stringify({
+      id: user.id,
+      name: user.name,
+      accessToken: user.accessToken,
+      email: user.email
+    });
+    // Cookie expires in 10 hours from now
+    const expires = new Date(Date.now() + 10 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `${this.USER_COOKIE_KEY}=${encodeURIComponent(cookieValue)}; expires=${expires}; path=/; SameSite=Lax; Secure`;
+    console.log("User saved to cookie (10 hour expiry):", user.name, "");
   }
 
-  // Get a promise that resolves when the database is ready
-  public getDatabaseReadyPromise() {
-    console.log("Waiting for database to be ready...");
-    return this.status
-  }
+  private getUserFromCookie(): User | null {
+    const cookies = document.cookie.split(';').map(cookie => cookie.trim());
+    const userCookie = cookies.find(cookie => cookie.startsWith(`${this.USER_COOKIE_KEY}=`));
 
-  // Method to add an entry to the collection
-  private async addEntry(collectionName: any, newEntry: any) {
-    if (!newEntry.id && newEntry.id !== null) {
-      let entryNotAdded = true;
-      let retries = 0;
-      newEntry.id = Math.floor(new Date().getTime() / 1000);
-  
-      do {
-        try {
-          await this.db.add(collectionName, newEntry);
-          console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
-          entryNotAdded = false;
-        } catch (error) {
-          newEntry.id += 1;
-          retries += 1;
+    if (userCookie) {
+      try {
+        const cookieValue = decodeURIComponent(userCookie.substring(this.USER_COOKIE_KEY.length + 1));
+        const userData = JSON.parse(cookieValue);
+        if (userData && typeof userData.id !== 'undefined' && userData.name && userData.accessToken && userData.email) {
+          return userData as User;
+        } else {
+          console.warn("Malformed user data in cookie, clearing.");
+          this.clearUserCookie(); // Clear malformed cookie
+          return null;
         }
-      } while (entryNotAdded && retries < 10);
-  
-      if (entryNotAdded) {
-        throw new Error('Failed to add entry after multiple attempts.');
+      } catch (error) {
+        console.error("Error parsing user cookie:", error);
+        this.clearUserCookie();
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private clearUserCookie(): void {
+    document.cookie = `${this.USER_COOKIE_KEY}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax; Secure`;
+    console.log("User cookie cleared.");
+  }
+  // --- End Cookie Methods ---
+
+  private async initializeDefaultState() {
+    console.log("Checking cookie and db state...");
+    let user = this.getUserFromCookie();
+
+    if (user) {
+      console.log("User found in cookie:", user.name, "");
+      const dbUser = await this.getUser(user.id);
+      if (!dbUser) {
+        console.log("User from cookie not in DB, adding to DB...");
+        await this.addUser(user, false);
       }
     } else {
-      await this.db.add(collectionName, newEntry);
-      console.log("Entry added to: " + collectionName + " id: " + newEntry.id);
+      console.log("No user found in cookie. Checking DB for any user...");
+      const usersInDb = await this.getAllUsers();
+      if (usersInDb && usersInDb.length > 0) {
+        user = usersInDb[0];
+        console.log("User found in DB, saving to cookie:", user.name, "");
+        this.saveUserToCookie(user);
+      } else {
+        console.log("No user in DB. Creating default user as per original logic...");
+        const defaultUser: User = {
+          id: 0,
+          accessToken: "defaultUser",
+          email: "defaultUser@example.com",
+          name: "Default User"
+        };
+        await this.addUser(defaultUser, true);
+        user = defaultUser;
+        console.log("Default user created and saved to cookie:", user.name, "");
+      }
     }
   }
 
-  /*
-  CRUD operations for messages
-  */
+  public getDatabaseReadyPromise() {
+    console.log("Waiting for database to be ready...");
+    return this.status;
+  }
 
+  /* CRUD operations for messages */
   async addMessage(message: Message) {
     return await this.db.add('chatMessages', message);
   }
 
-  async getMessage(id: number) {
+  async getMessage(id: number): Promise<Message | undefined> {
     return await this.db.get('chatMessages', id);
   }
 
@@ -118,28 +142,28 @@ export class DBService {
 
   async deleteMessagesByConversationId(conversationId: number) {
     const messages = await this.getMessagesByConversationId(conversationId);
-    messages.forEach(async (message: any) => {
-      await this.deleteMessage(message.id);
-    });
+    for (const message of messages) {
+      if (typeof message.id === 'number') {
+        await this.deleteMessage(message.id);
+      }
+    }
   }
 
-  async getMessagesByConversationId(conversationId: any = null) {
-    if(conversationId) {
-      return this.db.getAllFromIndex('chatMessages', 'by-conversationId', conversationId);
+  async getMessagesByConversationId(conversationId: number | null = null): Promise<Message[]> {
+    if(conversationId !== null) {
+      // Use IDBKeyRange.only for a specific value lookup on an index
+      return this.db.getAllFromIndex('chatMessages', 'by-conversationId', IDBKeyRange.only(conversationId));
     } else {
       return await this.db.getAll('chatMessages');
     }
   }
 
-  /*
-  CRUD operations for conversations
-  */
-
+  /* CRUD operations for conversations */
   async addConversation(conversation: Conversation) {
     return await this.db.add('conversations', conversation);
   }
 
-  async getConversation(id: number) {
+  async getConversation(id: number): Promise<Conversation | undefined> {
     return await this.db.get('conversations', id);
   }
 
@@ -151,35 +175,60 @@ export class DBService {
     return await this.db.delete('conversations', id);
   }
 
-  async getConversationsByUserId(userId: any = null) {
-    if(userId) {
-      return this.db.getAllFromIndex('conversations', 'by-userId', userId);
+  async getConversationsByUserId(userId: number | null = null): Promise<Conversation[]> {
+    if(userId !== null) {
+      // Use IDBKeyRange.only for a specific value lookup on an index
+      return this.db.getAllFromIndex('conversations', 'by-userId', IDBKeyRange.only(userId));
     } else {
       return await this.db.getAll('conversations');
     }
   }
 
-  /*
-  CRUD operations for the user
-  */
-
-  async addUser(user: User) {
-    return await this.db.add('user', user);
+  /* CRUD operations for the user */
+  async addUser(user: User, saveCookie: boolean = true) {
+    await this.db.add('user', user);
+    if (saveCookie) {
+      this.saveUserToCookie(user);
+    }
+    return user;
   }
 
-  async getUser(id: number) {
+  async getUser(id: number): Promise<User | undefined> {
     return await this.db.get('user', id);
   }
 
-  async updateUser(user: any) {
-    return await this.db.put('user', user);
+  async updateUser(user: User, saveCookie: boolean = true) {
+    const key = await this.db.put('user', user);
+    if (saveCookie) {
+      this.saveUserToCookie(user);
+    }
+    return key;
   }
 
   async deleteUser(id: number) {
-    return await this.db.delete('user', id);
+    const result = await this.db.delete('user', id);
+    const cookieUser = this.getUserFromCookie();
+    if (cookieUser && cookieUser.id === id) {
+      this.clearUserCookie();
+    }
+    return result;
   }
 
-  async getAllUsers() {
+  async getAllUsers(): Promise<User[]> {
     return await this.db.getAll('user');
+  }
+
+  async getCurrentUser(): Promise<User | null> {
+    await this.status;
+    let user = this.getUserFromCookie();
+    if (user) {
+      return user;
+    }
+    const users = await this.getAllUsers();
+    if (users && users.length > 0) {
+      this.saveUserToCookie(users[0]);
+      return users[0];
+    }
+    return null;
   }
 }

@@ -1,50 +1,90 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { DBService } from '../data/db.service';
+import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http'; // Added HttpErrorResponse for better error handling in login example
+// DBService is not directly used here for token, it's passed in.
+// import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
-
+import { User } from '../data/objects/user'; // Import User for loginAndFetchSessionToken
 
 @Injectable({
   providedIn: 'root'
 })
 export class ApiService {
-  // Use the environment configuration
   private baseUrl: string = environment.apiUrl;
 
-  constructor(private http: HttpClient, private dbService: DBService) {
-    // Development only - handle self-signed certificates
-    //if (!environment.production) {
-    //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
-    //}
-  }
+  constructor(
+    private http: HttpClient,
+    // private dbService: DBService // Not strictly needed here if token is passed
+  ) {}
 
-  // Headers setup method
-  private getHeaders(): HttpHeaders {
-    return new HttpHeaders({
+  // Modified to accept an optional accessToken
+  private getHeaders(accessToken?: string): HttpHeaders {
+    let headers = new HttpHeaders({
       'Content-Type': 'application/json',
-      // 'Authorization': `Bearer ${this.user.accessToken}`  // Add any kind of authorization here
-      // Add any other headers here
     });
+    if (accessToken) {
+      headers = headers.set('Authorization', `Bearer ${accessToken}`);
+    }
+    // Add any other headers here
+    return headers;
   }
 
-  async getConversationsByUser(): Promise<Conversation[]>{
-    // TODO: Use the authorization token from the headers instead of the userId
-    const userId = 1;
+  // --- Commented-out method for future session token fetching ---
+  /*
+  async loginAndFetchSessionToken(credentials: { email: string, password: string }): Promise<{ user: User, token: string } | null> {
+    const endpoint = `${this.baseUrl}/api/auth/login`; // Example login endpoint
+    try {
+      console.log('Attempting to login and fetch session token...');
+      const response = await lastValueFrom(
+        this.http.post<{ user: User, token: string }>(
+          endpoint,
+          credentials,
+          {
+            headers: this.getHeaders(), // Initial headers, token might be set by backend in cookie or response
+            observe: 'response'
+          }
+        )
+      );
+
+      if (response.status === 200 && response.body) {
+        console.log('Login successful, session token received/user data:', response.body);
+        // The backend would typically return user info and the session token.
+        // This token and user info should then be stored, likely by calling a method
+        // in an AuthService or DBService that handles cookie and IndexedDB storage.
+        // Example:
+        // await someAuthService.storeUserSession(response.body.user, response.body.token);
+        return response.body;
+      } else {
+        console.error('Login failed:', response.status, response.statusText);
+        return null;
+      }
+    } catch (error) {
+      if (error instanceof HttpErrorResponse) {
+        console.error('Error during login (HttpErrorResponse):', error.status, error.message, error.error);
+      } else {
+        console.error('Error during login (generic):', error);
+      }
+      return null;
+    }
+  }
+  */
+  // --- END: Commented-out method ---
+
+  async getConversationsByUser(userId: number, accessToken: string): Promise<Conversation[]>{ // Added userId and accessToken parameters
     const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
-    console.log('Requesting conversations...');
+    console.log('Requesting conversations for user ID:', userId, "");
 
     try{
       const response = await lastValueFrom(
-        this.http.get<Conversation[]>(endpoint, { 
-          headers: this.getHeaders(), 
-          observe: 'response' 
+        this.http.get<Conversation[]>(endpoint, {
+          headers: this.getHeaders(accessToken), // Use accessToken
+          observe: 'response'
         })
       );
 
-      console.log('Response:', response);
+      console.log('Response:', response, "");
 
       if (response.status === 200 && response.body) {
         return response.body;
@@ -54,13 +94,12 @@ export class ApiService {
         throw new Error(`Unexpected response: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error requesting conversations:', error);
+      console.error('Error requesting conversations:', error, "");
       throw error;
     }
   }
 
-  async getConversationMessages(conversationId: number, count: number, latestTimestamp: Date | null = null): Promise<Message[]> {
-    // Use the current time if no timestamp is provided
+  async getConversationMessages(conversationId: number, count: number, accessToken: string, latestTimestamp: Date | null = null): Promise<Message[]> { // Added accessToken
     if (latestTimestamp === null) {
       latestTimestamp = new Date();
     }
@@ -68,14 +107,13 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.get<any[]>(endpoint, { 
-          headers: this.getHeaders(), 
-          observe: 'response' 
+        this.http.get<any[]>(endpoint, {
+          headers: this.getHeaders(accessToken), // Use accessToken
+          observe: 'response'
         })
       );
 
       if (response.status === 200 && response.body) {
-        // Convert all messages using map for efficiency
         return response.body.map(messageData => Message.fromApiResponse(messageData));
       } else if (response.status === 204 && !response.body) {
         return [];
@@ -83,21 +121,21 @@ export class ApiService {
         throw new Error(`Unexpected response: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error refreshing conversation:', error);
+      console.error('Error refreshing conversation:', error, "");
       throw error;
     }
   }
 
-  async sendMessage(message: Message): Promise<Message> {
+  async sendMessage(message: Message, accessToken: string): Promise<Message> { // Added accessToken
     const endpoint = `${this.baseUrl}/api/message/send`;
     const body = message.toApiSend();
-  
+
     try {
       const response = await lastValueFrom(
-        this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
+        this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(accessToken), observe: 'response' }) // Use accessToken
       );
-  
-      if (response.status === 201) {
+
+      if (response.status === 201 && response.body) {
         message.id = response.body!.id;
         return message;
       } else if (response.status === 400) {
@@ -108,28 +146,27 @@ export class ApiService {
         throw new Error(`Unexpected response: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('Error sending message:', error, "");
       throw error;
     }
   }
 
-  async generateMessage(lastMessage: Message, participant: string): Promise<Message> {
+  async generateMessage(lastMessage: Message, participant: string, accessToken: string): Promise<Message> { // Added accessToken
     const endpoint = `${this.baseUrl}/api/message/generate`;
     const body = lastMessage.toApiGenerate(participant);
 
     try {
       const response = await lastValueFrom(
-        this.http.post<any>(endpoint, body, { headers: this.getHeaders() })
+        this.http.post<any>(endpoint, body, { headers: this.getHeaders(accessToken) }) // Use accessToken
       );
       return Message.fromApiGenerate(response);
     } catch (error) {
-      console.error('Error generating message:', error);
+      console.error('Error generating message:', error, "");
       throw error;
     }
   }
 
-  // Patch an existing message
-  async patchMessage(conversationId: number, messageId: number, content: string): Promise<Message> {
+  async patchMessage(conversationId: number, messageId: number, content: string, accessToken: string): Promise<Message> { // Added accessToken
     const endpoint = `${this.baseUrl}/api/message/patch`;
     const body = {
       messageId: messageId,
@@ -139,25 +176,24 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.patch<Message>(endpoint, body, { headers: this.getHeaders() })
+        this.http.patch<Message>(endpoint, body, { headers: this.getHeaders(accessToken) }) // Use accessToken
       );
       return response;
     } catch (error) {
-      console.error('Error patching message:', error);
+      console.error('Error patching message:', error, "");
       throw error;
     }
   }
 
-  // Delete a message
-  async deleteMessage(conversationId: number, messageId: number): Promise<void> {
+  async deleteMessage(conversationId: number, messageId: number, accessToken: string): Promise<void> { // Added accessToken
     const endpoint = `${this.baseUrl}/api/message/delete/${conversationId}/${messageId}`;
 
     try {
       await lastValueFrom(
-        this.http.delete(endpoint, { headers: this.getHeaders() })
+        this.http.delete(endpoint, { headers: this.getHeaders(accessToken) }) // Use accessToken
       );
     } catch (error) {
-      console.error('Error deleting message:', error);
+      console.error('Error deleting message:', error, "");
       throw error;
     }
   }

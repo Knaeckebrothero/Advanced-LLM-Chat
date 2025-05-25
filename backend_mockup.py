@@ -1,7 +1,7 @@
 """
-This is a mockup of a backend server for a chat application. 
-It provides a simple API for sending and receiving messages in a conversation. 
-The server uses SQLite as a database to store messages and conversation data. 
+This is a mockup of a backend server for a chat application.
+It provides a simple API for sending and receiving messages in a conversation.
+The server uses SQLite as a database to store messages and conversation data.
 The server also uses Replicate to generate AI responses to messages in a conversation.
 """
 import os
@@ -67,7 +67,7 @@ def get_db():
 def init_db():
     with get_db() as conn:
         cur = conn.cursor()
-        
+
         # Create messages table
         cur.execute('''
             CREATE TABLE IF NOT EXISTS messages (
@@ -78,13 +78,13 @@ def init_db():
                 time INTEGER NOT NULL
             )
         ''')
-        
+
         # Create index for faster querying
         cur.execute('''
-            CREATE INDEX IF NOT EXISTS idx_conversation_time 
+            CREATE INDEX IF NOT EXISTS idx_conversation_time
             ON messages(conversationId, time)
         ''')
-        
+
         conn.commit()
 
 
@@ -94,11 +94,11 @@ def setup_development_certificates():
     server_cert = ca.issue_cert("localhost")
     cert_dir = Path("devcerts")
     cert_dir.mkdir(exist_ok=True)
-    
+
     server_cert.private_key_and_cert_chain_pem.write_to_path(cert_dir / "server.pem")
     server_cert.private_key_pem.write_to_path(cert_dir / "server.key")
     ca.cert_pem.write_to_path(cert_dir / "ca.pem")
-    
+
     return str(cert_dir / "server.pem"), str(cert_dir / "server.key")
 
 
@@ -109,7 +109,7 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
     """
     if not messages:
         return 0
-    
+
     hash_value = 0
     hash_chars = ""
 
@@ -134,7 +134,7 @@ async def generate_llm_response(prompt: str) -> str:
     try:
         # Use Meta's Llama model through Replicate
         output = replicate.run(
-            "meta/meta-llama-3.1-405b-instruct",
+            "meta/meta-llama-3-8b-instruct",
             input={
                 "prompt": prompt,
                 "temperature": 0.6,
@@ -143,7 +143,7 @@ async def generate_llm_response(prompt: str) -> str:
                 "system_prompt": "You are a helpful AI assistant engaged in a natural conversation."
             }
         )
-        
+
         # Replicate returns a generator, collect all tokens
         return "".join(output)
     except Exception as e:
@@ -158,26 +158,26 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
             cur = conn.cursor()
             cur.execute(
                 """
-                SELECT roleName, content 
-                FROM messages 
-                WHERE conversationId = ? 
-                ORDER BY time DESC 
+                SELECT roleName, content
+                FROM messages
+                WHERE conversationId = ?
+                ORDER BY time DESC
                 LIMIT ?
                 """,
                 (conversation_id, limit)
             )
             messages = cur.fetchall()
-            
+
             # Build context string
             context = []
             for msg in reversed(messages):
                 context.append(f"{msg['roleName']}: {msg['content']}")
-            
+
             return "\n".join(context)
     except Exception as e:
         print(f"Error getting conversation context: {str(e)}")
         return ""
-    
+
 
 # Load environment variables
 load_dotenv(find_dotenv())
@@ -192,30 +192,34 @@ init_db()
 # API endpoints
 @app.get("/api/conversation/byuserid/{user_id}")
 async def get_conversations(user_id: int, response: Response, status_code=status.HTTP_200_OK):
-    print("Get conversations called")
+  print("Get conversations called for user_id:", user_id) # Added logging for the received user_id
 
-    try:
-        if not user_id:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="User id missing")
-        
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT * FROM messages WHERE conversationId = ?",
-                (1,)  # Hardcoded to conversation 1 as in original
-            )
-            messages = cur.fetchall()
-            
-            print(f"Messages found: {len(messages)}")
-            hashsum = generate_hash(messages)
+  try:
+    with get_db() as conn:
+      cur = conn.cursor()
+      # Your current implementation fetches messages for a hardcoded conversationId = 1
+      # If you intend to fetch conversations specific to the user_id,
+      # you'll need a 'conversations' table and query based on user_id.
+      # For now, sticking to the provided logic of checking messages for conversationId = 1.
+      cur.execute(
+        "SELECT * FROM messages WHERE conversationId = ?",
+        (1,)  # Hardcoded to conversation 1 as in your original backend code
+      )
+      messages = cur.fetchall()
 
-            if hashsum == 0:
-                response.status_code = status.HTTP_204_NO_CONTENT
-                return None
+      print(f"Messages found for conversationId=1: {len(messages)}")
+      hashsum = generate_hash(messages)
+
+      # If the intent is to return a list of conversations for the user_id,
+      # this part would need to change to reflect actual conversations.
+      # Currently, it returns a single object representing the state of conversationId=1.
+      if not messages: # If no messages, hashsum might be 0, implies no content or no conversation.
+        print(f"No messages found for conversationId=1, hashsum: {hashsum}. Returning 204.")
+        response.status_code = status.HTTP_204_NO_CONTENT
+        return None
 
             return [{'id': 1, 'hashsum': hashsum}]
-        
+
     except Exception as e:
         print(f"Error: {str(e)}")
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -224,10 +228,10 @@ async def get_conversations(user_id: int, response: Response, status_code=status
 
 @app.get("/api/conversation/messages/{conversation_id}/{timestamp}/{messages_count}")
 async def get_conversation_messages(
-    conversation_id: int, 
-    timestamp: int, 
+    conversation_id: int,
+    timestamp: int,
     messages_count: int,
-    response: Response, 
+    response: Response,
     status_code=status.HTTP_200_OK
 ):
     print("Get conversation messages called")
@@ -241,19 +245,19 @@ async def get_conversation_messages(
             cur = conn.cursor()
             cur.execute(
                 """
-                SELECT * FROM messages 
-                WHERE conversationId = ? AND time < ? 
+                SELECT * FROM messages
+                WHERE conversationId = ? AND time < ?
                 ORDER BY time DESC LIMIT ?
                 """,
                 (conversation_id, timestamp, min(messages_count, 30))
             )
             messages = cur.fetchall()
-            
+
             if messages:
                 # Convert Row objects to dictionaries
                 messages = [dict(msg) for msg in messages]
                 messages.reverse()  # Reverse to get chronological order
-                
+
                 if messages_count > 30 and len(messages) == 30:
                     response.status_code = status.HTTP_206_PARTIAL_CONTENT
                 else:
@@ -262,7 +266,7 @@ async def get_conversation_messages(
             else:
                 response.status_code = status.HTTP_204_NO_CONTENT
                 return None
-        
+
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
@@ -278,7 +282,7 @@ async def user_send_message(request: ApiMessageSend, response: Response, status_
             return ErrorResponse(error="Message content cannot be empty")
 
         message_id = int(time.time() * 1000)
-        
+
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -289,10 +293,10 @@ async def user_send_message(request: ApiMessageSend, response: Response, status_
                 (message_id, request.conversationId, request.roleName, request.content, request.time)
             )
             conn.commit()
-        
+
         response.status_code = status.HTTP_201_CREATED
         return {"id": message_id}
-        
+
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
@@ -309,13 +313,13 @@ async def generate_message(request: ApiMessageGenerate, response: Response, stat
 
         # Get conversation context
         context = await get_conversation_context(request.conversationId)
-        
+
         # Generate response
         ai_response = await generate_llm_response(context)
-        
+
         message_id = int(time.time() * 1000)
         current_time = int(time.time())
-        
+
         message_doc = {
             'id': message_id,
             'conversationId': request.conversationId,
@@ -323,7 +327,7 @@ async def generate_message(request: ApiMessageGenerate, response: Response, stat
             'content': ai_response,
             'time': current_time
         }
-        
+
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -331,14 +335,14 @@ async def generate_message(request: ApiMessageGenerate, response: Response, stat
                 INSERT INTO messages (id, conversationId, roleName, content, time)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (message_id, request.conversationId, request.roleName, 
+                (message_id, request.conversationId, request.roleName,
                  message_doc['content'], current_time)
             )
             conn.commit()
-        
+
         response.status_code = status.HTTP_201_CREATED
         return message_doc
-        
+
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
@@ -351,24 +355,24 @@ async def patch_message(request: MessagePatch, status_code=status.HTTP_200_OK):
     try:
         if not request.id:
             return Response(status_code=status.HTTP_400_BAD_REQUEST)
-        
+
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
                 """
-                UPDATE messages 
-                SET content = ? 
+                UPDATE messages
+                SET content = ?
                 WHERE id = ? AND conversationId = ?
                 """,
                 (request.content, request.id, request.conversationId)
             )
             conn.commit()
-            
+
             if cur.rowcount == 0:
                 return Response(status_code=status.HTTP_404_NOT_FOUND)
-                
+
         return None
-        
+
     except Exception as e:
         return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -380,7 +384,7 @@ async def delete_message(conversation_id: int, message_id: int, status_code=stat
     try:
         if not conversation_id or not message_id:
             return Response(status_code=status.HTTP_400_BAD_REQUEST)
-        
+
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -388,12 +392,12 @@ async def delete_message(conversation_id: int, message_id: int, status_code=stat
                 (conversation_id, message_id)
             )
             conn.commit()
-            
+
             if cur.rowcount == 0:
                 return Response(status_code=status.HTTP_404_NOT_FOUND)
-                
+
         return None
-        
+
     except Exception as e:
         return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -422,15 +426,15 @@ if os.getenv("USE_DEV_CERTS") == "True":
 
     print(f"""
     🔐 Development HTTPS certificates generated!
-    
+
     To trust these certificates in development:
     1. Certificate file location: {cert_file}
     2. You might need to add an exception in your browser
     3. For Angular development, you might need to set NODE_TLS_REJECT_UNAUTHORIZED='0'
-    
+
     ⚠️  These are self-signed certificates for development only!
     """)
-    
+
     ssl_config = {
         "ssl_keyfile": key_file,
         "ssl_certfile": cert_file,
