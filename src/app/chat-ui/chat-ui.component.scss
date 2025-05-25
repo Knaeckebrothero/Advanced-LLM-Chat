@@ -1,129 +1,122 @@
 @use 'src/styles/variables' as vars;
 @use 'src/styles/mixins' as mixins;
 
-// Chat component styles
 .chat-ui-container {
   height: 100%;
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-color: vars.$color-background;
+
+  background-color: #ffffff; // fallback
+  background-image: repeating-linear-gradient(
+      -45deg,
+      #F0F5F9 0,
+      #F0F5F9 50%,
+      #ffffff 50%,
+      #ffffff 100%
+  );
+  background-size: 240px 240px;
 }
+
+
+
 
 .message-container {
   flex-grow: 1;
-  width: auto;
-  // Make the container scrollable
-  overflow-y: scroll;
-
-  padding: 2%;
-  padding-bottom: 1%;
-  padding-top: 1%;
-
+  overflow-y: auto;
+  padding: 24px;
+  scroll-behavior: smooth;
 
   ::-webkit-scrollbar {
-    width: 10px;
+    width: 8px;
   }
+
   ::-webkit-scrollbar-thumb {
     background: vars.$color-primary;
-    border-radius: 5px;
-  }
-  .message{
-    width: 100%;
+    border-radius: 4px;
   }
 }
 
 .input-container {
-  width: 100%;
-  min-height: fit-content;
-  height: fit-content;
   display: flex;
-  flex-direction: row;
-  align-self: flex-end;
-
-  justify-content: space-between;
-  // Give some contrast with the chat UI background
-  background-color: vars.$color-secondary;
-
-  mat-form-field {
-    flex-grow: 1;
-    // Space between input field and send button
-    margin-left: 5%;
-    margin-right: 3%;
-  }
+  justify-content: center;
+  padding: 24px;
+  background-color: transparent;
 }
 
-.textfield-container{
-  height: 85%;
-  width: 85%;
-  margin: 5px;
+.textfield-container {
+  display: flex;
+  align-items: flex-end;
+  background-color: #fff;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 900px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  position: relative;
 }
 
 .chat-input {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  align-self: flex-start;
-  font-size: 1.3em;
-  width: 100%;
-  height: 100%;
-  border-radius: 8px;
-  //padding: 30px;
-  // border: 1px solid #ccc;
-  //border-radius: 5px;
-  resize: vertical; // Let the textarea resize vertically
-  background-color: vars.$color-background;
-  color: vars.$color-font-light;
+  flex: 1;
+  background: transparent;
+  border: none;
+  resize: none;
+  font-size: 1rem;
+  font-family: vars.$font-family-base;
+  color: #000;
+  padding: 6px 0;
+  line-height: 1.4;
+  max-height: calc(1.4em * 7); // bis zu 7 Zeilen
+  overflow-y: auto;
 
-}
-
-.chat-input:focus {
-  //border-color: #66afe9;
-  outline: none;
+  &:focus {
+    outline: none;
+  }
 }
 
 .button-container {
   display: flex;
-  flex-direction: column;
-  align-self: flex-end;
+  gap: 8px;
+  align-items: flex-end;
+  margin-left: 10px;
 
   button {
-    @include mixins.button-style(vars.$color-primary, vars.$color-font-dark);
-    min-width: 40px;
-    min-height: 40px;
-    align-self: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background-color: vars.$color-primary;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
 
-    &.generate-button {
-      width: 45px;
-      height: 45px;
-      border-radius: 100%;
+    &:hover {
+      background-color: darken(vars.$color-primary, 8%);
     }
   }
 }
 
-// Hide the button on screens smaller than 768px wide
-@media (min-width: 768px) {
-  .message-container {
-    padding: 4%;
-  }
+.chat-footer-hint {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: -16px; // leicht näher an Eingabe, falls nötig
+  margin-bottom: 16px;
 
-  .input-container {
-    min-height: 13%;
-  }
+  a {
+    color: vars.$color-primary;
+    text-decoration: underline;
+    margin-left: 6px;
 
-  .button-container {
-    button {
-      @include mixins.button-style(vars.$color-primary, vars.$color-font-dark);
-
-      &.generate-button {
-        align-self: center;
-        min-width: 100px;
-        min-height: 100px;
-      }
-
-      &.send-button {
-        display: none;
-      }
+    &:hover {
+      text-decoration: none;
     }
   }
 }
+

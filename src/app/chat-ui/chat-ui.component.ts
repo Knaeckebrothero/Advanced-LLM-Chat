@@ -72,6 +72,14 @@ export class ChatUiComponent implements AfterViewChecked {
 
       // The input field is cleared.
       this.inputField = '';
+
+      // Reset input-containers height
+      setTimeout(() => {
+        const textarea = document.querySelector('.chat-input') as HTMLTextAreaElement;
+        if (textarea) {
+          textarea.style.height = 'auto';
+        }
+      }, 0);
     }
   }
 
@@ -101,4 +109,12 @@ export class ChatUiComponent implements AfterViewChecked {
     // Call the ChatService to alter the message
     this.chatService.patchMessage(message.id!, "New message content");
   }
+
+  // Methode to dynamically change the size of the input-container
+  adjustTextareaHeight(event: Event): void {
+    const textarea = event.target as HTMLTextAreaElement;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }
+
 }
