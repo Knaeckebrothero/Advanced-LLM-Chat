@@ -27,14 +27,17 @@ from datetime import datetime, timedelta, UTC
 class ErrorResponse(BaseModel):
     error: str
 
+
 # Login models
 class MockLoginRequest(BaseModel):
     email: str
     # In real implementation, this might include IDP tokens, SAML response, etc.
 
+
 class LoginResponse(BaseModel):
     user: dict
     message: str
+
 
 # Pydantic models for request validation
 class ConversationState(BaseModel):
@@ -64,6 +67,7 @@ class MessagePatch(BaseModel):
     conversationId: int
     content: str
 
+
 # Pydantic models for responses (for OpenAPI documentation)
 class MessageResponse(BaseModel):
     id: int
@@ -71,6 +75,7 @@ class MessageResponse(BaseModel):
     roleName: str
     content: str
     time: int
+
 
 class ConversationResponse(BaseModel):
     id: int
@@ -107,32 +112,36 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24) -> 
 
     # Store session in memory
     sessions[session_key] = {
-      "user_id": user_id,
-      "email": user_email,
-      "created_at": datetime.now(UTC),
-      "expires_at": expires_at,
-      "last_activity": datetime.now(UTC)
+        "user_id": user_id,
+        "email": user_email,
+        "created_at": datetime.now(UTC),
+        "expires_at": expires_at,
+        "last_activity": datetime.now(UTC)
     }
 
     # Save session to database
     with get_db() as conn:
-      cur = conn.cursor()
-      cur.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-          session_key TEXT PRIMARY KEY,
-          user_id INTEGER NOT NULL,
-          email TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          expires_at TIMESTAMP NOT NULL,
-          last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions
+            (
+                session_key TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                email TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
 
-      cur.execute("""
-          INSERT INTO sessions (session_key, user_id, email, expires_at)
-          VALUES (?, ?, ?, ?)
-      """, (session_key, user_id, user_email, expires_at.isoformat()))
-      conn.commit()
+        cur.execute(
+            """
+            INSERT INTO sessions (session_key, user_id, email, expires_at)
+            VALUES (?, ?, ?, ?)
+            """, (session_key, user_id, user_email, expires_at.isoformat()))
+
+        conn.commit()
 
     return session_key
 
