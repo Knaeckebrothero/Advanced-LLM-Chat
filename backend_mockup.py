@@ -19,12 +19,22 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timedelta, UTC
 
 
 # Error response model
 class ErrorResponse(BaseModel):
+    """
+    Represents an error response model for providing error details to clients.
+
+    This class is used to define a structured format for handling and returning
+    error information in the system. It typically includes details about the error
+    that occurred, allowing for more informative client communication.
+
+    :ivar error: Description of the error that occurred.
+    :type error: str
+    """
     error: str
 
 
@@ -35,21 +45,77 @@ class MockLoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
+    """
+    Represents the response received upon a successful login attempt.
+
+    This class is used to encapsulate the details of a login response,
+    including information about the user and any additional message
+    associated with the login process.
+
+    :ivar user: Contains details relating to the logged-in user, such as
+        their profile information or credentials.
+    :type user: dict
+    :ivar message: A message conveying additional information or feedback
+        about the login process.
+    :type message: str
+    """
     user: dict
     message: str
 
 
 # Pydantic models for request validation
 class ConversationState(BaseModel):
+    """
+    Represents the state of a conversation.
+
+    This class is designed to store the unique state of a conversation,
+    identified by an ID and a corresponding hashsum. It can be used for
+    tracking, validation, or processing conversation states in an application.
+
+    :ivar id: Unique identifier for the conversation state.
+    :type id: int
+    :ivar hashsum: Hashsum of the conversation state, used for validation or
+        other purposes.
+    :type hashsum: int
+    """
     id: int
     hashsum: int
 
 
 class ApiConversationsCheck(BaseModel):
+    """
+    Represents a model for checking the list of conversation states.
+
+    This class serves as a container for a collection of `ConversationState`
+    objects, storing their states and providing a structured representation.
+    It follows a schema validation and can be used to encapsulate conversation
+    state information in various applications.
+
+    :ivar conversations: A list of `ConversationState` objects representing the
+        current states of various conversations.
+    :type conversations: List[ConversationState]
+    """
     conversations: List[ConversationState]
 
 
 class ApiMessageSend(BaseModel):
+    """
+    Represents a message sent within a specific conversation.
+
+    This class is used to encapsulate the details of a message sent in a
+    conversation, including the conversation ID, the role of the sender,
+    the content of the message, and the timestamp of when the message
+    was sent.
+
+    :ivar conversationId: Identifier of the conversation the message is associated with.
+    :type conversationId: int
+    :ivar roleName: Name or role of the sender of the message.
+    :type roleName: str
+    :ivar content: The textual content of the message.
+    :type content: str
+    :ivar time: Timestamp indicating when the message was sent, represented as an integer.
+    :type time: int
+    """
     conversationId: int
     roleName: str
     content: str
@@ -57,19 +123,67 @@ class ApiMessageSend(BaseModel):
 
 
 class ApiMessageGenerate(BaseModel):
+    """
+    Represents a model for generating API messages.
+
+    This class encapsulates the data and functionality required for handling
+    the generation of API messages. It stores information about the message
+    details, such as the associated conversation ID, the role name, and the
+    time of the message.
+
+    :ivar conversationId: Identifier for the conversation associated with
+        this message.
+    :type conversationId: int
+    :ivar roleName: Name of the role associated with the message.
+    :type roleName: str
+    :ivar time: Timestamp of when the message is generated or occurred.
+    :type time: int
+    """
     conversationId: int
     roleName: str
     time: int
 
 
 class MessagePatch(BaseModel):
+    """
+    Represents a model for updating message data within a conversation.
+
+    This class is used as a data structure for holding updated message
+    information such as the unique message identifier, the associated
+    conversation identifier, and the updated content of the message.
+
+    :ivar id: The unique identifier of the message.
+    :type id: int
+    :ivar conversationId: The unique identifier of the conversation to
+        which the message belongs.
+    :type conversationId: int
+    :ivar content: The updated content of the message.
+    :type content: str
+    """
     id: int
     conversationId: int
     content: str
 
 
-# Pydantic models for responses (for OpenAPI documentation)
 class MessageResponse(BaseModel):
+    """
+    Represents a response message within a conversation context.
+
+    This class serves as a data model for handling details related to a response
+    message in a conversation, including identifiers, role information, message
+    content, and the timestamp of when the message was created or sent.
+
+    :ivar id: Unique identifier of the message.
+    :type id: int
+    :ivar conversationId: Identifier of the conversation to which the message belongs.
+    :type conversationId: int
+    :ivar roleName: Role of the entity sending the message, such as 'user' or 'assistant'.
+    :type roleName: str
+    :ivar content: Text content of the response message.
+    :type content: str
+    :ivar time: Timestamp indicating when the message was created or sent, typically in epoch format.
+    :type time: int
+    """
     id: int
     conversationId: int
     roleName: str
@@ -78,14 +192,39 @@ class MessageResponse(BaseModel):
 
 
 class ConversationResponse(BaseModel):
+    """
+    Encapsulates the response details of a conversation.
+
+    This class represents the information related to a conversation's
+    response, such as its unique identifier and hash sum. It inherits
+    from `BaseModel` to utilize its functionality for data validation
+    and management.
+
+    :ivar id: Unique identifier for the conversation response.
+    :type id: int
+    :ivar hashsum: Hash sum representing the conversation response.
+    :type hashsum: int
+    """
     id: int
     hashsum: int
 
 
-# Database connection management
 @contextmanager
 def get_db():
-    # Establishes a connection to the SQLite database.
+    """
+    Establishes and manages a connection to the SQLite database.
+
+    This function acts as a context manager for database interactions.
+    It ensures that the database connection is properly opened and
+    closed, even in cases of exceptions. The database connection is
+    configured to allow dictionary-like access to rows using the
+    `sqlite3.Row` factory.
+
+    :param None: This function does not accept any parameters.
+    :yield: sqlite3.Connection
+        A connection object for interacting with the SQLite database.
+    :return: None
+    """
     # It uses a context manager to ensure the connection is closed automatically.
     conn = sqlite3.connect('chat.db')
     conn.row_factory = sqlite3.Row  # This enables dictionary-like access to rows
@@ -95,17 +234,58 @@ def get_db():
         conn.close()
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+  """
+  Manages the lifespan of the FastAPI application.
+
+  This function is an asynchronous context manager that performs actions during
+  the startup and shutdown of a FastAPI application. On startup, it launches a
+  background task to clean up expired sessions. On shutdown, it ensures proper
+  cleanup before the application terminates.
+
+  :param app: The FastAPI application instance whose lifespan is being managed.
+  :type app: FastAPI
+  :return: An asynchronous generator managing the application lifecycle.
+  :rtype: AsyncGenerator[None, None]
+  """
+  asyncio.create_task(cleanup_expired_sessions())
+  yield
+
+
 # Session management functions
 def generate_session_key(length=32) -> str:
     """
-    Generate a secure session key
+    Generate a secure, random session key.
+
+    This function generates a session key using a cryptographically secure
+    method. It ensures the generated string is URL-safe and suitable for
+    use in contexts such as session identifiers or API keys.
+
+    :param length: Length of the session key to be generated. Defaults to 32.
+    :type length: int
+    :return: A URL-safe, random session key string of the specified length.
+    :rtype: str
     """
     return secrets.token_urlsafe(length)
 
 
 def create_session(user_id: int, user_email: str, session_duration_hours=24) -> str:
     """
-    Create a new session
+    Creates a new session for a user, storing it both in memory and in the database.
+    The session is associated with a unique session key and includes details such
+    as the user ID, email, session creation time, expiration time, and the last
+    activity timestamp.
+
+    :param user_id: The unique identifier for the user.
+    :type user_id: int
+    :param user_email: The email address of the user.
+    :type user_email: str
+    :param session_duration_hours: The duration of the session in hours. Defaults
+        to 24 hours.
+    :type session_duration_hours: int
+    :return: The unique session key created for the session.
+    :rtype: str
     """
     session_key = generate_session_key()
     expires_at = datetime.now(UTC) + timedelta(hours=session_duration_hours)
@@ -148,7 +328,18 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24) -> 
 
 def validate_session(session_key: str) -> Optional[dict]:
     """
-    Validate a session key and return user info if valid
+    Validates a provided session key by checking active in-memory sessions first,
+    and falling back to database validation if necessary. It ensures that the session is not
+    expired, removes expired sessions, and updates session activity timestamp when valid.
+    The function returns session user-related data if the session is valid,
+    or None if the session key is invalid or expired.
+
+    :param session_key: The session key to be validated.
+    :type session_key: str
+
+    :return: A dictionary containing user-related data (user_id and email) if the session
+             is valid or None if invalid/expired.
+    :rtype: Optional[dict]
     """
     if not session_key:
       return None
@@ -204,7 +395,14 @@ def validate_session(session_key: str) -> Optional[dict]:
 
 def delete_session(session_key: str):
     """
-    Delete a session (logout)
+    Deletes a session from the memory and the database. This function first checks
+    if the session key exists in the in-memory sessions storage and deletes it
+    if present. Subsequently, it deletes the session with the given session key
+    from the database to maintain consistency.
+
+    :param session_key: The key identifying the session to be deleted
+    :type session_key: str
+    :return: None
     """
     if session_key in sessions:
       del sessions[session_key]
@@ -215,10 +413,19 @@ def delete_session(session_key: str):
       conn.commit()
 
 
-# Dependency to get current user from session
 async def get_current_user(request: Request) -> dict:
     """
-    Dependency to validate session and get current user
+    Retrieves the current user based on the session information provided
+    in the request cookies. The function validates the session key and
+    returns user information if the session is valid. If the session is
+    invalid or missing, raises an HTTP exception.
+
+    :param request: The HTTP request object containing cookies with the
+        session information
+    :type request: Request
+    :return: A dictionary containing the details of the authenticated user
+    :rtype: dict
+    :raises HTTPException: If the session key is missing or invalid
     """
     session_key = request.cookies.get("session_id")
     if not session_key:
@@ -231,10 +438,18 @@ async def get_current_user(request: Request) -> dict:
     return user_info
 
 
-# Optional dependency (doesn't raise exception)
 async def get_current_user_optional(request: Request) -> Optional[dict]:
     """
-    Optional version that returns None instead of raising exception
+    Attempts to retrieve the current user based on the provided request. If the
+    user is not authenticated or an HTTPException occurs during the process, it
+    returns None instead of raising the exception.
+
+    :param request: Request instance containing the context for the current
+        HTTP request.
+    :type request: Request
+    :return: A dictionary containing user information if authentication is
+        successful, or None if no user is authenticated or an exception occurs.
+    :rtype: Optional[dict]
     """
     try:
       return await get_current_user(request)
@@ -244,7 +459,14 @@ async def get_current_user_optional(request: Request) -> Optional[dict]:
 
 async def cleanup_expired_sessions():
     """
-    Background task to clean up expired sessions
+    Periodically cleans up expired sessions from both in-memory storage and the database.
+    This method runs indefinitely, removing sessions that have expired from the in-memory
+    storage and the database at regular intervals. It ensures proper cleanup to prevent
+    storage bloat and maintain system performance.
+
+    :raises Exception: if any uncaught error occurs during in-memory or database cleanup operations.
+
+    :return: None
     """
     while True:
       try:
@@ -272,8 +494,15 @@ async def cleanup_expired_sessions():
       await asyncio.sleep(3600)
 
 
-# Initialize database and create tables
 def init_db():
+    """
+    Initializes the database by creating necessary tables if they do not exist. This function is responsible for
+    setting up the schema required to store chat messages, user sessions, and user information. Additionally, it
+    creates an index on the messages table for optimized queries.
+
+    :raises DatabaseError: If the database connection or operations fail
+    :return: None
+    """
     # Initializes the database by creating necessary tables if they don't exist.
     with get_db() as conn:
         cur = conn.cursor()
@@ -321,8 +550,16 @@ def init_db():
         conn.commit() # Commit changes to the database
 
 
-# Generate and save development certificates using trustme
 def setup_development_certificates():
+    """
+    Sets up self-signed SSL certificates for local development using the `trustme` library. These certificates
+    enable running the server over HTTPS in a secure manner during development. The function generates a
+    Certificate Authority (CA) and server certificates, saves them in a directory, and returns the paths to
+    the certificate and private key.
+
+    :return: A tuple containing the file paths to the server certificate and private key.
+    :rtype: Tuple[str, str]
+    """
     # Sets up SSL certificates for local development using trustme.
     # This allows running the server over HTTPS.
     ca = trustme.CA()
@@ -339,11 +576,19 @@ def setup_development_certificates():
     return str(cert_dir / "server.pem"), str(cert_dir / "server.key")
 
 
-# Generate a hashsum from the conversation messages
 def generate_hash(messages: List[sqlite3.Row]) -> int:
     """
-    Custom hashsum generator for checking the integrity of a conversation.
-    This function creates a numerical hash based on the content of messages.
+    Generates a hash value based on the content of the provided messages. This method applies
+    a basic hashing logic using the first and last character of each message content and the
+    string length. If the list of messages is empty, the hash value defaults to 0. The result
+    is constrained to a 32-bit integer format.
+
+    :param messages: A list of sqlite3.Row objects. Each row should contain a 'content' field
+        with a string value that will be used for generating the hash.
+    :type messages: List[sqlite3.Row]
+    :return: An integer representing the computed hash value. If the provided list is empty,
+        the returned value is 0.
+    :rtype: int
     """
     if not messages:
         return 0 # Return 0 if there are no messages
@@ -368,9 +613,20 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
     return hash_value
 
 
-# Generate a response using Replicate's API
 async def generate_llm_response(prompt: str) -> str:
-    # Generates a text response using a Large Language Model (LLM) via Replicate API.
+    """
+    Generates a text response using a Large Language Model (LLM) via Replicate API.
+
+    This function utilizes Meta's Llama model to generate a text response based on
+    the input prompt. The model parameters such as temperature, top_p, and max tokens
+    are configurable within the function. The response is returned as a concatenated
+    string.
+
+    :param prompt: The input prompt to generate a response.
+    :type prompt: str
+    :return: Text response generated by the LLM.
+    :rtype: str
+    """
     try:
         # Use Meta's Llama model through Replicate
         output = replicate.run(
@@ -391,9 +647,22 @@ async def generate_llm_response(prompt: str) -> str:
         return "I apologize, but I encountered an error generating a response." # Fallback message
 
 
-# Get conversation context
 async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
-    # Retrieves the recent message history for a given conversation to provide context for the LLM.
+    """
+    Retrieves the recent message history for a specific conversation, providing
+    a textual context that can be used as input for a language model or other
+    processes. The context consists of the last `limit` messages, ordered
+    chronologically.
+
+    :param conversation_id: The unique identifier for the conversation.
+    :type conversation_id: int
+    :param limit: The maximum number of recent messages to retrieve
+        from the conversation. Default is 5.
+    :type limit: int
+    :return: A string containing the conversation context, where each
+        message is prefaced by the role of its sender.
+    :rtype: str
+    """
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -437,25 +706,30 @@ app = FastAPI(
     description="This is a backend server for a chat application.",
     docs_url=None,
     redoc_url=None,
-    openapi_url="/api/openapi.json"
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan
+
 )
 
 # Initialize the database on startup
 init_db()
 
 
-# Start cleanup task when app starts
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(cleanup_expired_sessions())
-
-
-# Custom OpenAPI schema endpoint
 @app.get(app.openapi_url, include_in_schema=False) # Use app.openapi_url here
 async def custom_openapi():
-    # Serves the OpenAPI schema in JSON format.
-    # This is used by Swagger UI to understand the API structure.
-    # The schema is generated based on the routes and Pydantic models.
+    """
+    Simulates the functionality of various API endpoints for handling authentication, user information,
+    conversation retrieval, message retrieval, and message creation in a backend application. The endpoints
+    are implemented using FastAPI and cover actions such as login, logout, fetching user information,
+    retrieving conversations/messages, and sending messages.
+
+    The endpoints either serve custom HTML pages (e.g., Swagger UI), or perform database queries to interact
+    with messages and conversations. Authentication-related routes also manage session cookies for user sessions.
+
+    :param app: The FastAPI application instance used to define API routes.
+    :param include_in_schema: Whether to include this endpoint in the OpenAPI schema.
+    :return: A dictionary containing the OpenAPI schema for the API.
+    """
     return get_openapi(
         title=app.title,
         version=app.version,
@@ -464,11 +738,16 @@ async def custom_openapi():
     )
 
 
-# Custom Swagger UI endpoint
 @app.get("/api/docs", include_in_schema=False)
 async def custom_swagger_ui_html(req: Request):
-    # Serves the Swagger UI HTML page.
-    # It fetches the OpenAPI schema from the `openapi_url` configured in the FastAPI app.
+    """
+    Serves the Swagger UI HTML for API documentation.
+
+    :param req: The request object containing the root path and other request scope information.
+    :type req: Request
+    :return: An HTML response for the Swagger UI page.
+    :rtype: HTMLResponse
+    """
     root_path = req.scope.get("root_path", "").rstrip("/")
     openapi_url = root_path + app.openapi_url
     return get_swagger_ui_html(
@@ -477,12 +756,20 @@ async def custom_swagger_ui_html(req: Request):
     )
 
 
-# Authentication endpoints
 @app.post("/api/auth/mock-login", response_model=LoginResponse)
 async def mock_login(request: MockLoginRequest, response: Response):
     """
-    Mock login endpoint - simulates successful IDP authentication
-    In production, this would validate IDP tokens/SAML assertions
+    Handles a mock login process for a user with provided request data. Generates a mock
+    user ID based on the email, creates a session, sets the session cookie in the
+    response, and returns a successful login response. This is a mocked implementation
+    and should be replaced with proper validation and user creation/lookup in production.
+
+    :param request: The login request data containing email information.
+    :type request: MockLoginRequest
+    :param response: The HTTP response object to which a session cookie is added.
+    :type response: Response
+    :return: A response model containing user details and a success message.
+    :rtype: LoginResponse
     """
     # For now, we'll create a mock user based on the email
     # In production, you'd validate IDP response and get user info
@@ -513,10 +800,18 @@ async def mock_login(request: MockLoginRequest, response: Response):
       message="Mock login successful"
     )
 
+
 @app.post("/api/auth/logout")
 async def logout(request: Request, response: Response):
     """
-    Logout endpoint - deletes session
+    Handles user logout by deleting the session and clearing the session cookie.
+
+    :param request: An instance of ``Request`` containing the HTTP request with
+        cookies to retrieve the session ID.
+    :param response: An instance of ``Response`` used to delete the session cookie
+        and send the response back to the client.
+    :return: A dictionary message with a confirmation of successful logout.
+    :rtype: dict
     """
     session_key = request.cookies.get("session_id")
     if session_key:
@@ -526,10 +821,23 @@ async def logout(request: Request, response: Response):
     response.delete_cookie("session_id")
     return {"message": "Logged out successfully"}
 
+
 @app.get("/api/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
     """
-    Get current user info
+    Retrieves the details of the currently authenticated user.
+
+    This function is an endpoint for retrieving the authenticated user's
+    information. It depends on the `get_current_user` function to obtain
+    the user's data and returns it as part of the response. The user data
+    is expected to include all the relevant details of the currently
+    authenticated user in dictionary format.
+
+    :param current_user: A dictionary object that contains data about
+        the currently authenticated user. This is automatically retrieved
+        via dependency injection using `Depends(get_current_user)`.
+    :return: A dictionary containing the "user" key, holding the details
+        of the currently authenticated user.
     """
     return {"user": current_user}
 
