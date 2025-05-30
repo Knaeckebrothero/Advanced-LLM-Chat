@@ -3,14 +3,15 @@ import {BehaviorSubject, Observable} from 'rxjs';
 import {Message, MessageData} from '../data/objects/message';
 import {DBService} from '../data/db.service';
 import {ApiService} from '../api/api.service';
-import {Conversation} from '../data/objects/conversation'; // Assuming ConversationDTO is not used directly here but Conversation class itself
+import {Conversation} from '../data/objects/conversation';
 import {User} from '../data/objects/user';
+import {AuthService} from '../auth/auth.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ChatService {
-  private conversation!: Conversation; // Definite assignment assertion
+  private conversation!: Conversation;
   private currentUser: User | null = null;
 
   private messagesSubject = new BehaviorSubject<Message[]>([]);
@@ -21,61 +22,81 @@ export class ChatService {
 
   constructor(
     private dbService: DBService,
-    private apiService: ApiService
+    private apiService: ApiService,
+    private authService: AuthService
   ) {
-    this.initializeChat();
+    // Subscribe to auth changes
+    this.authService.currentUser$.subscribe(user => {
+      if (user) {
+        this.initializeChat();
+      } else {
+        // Clear chat when user logs out
+        this.clearChat();
+      }
+    });
+  }
+
+  private clearChat(): void {
+    this.currentUser = null;
+    this.messagesSubject.next([]);
+    this.currentConversationSubject.next(null);
   }
 
   private async initializeChat(): Promise<void> {
     console.log("ChatService: Initializing...");
-    await this.dbService.getDatabaseReadyPromise(); // Ensure DB is ready
-    this.currentUser = await this.dbService.getCurrentUser();
+    await this.dbService.getDatabaseReadyPromise();
+
+    // Get current user from auth service
+    const authUser = this.authService.getCurrentUser();
+    if (!authUser) {
+      console.error("ChatService: No authenticated user found");
+      this.clearChat();
+      return;
+    }
+
+    // Create User object with the session token
+    this.currentUser = {
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      accessToken: this.authService.getToken() || ''
+    };
 
     if (this.currentUser) {
       console.log("ChatService: Current user loaded -", this.currentUser.name, `(ID: ${this.currentUser.id})`);
       await this.loadOrCreateConversationForUser(this.currentUser);
     } else {
       console.error("ChatService: CRITICAL - No current user found after DB init. Chat functionality will be limited.");
-      this.currentConversationSubject.next(null); // No active conversation
-      // Fallback for guest/default user if necessary:
-      // this.conversation = new Conversation(SOME_DEFAULT_ID, 0, "Guest Chat", ["user", "Assistant"]);
-      // await this.dbService.addConversation(this.conversation); // If guest convos are persisted
-      // this.currentConversationSubject.next(this.conversation);
-      // await this.loadMessagesForCurrentConversation(); // Load messages for guest
+      this.currentConversationSubject.next(null);
     }
   }
 
   private async loadOrCreateConversationForUser(user: User): Promise<void> {
     const userConversations = await this.dbService.getConversationsByUserId(user.id);
     if (userConversations && userConversations.length > 0) {
-      this.conversation = userConversations[0]; // Load the first available conversation
+      this.conversation = userConversations[0];
       console.log("ChatService: Loaded existing conversation:", this.conversation.name, `(ID: ${this.conversation.id})`);
     } else {
-      // Create a new Conversation object in memory. ID is null.
-      // It will be saved to DBService only after the backend confirms its creation (via the first sendMessage).
       this.conversation = new Conversation(
-        null, // ID is null for a new, unsaved conversation
+        null,
         user.id,
-        `Chat with ${user.name}`, // Default name
-        ["user", "Assistant"]    // Default participants
+        `Chat with ${user.name}`,
+        ["user", "Assistant"]
       );
       console.log("ChatService: Initialized new in-memory conversation (not yet saved to DB/Backend):", this.conversation.name);
-      // DO NOT add to dbService here. It will be added after the first message send and backend confirmation.
     }
     this.currentConversationSubject.next(this.conversation);
 
     if (this.conversation && this.conversation.id !== null) {
       await this.loadMessagesForCurrentConversation();
-      this.refreshConversationFromServer(); // Check for updates from server
+      this.refreshConversationFromServer();
     } else if (this.conversation && this.conversation.id === null) {
-      // For a new conversation (id is null), there are no messages to load yet.
       this.messagesSubject.next([]);
       console.log("ChatService: New conversation instance created. Messages will load/populate after the first successful send.");
     }
   }
 
   private async loadMessagesForCurrentConversation(): Promise<void> {
-    // This method should only be called if conversation.id is NOT null.
     if (!this.conversation || this.conversation.id === null) {
       console.warn("ChatService: Attempted to load messages for a conversation with a null ID.");
       this.messagesSubject.next([]);
@@ -94,7 +115,7 @@ export class ChatService {
     }
 
     try {
-      const remoteConversations = await this.apiService.getConversationsByUser(this.currentUser.id, this.currentUser.accessToken);
+      const remoteConversations = await this.apiService.getConversationsByUser(this.currentUser.id);
       const remoteCurrentConversationData = remoteConversations.find(c => c.id === this.conversation.id);
 
       if (!remoteCurrentConversationData) {
@@ -102,22 +123,18 @@ export class ChatService {
         return;
       }
 
-      // remoteCurrentConversationData is already a Conversation instance if ApiService.getConversationsByUser maps it.
-      // If it returns plain objects, then instantiation is needed here. Assuming it's Conversation instance.
       const remoteCurrentConversation = remoteCurrentConversationData;
-
       const localHashsum = await this.conversation.computeHash(this.dbService);
 
-      // Ensure remoteCurrentConversation.hashsum is available (it should be if API provides it)
       if (remoteCurrentConversation.hashsum !== undefined && localHashsum !== remoteCurrentConversation.hashsum) {
         console.log('ChatService: Conversation hashes mismatch! Local:', localHashsum, 'Remote:', remoteCurrentConversation.hashsum, ". Refreshing messages.");
 
-        const messagesFromServer = await this.apiService.getConversationMessages(remoteCurrentConversation.id!, 50, this.currentUser.accessToken);
+        const messagesFromServer = await this.apiService.getConversationMessages(remoteCurrentConversation.id!, 50);
 
-        await this.dbService.deleteMessagesByConversationId(this.conversation.id!); // id is not null here
-        this.messagesSubject.next([]); // Clear UI
+        await this.dbService.deleteMessagesByConversationId(this.conversation.id!);
+        this.messagesSubject.next([]);
 
-        this.addMessagesToLocalStoreAndSubject(messagesFromServer, this.conversation.id!); // id is not null
+        this.addMessagesToLocalStoreAndSubject(messagesFromServer, this.conversation.id!);
 
         this.conversation.hashsum = remoteCurrentConversation.hashsum;
         await this.dbService.updateConversation(this.conversation);
@@ -133,20 +150,18 @@ export class ChatService {
 
   private addMessagesToLocalStoreAndSubject(
     messageOrMessages: Message | MessageData | (Message | MessageData)[],
-    targetConversationId: number // Expecting a non-null ID once messages are being formally added
+    targetConversationId: number
   ): void {
-    // Note: targetConversationId is now number, implying it's for an existing/confirmed conversation.
     const messagesToAddArray = Array.isArray(messageOrMessages) ? messageOrMessages : [messageOrMessages];
     if (messagesToAddArray.length === 0) return;
 
     const processedMessages: Message[] = messagesToAddArray.map(msgDataOrInstance => {
       const msg = msgDataOrInstance instanceof Message ? msgDataOrInstance : Message.fromApiResponse(msgDataOrInstance as MessageData);
-      msg.conversationId = targetConversationId; // Explicitly set/confirm conversationId
+      msg.conversationId = targetConversationId;
       return msg;
     });
 
     const currentMessages = this.messagesSubject.getValue();
-    // Filter out duplicates more reliably
     const uniqueNewMessages = processedMessages.filter(nm => !currentMessages.some(cm => cm.id === nm.id && cm.conversationId === nm.conversationId));
 
     if (uniqueNewMessages.length > 0) {
@@ -171,28 +186,24 @@ export class ChatService {
     const tempMessageId = Date.now();
     const messageTime = new Date();
 
-    // Message.conversationId will be null if this.conversation.id is null (new conversation)
     const message = new Message({
       id: tempMessageId,
-      conversationId: this.conversation.id, // Can be null for a new conversation
+      conversationId: this.conversation.id,
       roleName: roleName === 'user' ? this.currentUser.name : roleName,
       content: content,
       time: messageTime
     });
 
-    // Optimistic UI update
     const currentUIMessages = this.messagesSubject.getValue();
     this.messagesSubject.next([...currentUIMessages, message].sort((a, b) => (a.time?.getTime() || 0) - (b.time?.getTime() || 0)));
 
     try {
       const {confirmedMessage, newConversation} = await this.apiService.sendMessage(
         message,
-        this.conversation, // Pass the current conversation object (which might have id: null)
-        this.currentUser.accessToken
+        this.conversation
       );
       console.log('ChatService: Message sent. Confirmed Msg ID:', confirmedMessage.id, "New Conv ID:", confirmedMessage.conversationId);
 
-      // If a new conversation was created by the backend
       if (newConversation && this.conversation.id === null) {
         console.log('ChatService: New conversation confirmed by backend. Updating local conversation ID from null to', newConversation.id);
 
@@ -201,41 +212,25 @@ export class ChatService {
         this.conversation.participants = newConversation.participants;
         this.conversation.hashsum = newConversation.hashsum;
 
-        // IMPORTANT: Save the newly confirmed conversation to local DB
         await this.dbService.addConversation(this.conversation);
-        this.currentConversationSubject.next(this.conversation); // Notify observers
-
-        // The confirmedMessage from API will have the correct new conversationId.
-        // The temporary message had `conversationId: null` if it was a new convo.
+        this.currentConversationSubject.next(this.conversation);
       }
 
-      // Remove the temporary message from UI
       const finalMessagesAfterTempRemoval = this.messagesSubject.getValue().filter(m => m.id !== tempMessageId);
       this.messagesSubject.next(finalMessagesAfterTempRemoval);
 
-      // Attempt to delete temporary message from DB if it was saved under a different (temporary) ID context
-      // This delete is mainly for client-side only temp messages that should not persist.
-      // Given our flow, the temp message with null conversationId wouldn't have a specific DB entry
-      // to delete by its tempMessageId if DB constraints prevent messages with null convId.
-      // If it *was* added optimistically to DB with a temp convId, then delete.
-      // For now, assume it was UI only or DB handled its temporary nature.
-      // If dbService.addMessage handles null conversationId by not saving, this delete is fine.
-      // If Message.id is unique, this is okay.
       try {
         await this.dbService.deleteMessage(tempMessageId);
       } catch (dbError) {
         console.warn("ChatService: Could not delete temporary message from DB; it might not have been added or already processed:", dbError);
       }
 
-      // Add the server-confirmed message which has the correct ID and conversationId
-      this.addMessagesToLocalStoreAndSubject(confirmedMessage, confirmedMessage.conversationId!); // confirmedMessage.conversationId should not be null here
+      this.addMessagesToLocalStoreAndSubject(confirmedMessage, confirmedMessage.conversationId!);
 
     } catch (error) {
       console.error('ChatService: Error sending message via API:', error);
-      // Revert optimistic UI update on failure
       const revertedMessages = this.messagesSubject.getValue().filter(m => m.id !== tempMessageId);
       this.messagesSubject.next(revertedMessages);
-      // TODO: Provide more specific UI feedback for the failed message (e.g., mark as "failed to send")
     }
   }
 
@@ -248,8 +243,6 @@ export class ChatService {
     const currentMessages = this.messagesSubject.getValue();
     if (currentMessages.length === 0) {
       console.warn("ChatService: Cannot generate AI message. No previous messages in conversation to provide context.");
-      // You could potentially allow AI to send the first message if logic supports it.
-      // For example, by sending a different request to ApiService or a default initial prompt.
       return;
     }
 
@@ -257,8 +250,7 @@ export class ChatService {
     console.log(`ChatService: Generating AI message for ${participantName} based on last message: "${lastMessage.content}"`);
 
     try {
-      const generatedMessage = await this.apiService.generateMessage(lastMessage, participantName, this.currentUser.accessToken);
-      // generatedMessage.conversationId should match this.conversation.id!
+      const generatedMessage = await this.apiService.generateMessage(lastMessage, participantName);
       this.addMessagesToLocalStoreAndSubject(generatedMessage, this.conversation.id!);
       console.log("ChatService: Generated AI message added:", generatedMessage.content);
     } catch (error) {
@@ -272,14 +264,13 @@ export class ChatService {
       return;
     }
     try {
-      // Pass conversation.id! as it's confirmed not null by the guard
-      const updatedMessage = await this.apiService.patchMessage(this.conversation.id!, messageId, newContent, this.currentUser.accessToken);
+      const updatedMessage = await this.apiService.patchMessage(this.conversation.id!, messageId, newContent);
 
       const currentMessages = this.messagesSubject.getValue();
       const messageIndex = currentMessages.findIndex(msg => msg.id === messageId && msg.conversationId === this.conversation.id);
 
       if (messageIndex !== -1) {
-        currentMessages[messageIndex] = updatedMessage; // ApiService should return a Message instance
+        currentMessages[messageIndex] = updatedMessage;
         this.messagesSubject.next([...currentMessages]);
         await this.dbService.updateMessage(updatedMessage);
         console.log("ChatService: Message patched successfully:", updatedMessage.content);
@@ -297,12 +288,11 @@ export class ChatService {
       return;
     }
     try {
-      // Pass conversation.id! as it's confirmed not null
-      await this.apiService.deleteMessage(this.conversation.id!, messageId, this.currentUser.accessToken);
+      await this.apiService.deleteMessage(this.conversation.id!, messageId);
 
       const updatedMessages = this.messagesSubject.getValue().filter(msg => !(msg.id === messageId && msg.conversationId === this.conversation.id));
       this.messagesSubject.next(updatedMessages);
-      await this.dbService.deleteMessage(messageId); // Assuming messageId is globally unique or DBService handles context
+      await this.dbService.deleteMessage(messageId);
       console.log("ChatService: Message deleted successfully, ID:", messageId);
     } catch (error) {
       console.error('ChatService: Error deleting message via API:', error);
@@ -314,19 +304,6 @@ export class ChatService {
       console.error("ChatService: Cannot regenerate message. Conversation not fully initialized with a server-assigned ID.");
       return;
     }
-    // Placeholder: Actual implementation would involve:
-    // 1. Identifying context (messages before messageToRegenerate).
-    // 2. Calling an API endpoint (potentially a modified generateMessage or a specific regenerate endpoint).
-    // 3. Handling the response: replacing messageToRegenerate or appending a new AI message.
     console.log('ChatService: Regenerating message (placeholder) - ID:', messageToRegenerate.id);
-    // Example:
-    // const messages = this.messagesSubject.getValue();
-    // const index = messages.findIndex(m => m.id === messageToRegenerate.id);
-    // if (index > 0) {
-    //   const contextMessage = messages[index -1];
-    //   // await this.apiService.regenerateBasedOn(contextMessage, messageToRegenerate, this.currentUser.accessToken);
-    // } else if (index === 0) {
-    //   // Regenerate first message - special handling or disallow
-    // }
   }
 }

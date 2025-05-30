@@ -1,30 +1,34 @@
-@use 'src/styles/variables' as vars;
-
 .main-ui-container {
-  // Make the positioning of the mat-icon relative to this container
-  position: relative;
-  height: 100%;
-  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+}
 
-  // Button styling
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: #3f51b5;
+  color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+
   mat-icon {
-    height: auto;
-    width: auto;
-    // Position mat-icon absolutely on the top left
-    position: absolute; 
-    // Ensure it's on top of other components.
-    z-index: 998;
-    // Change the cursor to a pointer when hovering over the button
     cursor: pointer;
-    color: vars.$color-secondary;
-    font-size: 50px;
+    margin-right: 16px;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  button {
+    color: white;
   }
 }
 
-// Hide the button on screens smaller than 768px wide
-@media (max-width: 768px) {
-  //mat-icon {
-  //  display: none;
-  //}
+router-outlet + * {
+  flex: 1;
+  overflow: auto;
 }

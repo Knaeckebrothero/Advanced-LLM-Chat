@@ -1,14 +1,23 @@
 @use 'src/styles/variables' as vars;
 @use 'src/styles/mixins' as mixins;
 
+:host {
+  flex-grow: 1; /* Allows the component to grow and take available vertical space */
+  display: flex; /* Establishes a flex context for its child (.chat-ui-container) */
+  min-height: 0;  /* Prevents the flex item from overflowing its container, crucial for nested scrollable content */
+  width: 100%; /* Ensure it takes full width */
+}
+
 // Chat component styles
 .chat-ui-container {
-  height: 100%;
+  height: 100%; /* Takes the full height of the :host element */
   width: 100%;
   display: flex;
   flex-direction: column;
   background-color: vars.$color-background;
 }
+
+/* ... rest of your existing styles in app/chat-ui/chat-ui.component.scss ... */
 
 .message-container {
   flex-grow: 1;
@@ -108,7 +117,12 @@
   }
 
   .input-container {
-    min-height: 13%;
+    min-height: 13%; // This provides a minimum height on desktop
+  }
+
+  .textfield-container{
+    /* Ensure textfield-container also respects the new height model if needed,
+       but its percentage height should work better with a stable input-container height. */
   }
 
   .button-container {

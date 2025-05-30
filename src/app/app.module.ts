@@ -4,6 +4,7 @@ import { ChatUiMessageComponent } from './chat-ui/chat-ui-message/chat-ui-messag
 import { SettingsComponent } from './settings/settings.component';
 import { MetricsComponent } from './metrics/metrics.component';
 import { StatusBarComponent } from './status-bar/status-bar.component';
+import { LoginComponent } from './login/login.component';
 
 // Angular Material
 import { MatIconModule } from '@angular/material/icon';
@@ -12,6 +13,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatListModule } from '@angular/material/list';
+import { MatCardModule } from '@angular/material/card';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
 // Default
 import { NgModule, isDevMode } from '@angular/core';
@@ -24,35 +27,48 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, Routes } from '@angular/router';
 
+// Auth
+import { AuthGuard } from './auth/auth.guard';
 
 // Routes
 const routes: Routes = [
-  { path: '', component: ChatUiComponent },
-  { path: 'metrics', component: MetricsComponent },
-  { path: 'settings', component: SettingsComponent }
+  { path: 'login', component: LoginComponent },
+  { path: '', component: ChatUiComponent, canActivate: [AuthGuard] },
+  { path: 'metrics', component: MetricsComponent, canActivate: [AuthGuard] },
+  { path: 'settings', component: SettingsComponent, canActivate: [AuthGuard] },
+  { path: '**', redirectTo: '' }
 ];
 
-@NgModule({ declarations: [
-        AppComponent,
-        ChatUiComponent,
-        ChatUiMessageComponent,
-        SettingsComponent,
-        MetricsComponent,
-        StatusBarComponent,
-    ],
-    bootstrap: [AppComponent], imports: [BrowserModule,
-        MatIconModule,
-        MatInputModule,
-        FormsModule,
-        ReactiveFormsModule,
-        MatButtonModule,
-        MatFormFieldModule,
-        MatSidenavModule,
-        MatListModule,
-        RouterModule.forRoot(routes),
-        ServiceWorkerModule.register('ngsw-worker.js', {
-            enabled: !isDevMode(),
-            registrationStrategy: 'registerWhenStable:30000'
-        }),
-        BrowserAnimationsModule], providers: [provideHttpClient(withInterceptorsFromDi())] })
+@NgModule({
+  declarations: [
+    AppComponent,
+    ChatUiComponent,
+    ChatUiMessageComponent,
+    SettingsComponent,
+    MetricsComponent,
+    StatusBarComponent,
+    LoginComponent,
+  ],
+  bootstrap: [AppComponent],
+  imports: [
+    BrowserModule,
+    MatIconModule,
+    MatInputModule,
+    FormsModule,
+    ReactiveFormsModule,
+    MatButtonModule,
+    MatFormFieldModule,
+    MatSidenavModule,
+    MatListModule,
+    MatCardModule,
+    MatProgressSpinnerModule,
+    RouterModule.forRoot(routes),
+    ServiceWorkerModule.register('ngsw-worker.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000'
+    }),
+    BrowserAnimationsModule
+  ],
+  providers: [provideHttpClient(withInterceptorsFromDi())]
+})
 export class AppModule { }

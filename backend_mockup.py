@@ -10,7 +10,10 @@ import trustme
 import time
 import replicate  # type: ignore
 import json  # For storing participants list
-from fastapi import FastAPI, Response, status, Request
+import secrets
+import hashlib
+from datetime import datetime, timedelta
+from fastapi import FastAPI, Response, status, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -21,7 +24,19 @@ from pathlib import Path
 from contextlib import contextmanager
 
 
+# --- Hardcoded Credentials ---
+HARDCODED_USERNAME = "admin"
+HARDCODED_PASSWORD = "password123"  # In production, use environment variables
+HARDCODED_USER_ID = 777
+HARDCODED_USER_NAME = "Backend User"
+HARDCODED_USER_EMAIL = "backend.user@example.com"
+
 # --- Pydantic Models ---
+class LoginRequest(BaseModel):
+  username: str
+  password: str
+
+
 class ErrorResponse(BaseModel):
   error: str
 
@@ -89,13 +104,6 @@ class SendMessageApiResponse(BaseModel):
   conversation: Optional[ConversationResponse] = None  # Populated if a new conversation was created
 
 
-# --- Hardcoded User & Token (for mockup) ---
-HARDCODED_USER_ID = 777
-HARDCODED_USER_NAME = "Backend User"
-HARDCODED_USER_EMAIL = "backend.user@example.com"
-HARDCODED_SESSION_TOKEN = "hardcoded-backend-session-token-12345"
-
-
 # --- Database Setup ---
 @contextmanager
 def get_db():
@@ -114,62 +122,37 @@ def init_db():
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS conversations
                 (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY
-                  AUTOINCREMENT,
-                  userId
-                  INTEGER
-                  NOT
-                  NULL,
-                  name
-                  TEXT
-                  NOT
-                  NULL,
-                  participants
-                  TEXT
-                  NOT
-                  NULL, -- Store as JSON string
-                  hashsum
-                  INTEGER
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  userId INTEGER NOT NULL,
+                  name TEXT NOT NULL,
+                  participants TEXT NOT NULL, -- Store as JSON string
+                  hashsum INTEGER
                 )
                 ''')
     # Messages table
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS messages
                 (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY,  -- Using client-generated timestamp for ID initially
-                  conversationId
-                  INTEGER
-                  NOT
-                  NULL,
-                  roleName
-                  TEXT
-                  NOT
-                  NULL,
-                  content
-                  TEXT
-                  NOT
-                  NULL,
-                  time
-                  INTEGER
-                  NOT
-                  NULL, -- Unix timestamp in seconds
-                  FOREIGN
-                  KEY
-                (
-                  conversationId
-                ) REFERENCES conversations
-                (
-                  id
-                )
+                  id INTEGER PRIMARY KEY,  -- Using client-generated timestamp for ID initially
+                  conversationId INTEGER NOT NULL,
+                  roleName TEXT NOT NULL,
+                  content TEXT NOT NULL,
+                  time INTEGER NOT NULL, -- Unix timestamp in seconds
+                  FOREIGN KEY (conversationId) REFERENCES conversations (id)
                   )
                 ''')
     cur.execute('CREATE INDEX IF NOT EXISTS idx_conversation_time ON messages(conversationId, time)')
+
+    # Sessions table
+    cur.execute('''
+                CREATE TABLE IF NOT EXISTS sessions
+                (
+                  token TEXT PRIMARY KEY,
+                  user_id INTEGER NOT NULL,
+                  expires_at TIMESTAMP NOT NULL,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                ''')
     conn.commit()
 
 
@@ -183,6 +166,83 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
       continue
     hash_value += ord(content[0]) + ord(content[-1]) + len(content)
   return hash_value % (2 ** 32)
+
+
+# --- Session Management ---
+def generate_session_token() -> str:
+  """Generate a secure random session token."""
+  return secrets.token_urlsafe(32)
+
+
+def create_session(user_id: int) -> str:
+  """Create a new session for the user."""
+  token = generate_session_token()
+  expires_at = datetime.now() + timedelta(hours=1)  # 1 hour validity
+
+  with get_db() as conn:
+    cur = conn.cursor()
+    # Remove any existing sessions for this user
+    cur.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    # Create new session
+    cur.execute(
+      "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+      (token, user_id, expires_at.isoformat())
+    )
+    conn.commit()
+
+  return token
+
+
+def validate_session_token(token: str) -> Optional[int]:
+  """Validate session token and return user_id if valid."""
+  if not token:
+    return None
+
+  with get_db() as conn:
+    cur = conn.cursor()
+    cur.execute(
+      "SELECT user_id, expires_at FROM sessions WHERE token = ?",
+      (token,)
+    )
+    result = cur.fetchone()
+
+    if not result:
+      return None
+
+    user_id = result['user_id']
+    expires_at = datetime.fromisoformat(result['expires_at'])
+
+    # Check if expired
+    if expires_at < datetime.now():
+      # Clean up expired session
+      cur.execute("DELETE FROM sessions WHERE token = ?", (token,))
+      conn.commit()
+      return None
+
+    # Update expiry time (sliding window - resets to 1 hour on each valid request)
+    new_expires_at = datetime.now() + timedelta(hours=1)
+    cur.execute(
+      "UPDATE sessions SET expires_at = ? WHERE token = ?",
+      (new_expires_at.isoformat(), token)
+    )
+    conn.commit()
+
+    return user_id
+
+
+async def get_current_user(request: Request) -> int:
+  """Dependency to get current user from session token."""
+  auth_header = request.headers.get("Authorization")
+  if not auth_header or not auth_header.startswith("Bearer "):
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
+  token = auth_header.split(" ")[1]
+  user_id = validate_session_token(token)
+
+  if not user_id:
+    raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+  return user_id
 
 
 # --- LLM Interaction (Replicate) ---
@@ -229,8 +289,8 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
 load_dotenv(find_dotenv())
 app = FastAPI(
   title="Chat API Mockup",
-  version="1.1.0",
-  description="Mockup backend for a chat application, handles conversation creation.",
+  version="1.2.0",
+  description="Mockup backend for a chat application with session authentication.",
   docs_url=None,
   redoc_url=None,
   openapi_url="/api/openapi.json"
@@ -250,19 +310,70 @@ async def custom_swagger_ui_html(req: Request):
 
 
 # --- API Endpoints ---
+@app.post("/api/auth/login", response_model=SessionInfoResponse, tags=["Authentication"])
+async def login(request_body: LoginRequest, response: Response):
+  """Login endpoint with hardcoded credentials."""
+  print(f"Login attempt for user: {request_body.username}")
+
+  # Check hardcoded credentials
+  if request_body.username != HARDCODED_USERNAME or request_body.password != HARDCODED_PASSWORD:
+    response.status_code = status.HTTP_401_UNAUTHORIZED
+    return ErrorResponse(error="Invalid username or password")
+
+  # Create session
+  token = create_session(HARDCODED_USER_ID)
+
+  user_details = UserDetails(
+    id=HARDCODED_USER_ID,
+    name=HARDCODED_USER_NAME,
+    email=HARDCODED_USER_EMAIL
+  )
+
+  return SessionInfoResponse(user=user_details, token=token)
+
+
+@app.post("/api/auth/logout", tags=["Authentication"])
+async def logout(user_id: int = Depends(get_current_user)):
+  """Logout endpoint - invalidates the session."""
+  print(f"Logout request for user: {user_id}")
+
+  with get_db() as conn:
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    conn.commit()
+
+  return {"message": "Logged out successfully"}
+
+
 @app.get("/api/auth/session-info", response_model=SessionInfoResponse, tags=["Authentication"])
-async def get_session_info():
-  print("Auth session-info called")
-  user_details = UserDetails(id=HARDCODED_USER_ID, name=HARDCODED_USER_NAME, email=HARDCODED_USER_EMAIL)
-  return SessionInfoResponse(user=user_details, token=HARDCODED_SESSION_TOKEN)
+async def get_session_info(user_id: int = Depends(get_current_user)):
+  """Get current session info - requires valid session token."""
+  print("Auth session-info called for user:", user_id)
+
+  user_details = UserDetails(
+    id=HARDCODED_USER_ID,
+    name=HARDCODED_USER_NAME,
+    email=HARDCODED_USER_EMAIL
+  )
+
+  # Get the current token from request (for response consistency)
+  # In a real app, you might not want to return the token here
+  return SessionInfoResponse(user=user_details, token="[REDACTED]")
 
 
 @app.get("/api/conversation/byuserid/{user_id}", response_model=List[ConversationResponse], tags=["Conversation"])
-async def get_conversations_by_user_id(user_id: int, response: Response):
+async def get_conversations_by_user_id(
+  user_id: int,
+  response: Response,
+  current_user_id: int = Depends(get_current_user)
+):
   print(f"Get conversations called for user_id: {user_id}")
-  if user_id is None:  # user_id 0 is a valid ID
-    response.status_code = status.HTTP_400_BAD_REQUEST
-    return ErrorResponse(error="User ID missing or invalid")
+
+  # Check if user is requesting their own conversations
+  if user_id != current_user_id:
+    response.status_code = status.HTTP_403_FORBIDDEN
+    return ErrorResponse(error="Cannot access other user's conversations")
+
   try:
     with get_db() as conn:
       cur = conn.cursor()
@@ -279,17 +390,13 @@ async def get_conversations_by_user_id(user_id: int, response: Response):
         messages_for_hash = cur.fetchall()
         hashsum = generate_hash(messages_for_hash)
 
-        # Update hashsum in DB (optional, could be done on message send/delete too)
-        # cur.execute("UPDATE conversations SET hashsum = ? WHERE id = ?", (hashsum, conv_row["id"]))
-        # conn.commit()
-
         result_conversations.append(
           ConversationResponse(
             id=conv_row["id"],
             userId=conv_row["userId"],
             name=conv_row["name"],
-            participants=json.loads(conv_row["participants"]),  # Deserialize JSON string
-            hashsum=hashsum  # Use dynamically calculated hash
+            participants=json.loads(conv_row["participants"]),
+            hashsum=hashsum
           )
         )
     return result_conversations
@@ -301,18 +408,37 @@ async def get_conversations_by_user_id(user_id: int, response: Response):
 
 @app.get("/api/conversation/messages/{conversation_id}/{timestamp}/{messages_count}",
          response_model=List[MessageResponse], tags=["Conversation"])
-async def get_conversation_messages(conversation_id: int, timestamp: int, messages_count: int, response: Response):
+async def get_conversation_messages(
+  conversation_id: int,
+  timestamp: int,
+  messages_count: int,
+  response: Response,
+  current_user_id: int = Depends(get_current_user)
+):
   print(f"Get messages for conv_id: {conversation_id}, before_time: {timestamp}, count: {messages_count}")
+
+  # Verify user owns this conversation
   try:
     with get_db() as conn:
       cur = conn.cursor()
+      cur.execute("SELECT userId FROM conversations WHERE id = ?", (conversation_id,))
+      conv_row = cur.fetchone()
+
+      if not conv_row:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return ErrorResponse(error="Conversation not found")
+
+      if conv_row['userId'] != current_user_id:
+        response.status_code = status.HTTP_403_FORBIDDEN
+        return ErrorResponse(error="Cannot access this conversation")
+
       cur.execute(
         "SELECT id, conversationId, roleName, content, time FROM messages WHERE conversationId = ? AND time < ? ORDER BY time DESC LIMIT ?",
-        (conversation_id, timestamp, min(messages_count, 50))  # Max 50 messages per request
+        (conversation_id, timestamp, min(messages_count, 50))
       )
       messages_rows = cur.fetchall()
       if messages_rows:
-        return [dict(msg) for msg in reversed(messages_rows)]  # Return in chronological order
+        return [dict(msg) for msg in reversed(messages_rows)]
       else:
         response.status_code = status.HTTP_204_NO_CONTENT
         return []
@@ -324,14 +450,18 @@ async def get_conversation_messages(conversation_id: int, timestamp: int, messag
 
 @app.post("/api/message/send", response_model=SendMessageApiResponse, status_code=status.HTTP_201_CREATED,
           tags=["Message"])
-async def user_send_message(request_body: ApiMessageSend, response: Response):
+async def user_send_message(
+  request_body: ApiMessageSend,
+  response: Response,
+  current_user_id: int = Depends(get_current_user)
+):
   print(f"Message send called with: {request_body.model_dump_json(indent=2)}")
   try:
     if not request_body.content:
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Message content cannot be empty")
 
-    message_id = int(time.time() * 1000)  # Temporary ID, could be overwritten by DB if auto-incrementing on messages
+    message_id = int(time.time() * 1000)
     actual_conversation_id = request_body.conversationId
     created_conversation_response: Optional[ConversationResponse] = None
 
@@ -341,25 +471,25 @@ async def user_send_message(request_body: ApiMessageSend, response: Response):
       # If conversationId is None, create a new conversation
       if actual_conversation_id is None:
         if not request_body.newConversationData:
-          response.status_code = status.HTTP_400_BAD_REQUEST
-          return ErrorResponse(error="newConversationData is required when conversationId is null")
-
-        conv_data = request_body.newConversationData
-        # In a real app, userId might come from auth token
-        authed_user_id = conv_data.userId  # Or HARDCODED_USER_ID if not passed
+          # Use current user's ID for new conversation
+          conv_data = ConversationCreateData(
+            userId=current_user_id,
+            name=f"Chat with {HARDCODED_USER_NAME}",
+            participants=["user", "Assistant"]
+          )
+        else:
+          conv_data = request_body.newConversationData
+          # Override userId with authenticated user's ID for security
+          conv_data.userId = current_user_id
 
         cur.execute(
           "INSERT INTO conversations (userId, name, participants) VALUES (?, ?, ?)",
-          (authed_user_id, conv_data.name, json.dumps(conv_data.participants))  # Serialize participants
+          (conv_data.userId, conv_data.name, json.dumps(conv_data.participants))
         )
-        actual_conversation_id = cur.lastrowid  # Get the ID of the newly inserted conversation
-        conn.commit()  # Commit conversation creation
-        print(f"New conversation created with ID: {actual_conversation_id} for user {authed_user_id}")
+        actual_conversation_id = cur.lastrowid
+        conn.commit()
+        print(f"New conversation created with ID: {actual_conversation_id} for user {conv_data.userId}")
 
-        # Prepare ConversationResponse for the newly created conversation
-        # For hashsum, it will be 0 initially as there are no messages yet for it to compute from
-        # Or, calculate hash after inserting the first message.
-        # For now, let's fetch it to get all details correctly.
         cur.execute("SELECT id, userId, name, participants FROM conversations WHERE id = ?", (actual_conversation_id,))
         new_conv_row = cur.fetchone()
         if new_conv_row:
@@ -368,27 +498,31 @@ async def user_send_message(request_body: ApiMessageSend, response: Response):
             userId=new_conv_row["userId"],
             name=new_conv_row["name"],
             participants=json.loads(new_conv_row["participants"]),
-            hashsum=0  # Initial hashsum for a new conversation with 0 messages before this one
+            hashsum=0
           )
+      else:
+        # Verify user owns this conversation
+        cur.execute("SELECT userId FROM conversations WHERE id = ?", (actual_conversation_id,))
+        conv_row = cur.fetchone()
+        if not conv_row or conv_row['userId'] != current_user_id:
+          response.status_code = status.HTTP_403_FORBIDDEN
+          return ErrorResponse(error="Cannot send message to this conversation")
 
       # Insert the message
       cur.execute(
         "INSERT INTO messages (id, conversationId, roleName, content, time) VALUES (?, ?, ?, ?, ?)",
         (message_id, actual_conversation_id, request_body.roleName, request_body.content, request_body.time)
       )
-      conn.commit()  # Commit message insertion
+      conn.commit()
 
-      # Update hashsum for the conversation if it was an existing one
-      if created_conversation_response and actual_conversation_id:  # Update hashsum for new conv after 1st message
+      if created_conversation_response and actual_conversation_id:
         cur.execute("SELECT content FROM messages WHERE conversationId = ? ORDER BY time", (actual_conversation_id,))
         messages_for_hash = cur.fetchall()
         new_hash = generate_hash(messages_for_hash)
         created_conversation_response.hashsum = new_hash
-        # cur.execute("UPDATE conversations SET hashsum = ? WHERE id = ?", (new_hash, actual_conversation_id))
-        # conn.commit() # Persist hashsum if desired
 
     message_response = MessageResponse(
-      id=message_id,  # This is the client-generated ID for now
+      id=message_id,
       conversationId=actual_conversation_id,
       roleName=request_body.roleName,
       content=request_body.content,
@@ -397,7 +531,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response):
 
     return SendMessageApiResponse(message=message_response, conversation=created_conversation_response)
 
-  except sqlite3.IntegrityError as e:  # e.g. Foreign key constraint if conversationId is invalid
+  except sqlite3.IntegrityError as e:
     print(f"Database integrity error: {str(e)}")
     response.status_code = status.HTTP_400_BAD_REQUEST
     return ErrorResponse(error=f"Invalid request leading to database error: {str(e)}")
@@ -409,23 +543,33 @@ async def user_send_message(request_body: ApiMessageSend, response: Response):
 
 @app.post("/api/message/generate", response_model=MessageResponse, status_code=status.HTTP_201_CREATED,
           tags=["Message"])
-async def generate_ai_message(request_body: ApiMessageGenerate, response: Response):
+async def generate_ai_message(
+  request_body: ApiMessageGenerate,
+  response: Response,
+  current_user_id: int = Depends(get_current_user)
+):
   print(f"Generate AI message called for conv_id: {request_body.conversationId}")
   try:
     if request_body.conversationId is None:
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Conversation ID is required for generating a message.")
 
+    # Verify user owns this conversation
+    with get_db() as conn:
+      cur = conn.cursor()
+      cur.execute("SELECT userId FROM conversations WHERE id = ?", (request_body.conversationId,))
+      conv_row = cur.fetchone()
+      if not conv_row or conv_row['userId'] != current_user_id:
+        response.status_code = status.HTTP_403_FORBIDDEN
+        return ErrorResponse(error="Cannot generate message for this conversation")
+
     context = await get_conversation_context(request_body.conversationId)
-    if not context:  # If no history, provide a generic starter for the AI
+    if not context:
       context = "Hello, let's start a new conversation."
       print(f"No context for conv {request_body.conversationId}, using default prompt.")
 
-    # Append a placeholder for the AI to respond to, if needed by the prompt structure
-    # context += f"\n{request_body.roleName}:" # roleName is AI's role
-
     ai_response_content = await generate_llm_response(context)
-    message_id = int(time.time() * 1000)  # Unique ID for the AI message
+    message_id = int(time.time() * 1000)
     current_time_seconds = int(time.time())
 
     with get_db() as conn:
@@ -450,26 +594,43 @@ async def generate_ai_message(request_body: ApiMessageGenerate, response: Respon
 
 
 @app.patch("/api/message/patch", response_model=MessageResponse, tags=["Message"])
-async def patch_message(request_body: MessagePatch, response: Response):
+async def patch_message(
+  request_body: MessagePatch,
+  response: Response,
+  current_user_id: int = Depends(get_current_user)
+):
   print(f"Patch message called: {request_body}")
   try:
     with get_db() as conn:
       cur = conn.cursor()
+
+      # Verify user owns the conversation containing this message
+      cur.execute("""
+                  SELECT c.userId FROM messages m
+                                         JOIN conversations c ON m.conversationId = c.id
+                  WHERE m.id = ? AND m.conversationId = ?
+                  """, (request_body.id, request_body.conversationId))
+      result = cur.fetchone()
+
+      if not result or result['userId'] != current_user_id:
+        response.status_code = status.HTTP_403_FORBIDDEN
+        return ErrorResponse(error="Cannot modify this message")
+
       cur.execute(
         "UPDATE messages SET content = ? WHERE id = ? AND conversationId = ?",
         (request_body.content, request_body.id, request_body.conversationId)
       )
       conn.commit()
+
       if cur.rowcount == 0:
         response.status_code = status.HTTP_404_NOT_FOUND
         return ErrorResponse(error="Message not found or not updated.")
 
-      # Fetch the updated message to return it
       cur.execute("SELECT id, conversationId, roleName, content, time FROM messages WHERE id = ?", (request_body.id,))
       updated_msg_row = cur.fetchone()
       if updated_msg_row:
         return dict(updated_msg_row)
-      else:  # Should not happen if rowcount > 0
+      else:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error="Failed to retrieve updated message after patch.")
 
@@ -481,23 +642,74 @@ async def patch_message(request_body: MessagePatch, response: Response):
 
 @app.delete("/api/message/delete/{conversation_id}/{message_id}", status_code=status.HTTP_204_NO_CONTENT,
             tags=["Message"])
-async def delete_message(conversation_id: int, message_id: int, response: Response):
+async def delete_message(
+  conversation_id: int,
+  message_id: int,
+  response: Response,
+  current_user_id: int = Depends(get_current_user)
+):
   print(f"Delete message called for conv_id: {conversation_id}, msg_id: {message_id}")
   try:
     with get_db() as conn:
       cur = conn.cursor()
+
+      # Verify user owns this conversation
+      cur.execute("SELECT userId FROM conversations WHERE id = ?", (conversation_id,))
+      conv_row = cur.fetchone()
+      if not conv_row or conv_row['userId'] != current_user_id:
+        response.status_code = status.HTTP_403_FORBIDDEN
+        return ErrorResponse(error="Cannot delete message from this conversation")
+
       cur.execute("DELETE FROM messages WHERE conversationId = ? AND id = ?", (conversation_id, message_id))
       conn.commit()
       if cur.rowcount == 0:
         response.status_code = status.HTTP_404_NOT_FOUND
-        return ErrorResponse(
-          error="Message not found.")  # FastAPI will prevent body on 204, but good for other statuses
-    # For 204, no body should be returned. FastAPI handles this.
+        return ErrorResponse(error="Message not found.")
     return None
   except Exception as e:
     print(f"Error in delete_message: {str(e)}")
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     return ErrorResponse(error=str(e))
+
+
+# --- Certificate Setup ---
+def setup_development_certificates():
+  """Generate self-signed certificates for HTTPS in development."""
+  cert_dir = Path("devcerts")
+  cert_dir.mkdir(exist_ok=True)
+
+  cert_file = cert_dir / "server.pem"
+  key_file = cert_dir / "server.key"
+
+  # Check if certificates already exist
+  if cert_file.exists() and key_file.exists():
+    print("Using existing development certificates...")
+    return str(cert_file), str(key_file)
+
+  print("Generating new self-signed certificates for development...")
+
+  # Create a certificate authority
+  ca = trustme.CA()
+
+  # Issue a certificate for localhost and common variations
+  server_cert = ca.issue_cert(
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "localhost.localdomain",
+  )
+
+  # Save the certificate and private key
+  with open(cert_file, "w") as f:
+    f.write(server_cert.cert_chain_pems[0].bytes().decode())
+
+  with open(key_file, "w") as f:
+    f.write(server_cert.private_key_pem.bytes().decode())
+
+  print(f"Certificates generated in {cert_dir}/")
+  print("You'll need to accept the security warning in your browser when accessing https://localhost:8443")
+
+  return str(cert_file), str(key_file)
 
 
 # --- CORS and Server Run ---
@@ -508,9 +720,8 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
 ssl_config_dict = {}
 if os.getenv("USE_DEV_CERTS") == "True":
   print("Starting in development mode with auto-generated certificates...")
-  # Placeholder for setup_development_certificates if you re-add it
-  # cert_file, key_file = setup_development_certificates()
-  # ssl_config_dict = {"ssl_keyfile": key_file, "ssl_certfile": cert_file}
+  cert_file, key_file = setup_development_certificates()
+  ssl_config_dict = {"ssl_keyfile": key_file, "ssl_certfile": cert_file}
 
 if __name__ == "__main__":
   import uvicorn
