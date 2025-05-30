@@ -91,7 +91,8 @@ class SendMessageApiResponse(BaseModel):
 
 # --- Hardcoded User & Token (for mockup) ---
 HARDCODED_USER_ID = 777
-HARDCODED_USER_NAME = "Backend User"
+# TODO: Find a way to solve the user message display issue!
+HARDCODED_USER_NAME = "user"  # This needs to be 'user' because the frontend uses it as part of the display logic!
 HARDCODED_USER_EMAIL = "backend.user@example.com"
 HARDCODED_SESSION_TOKEN = "hardcoded-backend-session-token-12345"
 
