@@ -9,21 +9,32 @@ import sqlite3
 import trustme
 import time
 import replicate
-from fastapi import FastAPI, Response, status, Request # Added Request
+import secrets
+import asyncio
+from fastapi import FastAPI, Response, status, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.docs import get_swagger_ui_html # Added for Swagger UI
-from fastapi.openapi.utils import get_openapi # Added for OpenAPI schema
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
-from typing import List, Dict # Added Dict
+from typing import List, Dict, Optional
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 from contextlib import contextmanager
+from datetime import datetime, timedelta, UTC
 
 
 # Error response model
 class ErrorResponse(BaseModel):
     error: str
 
+# Login models
+class MockLoginRequest(BaseModel):
+    email: str
+    # In real implementation, this might include IDP tokens, SAML response, etc.
+
+class LoginResponse(BaseModel):
+    user: dict
+    message: str
 
 # Pydantic models for request validation
 class ConversationState(BaseModel):
@@ -79,6 +90,179 @@ def get_db():
         conn.close()
 
 
+# Session management functions
+def generate_session_key(length=32) -> str:
+    """
+    Generate a secure session key
+    """
+    return secrets.token_urlsafe(length)
+
+
+def create_session(user_id: int, user_email: str, session_duration_hours=24) -> str:
+    """
+    Create a new session
+    """
+    session_key = generate_session_key()
+    expires_at = datetime.now(UTC) + timedelta(hours=session_duration_hours)
+
+    # Store session in memory
+    sessions[session_key] = {
+      "user_id": user_id,
+      "email": user_email,
+      "created_at": datetime.now(UTC),
+      "expires_at": expires_at,
+      "last_activity": datetime.now(UTC)
+    }
+
+    # Save session to database
+    with get_db() as conn:
+      cur = conn.cursor()
+      cur.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+          session_key TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          email TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          expires_at TIMESTAMP NOT NULL,
+          last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+      cur.execute("""
+          INSERT INTO sessions (session_key, user_id, email, expires_at)
+          VALUES (?, ?, ?, ?)
+      """, (session_key, user_id, user_email, expires_at.isoformat()))
+      conn.commit()
+
+    return session_key
+
+
+def validate_session(session_key: str) -> Optional[dict]:
+    """
+    Validate a session key and return user info if valid
+    """
+    if not session_key:
+      return None
+
+    # Check in-memory sessions first
+    if session_key in sessions:
+      session = sessions[session_key]
+      if datetime.now(UTC) > session["expires_at"]:
+        # Session expired
+        del sessions[session_key]
+        return None
+
+      # Update last activity
+      session["last_activity"] = datetime.now(UTC)
+      return {
+        "user_id": session["user_id"],
+        "email": session["email"]
+      }
+
+    # Fallback to database (in case of server restart)
+    with get_db() as conn:
+      cur = conn.cursor()
+      cur.execute("""
+                  SELECT user_id, email, expires_at
+                  FROM sessions
+                  WHERE session_key = ?
+                  """, (session_key,))
+      result = cur.fetchone()
+
+      if result:
+        expires_at = datetime.fromisoformat(result["expires_at"])
+        if datetime.now(UTC) > expires_at:
+          # Session expired, clean up
+          cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
+          conn.commit()
+          return None
+
+        # Cache in memory for performance
+        sessions[session_key] = {
+          "user_id": result["user_id"],
+          "email": result["email"],
+          "expires_at": expires_at,
+          "last_activity": datetime.now(UTC)
+        }
+
+        return {
+          "user_id": result["user_id"],
+          "email": result["email"]
+        }
+
+    return None
+
+
+def delete_session(session_key: str):
+    """
+    Delete a session (logout)
+    """
+    if session_key in sessions:
+      del sessions[session_key]
+
+    with get_db() as conn:
+      cur = conn.cursor()
+      cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
+      conn.commit()
+
+
+# Dependency to get current user from session
+async def get_current_user(request: Request) -> dict:
+    """
+    Dependency to validate session and get current user
+    """
+    session_key = request.cookies.get("session_id")
+    if not session_key:
+      raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user_info = validate_session(session_key)
+    if not user_info:
+      raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    return user_info
+
+
+# Optional dependency (doesn't raise exception)
+async def get_current_user_optional(request: Request) -> Optional[dict]:
+    """
+    Optional version that returns None instead of raising exception
+    """
+    try:
+      return await get_current_user(request)
+    except HTTPException:
+      return None
+
+
+async def cleanup_expired_sessions():
+    """
+    Background task to clean up expired sessions
+    """
+    while True:
+      try:
+        # Clean in-memory sessions
+        expired_keys = [
+          key for key, session in sessions.items()
+          if datetime.now(UTC) > session["expires_at"]
+        ]
+        for key in expired_keys:
+          del sessions[key]
+
+        # Clean database sessions
+        with get_db() as conn:
+          cur = conn.cursor()
+          cur.execute("""
+                      DELETE FROM sessions
+                      WHERE datetime(expires_at) < datetime('now')
+                      """)
+          conn.commit()
+
+      except Exception as e:
+        print(f"Error cleaning up sessions: {e}")
+
+      # Run every hour
+      await asyncio.sleep(3600)
+
+
 # Initialize database and create tables
 def init_db():
     # Initializes the database by creating necessary tables if they don't exist.
@@ -95,6 +279,29 @@ def init_db():
                 time INTEGER NOT NULL
             )
         ''')
+
+        # Create sessions table to manage user sessions
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_key TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                email TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # In init_db()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
 
         # Create index for faster querying by conversationId and time
         cur.execute('''
@@ -208,13 +415,16 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
 # Load environment variables from .env file
 load_dotenv(find_dotenv())
 
+# Session storage (use Redis or database in production)
+sessions: Dict[str, dict] = {}
+
 # Setup FastAPI app
 # Initialize the FastAPI application.
 # docs_url and redoc_url are set to None to disable default docs and use custom ones.
 # openapi_url specifies the path for the OpenAPI schema.
 app = FastAPI(
     title="Chat API",
-    version="1.0.0",
+    version="2.0.0",
     description="This is a backend server for a chat application.",
     docs_url=None,
     redoc_url=None,
@@ -223,6 +433,12 @@ app = FastAPI(
 
 # Initialize the database on startup
 init_db()
+
+
+# Start cleanup task when app starts
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(cleanup_expired_sessions())
 
 
 # Custom OpenAPI schema endpoint
@@ -250,6 +466,63 @@ async def custom_swagger_ui_html(req: Request):
         openapi_url=openapi_url, # URL to the OpenAPI schema
         title=app.title + " - Swagger UI" # Title for the Swagger UI page
     )
+
+
+# Authentication endpoints
+@app.post("/api/auth/mock-login", response_model=LoginResponse)
+async def mock_login(request: MockLoginRequest, response: Response):
+    """
+    Mock login endpoint - simulates successful IDP authentication
+    In production, this would validate IDP tokens/SAML assertions
+    """
+    # For now, we'll create a mock user based on the email
+    # In production, you'd validate IDP response and get user info
+
+    # Mock user creation/lookup
+    mock_user_id = abs(hash(request.email)) % 10000  # Generate consistent ID from email
+
+    # Create session
+    session_key = create_session(mock_user_id, request.email)
+
+    # Set session cookie
+    response.set_cookie(
+      key="session_id",
+      value=session_key,
+      max_age=86400,  # 24 hours
+      httponly=True,  # Prevents JS access
+      secure=True,    # HTTPS only
+      samesite="strict",  # CSRF protection
+      path="/"
+    )
+
+    return LoginResponse(
+      user={
+        "id": mock_user_id,
+        "email": request.email,
+        "name": request.email.split("@")[0].title()  # Mock name from email
+      },
+      message="Mock login successful"
+    )
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response):
+    """
+    Logout endpoint - deletes session
+    """
+    session_key = request.cookies.get("session_id")
+    if session_key:
+      delete_session(session_key)
+
+    # Delete cookie
+    response.delete_cookie("session_id")
+    return {"message": "Logged out successfully"}
+
+@app.get("/api/auth/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    """
+    Get current user info
+    """
+    return {"user": current_user}
 
 
 # API endpoints
