@@ -1,0 +1,29 @@
+<div class="login-container">
+  <div class="login-card">
+    <h1>Welcome to Advanced LLM Chat</h1>
+    <h2>Login</h2>
+
+    <mat-form-field appearance="fill">
+      <mat-label>Email</mat-label>
+      <input
+        matInput
+        type="email"
+        [(ngModel)]="email"
+        placeholder="Enter your email"
+        (keyup.enter)="login()"
+        [disabled]="loading"
+      >
+    </mat-form-field>
+
+    <button
+      mat-raised-button
+      color="primary"
+      (click)="login()"
+      [disabled]="loading || !email"
+    >
+      {{ loading ? 'Logging in...' : 'Login' }}
+    </button>
+
+    <p *ngIf="error" class="error">{{ error }}</p>
+  </div>
+</div>

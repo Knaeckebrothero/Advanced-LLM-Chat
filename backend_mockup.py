@@ -23,7 +23,6 @@ from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timedelta, UTC
 
 
-# Error response model
 class ErrorResponse(BaseModel):
     """
     Represents an error response model for providing error details to clients.
@@ -38,7 +37,6 @@ class ErrorResponse(BaseModel):
     error: str
 
 
-# Login models
 class MockLoginRequest(BaseModel):
     email: str
     # In real implementation, this might include IDP tokens, SAML response, etc.
@@ -63,7 +61,6 @@ class LoginResponse(BaseModel):
     message: str
 
 
-# Pydantic models for request validation
 class ConversationState(BaseModel):
     """
     Represents the state of a conversation.
@@ -253,7 +250,6 @@ async def lifespan(app: FastAPI):
   yield
 
 
-# Session management functions
 def generate_session_key(length=32) -> str:
     """
     Generate a secure, random session key.
@@ -427,7 +423,7 @@ async def get_current_user(request: Request) -> dict:
     :rtype: dict
     :raises HTTPException: If the session key is missing or invalid
     """
-    session_key = request.cookies.get("session_id")
+    session_key = request.cookies.get("session")
     if not session_key:
       raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -773,6 +769,7 @@ async def mock_login(request: MockLoginRequest, response: Response):
     """
     # For now, we'll create a mock user based on the email
     # In production, you'd validate IDP response and get user info
+    print(f"Login attempt for: {request.email}")
 
     # Mock user creation/lookup
     mock_user_id = abs(hash(request.email)) % 10000  # Generate consistent ID from email
@@ -782,14 +779,16 @@ async def mock_login(request: MockLoginRequest, response: Response):
 
     # Set session cookie
     response.set_cookie(
-      key="session_id",
+      key="session",
       value=session_key,
       max_age=86400,  # 24 hours
       httponly=True,  # Prevents JS access
       secure=True,    # HTTPS only
-      samesite="strict",  # CSRF protection
+      samesite= "lax", # samesite="strict",  # CSRF protection
       path="/"
     )
+
+    print(f"Active sessions: {list(sessions.keys())}")
 
     return LoginResponse(
       user={
@@ -813,12 +812,12 @@ async def logout(request: Request, response: Response):
     :return: A dictionary message with a confirmation of successful logout.
     :rtype: dict
     """
-    session_key = request.cookies.get("session_id")
+    session_key = request.cookies.get("session")
     if session_key:
       delete_session(session_key)
 
     # Delete cookie
-    response.delete_cookie("session_id")
+    response.delete_cookie("session")
     return {"message": "Logged out successfully"}
 
 
@@ -851,7 +850,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
              status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
          },
          tags=["Conversation"]) # Groups this endpoint under "Conversation" in Swagger UI
-async def get_conversations(user_id: int, response: Response):
+async def get_conversations(user_id: int, response: Response, current_user: dict = Depends(get_current_user)):
     # Endpoint to get conversations for a user (currently hardcoded to conversation 1).
     print("Get conversations called")
 

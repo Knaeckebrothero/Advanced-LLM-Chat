@@ -30,8 +30,16 @@ export class ApiService {
     });
   }
 
+  private getHttpOptions() {
+    return {
+      headers: this.getHeaders(),  // Headers
+      withCredentials: true  // Cookies
+    };
+  }
+
+
   async getConversationsByUser(): Promise<Conversation[]>{
-    // TODO: Use the authorization token from the headers instead of the userId
+    // TODO: Use the authorization token instead of the userId
     const userId = 1;
     const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
     console.log('Requesting conversations...');
@@ -39,9 +47,9 @@ export class ApiService {
     try{
       const response = await lastValueFrom(
         this.http.get<Conversation[]>(endpoint, {
-          headers: this.getHeaders(),
+          ...this.getHttpOptions(),
           observe: 'response'
-        })
+    })
       );
 
       console.log('Response:', response);
@@ -69,7 +77,7 @@ export class ApiService {
     try {
       const response = await lastValueFrom(
         this.http.get<any[]>(endpoint, {
-          headers: this.getHeaders(),
+          ...this.getHttpOptions(),
           observe: 'response'
         })
       );
@@ -94,7 +102,10 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
+        this.http.post<{ id: number }>(endpoint, body, {
+            ...this.getHttpOptions(),
+            observe: 'response' }
+        )
       );
 
       if (response.status === 201) {
@@ -119,7 +130,7 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.post<any>(endpoint, body, { headers: this.getHeaders() })
+        this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
       );
       return Message.fromApiGenerate(response);
     } catch (error) {
@@ -139,7 +150,7 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.patch<Message>(endpoint, body, { headers: this.getHeaders() })
+        this.http.patch<Message>(endpoint, body, { ...this.getHttpOptions() })
       );
       return response;
     } catch (error) {
@@ -154,7 +165,7 @@ export class ApiService {
 
     try {
       await lastValueFrom(
-        this.http.delete(endpoint, { headers: this.getHeaders() })
+        this.http.delete(endpoint, { ...this.getHttpOptions() })
       );
     } catch (error) {
       console.error('Error deleting message:', error);
