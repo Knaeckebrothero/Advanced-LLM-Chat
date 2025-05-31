@@ -268,56 +268,28 @@ def generate_session_key(length=32) -> str:
 
 def create_session(user_id: int, user_email: str, session_duration_hours=24) -> str:
     """
-    Creates a new session for a user, storing it both in memory and in the database.
-    The session is associated with a unique session key and includes details such
-    as the user ID, email, session creation time, expiration time, and the last
-    activity timestamp.
+    Creates a session for a given user with a specified duration in hours. The session includes a unique
+    session key and an expiration timestamp. The session details are persisted to the database for
+    later verification.
 
-    :param user_id: The unique identifier for the user.
-    :type user_id: int
-    :param user_email: The email address of the user.
-    :type user_email: str
-    :param session_duration_hours: The duration of the session in hours. Defaults
-        to 24 hours.
-    :type session_duration_hours: int
-    :return: The unique session key created for the session.
+    :param user_id: Unique identifier of the user for whom the session is being created.
+    :param user_email: Email address of the user related to the session.
+    :param session_duration_hours: Optional; Number of hours the session is valid. Default value is 24.
+    :return: A unique session key as a string that identifies the created session.
     :rtype: str
     """
     session_key = generate_session_key()
     expires_at = datetime.now(UTC) + timedelta(hours=session_duration_hours)
 
-    # Store session in memory
-    sessions[session_key] = {
-        "user_id": user_id,
-        "email": user_email,
-        "created_at": datetime.now(UTC),
-        "expires_at": expires_at,
-        "last_activity": datetime.now(UTC)
-    }
-
     # Save session to database
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sessions
-            (
-                session_key TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                email TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP NOT NULL,
-                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-
-        cur.execute(
+    with get_db() as db:
+        db.execute(
             """
             INSERT INTO sessions (session_key, user_id, email, expires_at)
             VALUES (?, ?, ?, ?)
             """, (session_key, user_id, user_email, expires_at.isoformat()))
 
-        conn.commit()
+        db.commit()
 
     return session_key
 
@@ -338,55 +310,41 @@ def validate_session(session_key: str) -> Optional[dict]:
     :rtype: Optional[dict]
     """
     if not session_key:
-      return None
-
-    # Check in-memory sessions first
-    if session_key in sessions:
-      session = sessions[session_key]
-      if datetime.now(UTC) > session["expires_at"]:
-        # Session expired
-        del sessions[session_key]
         return None
 
-      # Update last activity
-      session["last_activity"] = datetime.now(UTC)
-      return {
-        "user_id": session["user_id"],
-        "email": session["email"]
-      }
-
-    # Fallback to database (in case of server restart)
     with get_db() as conn:
-      cur = conn.cursor()
-      cur.execute("""
-                  SELECT user_id, email, expires_at
-                  FROM sessions
-                  WHERE session_key = ?
-                  """, (session_key,))
-      result = cur.fetchone()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT user_id, email, expires_at, last_activity
+            FROM sessions
+            WHERE session_key = ?
+            """, (session_key,))
+        result = cur.fetchone()
 
-      if result:
+        if not result:
+            return None
+
         expires_at = datetime.fromisoformat(result["expires_at"])
         if datetime.now(UTC) > expires_at:
-          # Session expired, clean up
-          cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
-          conn.commit()
-          return None
+            # Session expired, clean up
+            cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
+            conn.commit()
+            return None
 
-        # Cache in memory for performance
-        sessions[session_key] = {
-          "user_id": result["user_id"],
-          "email": result["email"],
-          "expires_at": expires_at,
-          "last_activity": datetime.now(UTC)
-        }
+        # Update last activity timestamp
+        current_time = datetime.now(UTC)
+        cur.execute("""
+                    UPDATE sessions
+                    SET last_activity = ?
+                    WHERE session_key = ?
+                    """, (current_time.isoformat(), session_key))
+        conn.commit()
 
         return {
-          "user_id": result["user_id"],
-          "email": result["email"]
+            "user_id": result["user_id"],
+            "email": result["email"]
         }
-
-    return None
 
 
 def delete_session(session_key: str):
@@ -492,14 +450,12 @@ async def cleanup_expired_sessions():
 
 def init_db():
     """
-    Initializes the database by creating necessary tables if they do not exist. This function is responsible for
-    setting up the schema required to store chat messages, user sessions, and user information. Additionally, it
-    creates an index on the messages table for optimized queries.
+    Initializes the database and sets up the required tables if they are not already created. This includes
+    the creation of tables to store chat messages, sessions, and users, along with an index for efficient
+    querying in the `messages` table. This function ensures that the database structure is ready for usage.
 
-    :raises DatabaseError: If the database connection or operations fail
     :return: None
     """
-    # Initializes the database by creating necessary tables if they don't exist.
     with get_db() as conn:
         cur = conn.cursor()
 
