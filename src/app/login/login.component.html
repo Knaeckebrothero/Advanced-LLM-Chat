@@ -1,0 +1,51 @@
+<div class="login-container">
+  <mat-card class="login-card">
+    <mat-card-header>
+      <mat-card-title>Welcome to Advanced LLM Chat</mat-card-title>
+      <mat-card-subtitle>Login</mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content>
+      <form>
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Email</mat-label>
+          <input matInput
+            type="email"
+            [(ngModel)]="email"
+            name="email"
+            placeholder="Enter your email"
+            (keyup.enter)="login()"
+            [disabled]="loading"
+            required
+          >
+          <mat-error *ngIf="!email">
+            Email is required
+          </mat-error>
+        </mat-form-field>
+
+        <div class="error-message" *ngIf="error">
+          <mat-icon color="warn">error</mat-icon>
+          <span>{{ error }}</span>
+        </div>
+
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="login()"
+          [disabled]="loading || !email"
+          class="full-width login-button"
+        >
+          <span *ngIf="!loading">Login</span>
+          <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
+        </button>
+      </form>
+    </mat-card-content>
+
+    <mat-card-footer>
+      <p class="login-hint">
+        <mat-icon>info</mat-icon>
+        <span>Please enter your email to login.</span>
+      </p>
+    </mat-card-footer>
+  </mat-card>
+</div>
