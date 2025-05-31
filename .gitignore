@@ -4,6 +4,7 @@
 # Local environment
 .env
 .venv
+venv
 
 # Development certificates
 devcerts/
