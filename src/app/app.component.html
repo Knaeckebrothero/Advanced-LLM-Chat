@@ -1,8 +1,18 @@
-<div class="main-ui-container">
-    <mat-icon aria-hidden="false" aria-label="Example home icon" fontIcon="menu" (click)="toggleNavbar()"></mat-icon>
-    <app-sidebar></app-sidebar>
-    <div class="main-content">
-      <app-status-bar></app-status-bar>
-      <router-outlet></router-outlet>
-    </div>
+<div class="app-container">
+  <app-sidebar
+    class="sidebar-element"
+    [class.open]="displayService.isSidebarOpen$ | async">
+  </app-sidebar>
+
+  <div class="content-wrapper" [class.sidebar-open]="displayService.isSidebarOpen$ | async">
+    <mat-icon
+      class="menu-toggle-button"
+      [class.sidebar-open]="displayService.isSidebarOpen$ | async"
+      aria-hidden="false"
+      aria-label="Toggle sidebar menu"
+      fontIcon="menu"
+      (click)="displayService.toggleSidebar()">
+    </mat-icon>
+    <router-outlet></router-outlet>
+  </div>
 </div>

@@ -4,7 +4,6 @@
   </div>
 
   <div class="conversation-list">
-    <!-- Zeitgruppen wie oben -->
     <ng-container *ngFor="let label of ['Heute', 'Letzte 7 Tage', 'Diesen Monat', 'Älter']">
       <ng-container *ngIf="groupedConversations[label]?.length">
         <div class="group-label">{{ label }}</div>
@@ -15,6 +14,18 @@
         </app-conversation>
       </ng-container>
     </ng-container>
+  </div>
+
+  <div class="sidebar-navigation-main-links">
+    <button class="nav-button" (click)="navigateTo('/')" [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
+      Chat
+    </button>
+    <button class="nav-button" (click)="navigateTo('/metrics')" [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
+      Metrics
+    </button>
+    <button class="nav-button" (click)="navigateTo('/settings')" [class.selected]="router.isActive('/settings', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
+      Settings
+    </button>
   </div>
 
   <div class="user">

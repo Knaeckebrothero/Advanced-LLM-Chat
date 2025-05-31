@@ -1,12 +1,36 @@
+/* src/app/sidebar/sidebar.component.scss */
 .sidebar {
-  width: 260px;
+  // width: 260px; // Width is controlled by .sidebar-element in app.component.scss
   background-color: #2C8BCC;
   color: white;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%; // Changed from 100vh to 100% to fill parent
   padding: 1rem;
   box-sizing: border-box;
+  overflow-y: auto; // Allow sidebar itself to scroll if content exceeds height
+  scrollbar-width: thin;
+  scrollbar-color: #91c4e0 #1A6DA8; // Adjusted scrollbar for sidebar
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #1A6DA8;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: #91c4e0; // Lighter thumb
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: #a1d4f0; // Slightly lighter on hover
+  }
 }
 
 
@@ -14,22 +38,16 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem; // Reduced margin
+  flex-shrink: 0;
 
   img {
-    height: 90px;
+    height: 70px; // Adjusted size
+    width: auto; // Maintain aspect ratio
     border-radius: 4px;
   }
 
-  .text {
-    .title {
-      font-size: 0.875rem;
-      font-weight: bold;
-    }
-    .subtitle {
-      font-size: 0.75rem;
-    }
-  }
+  // .text class was removed from HTML, styles can be removed if not used
 }
 
 .nav-button {
@@ -39,11 +57,12 @@
   border: none;
   color: white;
   text-align: left;
-  padding: 0.5rem;
+  padding: 0.75rem 0.5rem; // Adjusted padding
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: 0.9rem; // Adjusted font size
   margin-bottom: 0.4rem;
+  transition: background-color 0.2s ease;
 
   &:hover {
     background-color: #1A6DA8;
@@ -51,13 +70,14 @@
 
   &.selected {
     background-color: #154D96;
+    font-weight: bold;
   }
 }
 
 
 .user {
   flex-shrink: 0;
-  margin-top: 16px;
+  margin-top: auto; // Pushes user section and nav links to bottom if sidebar scrolls
   padding-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   display: flex;
@@ -74,49 +94,42 @@
     text-align: center;
     line-height: 32px;
     font-weight: bold;
+    flex-shrink: 0;
   }
 
   .username {
     font-size: 14px;
     opacity: 0.9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
 
 .group-label {
-  font-size: 12px;
+  font-size: 0.75rem; // Adjusted size
   color: white;
-  opacity: 0.6;
-  margin: 16px 0 8px 0;
-  padding-left: 8px;
+  opacity: 0.7; // Increased opacity slightly
+  margin: 1rem 0 0.5rem 0; // Adjusted margin
+  padding-left: 0.5rem; // Match nav-button padding
+  font-weight: 600;
 }
 
 
 
 .conversation-list {
-  flex: 1 1 auto;
+  flex-grow: 1; // Takes available space
   overflow-y: auto;
-  padding-right: 8px;
+  // padding-right: 8px; // Removed to use sidebar's main scrollbar
   scrollbar-width: thin;
   scrollbar-color: #91c4e0 #2c8bcc;
 
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
+  // Webkit scrollbar styles can be inherited or customized further if needed
+}
 
-  &::-webkit-scrollbar-track {
-    background: #1A6DA8;
-    border-radius: 4px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background-color: #2C8BCC;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
-
-  &::-webkit-scrollbar-thumb:hover {
-    background-color: #154D96;
-  }
+.sidebar-navigation-main-links {
+  margin-top: 1rem; // Space above main nav links
+  margin-bottom: 1rem; // Space below main nav links before user section
+  flex-shrink: 0;
 }
