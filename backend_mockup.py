@@ -392,6 +392,7 @@ async def get_current_user(request: Request) -> dict:
     return user_info
 
 
+# TODO: This needs to be looked into (removed or refactored)
 async def get_current_user_optional(request: Request) -> Optional[dict]:
     """
     Attempts to retrieve the current user based on the provided request. If the

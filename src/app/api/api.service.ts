@@ -33,10 +33,10 @@ export class ApiService {
   private getHttpOptions() {
     return {
       headers: this.getHeaders(),  // Headers
+      // TODO: Do we still need this now that we have the auth.guard?
       withCredentials: true  // Cookies
     };
   }
-
 
   async getConversationsByUser(): Promise<Conversation[]>{
     // TODO: Use the authorization token instead of the userId

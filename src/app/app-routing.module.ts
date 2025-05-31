@@ -8,10 +8,10 @@ import { AuthGuard } from './auth/auth.guard';
 
 
 const routes: Routes = [
-  { path: 'login', component: LoginComponent },
   { path: '', component: ChatUiComponent, canActivate: [AuthGuard] },
   { path: 'metrics', component: MetricsComponent, canActivate: [AuthGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [AuthGuard] },
+  { path: 'login', component: LoginComponent },
   { path: '**', redirectTo: '' }
 ];
 

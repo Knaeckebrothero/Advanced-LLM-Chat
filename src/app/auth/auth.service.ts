@@ -4,6 +4,8 @@ import { Router } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { lastValueFrom } from 'rxjs';
 import { environment } from '../environments/environment';
+import {take} from "rxjs/operators";
+
 
 interface User {
   id: number;
@@ -29,17 +31,27 @@ export class AuthService {
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  // This makes it easy to switch providers later
+  // Promise to track initialization
+  private authInitialized: Promise<void>;
+
+  // TODO: This makes it easy to switch providers later
   private loginProvider: LoginProvider = { type: 'mock' };
 
   constructor(
     private http: HttpClient,
     private router: Router
   ) {
-    this.checkAuthStatus();
+    // Store the promise but don't await it in constructor
+    this.authInitialized = this.checkAuthStatus();
+  }
+
+  // Make this return a Promise so APP_INITIALIZER can wait for it
+  initializeAuth(): Promise<void> {
+    return this.authInitialized;
   }
 
   async checkAuthStatus(): Promise<void> {
+    console.log('AuthService: checkAuthStatus() called.');
     try {
       const response = await lastValueFrom(
         this.http.get<{ user: User }>(
@@ -47,8 +59,16 @@ export class AuthService {
           { withCredentials: true }
         )
       );
-      this.currentUserSubject.next(response.user);
+      console.log('AuthService: /api/auth/me response received:', response);
+      if (response && response.user) {
+        this.currentUserSubject.next(response.user);
+        console.log('AuthService: currentUserSubject updated with user:', response.user);
+      } else {
+        console.log('AuthService: /api/auth/me response did not contain a valid user object.');
+        this.currentUserSubject.next(null);
+      }
     } catch (error) {
+      console.error('AuthService: Error during checkAuthStatus:', error);
       this.currentUserSubject.next(null);
     }
   }
