@@ -19,6 +19,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatListModule } from '@angular/material/list';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatCardModule } from '@angular/material/card'; // <--- Added this
 
 // Default
 import {NgModule, isDevMode, provideAppInitializer, inject} from '@angular/core';
@@ -42,14 +43,14 @@ const routes: Routes = [
 ];
 
 @NgModule({ declarations: [
-  AppComponent,
-  ChatUiComponent,
-  ChatUiMessageComponent,
-  SettingsComponent,
-  MetricsComponent,
-  StatusBarComponent,
-  AuthCallbackComponent,
-  LoginComponent,
+    AppComponent,
+    ChatUiComponent,
+    ChatUiMessageComponent,
+    SettingsComponent,
+    MetricsComponent,
+    StatusBarComponent,
+    AuthCallbackComponent,
+    LoginComponent,
   ],
   bootstrap: [AppComponent],
   imports: [
@@ -63,6 +64,7 @@ const routes: Routes = [
     MatSidenavModule,
     MatListModule,
     MatProgressSpinnerModule,
+    MatCardModule, // <--- Added this
     RouterModule.forRoot(routes),
     ServiceWorkerModule.register(
       'ngsw-worker.js', {
