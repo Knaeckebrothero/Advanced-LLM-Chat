@@ -1,18 +1,21 @@
 <div class="app-container">
+  <div class="burger-container" [class.sidebar-closed]="!(displayService.isSidebarOpen$ | async)">
+    <button class="burger-menu-button"
+            (click)="displayService.toggleSidebar()"
+            aria-label="Toggle sidebar menu"
+            [attr.aria-expanded]="displayService.isSidebarOpen$ | async">
+      <div class="burger-line line1"></div>
+      <div class="burger-line line2"></div>
+      <div class="burger-line line3"></div>
+    </button>
+  </div>
+
   <app-sidebar
     class="sidebar-element"
     [class.open]="displayService.isSidebarOpen$ | async">
   </app-sidebar>
 
   <div class="content-wrapper" [class.sidebar-open]="displayService.isSidebarOpen$ | async">
-    <mat-icon
-      class="menu-toggle-button"
-      [class.sidebar-open]="displayService.isSidebarOpen$ | async"
-      aria-hidden="false"
-      aria-label="Toggle sidebar menu"
-      fontIcon="menu"
-      (click)="displayService.toggleSidebar()">
-    </mat-icon>
     <router-outlet></router-outlet>
   </div>
 </div>

@@ -1,25 +1,76 @@
 /* src/app/app.component.scss */
 @use 'src/styles/variables' as vars;
 
+$burger-area-height: 60px;
+$burger-area-width: 60px;
+
 .app-container {
   display: flex;
   height: 100vh;
   width: 100vw;
-  overflow: hidden; // Prevent whole page scroll
+  overflow: hidden;
+}
+
+.burger-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: $burger-area-width;
+  height: $burger-area-height;
+  /* Ensure the background is always transparent or remove the .sidebar-closed specific background.
+    The transition for background-color can also be removed if it's always transparent.
+  */
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1002;
+  // transition: background-color 0.3s ease-in-out; // Optional: remove if no background change
+
+  /* Remove or comment out this block to prevent the blue background
+    when the sidebar is closed.
+  */
+  /*
+  &.sidebar-closed {
+    background-color: #2C8BCC; // This line causes the blue background
+  }
+  */
+}
+
+.burger-menu-button {
+  width: 30px;
+  height: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  box-sizing: border-box;
+
+  .burger-line {
+    width: 100%;
+    height: 3px;
+    background-color: vars.$color-font-light;
+    border-radius: 2px;
+  }
 }
 
 .sidebar-element {
-  width: 260px; // Standard sidebar width
+  width: 260px;
   position: fixed;
   left: 0;
   top: 0;
   height: 100vh;
-  transform: translateX(-100%); // Start closed
+  transform: translateX(-100%);
   transition: transform 0.3s ease-in-out;
-  z-index: 1000; // Ensure sidebar is on top for overlay behavior
-  // background-color is handled by sidebar.component.scss
-  display: flex; // Added to ensure sidebar content is laid out correctly
-  flex-direction: column; // Added
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background-color: #2C8BCC;
+  padding-top: $burger-area-height;
+  box-sizing: border-box;
 
   &.open {
     transform: translateX(0);
@@ -29,70 +80,32 @@
 .content-wrapper {
   flex-grow: 1;
   height: 100vh;
-  overflow-y: auto; // Allow content to scroll
-  background-color: vars.$color-background; // Match chat UI background
+  overflow-y: auto;
+  background-color: vars.$color-background;
   transition: margin-left 0.3s ease-in-out;
-  position: relative; // For potential absolute positioned children if any
-  // padding: 1rem; // Optional: if router-outlet content needs general padding
-}
-
-.menu-toggle-button {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 1001; // Above sidebar overlay
-  cursor: pointer;
-  color: vars.$color-secondary;
-  font-size: 30px; // Adjusted size
-  padding: 5px; // Clickable area
-  transition: left 0.3s ease-in-out, color 0.3s ease-in-out;
-
-  &:hover {
-    color: vars.$color-primary-light;
-  }
+  position: relative;
 }
 
 // Desktop and larger screens
 @media (min-width: 769px) {
-  .sidebar-element {
-    // On desktop, when open, it's part of the flow, not fixed overlay in the same way
-    // but still starts hidden and slides in.
-    &.open {
-      // transform: translateX(0); // Handled by .open
-    }
-  }
-
   .content-wrapper {
     &.sidebar-open {
-      margin-left: 260px; // Push content by sidebar width
-    }
-  }
-
-  .menu-toggle-button {
-    &.sidebar-open {
-      // Optional: move button when sidebar is open on desktop
-      // left: calc(260px + 15px); // Or hide it if sidebar is pinned open
+      margin-left: 260px;
     }
   }
 }
 
-// Mobile/Tablet screens (sidebar overlays)
+// Mobile/Tablet screens
 @media (max-width: 768px) {
   .sidebar-element {
-    width: 85%; // Take more space on mobile when open
+    width: 85%;
     &.open {
-      box-shadow: 3px 0px 15px rgba(0,0,0,0.2); // Add shadow when overlaying
+      box-shadow: 3px 0px 15px rgba(0,0,0,0.2);
     }
   }
-
   .content-wrapper {
     &.sidebar-open {
-      margin-left: 0; // Content does not shift
+      margin-left: 0;
     }
-  }
-
-  .menu-toggle-button {
-    // Stays at top-left, no change needed based on sidebar state for position
-    // but you might change its icon or behavior if the sidebar is open.
   }
 }

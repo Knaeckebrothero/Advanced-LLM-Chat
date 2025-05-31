@@ -1,17 +1,16 @@
-import { Component, OnInit } from '@angular/core'; // Removed Output, EventEmitter
+import { Component, OnInit } from '@angular/core';
 import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
-import { Conversation } from '../data/objects/conversation';
-import { ChatService } from '../chat/chat.service';
+import { Conversation } from '../data/objects/conversation'; //
+import { ChatService } from '../chat/chat.service'; //
 import { ConversationComponent } from './conversation/conversation.component';
-import {DisplayService} from "./service/display.service";
-
+import {DisplayService} from "./service/display.service"; //
 
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  templateUrl: './sidebar.component.html',
-  styleUrls: ['./sidebar.component.scss'],
+  templateUrl: './sidebar.component.html', //
+  styleUrls: ['./sidebar.component.scss'], //
   imports: [
     CommonModule,
     NgOptimizedImage,
@@ -19,18 +18,17 @@ import {DisplayService} from "./service/display.service";
   ]
 })
 export class SidebarComponent implements OnInit {
-  // Removed @Output() closeRequest
 
   groupedConversations: { [key: string]: Conversation[] } = {};
 
   constructor(
     private chatService: ChatService,
-    public router: Router,
-    private displayService: DisplayService // Injected DisplayService
+    public router: Router, // Router is already public
+    private displayService: DisplayService
   ) {}
 
   ngOnInit(): void {
-    const allConversations = this.chatService.getDummyConversations();
+    const allConversations = this.chatService.getDummyConversations(); //
     this.groupedConversations = this.groupConversationsByDate(allConversations);
   }
 
@@ -45,7 +43,7 @@ export class SidebarComponent implements OnInit {
     now.setHours(0, 0, 0, 0);
 
     for (const conv of conversations) {
-      const updated = new Date(conv.updatedAt);
+      const updated = new Date(conv.updatedAt); //
       updated.setHours(0, 0, 0, 0);
 
       const diffTime = now.getTime() - updated.getTime();
@@ -75,12 +73,13 @@ export class SidebarComponent implements OnInit {
   }
 
   onSelectConversation(conversation: Conversation): void {
-    this.chatService.loadConversation(conversation);
-    this.displayService.closeSidebarOnMobile(); // Use DisplayService
+    this.chatService.loadConversation(conversation); //
+    this.router.navigate(['/']); // Navigate to the main chat view
+    this.displayService.closeSidebarOnMobile(); // Close sidebar on mobile if open
   }
 
   navigateTo(route: string): void {
     this.router.navigate([route]);
-    this.displayService.closeSidebarOnMobile(); // Use DisplayService
+    this.displayService.closeSidebarOnMobile();
   }
 }
