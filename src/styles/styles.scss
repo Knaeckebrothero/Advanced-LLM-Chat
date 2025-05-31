@@ -22,8 +22,8 @@ $custom-theme: mat.m2-define-dark-theme((
 html, body {
   height: 100vh;
   width: 100vw;
-  margin: 0%;
-  padding: 0%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   font-family: vars.$font-family-base;
   background-color: vars.$color-background;
@@ -47,12 +47,12 @@ html, body {
 More information about angular Material Theming:
 https://material.angular.io/guide/theming
 
-Include the common styles for Angular Material. 
-We include this here so that you only have to load a single css file for Angular Material in your app. 
+Include the common styles for Angular Material.
+We include this here so that you only have to load a single css file for Angular Material in your app.
 Be sure that you only ever include this mixin once!
 
-Define the palettes for your theme using the Material Design palettes available in palette.scss (imported above). 
-For each palette, you can optionally specify a default, lighter, and darker hue. 
+Define the palettes for your theme using the Material Design palettes available in palette.scss (imported above).
+For each palette, you can optionally specify a default, lighter, and darker hue.
 Available color palettes: https://material.io/design/color/
 
 Include theme styles for core and each component used in your app.
