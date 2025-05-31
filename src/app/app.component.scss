@@ -3,9 +3,12 @@
 .main-ui-container {
   // Make the positioning of the mat-icon relative to this container
   position: relative;
-  height: 100%;
+  // height: 100%;
   width: 100%;
   overflow: hidden;
+  display: flex;
+  height: 100vh;
+
 
   // Button styling
   mat-icon {
@@ -22,18 +25,11 @@
   }
 }
 
-// Layout styling (Sidebar)
-.app-layout {
-  display: flex;
-  height: 100vh; /* vollständige Höhe */
-  overflow: hidden;
-}
-
 // Layout styling (Main content)
 .main-content {
   flex: 1;
   background-color: #f4f4f5;
-  padding: 1rem;
+  // padding: 1rem;
   overflow-y: auto;
 }
 
