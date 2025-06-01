@@ -12,6 +12,8 @@ import { Conversation } from '../data/objects/conversation';
 export class ChatService {
   // The conversation this service is managing
   private conversation: Conversation = new Conversation(1, 1, "default", ["user"])
+  // TODO: Start with conversation null, only create new conversation once the first message is sent!
+  //  (e.g. we don't wanna have empty conversations with no messages)
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
@@ -64,7 +66,7 @@ export class ChatService {
     try {
       const conversations = await this.apiService.getConversationsByUser();
       if (conversations.length === 0) {
-        console.log('No refresh of conversations nessessary!');
+        console.log('No refresh of conversations necessary!');
         return;
       }
       const hashsum = await this.conversation.computeHash(this.dbService);
@@ -228,6 +230,7 @@ export class ChatService {
   // Regenerate a message in the conversation
   public regenerateMessage(message: Message) {
     console.log('Regenerating message');
+    // TODO: Implement regenerate message method!
   }
 
   // Loads a specific conversation and its messages into memory.
