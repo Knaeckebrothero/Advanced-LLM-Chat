@@ -4,7 +4,6 @@ import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
-import { DUMMY_CONVERSATIONS } from '../data/objects/dummy-conversation';  // TODO: Remove this!
 
 
 @Injectable({
@@ -239,12 +238,6 @@ export class ChatService {
     messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
 
     this.messagesSubject.next(messages);
-  }
-
-  // TODO: Remove this!
-  // Returns a static list of mock conversations for UI development
-  getDummyConversations(): Conversation[] {
-    return DUMMY_CONVERSATIONS;
   }
 
   // Create a new conversation
