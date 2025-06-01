@@ -1,0 +1,236 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Verify Docker directory and files
+        run: |
+          echo "Current directory:"
+          pwd
+          echo ""
+          echo "Repository structure:"
+          ls -la
+          echo ""
+
+          if [ ! -d "docker" ]; then
+            echo "Error: docker directory not found!"
+            echo "Please ensure the docker directory exists with Dockerfile and nginx.conf"
+            exit 1
+          fi
+
+          echo "Docker directory contents:"
+          ls -la docker/
+          echo ""
+
+          if [ ! -f "docker/Dockerfile" ]; then
+            echo "Error: docker/Dockerfile not found!"
+            exit 1
+          fi
+
+          if [ ! -f "docker/nginx.conf" ]; then
+            echo "Error: docker/nginx.conf not found!"
+            exit 1
+          fi
+
+          echo "✅ All required Docker files found"
+          echo ""
+          echo "nginx.conf file size:"
+          ls -lh docker/nginx.conf
+          echo ""
+          echo "First few lines of nginx.conf:"
+          head -n 10 docker/nginx.conf
+
+      - name: Test Docker build locally
+        run: |
+          echo "Testing Docker build with standard docker command..."
+          docker build -f docker/Dockerfile -t test-build:latest . || {
+            echo "Docker build failed!"
+            echo "Checking if files are accessible from Docker context..."
+            echo "Creating test Dockerfile to debug..."
+            cat > test.Dockerfile << 'EOF'
+          FROM alpine
+          COPY docker/nginx.conf /test-nginx.conf
+          RUN ls -la /test-nginx.conf
+          EOF
+            docker build -f test.Dockerfile -t test-context . || echo "Context test failed"
+            rm test.Dockerfile
+            exit 1
+          }
+          echo "✅ Docker build successful"
+
+      - name: Log in to the Container registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,format=short,prefix=${{ github.event_name == 'pull_request' && 'pr-' || 'sha-' }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=develop-latest,enable=${{ github.ref == 'refs/heads/develop' && github.event_name != 'pull_request' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: ${{ github.event_name == 'pull_request' }}
+
+      - name: Create deployment artifacts
+        if: success()
+        run: |
+          echo "Creating deployment directory..."
+          mkdir -p deployment
+
+          # Create a docker-compose template
+          cat > deployment/docker-compose.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            angular-app:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest
+              container_name: advanced-llm-chat
+              ports:
+                - "8080:80"
+              restart: unless-stopped
+              environment:
+                - NODE_ENV=production
+              networks:
+                - app-network
+
+          networks:
+            app-network:
+              driver: bridge
+          EOF
+
+          # Create deployment instructions
+          cat > deployment/README.md << 'EOF'
+          # Deployment Instructions
+
+          ## Pull and run the latest image:
+
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest
+          docker run -d -p 8080:80 --name advanced-llm-chat ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-latest
+          ```
+
+          ## Or use docker-compose:
+
+          ```bash
+          docker-compose up -d
+          ```
+
+          ## Image Information
+
+          - Registry: ${{ env.REGISTRY }}
+          - Repository: ${{ env.IMAGE_NAME }}
+          - Tags: ${{ steps.meta.outputs.tags }}
+          EOF
+
+          # Create .env file
+          echo "IMAGE_TAG=develop-latest" > deployment/.env
+          echo "REGISTRY=${{ env.REGISTRY }}" >> deployment/.env
+          echo "IMAGE_NAME=${{ env.IMAGE_NAME }}" >> deployment/.env
+
+          # List deployment directory contents for verification
+          echo "Deployment directory contents:"
+          ls -la deployment/
+
+      - name: Verify deployment directory
+        if: success()
+        run: |
+          if [ ! -d "deployment" ]; then
+            echo "Error: Deployment directory not found!"
+            exit 1
+          fi
+          echo "Deployment directory exists with the following files:"
+          ls -la deployment/
+
+      - name: Upload deployment artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts
+          path: deployment/
+          retention-days: 7
+
+      - name: Load and test Docker image (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Testing Docker image..."
+
+          echo "Available images:"
+          docker images
+
+          # For PR testing, we can use the test-build image created earlier
+          # This avoids the case sensitivity issues with the registry name
+          IMAGE_TAG="test-build:latest"
+
+          echo "Using locally built test image: $IMAGE_TAG"
+
+          echo "Running basic container test..."
+          docker run --rm -d --name test-container -p 8082:80 "$IMAGE_TAG"
+
+          echo "Waiting for container to start..."
+          sleep 5
+
+          echo "Checking container status..."
+          if docker ps | grep -q test-container; then
+            echo "✅ Container is running successfully"
+
+            # Test HTTP response
+            echo "Testing HTTP response..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8082 || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ HTTP test passed (status: $HTTP_STATUS)"
+            else
+              echo "⚠️  HTTP test returned status: $HTTP_STATUS"
+              docker logs test-container || true
+            fi
+          else
+            echo "❌ Container failed to start"
+            docker logs test-container || true
+            exit 1
+          fi
+
+          echo "Stopping test container..."
+          docker stop test-container || true
+
+          echo "✅ PR test completed successfully!"

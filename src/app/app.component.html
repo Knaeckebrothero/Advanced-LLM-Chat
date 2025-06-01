@@ -1,5 +1,5 @@
 <div class="app-container">
-  <div class="burger-container" [class.sidebar-closed]="!(displayService.isSidebarOpen$ | async)">
+  <div *ngIf="showMenuIcon" class="burger-container" [class.sidebar-closed]="!(displayService.isSidebarOpen$ | async)">
     <button class="burger-menu-button"
             (click)="displayService.toggleSidebar()"
             aria-label="Toggle sidebar menu"
@@ -11,11 +11,14 @@
   </div>
 
   <app-sidebar
+    *ngIf="showMenuIcon"
     class="sidebar-element"
     [class.open]="displayService.isSidebarOpen$ | async">
   </app-sidebar>
 
-  <div class="content-wrapper" [class.sidebar-open]="displayService.isSidebarOpen$ | async">
+  <div class="content-wrapper"
+       [class.sidebar-open]="(displayService.isSidebarOpen$ | async) && showMenuIcon"
+       [class.no-sidebar]="!showMenuIcon">
     <router-outlet></router-outlet>
   </div>
 </div>

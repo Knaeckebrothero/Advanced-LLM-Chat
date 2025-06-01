@@ -1,6 +1,5 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { DBService } from '../data/db.service';
 import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
@@ -11,7 +10,7 @@ import { Conversation } from '../data/objects/conversation';
   providedIn: 'root'
 })
 export class ApiService {
-  // Use the environment configuration
+  // Use the environment configuration to get
   private baseUrl: string = environment.apiUrl;
 
   constructor(private http: HttpClient) {
@@ -19,19 +18,28 @@ export class ApiService {
     //if (!environment.production) {
     //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
     //}
+    // TODO: Either enable or remove this
   }
 
   // Headers setup method
   private getHeaders(): HttpHeaders {
     return new HttpHeaders({
       'Content-Type': 'application/json',
-      // 'Authorization': `Bearer ${this.user.accessToken}`  // Add any kind of authorization here
-      // Add any other headers here
+      // 'Authorization': `Bearer ${this.user.accessToken}`
+      // TODO: Implement a access token
     });
   }
 
+  private getHttpOptions() {
+    return {
+      headers: this.getHeaders(),  // Headers
+      // TODO: Do we still need this now that we have the auth.guard?
+      withCredentials: true  // Cookies
+    };
+  }
+
   async getConversationsByUser(): Promise<Conversation[]>{
-    // TODO: Use the authorization token from the headers instead of the userId
+    // TODO: Use the authorization token instead of the userId
     const userId = 1;
     const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
     console.log('Requesting conversations...');
@@ -94,7 +102,10 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
+        this.http.post<{ id: number }>(endpoint, body, {
+            ...this.getHttpOptions(),
+            observe: 'response' }
+        )
       );
 
       if (response.status === 201) {
@@ -119,7 +130,7 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.post<any>(endpoint, body, { headers: this.getHeaders() })
+        this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
       );
       return Message.fromApiGenerate(response);
     } catch (error) {
@@ -139,7 +150,7 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.patch<Message>(endpoint, body, { headers: this.getHeaders() })
+        this.http.patch<Message>(endpoint, body, { ...this.getHttpOptions() })
       );
       return response;
     } catch (error) {
@@ -154,7 +165,7 @@ export class ApiService {
 
     try {
       await lastValueFrom(
-        this.http.delete(endpoint, { headers: this.getHeaders() })
+        this.http.delete(endpoint, { ...this.getHttpOptions() })
       );
     } catch (error) {
       console.error('Error deleting message:', error);
