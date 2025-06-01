@@ -1,8 +1,11 @@
-fastapi
-uvicorn
-pydantic
-trustme
-python-dotenv
-tinydb
-replicate
-# langchain
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+replicate==0.22.0
+trustme==1.1.0
+pydantic==2.5.0
+
+# TODO: Do we need these for the container?
+# python-multipart==0.0.6
+# Add CORS middleware support
+# httpx==0.25.2

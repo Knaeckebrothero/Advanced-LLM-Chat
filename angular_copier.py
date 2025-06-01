@@ -29,7 +29,8 @@ class AngularProjectCopier:
     'docker/Dockerfile',
     'docker/nginx.conf',
     'docker/README.md',
-    '.dockerignore'
+    '.dockerignore',
+    'requirements.txt'
     # Add any other files you want to copy (use relative paths)
   ]
 
