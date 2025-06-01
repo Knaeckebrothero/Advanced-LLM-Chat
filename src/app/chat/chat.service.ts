@@ -4,7 +4,7 @@ import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
-import { DUMMY_CONVERSATIONS } from '../data/objects/dummy-conversation';
+import { DUMMY_CONVERSATIONS } from '../data/objects/dummy-conversation';  // TODO: Remove this!
 
 
 @Injectable({
@@ -148,6 +148,13 @@ export class ChatService {
         console.log('Message sent:', response);
       }
     });
+
+    // Update conversation timestamp
+    this.conversation.updatedAt = new Date();
+    await this.dbService.updateConversation(this.conversation);
+
+    // This will trigger re-grouping in sidebar
+    await this.loadAllConversations();
   }
 
   // Generate a message
@@ -224,14 +231,6 @@ export class ChatService {
     console.log('Regenerating message');
   }
 
-
-  // Loads a specific conversation and its messages into memory
-  private async loadAllConversations() {
-    const conversations = await this.dbService.getAllConversations();
-    this.conversationsSubject.next(conversations);
-  }
-
-
   // Loads a specific conversation and its messages into memory.
   public async loadConversation(conversation: Conversation) {
     this.conversation = conversation;
@@ -242,9 +241,53 @@ export class ChatService {
     this.messagesSubject.next(messages);
   }
 
+  // TODO: Remove this!
   // Returns a static list of mock conversations for UI development
   getDummyConversations(): Conversation[] {
     return DUMMY_CONVERSATIONS;
   }
 
+  // Create a new conversation
+  public async createConversation(conversation: Conversation): Promise<Conversation> {
+    // Set timestamps
+    conversation.createdAt = new Date();
+    conversation.updatedAt = new Date();
+
+    // Save to database
+    await this.dbService.addConversation(conversation);
+
+    // Update the conversations list
+    await this.loadAllConversations();
+
+    return conversation;
+  }
+
+  // Load all conversations from database (replace getDummyConversations)
+  public async loadAllConversations(): Promise<Conversation[]> {
+    const conversations = await this.dbService.getAllConversations();
+    this.conversationsSubject.next(conversations);
+    return conversations;
+  }
+
+  // Get conversations as observable
+  public getConversations(): Observable<Conversation[]> {
+    return this.conversations$;
+  }
+
+  // Update conversation (e.g., rename)
+  public async updateConversation(conversation: Conversation): Promise<void> {
+    conversation.updatedAt = new Date();
+    await this.dbService.updateConversation(conversation);
+    await this.loadAllConversations();
+  }
+
+  // Delete conversation
+  public async deleteConversation(conversationId: number): Promise<void> {
+    // Delete all messages first
+    await this.dbService.deleteMessagesByConversationId(conversationId);
+    // Delete the conversation
+    await this.dbService.deleteConversation(conversationId);
+    // Reload conversations
+    await this.loadAllConversations();
+  }
 }

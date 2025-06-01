@@ -1,3 +1,8 @@
-<button class="conversation-button" (click)="onClick()">
-  <div>{{ conversation.name }}</div>
+<button class="conversation-button" (click)="onClick()" (contextmenu)="onRightClick($event)">
+  <div *ngIf="!editing">{{ conversation.name }}</div>
+  <input *ngIf="editing"
+         [(ngModel)]="newName"
+         (blur)="finishEditing()"
+         (keyup.enter)="finishEditing()"
+         (keyup.escape)="cancelEditing()">
 </button>

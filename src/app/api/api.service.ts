@@ -14,7 +14,7 @@ export class ApiService {
   // Use the environment configuration
   private baseUrl: string = environment.apiUrl;
 
-  constructor(private http: HttpClient, private dbService: DBService) {
+  constructor(private http: HttpClient) {
     // Development only - handle self-signed certificates
     //if (!environment.production) {
     //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
@@ -38,9 +38,9 @@ export class ApiService {
 
     try{
       const response = await lastValueFrom(
-        this.http.get<Conversation[]>(endpoint, { 
-          headers: this.getHeaders(), 
-          observe: 'response' 
+        this.http.get<Conversation[]>(endpoint, {
+          headers: this.getHeaders(),
+          observe: 'response'
         })
       );
 
@@ -68,9 +68,9 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.get<any[]>(endpoint, { 
-          headers: this.getHeaders(), 
-          observe: 'response' 
+        this.http.get<any[]>(endpoint, {
+          headers: this.getHeaders(),
+          observe: 'response'
         })
       );
 
@@ -91,12 +91,12 @@ export class ApiService {
   async sendMessage(message: Message): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/send`;
     const body = message.toApiSend();
-  
+
     try {
       const response = await lastValueFrom(
         this.http.post<{ id: number }>(endpoint, body, { headers: this.getHeaders(), observe: 'response' })
       );
-  
+
       if (response.status === 201) {
         message.id = response.body!.id;
         return message;
@@ -160,5 +160,31 @@ export class ApiService {
       console.error('Error deleting message:', error);
       throw error;
     }
+  }
+
+  // TODO: Implement get all conversations
+  async getAllConversations(userId: number): Promise<Conversation[]> {
+    const endpoint = `${this.baseUrl}/api/conversations/user/${userId}`;
+    // ... implement API call
+    return [];
+  }
+
+  // TODO: Implement create conversation
+  async createConversation(conversation: Conversation): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/create`;
+    // ... implement API call
+    return conversation;
+  }
+
+  // TODO: Implement update conversation
+  async updateConversation(conversation: Conversation): Promise<void> {
+    const endpoint = `${this.baseUrl}/api/conversation/update`;
+    // ... implement API call
+  }
+
+  // TODO: Implement delete conversation
+  async deleteConversation(conversationId: number): Promise<void> {
+    const endpoint = `${this.baseUrl}/api/conversation/delete/${conversationId}`;
+    // ... implement API call
   }
 }
