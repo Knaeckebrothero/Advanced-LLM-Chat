@@ -108,14 +108,29 @@ class ConversationResponse(BaseModel):
 @contextmanager
 def get_db():
   """
-  Establishes and manages a connection to the SQLite database.
+  Provides a context manager to handle SQLite database connections. This ensures
+  that the connection to the database is properly opened and closed after use,
+  reducing the risk of resource leakage or runtime database errors. The method
+  yields an SQLite connection object that can be used to interact with the
+  database.
+
+  Parameters and return types are defined to clarify usage and expected output.
+
+  Yields:
+      sqlite3.Connection: The SQLite connection object initialized with the
+          given database path and custom row factory configuration.
+
+  Raises:
+      None
   """
-  conn = sqlite3.connect('chat.db')
-  conn.row_factory = sqlite3.Row  # This enables dictionary-like access to rows
+  conn = sqlite3.connect(DB_PATH)  # Changed from 'chat.db' to DB_PATH
+  conn.row_factory = sqlite3.Row
   try:
     yield conn
   finally:
     conn.close()
+
+
 
 
 @asynccontextmanager
@@ -401,6 +416,11 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
 
 # Load environment variables from .env file
 load_dotenv(find_dotenv())
+
+# Database configuration
+DB_DIR = os.getenv('DB_DIR', './data')
+Path(DB_DIR).mkdir(exist_ok=True)
+DB_PATH = os.path.join(DB_DIR, 'chat.db')
 
 # Session storage (in-memory cache for tracking active sessions)
 sessions: Dict[str, dict] = {}
