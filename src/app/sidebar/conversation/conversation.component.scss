@@ -1,12 +1,18 @@
+.conversation-container {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  position: relative;
+}
+
 button.conversation-button {
-  width: 100%;
+  flex: 1;
   text-align: left;
   background-color: #2C8BCC;
   border: none;
   color: white;
   padding: 12px;
   border-radius: 8px;
-  margin-bottom: 8px;
   cursor: pointer;
   transition: background-color 0.2s ease-in-out;
 
@@ -20,5 +26,29 @@ button.conversation-button {
 
   div {
     font-size: 14px;
+  }
+}
+
+button.delete-button {
+  background-color: #e74c3c;
+  border: none;
+  color: white;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: background-color 0.2s ease-in-out;
+
+  &:hover {
+    background-color: #c0392b;
+  }
+
+  .delete-icon {
+    font-size: 18px;
+    font-weight: bold;
   }
 }

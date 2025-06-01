@@ -3,6 +3,12 @@
     <img ngSrc="assets/icons/fra_uas_logo_white.png" alt="Logo" height="144" width="349"/>
   </div>
 
+  <!-- New Chat Button -->
+  <button class="new-conversation-button" (click)="createNewConversation()">
+    <mat-icon>add</mat-icon>
+    New Chat
+  </button>
+
   <div class="conversation-list">
     <ng-container *ngFor="let label of ['Heute', 'Letzte 7 Tage', 'Diesen Monat', 'Älter']">
       <ng-container *ngIf="groupedConversations[label]?.length">

@@ -2,12 +2,15 @@ import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { Conversation } from '../../data/objects/conversation';
 import { Message } from '../../data/objects/message';
 import { DBService } from '../../data/db.service';
-import { DatePipe, CommonModule } from '@angular/common';
+import { CommonModule } from '@angular/common';
+import {ChatService} from "../../chat/chat.service";
+import {FormsModule} from "@angular/forms";
+
 
 @Component({
   selector: 'app-conversation',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './conversation.component.html',
   styleUrls: ['./conversation.component.scss']
 })
@@ -16,12 +19,12 @@ export class ConversationComponent implements OnInit {
   @Output() selected = new EventEmitter<Conversation>();
 
   messages: Message[] = [];
+  editing = false;
+  newName = '';
 
-  constructor(private db: DBService) {}
+  constructor(private chatService: ChatService, private db: DBService) {}
 
-
-
-  // Lifecycle hook: called once after component is initialized.
+  // Lifecycle hook: called once after the component is initialized.
   // Loads messages related to this conversation from the local database.
   // (This could be used later for message previews or synchronization.)
   async ngOnInit() {
@@ -31,5 +34,48 @@ export class ConversationComponent implements OnInit {
   // Emits the selected conversation to the parent component when the user clicks on this conversation.
   onClick(): void {
     this.selected.emit(this.conversation);
+  }
+
+  /**
+   * Handles the right-click event by preventing the default context menu
+   * and initiating the editing process.
+   *
+   * @param {Event} event - The event object associated with the right-click action.
+   * @return {void} This method does not return a value.
+   */
+  onRightClick(event: Event): void {
+    event.preventDefault();
+    this.startEditing();
+  }
+
+  startEditing(): void {
+    this.editing = true;
+    this.newName = this.conversation.name;
+  }
+
+  async finishEditing(): Promise<void> {
+    if (this.newName && this.newName !== this.conversation.name) {
+      this.conversation.name = this.newName;
+      await this.chatService.updateConversation(this.conversation);
+    }
+    this.editing = false;
+  }
+
+  cancelEditing(): void {
+    this.editing = false;
+    this.newName = '';
+  }
+
+  /**
+   * Deletes the current conversation after user confirmation.
+   * Prompts the user with a confirmation dialog before proceeding with the deletion.
+   * If the user confirms, the conversation is deleted using the chat service.
+   *
+   * @return {Promise<void>} A promise that resolves when the conversation is successfully deleted or is rejected if an error occurs.
+   */
+  async deleteConversation(): Promise<void> {
+    if (confirm('Delete this conversation?')) {
+      await this.chatService.deleteConversation(this.conversation.id);
+    }
   }
 }
