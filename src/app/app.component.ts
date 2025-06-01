@@ -1,24 +1,31 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Router, NavigationEnd } from '@angular/router'; // Import Router and NavigationEnd
-import { StatusBarService } from './status-bar/status-bar.service';
-import { Subscription } from 'rxjs'; // Import Subscription
-import { filter } from 'rxjs/operators'; // Import filter operator
+import {Component, OnDestroy, OnInit} from '@angular/core';
+import {DisplayService} from "./sidebar/service/display.service";
+
+
+import {NavigationEnd, Router} from '@angular/router'; // Import Router and NavigationEnd
+import {Subscription} from 'rxjs'; // Import Subscription
+import {filter} from 'rxjs/operators'; // Import filter operator
+
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss'],
-  standalone: false
+  standalone: false // This makes AppComponent a non-standalone component
 })
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Advanced LLM Chat';
   showMenuIcon: boolean = true; // Property to control menu icon visibility
   private routerSubscription: Subscription | undefined; // To store the subscription
 
-  constructor(
-    private statusService: StatusBarService,
-    private router: Router // Inject Router
-  ) {}
+  // Make displayService public to allow template to access its methods and observables
+  constructor(public displayService: DisplayService,
+              private router: Router // Inject Router
+
+
+  ) {
+  }
+
 
   ngOnInit() {
     this.routerSubscription = this.router.events.pipe(
@@ -27,10 +34,6 @@ export class AppComponent implements OnInit, OnDestroy {
       // Check if the current route is the login page
       this.showMenuIcon = !(event.url === '/login' || event.urlAfterRedirects === '/login');
     });
-  }
-
-  toggleNavbar() {
-    this.statusService.toggleSidenav();
   }
 
   ngOnDestroy() {

@@ -12,15 +12,21 @@ import { Conversation } from '../data/objects/conversation';
 export class ChatService {
   // The conversation this service is managing
   private conversation: Conversation = new Conversation(1, 1, "default", ["user"])
+  // TODO: Start with conversation null, only create new conversation once the first message is sent!
+  //  (e.g. we don't wanna have empty conversations with no messages)
 
   // The ChatService is responsible for managing and exposing the messages.
   private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
   public messages: Observable<Message[]> = this.messagesSubject.asObservable();
 
+  private conversationsSubject = new BehaviorSubject<Conversation[]>([]);
+  public conversations$: Observable<Conversation[]> = this.conversationsSubject.asObservable();
+
   // Constructor
   constructor(
-    private dbService: DBService, 
+    private dbService: DBService,
     private apiService: ApiService
+
   ) {
     // Wait for the database to be ready
     this.dbService.getDatabaseReadyPromise().then(() => {
@@ -40,11 +46,12 @@ export class ChatService {
             }
             console.log("Conversation loaded!");
           });
-        } else {          
+        } else {
           // Add the default conversation to the database
           this.dbService.addConversation(this.conversation).then(() => {
           console.log("New conversation created!");
           });
+        this.loadAllConversations();
         }
 
         // Check for new messages
@@ -59,7 +66,7 @@ export class ChatService {
     try {
       const conversations = await this.apiService.getConversationsByUser();
       if (conversations.length === 0) {
-        console.log('No refresh of conversations nessessary!');
+        console.log('No refresh of conversations necessary!');
         return;
       }
       const hashsum = await this.conversation.computeHash(this.dbService);
@@ -142,13 +149,20 @@ export class ChatService {
         console.log('Message sent:', response);
       }
     });
+
+    // Update conversation timestamp
+    this.conversation.updatedAt = new Date();
+    await this.dbService.updateConversation(this.conversation);
+
+    // This will trigger re-grouping in sidebar
+    await this.loadAllConversations();
   }
 
   // Generate a message
   public async generateMessage(participant: string) {
     const currentMessages = this.messagesSubject.getValue();
     // Convert the last message to a Message instance if it's not already one
-    const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message 
+    const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message
     ? currentMessages[currentMessages.length - 1]
     : new Message(currentMessages[currentMessages.length - 1]);
 
@@ -156,7 +170,7 @@ export class ChatService {
 
     try {
       const generatedMessage = await this.apiService.generateMessage(lastMessage, participant);
-      
+
       // Add to local state and database
       this.addMessage(generatedMessage);
     } catch (error) {
@@ -173,11 +187,11 @@ export class ChatService {
 
       // Call the API to patch the message
       const updatedMessage = await this.apiService.patchMessage(conversationId, messageId, content);
-      
+
       // Update the message in the local state
       const currentMessages = this.messagesSubject.getValue();
       const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
-      
+
       if (messageIndex !== -1) {
         currentMessages[messageIndex] = new Message({
           ...currentMessages[messageIndex],
@@ -185,7 +199,7 @@ export class ChatService {
         });
         // currentMessages[messageIndex] = { ...currentMessages[messageIndex], ...updatedMessage };
         this.messagesSubject.next([...currentMessages]);
-        
+
         // Update in database
         await this.dbService.updateMessage(currentMessages[messageIndex]);
       }
@@ -199,12 +213,12 @@ export class ChatService {
   public async deleteMessage(messageId: number) {
     try {
       await this.apiService.deleteMessage(this.conversation.id, messageId);
-      
+
       // Remove from local state
       const currentMessages = this.messagesSubject.getValue();
       const updatedMessages = currentMessages.filter(msg => msg.id !== messageId);
       this.messagesSubject.next(updatedMessages);
-      
+
       // Remove from database
       await this.dbService.deleteMessage(messageId);
     } catch (error) {
@@ -216,5 +230,60 @@ export class ChatService {
   // Regenerate a message in the conversation
   public regenerateMessage(message: Message) {
     console.log('Regenerating message');
+    // TODO: Implement regenerate message method!
+  }
+
+  // Loads a specific conversation and its messages into memory.
+  public async loadConversation(conversation: Conversation) {
+    this.conversation = conversation;
+
+    const messages = await this.dbService.getMessagesByConversationId(conversation.id);
+    messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
+
+    this.messagesSubject.next(messages);
+  }
+
+  // Create a new conversation
+  public async createConversation(conversation: Conversation): Promise<Conversation> {
+    // Set timestamps
+    conversation.createdAt = new Date();
+    conversation.updatedAt = new Date();
+
+    // Save to database
+    await this.dbService.addConversation(conversation);
+
+    // Update the conversations list
+    await this.loadAllConversations();
+
+    return conversation;
+  }
+
+  // Load all conversations from database (replace getDummyConversations)
+  public async loadAllConversations(): Promise<Conversation[]> {
+    const conversations = await this.dbService.getAllConversations();
+    this.conversationsSubject.next(conversations);
+    return conversations;
+  }
+
+  // Get conversations as observable
+  public getConversations(): Observable<Conversation[]> {
+    return this.conversations$;
+  }
+
+  // Update conversation (e.g., rename)
+  public async updateConversation(conversation: Conversation): Promise<void> {
+    conversation.updatedAt = new Date();
+    await this.dbService.updateConversation(conversation);
+    await this.loadAllConversations();
+  }
+
+  // Delete conversation
+  public async deleteConversation(conversationId: number): Promise<void> {
+    // Delete all messages first
+    await this.dbService.deleteMessagesByConversationId(conversationId);
+    // Delete the conversation
+    await this.dbService.deleteConversation(conversationId);
+    // Reload conversations
+    await this.loadAllConversations();
   }
 }

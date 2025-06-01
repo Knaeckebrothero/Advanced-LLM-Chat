@@ -1,30 +1,111 @@
+/* src/app/app.component.scss */
 @use 'src/styles/variables' as vars;
 
-.main-ui-container {
-  // Make the positioning of the mat-icon relative to this container
-  position: relative;
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
+$burger-area-height: 60px;
+$burger-area-width: 60px;
 
-  // Button styling
-  mat-icon {
-    height: auto;
-    width: auto;
-    // Position mat-icon absolutely on the top left
-    position: absolute; 
-    // Ensure it's on top of other components.
-    z-index: 998;
-    // Change the cursor to a pointer when hovering over the button
-    cursor: pointer;
-    color: vars.$color-secondary;
-    font-size: 50px;
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.burger-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: $burger-area-width;
+  height: $burger-area-height;
+  /* Ensure the background is always transparent or remove the .sidebar-closed specific background.
+    The transition for background-color can also be removed if it's always transparent.
+  */
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1002;
+  // transition: background-color 0.3s ease-in-out; // Optional: remove if no background change
+
+  /* Remove or comment out this block to prevent the blue background
+    when the sidebar is closed.
+  */
+  /*
+  &.sidebar-closed {
+    background-color: #2C8BCC; // This line causes the blue background
+  }
+  */
+}
+
+.burger-menu-button {
+  width: 30px;
+  height: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  box-sizing: border-box;
+
+  .burger-line {
+    width: 100%;
+    height: 3px;
+    background-color: vars.$color-font-light;
+    border-radius: 2px;
   }
 }
 
-// Hide the button on screens smaller than 768px wide
+.sidebar-element {
+  width: 260px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease-in-out;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background-color: #2C8BCC;
+  padding-top: $burger-area-height;
+  box-sizing: border-box;
+
+  &.open {
+    transform: translateX(0);
+  }
+}
+
+.content-wrapper {
+  flex-grow: 1;
+  height: 100vh;
+  overflow-y: auto;
+  background-color: vars.$color-background;
+  transition: margin-left 0.3s ease-in-out;
+  position: relative;
+}
+
+// Desktop and larger screens
+@media (min-width: 769px) {
+  .content-wrapper {
+    &.sidebar-open {
+      margin-left: 260px;
+    }
+  }
+}
+
+// Mobile/Tablet screens
 @media (max-width: 768px) {
-  //mat-icon {
-  //  display: none;
-  //}
+  .sidebar-element {
+    width: 85%;
+    &.open {
+      box-shadow: 3px 0px 15px rgba(0,0,0,0.2);
+    }
+  }
+  .content-wrapper {
+    &.sidebar-open {
+      margin-left: 0;
+    }
+  }
 }
