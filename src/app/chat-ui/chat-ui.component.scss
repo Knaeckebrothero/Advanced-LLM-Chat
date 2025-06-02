@@ -1,13 +1,12 @@
 @use 'src/styles/variables' as vars;
 @use 'src/styles/mixins' as mixins;
 
-// Chat component styles
 .chat-ui-container {
   height: 100%;
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-color: vars.$color-background;
+  background-color: transparent; // Allows the content-wrapper's (and thus body's) background to be visible
 }
 
 .message-container {

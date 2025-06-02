@@ -77,11 +77,12 @@ $burger-area-width: 60px;
   }
 }
 
+
 .content-wrapper {
   flex-grow: 1;
   height: 100vh;
   overflow-y: auto;
-  background-color: vars.$color-background;
+  background-color: transparent; // Allows the body's background image to be visible
   transition: margin-left 0.3s ease-in-out;
   position: relative;
 }
