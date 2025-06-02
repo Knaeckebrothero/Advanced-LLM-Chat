@@ -1,9 +1,9 @@
-import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { lastValueFrom } from 'rxjs';
-import { Message } from '../data/objects/message';
-import { environment } from '../environments/environment';
-import { Conversation } from '../data/objects/conversation';
+import {Injectable} from '@angular/core';
+import {HttpClient, HttpHeaders} from '@angular/common/http';
+import {lastValueFrom} from 'rxjs';
+import {Message} from '../data/objects/message';
+import {environment} from '../environments/environment';
+import {Conversation} from '../data/objects/conversation';
 
 
 @Injectable({
@@ -38,13 +38,13 @@ export class ApiService {
     };
   }
 
-  async getConversationsByUser(): Promise<Conversation[]>{
+  async getConversationsByUser(): Promise<Conversation[]> {
     // TODO: Use the authorization token instead of the userId
-    const userId = 1;
-    const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
+   // const userId = 1;
+    const endpoint = `${this.baseUrl}/api/conversation`;
     console.log('Requesting conversations...');
 
-    try{
+    try {
       const response = await lastValueFrom(
         this.http.get<Conversation[]>(endpoint, {
           headers: this.getHeaders(),
@@ -104,7 +104,8 @@ export class ApiService {
       const response = await lastValueFrom(
         this.http.post<{ id: number }>(endpoint, body, {
             ...this.getHttpOptions(),
-            observe: 'response' }
+            observe: 'response'
+          }
         )
       );
 
@@ -130,7 +131,7 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
+        this.http.post<any>(endpoint, body, {...this.getHttpOptions()})
       );
       return Message.fromApiGenerate(response);
     } catch (error) {
@@ -150,7 +151,7 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.patch<Message>(endpoint, body, { ...this.getHttpOptions() })
+        this.http.patch<Message>(endpoint, body, {...this.getHttpOptions()})
       );
       return response;
     } catch (error) {
@@ -165,7 +166,7 @@ export class ApiService {
 
     try {
       await lastValueFrom(
-        this.http.delete(endpoint, { ...this.getHttpOptions() })
+        this.http.delete(endpoint, {...this.getHttpOptions()})
       );
     } catch (error) {
       console.error('Error deleting message:', error);
@@ -175,7 +176,7 @@ export class ApiService {
 
   // TODO: Implement get all conversations
   async getAllConversations(userId: number): Promise<Conversation[]> {
-    const endpoint = `${this.baseUrl}/api/conversations/user/${userId}`;
+    const endpoint = `${this.baseUrl}/api/conversations`;
     // ... implement API call
     return [];
   }

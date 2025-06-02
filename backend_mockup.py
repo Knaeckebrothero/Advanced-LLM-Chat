@@ -523,7 +523,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 
 # API endpoints with authentication
-@app.get("/api/conversation/byuserid/{user_id}",
+@app.get("/api/conversation",
          response_model=List[ConversationResponse],
          responses={
            status.HTTP_204_NO_CONTENT: {"description": "No conversations found or no messages in conversation"},
@@ -531,19 +531,18 @@ async def get_me(current_user: dict = Depends(get_current_user)):
            status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
          },
          tags=["Conversation"])
-async def get_conversations(user_id: int, response: Response, current_user: dict = Depends(get_current_user)):
+async def get_conversations(response: Response, current_user: dict = Depends(get_current_user)):
   """
   Get conversations for a user (currently hardcoded to conversation 1).
   """
   print("Get conversations called")
 
   try:
-    if not user_id:
-      response.status_code = status.HTTP_400_BAD_REQUEST
-      return ErrorResponse(error="User id missing")
+    userId = current_user.get("user_id")
 
     with get_db() as conn:
       cur = conn.cursor()
+
       # TODO: This should ideally fetch conversations based on user_id
       cur.execute(
         "SELECT * FROM messages WHERE conversationId = ?",
