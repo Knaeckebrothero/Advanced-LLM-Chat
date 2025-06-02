@@ -32,8 +32,8 @@ karma.conf.js
 
 # Development files
 .devcontainer/
-backend_mockup.py
-requirements.txt
+# backend_mockup.py
+# requirements.txt
 .env
 .env.*
 
