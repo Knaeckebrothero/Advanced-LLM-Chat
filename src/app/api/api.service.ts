@@ -96,6 +96,7 @@ export class ApiService {
     }
   }
 
+  //TODO: New Cpnversation -> ConversationId:Null
   async sendMessage(message: Message): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/send`;
     const body = message.toApiSend();
@@ -182,6 +183,8 @@ export class ApiService {
   }
 
   // TODO: Implement create conversation
+  //TODO is handles by backeend. Frontend sends conversation id null on cpnversationcreation
+  //TODO Conversationname then should be a sshort summary of the first message
   async createConversation(conversation: Conversation): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/create`;
     // ... implement API call
