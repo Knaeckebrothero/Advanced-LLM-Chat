@@ -6,21 +6,28 @@ A modern, Angular-based chat application for interacting with large language mod
 
 - [Features](#features)
 - [Docker Deployment](#docker-deployment)
+  - [Prerequisites for Docker Deployment](#prerequisites-for-docker-deployment)
   - [Quick Start with Docker](#quick-start-with-docker)
   - [Using Docker Compose](#using-docker-compose)
   - [Available Image Tags](#available-image-tags)
-  - [Integration with Backend](#integration-with-backend)
-  - [Building Your Own Image](#building-your-own-image)
+  - [Building Your Own Images](#building-your-own-images)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
   - [Backend Setup](#backend-setup)
   - [Frontend Setup](#frontend-setup)
 - [Development](#development)
 - [Usage](#usage)
+- [Architecture](#architecture)
 - [Troubleshooting](#troubleshooting)
+  - [CORS Issues](#cors-issues)
+  - [Certificate Issues](#certificate-issues)
+  - [Database Connection Issues](#database-connection-issues)
+  - [Backend Connection Issues](#backend-connection-issues)
+  - [Docker Deployment Issues](#docker-deployment-issues)
 - [Contributing](#contributing)
   - [Git Workflow](#git-workflow)
   - [Branch Structure](#branch-structure)
+  - [Automated Docker Builds](#automated-docker-builds)
   - [Contribution Process](#contribution-process)
 - [License](#license)
 - [Contact](#contact)
@@ -33,82 +40,69 @@ A modern, Angular-based chat application for interacting with large language mod
 - Analytics dashboard for tracking conversation metrics
 - Settings panel for customization
 - Progressive Web App (PWA) support
+- Dockerized frontend (Angular/nginx) and backend (Python/FastAPI) for easy deployment
+- LLM integration via Replicate API with streaming responses
+- Session-based authentication with persistent login state
 
 ## Docker Deployment
 
-The Angular application is available as a pre-built Docker container from GitHub Container Registry. This is the recommended deployment method for production environments.
+The application is available as pre-built Docker containers from GitHub Container Registry. The application consists of two containers:
+- **Frontend**: Angular application served by nginx
+- **Backend**: Python FastAPI with SQLite database and LLM integration
+
+### Prerequisites for Docker Deployment
+
+1. Docker and Docker Compose installed
+2. A Replicate API token (get one at https://replicate.com)
 
 ### Quick Start with Docker
 
 ```bash
-# Pull the latest image
-docker pull ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
+# Create a .env file with your Replicate API token
+echo "REPLICATE_API_TOKEN=your_replicate_api_token_here" > .env
 
-# Run the container
-docker run -d -p 8080:80 --name advanced-llm-chat ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
+# Pull and run the latest images
+docker pull ghcr.io/knaeckebrothero/advanced-llm-chat-frontend:develop-latest
+docker pull ghcr.io/knaeckebrothero/advanced-llm-chat-backend:develop-latest
+
+# Run with docker-compose (recommended)
+wget https://raw.githubusercontent.com/knaeckebrothero/advanced-llm-chat/develop/docker/docker-compose.prod.yml
+docker-compose -f docker-compose.prod.yml up -d
 ```
 
-Access the application at `http://localhost:8080`
+Access the application:
+- Frontend: `http://localhost:8080`
+- Backend API: `https://localhost:8443/api/docs`
+
+**Important**: You'll need to accept the self-signed certificate warning at `https://localhost:8443` first.
 
 ### Using Docker Compose
 
-For easier container management, use Docker Compose:
+For easier container management, clone the repository and use Docker Compose:
 
-```yaml
-version: '3.8'
-
-services:
-  frontend:
-    image: ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
-    container_name: advanced-llm-chat
-    ports:
-      - "8080:80"
-    restart: unless-stopped
-```
-
-Run with:
 ```bash
-docker-compose up -d
+git clone https://github.com/knaeckebrothero/advanced-llm-chat.git
+cd advanced-llm-chat/docker
+
+# Create .env file
+echo "REPLICATE_API_TOKEN=your_replicate_api_token_here" > .env
+
+# Build and run locally
+docker-compose up -d --build
+
+# Or use pre-built images
+docker-compose -f docker-compose.prod.yml up -d
 ```
 
 ### Available Image Tags
 
-- `ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest` - Latest develop branch build
-- `ghcr.io/knaeckebrothero/advanced-llm-chat:main-latest` - Latest main branch build (production)
-- `ghcr.io/knaeckebrothero/advanced-llm-chat:sha-<commit>` - Specific commit builds
+- `ghcr.io/knaeckebrothero/advanced-llm-chat-frontend:develop-latest` - Latest frontend from develop branch
+- `ghcr.io/knaeckebrothero/advanced-llm-chat-backend:develop-latest` - Latest backend from develop branch
+- `ghcr.io/knaeckebrothero/advanced-llm-chat-frontend:main-latest` - Latest frontend from main branch (production)
+- `ghcr.io/knaeckebrothero/advanced-llm-chat-backend:main-latest` - Latest backend from main branch (production)
+- `ghcr.io/knaeckebrothero/advanced-llm-chat-{frontend|backend}:sha-<commit>` - Specific commit builds
 
-### Integration with Backend
-
-To deploy with your backend API service:
-
-```yaml
-version: '3.8'
-
-services:
-  frontend:
-    image: ghcr.io/knaeckebrothero/advanced-llm-chat:develop-latest
-    ports:
-      - "80:80"
-    networks:
-      - app-network
-    depends_on:
-      - backend
-    
-  backend:
-    build: ./path-to-backend
-    ports:
-      - "8443:8443"
-    networks:
-      - app-network
-    environment:
-      - YOUR_ENV_VARS=values
-
-networks:
-  app-network:
-    driver: bridge
-```
-
-### Building Your Own Image
+### Building Your Own Images
 
 If you need to build the image locally with custom configurations:
 
@@ -134,6 +128,7 @@ Before you begin, ensure you have the following installed:
 - npm (v8.x or higher)
 - Python 3.8+ (for backend mockup)
 - Angular CLI (`npm install -g @angular/cli`)
+- A Replicate API token (for LLM functionality) - get one at https://replicate.com
 
 ## Installation
 
@@ -168,7 +163,9 @@ pip install -r requirements.txt
 Create a `.env` file in the root directory with the following content:
 
 ```
-DEV_CERTS=True
+USE_DEV_CERTS=True
+REPLICATE_API_TOKEN=your_replicate_api_token_here
+DB_DIR=./data
 ```
 **Tip:** You can use the [.env.example](.env.example) file to do so.
 
@@ -259,6 +256,30 @@ Use the status bar to navigate between:
 - Metrics dashboard
 - Settings panel
 
+## Architecture
+
+The application follows a modern microservices architecture:
+
+```
+┌─────────────────────┐         ┌─────────────────────┐
+│                     │         │                     │
+│   Angular PWA       │ <-----> │   FastAPI Backend   │
+│   (Frontend)        │  HTTPS  │   (Python)          │
+│                     │         │                     │
+│  - Angular 19       │         │  - FastAPI          │
+│  - TypeScript       │         │  - SQLite DB        │
+│  - IndexedDB        │         │  - Replicate API    │
+│  - Service Worker   │         │  - Session Auth     │
+│  - nginx (Docker)   │         │  - WebSockets       │
+│                     │         │                     │
+└─────────────────────┘         └─────────────────────┘
+      Port 8080                      Port 8443
+
+Docker Containers:
+- Frontend: nginx:alpine serving production Angular build
+- Backend: python:3.11-slim running FastAPI with uvicorn
+```
+
 ## Troubleshooting
 
 ### CORS Issues
@@ -291,6 +312,29 @@ If you encounter database issues:
 1. Check that the SQLite database file has been created
 2. Ensure your user has permission to read/write to the file
 3. Try deleting the file to start fresh (all data will be lost)
+
+### Backend Connection Issues
+
+If the frontend cannot connect to the backend:
+1. Ensure both Docker containers are running: `docker ps`
+2. Accept the self-signed certificate by visiting `https://localhost:8443` directly
+3. Check that both containers are on the same network: `docker network inspect docker_app-network`
+4. Verify the backend logs: `docker logs advanced-llm-chat-backend`
+
+### Docker Deployment Issues
+
+1. **Replicate API errors**:
+   - Ensure your `REPLICATE_API_TOKEN` is set correctly in the `.env` file
+   - Check backend logs for API errors: `docker logs advanced-llm-chat-backend`
+
+2. **Database persistence**:
+   - SQLite database is stored in `./docker/data/`
+   - Ensure proper permissions: `chmod 755 ./docker/data`
+   - Backup this directory to preserve chat history
+
+3. **Port conflicts**:
+   - Frontend runs on port 8080, backend on 8443
+   - Change ports in `docker-compose.yml` if needed
 
 ## Contributing
 
@@ -338,6 +382,14 @@ The project implements a strict Git Flow workflow with automated deployment thro
   * Contains the built application that is deployed to GitHub Pages
   * Automatically updated when changes are merged to `main`
 
+### Automated Docker Builds
+
+When changes are pushed to `develop` or `main` branches, GitHub Actions automatically:
+- Builds both frontend and backend Docker images
+- Pushes them to GitHub Container Registry
+- Tags them appropriately (develop-latest, main-latest, or sha-<commit>)
+- Creates deployment artifacts for easy server deployment
+
 ### Contribution Process
 
 1. **Clone the repository**
@@ -351,7 +403,7 @@ The project implements a strict Git Flow workflow with automated deployment thro
    # Make sure you have the develop branch
    git checkout develop
    git pull origin develop
-   
+
    # Install dependencies
    npm install
    ```

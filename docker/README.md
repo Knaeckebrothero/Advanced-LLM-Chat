@@ -86,8 +86,8 @@ The GitHub Actions workflow automatically builds and pushes both images:
 
 ```bash
 # Pull the latest images
-docker pull ghcr.io/[your-username]/advanced-llm-chat-frontend:develop-latest
-docker pull ghcr.io/[your-username]/advanced-llm-chat-backend:develop-latest
+docker pull ghcr.io/Knaeckebrothero/advanced-llm-chat-frontend:develop-latest
+docker pull ghcr.io/Knaeckebrothero/advanced-llm-chat-backend:develop-latest
 
 # Run with docker-compose using remote images
 docker-compose -f docker-compose.prod.yml up -d
