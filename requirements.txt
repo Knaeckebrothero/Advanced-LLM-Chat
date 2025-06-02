@@ -4,6 +4,8 @@ python-dotenv==1.0.0
 replicate==0.22.0
 trustme==1.1.0
 pydantic==2.5.0
+python-multipart==0.0.6
+httpx==0.25.2
 
 # TODO: Do we need these for the container?
 # python-multipart==0.0.6
