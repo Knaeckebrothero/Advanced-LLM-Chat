@@ -5,12 +5,12 @@
 
         <div class="message-body">
             <div *ngIf="!editing" [innerHTML]="formatMessage(message.content)"></div>
-            <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv 
-                [innerText]="message.content!" 
+            <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
+                [innerText]="message.content!"
                 (blur)="updateContent(editableDiv.innerText)">
             </div>
         </div>
-        
+
         <div class="message-footer">
             <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
             <div *ngIf="!editing" class="message-actions">

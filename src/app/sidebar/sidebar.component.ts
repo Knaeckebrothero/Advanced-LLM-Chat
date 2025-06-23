@@ -6,6 +6,11 @@ import { ChatService } from '../chat/chat.service';
 import { ConversationComponent } from './conversation/conversation.component';
 import { DisplayService } from "./service/display.service";
 import { MatIcon } from "@angular/material/icon";
+import { SettingsComponent } from "../settings/settings.component";
+import { SettingsService } from "../settings/settings.service";
+import { MatDialog } from "@angular/material/dialog";
+import { MatDialogModule } from '@angular/material/dialog';
+import { Settings } from '../settings/settings.service';
 
 
 @Component({
@@ -17,7 +22,8 @@ import { MatIcon } from "@angular/material/icon";
     CommonModule,
     NgOptimizedImage,
     ConversationComponent,
-    MatIcon
+    MatIcon,
+    MatDialogModule,
   ]
 })
 export class SidebarComponent implements OnInit {
@@ -27,8 +33,28 @@ export class SidebarComponent implements OnInit {
   constructor(
     private chatService: ChatService,
     public router: Router,
-    private displayService: DisplayService
+    private displayService: DisplayService,
+    private dialog: MatDialog,
+    private settingsService: SettingsService
   ) {}
+
+
+  /**
+   * Öffnet die Einstellungen als modales Dialogfenster.
+   * Nutzt die bestehende SettingsComponent und zeigt sie über MatDialog an.
+   */
+  openSettings(): void {
+    const dialogRef = this.dialog.open(SettingsComponent, {
+      width: '400px'
+    });
+
+    dialogRef.afterClosed().subscribe((result: Settings | undefined) => {
+      if (result) {
+        this.settingsService.saveSettings(result).subscribe();
+        this.settingsService.saveLocal(result);
+      }
+    });
+  }
 
   /**
    * Angular lifecycle hook that initializes the component's state.

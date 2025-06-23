@@ -29,13 +29,16 @@
     <button class="nav-button" (click)="navigateTo('/metrics')" [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
       Metrics
     </button>
-    <button class="nav-button" (click)="navigateTo('/settings')" [class.selected]="router.isActive('/settings', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      Settings
-    </button>
   </div>
 
-  <div class="user">
-    <div class="avatar">MM</div>
-    <div class="username">Max Mustermann</div>
+  <!-- Neuer Settings-Button unten -->
+  <div class="user-with-settings">
+    <div class="user">
+      <div class="avatar">MM</div>
+      <div class="username">Max Mustermann</div>
+    </div>
+    <button class="settings-icon-button" mat-icon-button (click)="openSettings()">
+      <mat-icon>settings</mat-icon>
+    </button>
   </div>
 </div>

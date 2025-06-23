@@ -21,7 +21,8 @@ import {MatFormFieldModule} from '@angular/material/form-field';
 import {MatSidenavModule} from '@angular/material/sidenav';
 import {MatListModule} from '@angular/material/list';
 import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
-import {MatCardModule} from '@angular/material/card'; // <--- Added this
+import {MatCardModule} from '@angular/material/card';
+import { MatDialogModule } from '@angular/material/dialog';
 // Default
 import {inject, isDevMode, NgModule, provideAppInitializer} from '@angular/core';
 import {BrowserModule} from '@angular/platform-browser';
@@ -49,7 +50,6 @@ const routes: Routes = [
     AppComponent,
     ChatUiComponent,
     ChatUiMessageComponent,
-    SettingsComponent,
     MetricsComponent,
     StatusBarComponent,
     AuthCallbackComponent,
@@ -67,7 +67,8 @@ const routes: Routes = [
     MatSidenavModule,
     MatListModule,
     MatProgressSpinnerModule,
-    MatCardModule, // <--- Added this
+    MatCardModule,
+    MatDialogModule,
     CommonModule,
     RouterModule.forRoot(routes),
     RouterModule.forRoot(routes),

@@ -1,21 +1,281 @@
-@use 'src/styles/variables' as vars;
+:host {
+  display: block;
+  padding: 24px;
+  background-color: #f3f9fd;
+  color: #1a1a1a;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-width: 100%;
+  min-width: 320px;
+  overflow: hidden;
+}
 
-.settings-ui {
-  width: 100%;
-  height: 100%;
+/* Überschrift */
+h2 {
+  font-size: 1.6rem;
+  margin-bottom: 1.2rem;
+  color: #2C8BCC;
+}
+
+.toggles-row {
   display: flex;
-  flex-direction: column;
-  gap: 40px; // Adjust the gap between elements as needed
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
 
-  .upload-container {
-    margin-top: 25%;
-    align-self: center;
-    color: vars.$color-secondary;
+  .dark-mode-toggle {
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 32px;
+
+      input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        border-radius: 32px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 2px;
+
+        mat-icon.icon {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background-color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          color: black;
+          transition: transform 0.3s ease;
+        }
+      }
+
+      input:checked + .slider {
+        background-color: #2C8BCC;
+
+        mat-icon.icon {
+          transform: translateX(28px);
+          color: white;
+          background-color: #1A6DA8;
+        }
+      }
+    }
   }
 
-  button {
-    align-self: center;
-    width: 50%;
-    height: 50px;
+
+
+  .language-toggle {
+    display: flex;
+    align-items: center;
   }
+
+  .switch {
+    width: 60px;
+    height: 32px;
+    background-color: #ccc;
+    border-radius: 32px;
+    position: relative;
+    cursor: pointer;
+    display: block;
+
+    .slider {
+      width: 28px;
+      height: 28px;
+      background-color: white;
+      border-radius: 50%;
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.3s ease, background-color 0.3s ease;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+
+      .icon {
+        font-size: 16px;
+        &.light {
+          color: black;
+        }
+        &.dark {
+          color: white;
+        }
+      }
+    }
+
+    input[type='checkbox'] {
+      display: none;
+    }
+
+    input:checked + .switch {
+      background-color: #2c8bcc;
+
+      .slider {
+        transform: translateX(28px);
+        background-color: #1a6da8;
+
+        .icon {
+          color: white;
+        }
+      }
+    }
+  }
+
+  .language-switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 32px;
+
+    .slider {
+      background-color: #ccc;
+      border-radius: 32px;
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      transition: background-color 0.3s;
+
+      .lang-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 600;
+        color: #333;
+        height: 100%;
+      }
+    }
+
+    input[type='checkbox']:checked + .slider {
+      background-color: #2c8bcc;
+
+      .lang-label {
+        color: white;
+      }
+    }
+  }
+}
+
+
+
+
+
+/* Dropdown und Input allgemein */
+mat-form-field {
+  width: 100%;
+  margin-bottom: 1.5rem;
+
+  ::ng-deep .mat-form-field-flex {
+    background-color: white !important;
+    border-radius: 6px;
+  }
+
+  ::ng-deep .mat-select-trigger,
+  ::ng-deep .mat-select-value,
+  ::ng-deep textarea.mat-input-element {
+    background-color: white !important;
+    color: #1a1a1a !important;
+  }
+
+  ::ng-deep .mat-form-field-wrapper {
+    padding: 4px 8px;
+  }
+}
+
+/* Label über System Prompt */
+.input-label {
+  display: block;
+  font-weight: 500;
+  margin: 8px 0 4px;
+  color: #2C8BCC;
+}
+
+/* Slider für Temperature & Top_p */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+
+  label {
+    min-width: 110px;
+    color: #2C8BCC;
+    font-weight: 500;
+  }
+
+  mat-slider {
+    flex: 1;
+
+    ::ng-deep .mat-slider-thumb {
+      background-color: #2C8BCC;
+    }
+
+    ::ng-deep .mat-slider-track-fill {
+      background-color: #2C8BCC;
+    }
+
+    ::ng-deep .mat-slider-track-background {
+      background-color: #d3eaf8;
+    }
+  }
+}
+
+/* Linkähnlicher Button */
+.link-button {
+  background: none;
+  border: none;
+  color: #2C8BCC;
+  cursor: pointer;
+  font-size: 0.9rem;
+  text-decoration: underline;
+  padding: 4px;
+  margin-top: 1rem;
+
+  &:hover {
+    text-decoration: none;
+    opacity: 0.8;
+  }
+}
+
+.custom-input {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #1976d2; // blau
+  border-radius: 4px;
+  background-color: white;
+  color: black;
+  font-size: 14px;
+  box-sizing: border-box;
+  margin-bottom: 16px;
+}
+
+.custom-input:focus {
+  outline: none;
+  border-color: #1565c0; // dunkleres blau beim Fokus
+}
+
+label {
+  display: block;
+  margin: 8px 0 4px;
+  font-weight: 600;
+  color: #1976d2;
 }

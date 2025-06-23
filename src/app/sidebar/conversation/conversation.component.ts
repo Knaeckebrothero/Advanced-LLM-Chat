@@ -28,7 +28,10 @@ export class ConversationComponent implements OnInit {
   // Loads messages related to this conversation from the local database.
   // (This could be used later for message previews or synchronization.)
   async ngOnInit() {
-    this.messages = await this.conversation.getLatestMessages(this.db);
+    if (this.conversation?.id) {
+      this.messages = await this.db.getMessagesByConversationId(this.conversation.id);
+      this.messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
+    }
   }
 
   // Emits the selected conversation to the parent component when the user clicks on this conversation.
