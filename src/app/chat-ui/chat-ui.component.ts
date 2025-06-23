@@ -2,7 +2,6 @@ import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/cor
 import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
 
-
 @Component({
     selector: 'app-chat-ui',
     templateUrl: './chat-ui.component.html',
@@ -11,94 +10,98 @@ import { Message } from '../data/objects/message';
 })
 export class ChatUiComponent implements AfterViewChecked {
 
-  // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
+  @ViewChild('fileInput') fileInputRef!: ElementRef<HTMLInputElement>;
 
-  // Variables
   userName: string = 'user';
   aiName: string = 'Assistant';
   conversationId: number = 1;
-
-  // The inputField property is bound to the input field in the template.
   inputField: string = '';
-
-  // Messages are managed by the ChatService and are passed to this component via observable.
   messages = this.chatService.messages;
+  selectedFiles: File[] = [];
+  isRecording: boolean = false;
 
-  // Constructor
   constructor(private chatService: ChatService) {}
 
-  // Method to scroll to the bottom of the chat window.
-  private scrollToBottom(): void {
-    try {
-      this.messageContainer.nativeElement.scrollTop = this.messageContainer.nativeElement.scrollHeight;
-    } catch(err) { }
-  }
-
-  // Use the AfterViewChecked lifecycle hook to trigger the scroll method.
   ngAfterViewChecked() {
     this.scrollToBottom();
   }
 
-  // Utility function to detect mobile devices
+  private scrollToBottom(): void {
+    try {
+      this.messageContainer.nativeElement.scrollTop = this.messageContainer.nativeElement.scrollHeight;
+    } catch (err) {}
+  }
+
   isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
-  // TODO: Do we want to move this to the app.component?
 
-  // Function to handle Enter key in textarea
   handleEnterKeyPress(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       if (this.isMobileDevice()) {
-        // It's a mobile device, allow line breaks on Enter
-        event.preventDefault(); // This line might be removed if you want to allow new lines
+        event.preventDefault();
       } else {
-        // It's not a mobile device, send the message
-        this.inputUserMessage();
-        event.preventDefault(); // Prevents new line even on desktop after sending message
+        this.handleActionClick();
+        event.preventDefault();
       }
     }
   }
 
-  // The addMessage method is called when the user submits a new message.
-  inputUserMessage() {
-    // The inputField property is checked to ensure that it is not empty.
-    if (this.inputField !== '') {
-      // The ChatService is used to add a new usermessage to the history.
-      this.chatService.sendMessage(this.inputField);
-      console.log('User added message:');
-
-      this.scrollToBottom();
-
-      // The input field is cleared.
-      this.inputField = '';
+  handleActionClick(): void {
+    const trimmedInput = this.inputField.trim();
+    if (trimmedInput || this.selectedFiles.length > 0) {
+      this.inputUserMessage();
+      this.generateMessage();
+    } else {
+      this.startVoiceInput();
     }
   }
 
-  // Generate a new message
+  inputUserMessage() {
+    if (this.inputField.trim() !== '' || this.selectedFiles.length > 0) {
+      this.chatService.sendMessage(this.inputField);
+      this.scrollToBottom();
+      this.inputField = '';
+      this.selectedFiles = [];
+    }
+  }
+
   generateMessage() {
     this.chatService.generateMessage(this.aiName);
   }
 
-  /*
+  startVoiceInput() {
+    this.isRecording = true;
+    console.log('Voice input triggered');
 
-  // The inputSystemMessage method is called to add a new system message
-  inputSystemMessage(messageId: number) {
-    // The ChatService is used to add a new system message to the history.
-    this.chatService.systemAddMessage(messageId);
+    setTimeout(() => {
+      this.isRecording = false;
+      this.inputField = '🎤 Spracheingabe erkannt...';
+    }, 2000);
   }
 
-  */
+  onPlusClick(): void {
+    this.fileInputRef.nativeElement.click();
+  }
 
-  // Method to delete a message
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      const newFiles = Array.from(input.files);
+      this.selectedFiles = [...this.selectedFiles, ...newFiles];
+    }
+  }
+
   deleteMessage(messageId: number) {
-    // Call the ChatService to delete the message
     this.chatService.deleteMessage(messageId);
   }
 
-  // Method to change a message
   patchMessage(message: Message) {
-    // Call the ChatService to alter the message
-    this.chatService.patchMessage(message.id!, "New message content");
+    this.chatService.patchMessage(message.id!, 'New message content');
+  }
+
+  get selectedFileNames(): string {
+    return this.selectedFiles.map(file => file.name).join(', ');
   }
 }

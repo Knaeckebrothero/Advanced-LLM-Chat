@@ -1,15 +1,33 @@
 <div class="chat-ui-container">
-    <div class="message-container" #messageContainer>
-        <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
-    </div>  
-    <div class="input-container">
-        <div class="textfield-container">
-            <textarea [(ngModel)]="inputField" class="chat-input" rows="1" placeholder="Type your message..." (keydown)="handleEnterKeyPress($event)"></textarea>
-        </div>
+  <div class="message-container" #messageContainer>
+    <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
+  </div>
 
-        <div class="button-container">
-            <button class="generate-button" mat-raised-button color="primary" (click)="generateMessage()">GEN</button>         
-            <button class="send-button" mat-raised-button color="primary" (click)="inputUserMessage()">SND</button>
-        </div>
+  <div class="input-wrapper">
+    <div class="input-box" [class.recording]="isRecording">
+
+      <div *ngIf="selectedFiles.length > 0" class="selected-files">
+        {{ selectedFileNames }}
+      </div>
+
+      <button class="icon-button left" (click)="onPlusClick()">
+        <i class="material-icons">add</i>
+      </button>
+
+      <textarea [(ngModel)]="inputField"
+                rows="1"
+                class="chat-input"
+                placeholder="Stelle eine Frage..."
+                (keydown)="handleEnterKeyPress($event)">
+      </textarea>
+
+      <button class="icon-button right" (click)="handleActionClick()">
+        <i class="material-icons">
+          {{ inputField.trim() || selectedFiles.length > 0 ? 'send' : 'mic' }}
+        </i>
+      </button>
     </div>
+  </div>
+
+  <input type="file" #fileInput hidden multiple (change)="onFileSelected($event)" />
 </div>
