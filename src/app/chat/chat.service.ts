@@ -4,14 +4,14 @@ import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
-
+import { DisplayService } from '../sidebar/service/display.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ChatService {
   // The conversation this service is managing
-  private conversation: Conversation = new Conversation(1, 1, "default", ["user"])
+  private conversation!: Conversation;
   // TODO: Start with conversation null, only create new conversation once the first message is sent!
   //  (e.g. we don't wanna have empty conversations with no messages)
 
@@ -22,41 +22,30 @@ export class ChatService {
   private conversationsSubject = new BehaviorSubject<Conversation[]>([]);
   public conversations$: Observable<Conversation[]> = this.conversationsSubject.asObservable();
 
+  private isNewConversationSubject = new BehaviorSubject<boolean>(false);
+  public isNewConversation$ = this.isNewConversationSubject.asObservable();
+
   // Constructor
   constructor(
     private dbService: DBService,
-    private apiService: ApiService
-
+    private apiService: ApiService,
+    private displayService: DisplayService
   ) {
     // Wait for the database to be ready
-    this.dbService.getDatabaseReadyPromise().then(() => {
-      // Load the default conversation from the database
-      this.dbService.getConversation(this.conversation.id).then((conversation: any) => {
-        // Check if the conversation exists
-        if (conversation != undefined) {
-          // Load the conversation messages from the database
-          this.dbService.getMessagesByConversationId(conversation.id).then((messages: Message[]) => {
-            // Check if the conversation has any messages
-            if(messages !== undefined) {
-              // Sort the messages by time
-              messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
-
-              // Add each message to the messages array
-              this.messagesSubject.next([...this.messagesSubject.getValue(), ...messages]);
-            }
-            console.log("Conversation loaded!");
-          });
-        } else {
-          // Add the default conversation to the database
-          this.dbService.addConversation(this.conversation).then(() => {
-          console.log("New conversation created!");
-          });
-        this.loadAllConversations();
-        }
-
-        // Check for new messages
-        this.refreshConversation();
-      });
+    this.dbService.getDatabaseReadyPromise().then(async () => {
+      await this.loadAllConversations();
+      const conversations = this.conversationsSubject.getValue();
+      if (conversations.length > 0) {
+        // Load the most recently updated conversation
+        const latestConversation = conversations.sort((a,b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+        this.loadConversation(latestConversation);
+        this.displayService.setActiveConversation(latestConversation.id);
+      } else {
+        // No conversations exist, start in "new chat" mode.
+        this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
+        this.displayService.setActiveConversation(0);
+      }
+      this.refreshConversation();
     });
   }
 
@@ -69,18 +58,21 @@ export class ChatService {
         console.log('No refresh of conversations necessary!');
         return;
       }
+      // This logic assumes we are always refreshing the current conversation.
+      // This might need to be adapted for multi-conversation views later.
+      const currentConvFromServer = conversations.find(c => c.id === this.conversation.id);
+      if (!currentConvFromServer) return;
+
       const hashsum = await this.conversation.computeHash(this.dbService);
 
-      if (hashsum !== conversations[0].hashsum) {
+      if (hashsum !== currentConvFromServer.hashsum) {
         console.log('Conversation hashes didnt match!');
-
-        console.log('Refreshing conversation:', conversations[0]);
+        console.log('Refreshing conversation:', currentConvFromServer);
 
         // Get the latest messages and add them to the conversation
-        this.apiService.getConversationMessages(conversations[0].id, 20).then((messages) => {
+        this.apiService.getConversationMessages(currentConvFromServer.id, 20).then((messages) => {
           console.log('Deleting old messages from conversation...');
           this.dbService.deleteMessagesByConversationId(this.conversation.id);
-
           console.log('Adding messages to conversation:', messages);
           this.addMessage(messages);
         });
@@ -123,7 +115,25 @@ export class ChatService {
 
   // Send a message
   public async sendMessage(content: string, roleName: string = 'user') {
-    // Create a new message object
+    if (this.isNewConversationSubject.getValue()) {
+      // First message in a new chat. Create the conversation.
+      const title = content.length > 30 ? content.substring(0, 27) + '...' : content;
+      const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
+
+      try {
+        const createdConv = await this.apiService.createConversation(newConvData);
+        this.conversation = createdConv;
+        await this.dbService.addConversation(this.conversation);
+        this.isNewConversationSubject.next(false);
+        await this.loadAllConversations();
+        this.displayService.setActiveConversation(this.conversation.id);
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        // Optionally show an error to the user
+        return;
+      }
+    }
+
     const message = new Message({
       id: Math.floor(new Date().getTime() / 1000) ,
       conversationId: this.conversation.id,
@@ -136,19 +146,27 @@ export class ChatService {
     this.addMessage(message);
 
     // Send the message to the backend
-    this.apiService.sendMessage(message).then((response) => {
-      if(message.id != response.id){
-        console.error('Message ID mismatch:', message.id, response.id);
+    try {
+      const response = await this.apiService.sendMessage(message);
+      if(message.id !== response.id){
+        console.log('Message ID mismatch, updating local state:', message.id, response.id);
+        await this.dbService.addMessage(response);
+        await this.dbService.deleteMessage(message.id);
 
-        // Update the message in the local state
-        this.dbService.addMessage(response);
-        this.dbService.deleteMessage(message.id);
-
-        console.log('Message ID mismatch resolved:', message.id, response.id);
+        const messages = this.messagesSubject.getValue();
+        const index = messages.findIndex(m => m.id === message.id);
+        if(index !== -1) {
+          messages[index] = response;
+          this.messagesSubject.next([...messages]);
+        }
       } else {
-        console.log('Message sent:', response);
+        console.log('Message sent and ID matched:', response);
       }
-    });
+    } catch(error) {
+      console.error('Error sending message:', error);
+      // Handle error, e.g., mark the message as failed to send
+    }
+
 
     // Update conversation timestamp
     this.conversation.updatedAt = new Date();
@@ -235,12 +253,17 @@ export class ChatService {
 
   // Loads a specific conversation and its messages into memory.
   public async loadConversation(conversation: Conversation) {
-    this.conversation = conversation;
-
-    const messages = await this.dbService.getMessagesByConversationId(conversation.id);
-    messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
-
-    this.messagesSubject.next(messages);
+    if (conversation.id === 0) {
+      this.isNewConversationSubject.next(true);
+      this.conversation = conversation;
+      this.messagesSubject.next([]);
+    } else {
+      this.isNewConversationSubject.next(false);
+      this.conversation = conversation;
+      const messages = await this.dbService.getMessagesByConversationId(conversation.id);
+      messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
+      this.messagesSubject.next(messages);
+    }
   }
 
   // Create a new conversation

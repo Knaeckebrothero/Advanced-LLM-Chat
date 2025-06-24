@@ -25,26 +25,20 @@ export class SidebarComponent implements OnInit {
   groupedConversations: { [key: string]: Conversation[] } = {};
 
   constructor(
-    private chatService: ChatService,
+    public chatService: ChatService,
     public router: Router,
-    private displayService: DisplayService
+    public displayService: DisplayService
   ) {}
 
   /**
    * Angular lifecycle hook that initializes the component's state.
    * It subscribes to a list of conversations from the chat service.
-   * If no conversations are present, it creates a new one.
-   * Otherwise, it groups existing conversations by date and stores them accordingly.
+   * It groups existing conversations by date and stores them accordingly.
    */
-  ngOnInit(): void {  // Fixed: Removed async and Promise<void>
+  ngOnInit(): void {
     // Subscribe to conversations
     this.chatService.getConversations().subscribe(conversations => {
-      if (conversations.length === 0) {
-        // Auto-create first conversation
-        this.createNewConversation();
-      } else {
-        this.groupedConversations = this.groupConversationsByDate(conversations);
-      }
+      this.groupedConversations = this.groupConversationsByDate(conversations);
     });
 
     // Initial load of all conversations
@@ -100,29 +94,29 @@ export class SidebarComponent implements OnInit {
 
   /**
    * Called when a conversation is selected (clicked).
-   * Passes the selected conversation to the ChatService.
+   * Passes the selected conversation to the ChatService and updates highlighting.
    */
   onSelectConversation(conversation: Conversation): void {
     this.chatService.loadConversation(conversation);
+    this.displayService.setActiveConversation(conversation.id);
     this.router.navigate(['/']); // Navigate to the main chat view
     this.displayService.closeSidebarOnMobile(); // Close sidebar on mobile if open
   }
 
   /**
-   * Creates a new conversation with default values.
+   * Creates a new placeholder conversation.
    */
-  async createNewConversation(): Promise<void> {
-    const newConversation = new Conversation(
-      Date.now(), // Temporary ID
-      1, // Current user ID
+  createNewConversation(): void {
+    const tempConversation = new Conversation(
+      0, // Temporary ID for a new, unsaved chat
+      1, // Placeholder user ID
       'New Chat', // Default name
       ['user', 'Assistant'] // Default participants
     );
 
-    await this.chatService.createConversation(newConversation);
-    // Fixed: Changed to use the correct service method
-    await this.chatService.loadAllConversations(); // Refresh the list
-    this.onSelectConversation(newConversation);
+    this.chatService.loadConversation(tempConversation);
+    this.displayService.setActiveConversation(0); // Highlight "New Chat" button
+    this.displayService.closeSidebarOnMobile();
   }
 
   /**
