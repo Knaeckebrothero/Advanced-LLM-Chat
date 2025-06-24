@@ -276,6 +276,29 @@ def init_db():
   with get_db() as conn:
     cur = conn.cursor()
 
+    # Create users table
+    cur.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                                                   id INTEGER PRIMARY KEY,
+                                                   email TEXT UNIQUE NOT NULL,
+                                                   name TEXT,
+                                                   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                ''')
+
+    # Create conversations table
+    cur.execute('''
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY,
+                    userId INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    participants TEXT,
+                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(userId) REFERENCES users(id)
+                )
+            ''')
+
     # Create messages table to store chat messages
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS messages (
@@ -283,7 +306,8 @@ def init_db():
                                                       conversationId INTEGER NOT NULL,
                                                       roleName TEXT NOT NULL,
                                                       content TEXT NOT NULL,
-                                                      time INTEGER NOT NULL
+                                                      time INTEGER NOT NULL,
+                                                      FOREIGN KEY(conversationId) REFERENCES conversations(id)
                 )
                 ''')
 
@@ -295,17 +319,8 @@ def init_db():
                                                       email TEXT NOT NULL,
                                                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                                       expires_at TIMESTAMP NOT NULL,
-                                                      last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                ''')
-
-    # Create users table
-    cur.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                                                   id INTEGER PRIMARY KEY,
-                                                   email TEXT UNIQUE NOT NULL,
-                                                   name TEXT,
-                                                   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                                      last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                      FOREIGN KEY(user_id) REFERENCES users(id)
                 )
                 ''')
 
@@ -313,6 +328,12 @@ def init_db():
     cur.execute('''
                 CREATE INDEX IF NOT EXISTS idx_conversation_time
                   ON messages(conversationId, time)
+                ''')
+
+    # Create index for faster querying by userId on conversations
+    cur.execute('''
+                CREATE INDEX IF NOT EXISTS idx_conversations_user
+                ON conversations(userId)
                 ''')
 
     conn.commit()
@@ -473,11 +494,23 @@ async def mock_login(request: MockLoginRequest, response: Response):
   """
   print(f"Login attempt for: {request.email}")
 
-  # Mock user creation/lookup
-  mock_user_id = abs(hash(request.email)) % 10000  # Generate consistent ID from email
+  with get_db() as db:
+    cur = db.cursor()
+    cur.execute("SELECT * FROM users WHERE email = ?", (request.email,))
+    user = cur.fetchone()
+
+    if not user:
+        # User doesn't exist, create a new one
+        user_name = request.email.split('@')[0].title()
+        cur.execute("INSERT INTO users (email, name) VALUES (?, ?)", (request.email, user_name))
+        user_id = cur.lastrowid
+        db.commit()
+    else:
+        user_id = user['id']
+        user_name = user['name']
 
   # Create session
-  session_key = create_session(mock_user_id, request.email)
+  session_key = create_session(user_id, request.email)
 
   # Set session cookie
   response.set_cookie(
@@ -492,9 +525,9 @@ async def mock_login(request: MockLoginRequest, response: Response):
 
   return LoginResponse(
     user={
-      "id": mock_user_id,
+      "id": user_id,
       "email": request.email,
-      "name": request.email.split("@")[0].title()  # Mock name from email
+      "name": user_name
     },
     message="Mock login successful"
   )
@@ -523,42 +556,47 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 
 # API endpoints with authentication
-@app.get("/api/conversation/byuserid/{user_id}",
+@app.get("/api/conversations",
          response_model=List[ConversationResponse],
          responses={
-           status.HTTP_204_NO_CONTENT: {"description": "No conversations found or no messages in conversation"},
-           status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "User ID missing"},
+           status.HTTP_204_NO_CONTENT: {"description": "No conversations found"},
            status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
          },
          tags=["Conversation"])
-async def get_conversations(user_id: int, response: Response, current_user: dict = Depends(get_current_user)):
+async def get_conversations(response: Response, current_user: dict = Depends(get_current_user)):
   """
-  Get conversations for a user (currently hardcoded to conversation 1).
+  Get conversations for the authenticated user.
   """
-  print("Get conversations called")
+  print("Get conversations for user called")
+  user_id = current_user['user_id']
 
   try:
-    if not user_id:
-      response.status_code = status.HTTP_400_BAD_REQUEST
-      return ErrorResponse(error="User id missing")
-
     with get_db() as conn:
       cur = conn.cursor()
-      # TODO: This should ideally fetch conversations based on user_id
+      # Fetch conversations for the current user
       cur.execute(
-        "SELECT * FROM messages WHERE conversationId = ?",
-        (1,)
+        "SELECT id FROM conversations WHERE userId = ?",
+        (user_id,)
       )
-      messages = cur.fetchall()
+      conversation_rows = cur.fetchall()
 
-      print(f"Messages found: {len(messages)}")
-      hashsum = generate_hash(messages)
-
-      if hashsum == 0 and not messages:
+      if not conversation_rows:
         response.status_code = status.HTTP_204_NO_CONTENT
-        return None
+        return []
 
-      return [{'id': 1, 'hashsum': hashsum}]
+      conversation_responses = []
+      for conv_row in conversation_rows:
+        conversation_id = conv_row['id']
+        # Fetch messages for each conversation to calculate hash
+        cur.execute(
+          "SELECT content FROM messages WHERE conversationId = ?",
+          (conversation_id,)
+        )
+        messages = cur.fetchall()
+        hashsum = generate_hash(messages)
+        conversation_responses.append({'id': conversation_id, 'hashsum': hashsum})
+
+      return conversation_responses
 
   except Exception as e:
     print(f"Error: {str(e)}")

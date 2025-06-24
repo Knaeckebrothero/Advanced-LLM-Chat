@@ -64,7 +64,7 @@ export class ChatService {
   private async refreshConversation() {
     // TODO: Add a way to handle / load conversations that don't exist on the client side
     try {
-      const conversations = await this.apiService.getConversationsByUser();
+      const conversations = await this.apiService.getConversations();
       if (conversations.length === 0) {
         console.log('No refresh of conversations necessary!');
         return;
