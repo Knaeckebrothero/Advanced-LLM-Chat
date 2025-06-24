@@ -38,17 +38,17 @@ export class ApiService {
     };
   }
 
-  async getConversationsByUser(): Promise<Conversation[]>{
+  async getConversations(): Promise<Conversation[]>{
     // TODO: Use the authorization token instead of the userId
-    const userId = 1;
-    const endpoint = `${this.baseUrl}/api/conversation/byuserid/${userId}`;
+    const endpoint = `${this.baseUrl}/api/conversations`;
     console.log('Requesting conversations...');
 
     try{
       const response = await lastValueFrom(
         this.http.get<Conversation[]>(endpoint, {
           headers: this.getHeaders(),
-          observe: 'response'
+          observe: 'response',
+          withCredentials: true
         })
       );
 
