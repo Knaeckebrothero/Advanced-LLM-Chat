@@ -16,13 +16,24 @@ import {FormsModule} from "@angular/forms";
 })
 export class ConversationComponent implements OnInit {
   @Input() conversation!: Conversation;
+  @Input() highlighted: boolean = false; // Added Input
   @Output() selected = new EventEmitter<Conversation>();
+  @Output() delete = new EventEmitter<number>();
 
   messages: Message[] = [];
   editing = false;
   newName = '';
 
   constructor(private chatService: ChatService, private db: DBService) {}
+
+  onSelect(): void {
+    this.selected.emit(this.conversation);
+  }
+
+  onDelete(event: MouseEvent): void {
+    event.stopPropagation();
+    this.delete.emit(this.conversation.id);
+  }
 
   // Lifecycle hook: called once after the component is initialized.
   // Loads messages related to this conversation from the local database.

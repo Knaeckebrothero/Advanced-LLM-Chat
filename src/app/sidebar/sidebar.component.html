@@ -17,7 +17,7 @@
         <app-conversation
           *ngFor="let conv of groupedConversations[label]"
           [conversation]="conv"
-          [class.highlighted]="(displayService.activeConversationId$ | async) === conv.id"
+          [highlighted]="(displayService.activeConversationId$ | async) === conv.id"
           (selected)="onSelectConversation($event)">
         </app-conversation>
       </ng-container>
