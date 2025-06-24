@@ -9,7 +9,7 @@ button.conversation-button {
   flex: 1;
   text-align: left;
   background-color: #2C8BCC;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.5); /* Modified for 50% opacity */
   color: white;
   padding: 12px;
   border-radius: 8px;
