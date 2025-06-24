@@ -75,6 +75,9 @@ class ApiMessageGenerate(BaseModel):
   conversationId: int
   roleName: str
   time: int
+  temperature: float = 0.5
+  top_p: float = 0.5
+  systemPrompt: str = "You are a helpful assistant!"
 
 
 class MessagePatch(BaseModel):
@@ -103,6 +106,27 @@ class ConversationResponse(BaseModel):
   """
   id: int
   hashsum: int
+
+
+class AppSettings(BaseModel):
+  """
+  Define the structure of the settings that the frontend can GET or PUT
+  """
+  model: str
+  temperature: float
+  top_p: float
+  systemPrompt: str
+  darkMode: int
+  languageIsEnglish: int
+
+_settings: AppSettings = AppSettings(
+   model="GPT 4o",
+   temperature=0.5,
+   top_p=0.5,
+   systemPrompt="",
+   darkMode = 0,
+   languageIsEnglish = 0
+   )
 
 
 @contextmanager
@@ -318,6 +342,21 @@ def init_db():
     conn.commit()
 
 
+    # Create Table for user-based settings
+    cur.execute('''
+      CREATE TABLE IF NOT EXISTS user_settings (
+        user_id INTEGER PRIMARY KEY,
+        model TEXT NOT NULL,
+        temperature REAL NOT NULL,
+        top_p REAL NOT NULL,
+        systemPrompt TEXT NOT NULL,
+        darkMode INTEGER NOT NULL,
+        languageIsEnglish INTEGER NOT NULL
+      )
+    ''')
+
+
+
 def setup_development_certificates():
   """
   Sets up self-signed SSL certificates for local development using the `trustme` library.
@@ -360,7 +399,7 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
   return hash_value
 
 
-async def generate_llm_response(prompt: str) -> str:
+async def generate_llm_response(prompt: str, temperature: float, top_p: float, system_prompt: str) -> str:
   """
   Generates a text response using a Large Language Model (LLM) via Replicate API.
   """
@@ -370,12 +409,21 @@ async def generate_llm_response(prompt: str) -> str:
       "meta/meta-llama-3.1-405b-instruct",
       input={
         "prompt": prompt,
-        "temperature": 0.6,
-        "top_p": 0.9,
+        "temperature": temperature,
+        "top_p": top_p,
         "max_tokens": 1024,
-        "system_prompt": "You are a helpful AI assistant engaged in a natural conversation."
+        "system_prompt": system_prompt,
       }
     )
+    print("\n".join([
+        f"LLM Input:",
+        f"  temp = {temperature}",
+        f"  top_p = {top_p}",
+        f"  system_prompt = {system_prompt}",
+        "  prompt:",
+        prompt
+    ]))
+
 
     # Replicate returns a generator, collect all parts of the streamed response
     return "".join(output)
@@ -566,6 +614,61 @@ async def get_conversations(user_id: int, response: Response, current_user: dict
     return ErrorResponse(error=str(e))
 
 
+@app.get("/api/settings", response_model=AppSettings)
+async def get_settings(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    with get_db() as db:
+        cur = db.cursor()
+        cur.execute("""
+            SELECT model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish
+            FROM user_settings
+            WHERE user_id = ?
+        """, (user_id,))
+        row = cur.fetchone()
+
+        if row:
+            return AppSettings(**row)
+        else:
+            # Fallback defaults if user has no settings yet
+            return AppSettings(
+                model="GPT 4o",
+                temperature=0.5,
+                top_p=0.5,
+                systemPrompt="You are a helpful assistant!",
+                darkMode=0,
+                languageIsEnglish=0
+            )
+
+
+@app.put("/api/settings")
+async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    with get_db() as db:
+        cur = db.cursor()
+        cur.execute("""
+            INSERT INTO user_settings (user_id, model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              model = excluded.model,
+              temperature = excluded.temperature,
+              top_p = excluded.top_p,
+              systemPrompt = excluded.systemPrompt,
+              darkMode = excluded.darkMode,
+              languageIsEnglish = excluded.languageIsEnglish
+        """, (
+            user_id,
+            new_settings.model,
+            new_settings.temperature,
+            new_settings.top_p,
+            new_settings.systemPrompt,
+            new_settings.darkMode,
+            new_settings.languageIsEnglish
+        ))
+        db.commit()
+    return {"message": "Settings saved"}
+
+
+
 @app.get("/api/conversation/messages/{conversation_id}/{timestamp}/{messages_count}",
          response_model=List[MessageResponse],
          responses={
@@ -685,11 +788,42 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Conversation ID missing or invalid in request")
 
+# Get latest user settings from DB
+    user_id = current_user["user_id"]
+    with get_db() as db:
+      cur = db.cursor()
+      cur.execute("""
+          SELECT model, temperature, top_p, systemPrompt,
+                 darkMode, languageIsEnglish
+          FROM user_settings
+          WHERE user_id = ?
+      """, (user_id,))
+
+      row = cur.fetchone()
+
+      if row:
+          settings = AppSettings(**dict(row))
+          print(f"Using settings from DB: {settings}")
+      else:
+        settings = AppSettings(
+          model="GPT 4o",
+          temperature=0.5,
+          top_p=0.5,
+          systemPrompt="You are a helpful assistant!",
+          darkMode=0,
+          languageIsEnglish=0
+        )
+
     # Get conversation context for the LLM
     context = await get_conversation_context(request_body.conversationId)
 
     # Generate AI response
-    ai_response_content = await generate_llm_response(context)
+    ai_response_content = await generate_llm_response(
+      context,
+      settings.temperature,
+      settings.top_p,
+      settings.systemPrompt
+    )
 
     message_id = int(time.time() * 1000)
     current_time = int(time.time())
