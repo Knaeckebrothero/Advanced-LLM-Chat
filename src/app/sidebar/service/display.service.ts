@@ -8,9 +8,15 @@ export class DisplayService {
   private isSidebarOpenSubject = new BehaviorSubject<boolean>(true);
   public isSidebarOpen$: Observable<boolean> = this.isSidebarOpenSubject.asObservable();
 
+  public activeConversationId$ = new BehaviorSubject<number | null>(null);
+
   constructor() {
     this.handleResize(); // Set initial state
     window.addEventListener('resize', () => this.handleResize());
+  }
+
+  public setActiveConversation(conversationId: number | null) {
+    this.activeConversationId$.next(conversationId);
   }
 
   private handleResize(): void {

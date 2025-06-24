@@ -39,16 +39,15 @@ export class ApiService {
   }
 
   async getConversations(): Promise<Conversation[]>{
-    // TODO: Use the authorization token instead of the userId
+    // Use the access token via session cookie instead of passing userId
     const endpoint = `${this.baseUrl}/api/conversations`;
-    console.log('Requesting conversations...');
+    console.log('Requesting conversations for current user...');
 
     try{
       const response = await lastValueFrom(
         this.http.get<Conversation[]>(endpoint, {
-          headers: this.getHeaders(),
-          observe: 'response',
-          withCredentials: true
+          ...this.getHttpOptions(),
+          observe: 'response'
         })
       );
 
@@ -183,8 +182,16 @@ export class ApiService {
   // TODO: Implement create conversation
   async createConversation(conversation: Conversation): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/create`;
-    // ... implement API call
-    return conversation;
+    const body = { name: conversation.name, participants: conversation.participants };
+    try {
+      const responseData = await lastValueFrom(
+        this.http.post<any>(endpoint, body, this.getHttpOptions())
+      );
+      return Conversation.fromApiResponse(responseData);
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+      throw error;
+    }
   }
 
   // TODO: Implement update conversation

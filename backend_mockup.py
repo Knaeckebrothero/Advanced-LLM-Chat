@@ -11,6 +11,7 @@ import time
 import replicate
 import secrets
 import asyncio
+import json
 from fastapi import FastAPI, Response, status, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -103,6 +104,18 @@ class ConversationResponse(BaseModel):
   """
   id: int
   hashsum: int
+
+class Conversation(BaseModel):
+  id: int
+  userId: int
+  name: str
+  participants: Optional[str] = None
+  createdAt: datetime
+  updatedAt: datetime
+
+class ConversationCreateRequest(BaseModel):
+  name: str
+  participants: List[str]
 
 
 @contextmanager
@@ -603,6 +616,27 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     return ErrorResponse(error=str(e))
 
+
+@app.post("/api/conversation/create", response_model=Conversation, status_code=status.HTTP_201_CREATED, tags=["Conversation"])
+async def create_conversation(req: ConversationCreateRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Creates a new conversation for the authenticated user.
+    """
+    user_id = current_user['user_id']
+    with get_db() as conn:
+        cur = conn.cursor()
+        participants_json = json.dumps(req.participants)
+        cur.execute(
+            "INSERT INTO conversations (userId, name, participants) VALUES (?, ?, ?)",
+            (user_id, req.name, participants_json)
+        )
+        new_id = cur.lastrowid
+        conn.commit()
+
+        cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?", (new_id,))
+        new_conv_row = cur.fetchone()
+
+        return Conversation(**dict(new_conv_row))
 
 @app.get("/api/conversation/messages/{conversation_id}/{timestamp}/{messages_count}",
          response_model=List[MessageResponse],
