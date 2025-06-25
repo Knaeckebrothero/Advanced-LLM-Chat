@@ -1,20 +1,18 @@
-<!-- Weiße Karte -->
 <div class="sidebar-wrapper">
   <div class="sidebar">
 
-    <!-- Logo ---------------------------------------------------------- -->
     <div class="branding-box">
-      <img src="assets/icons/logo-recyclingbot.png" alt="Logo" class="logo-icon" />
+      <img [src]="isDarkMode ? 'assets/icons/robot_dark.svg' : 'assets/icons/robot.svg'"
+           alt="Logo"
+           class="logo-icon" />
       <span class="branding-label">Recycling<br>Bot</span>
     </div>
 
-    <!-- New Chat ------------------------------------------------------ -->
     <button class="new-conversation-button"
             (click)="createNewConversation()">
       <mat-icon>add</mat-icon>  New Chat
     </button>
 
-    <!-- Conversation-Listen ------------------------------------------ -->
     <ng-container *ngFor="let label of ['Heute','Letzte 7 Tage','Diesen Monat','Älter']">
       <ng-container *ngIf="groupedConversations[label]?.length">
         <div class="group-label">{{ label }}</div>
@@ -28,7 +26,6 @@
       </ng-container>
     </ng-container>
 
-    <!-- Navigation ---------------------------------------------------- -->
     <div class="sidebar-navigation-main-links">
       <button class="nav-button"
               (click)="navigateTo('/')"
@@ -47,7 +44,6 @@
       </button>
     </div>
 
-    <!-- User-Info ----------------------------------------------------- -->
     <div class="user">
       <div class="avatar">MM</div>
       <span class="username">Max Mustermann</span>

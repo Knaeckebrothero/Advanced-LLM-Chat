@@ -1,11 +1,13 @@
-import { Component, OnInit } from '@angular/core';
-import { CommonModule, NgOptimizedImage } from '@angular/common';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { Conversation } from '../data/objects/conversation';
 import { ChatService } from '../chat/chat.service';
 import { ConversationComponent } from './conversation/conversation.component';
 import { DisplayService } from "./service/display.service";
 import { MatIcon } from "@angular/material/icon";
+import { ThemeService } from 'src/styles/themes/theme.service';
+import { Subscription } from 'rxjs';
 
 
 @Component({
@@ -19,24 +21,29 @@ import { MatIcon } from "@angular/material/icon";
     MatIcon
   ]
 })
-export class SidebarComponent implements OnInit {
+export class SidebarComponent implements OnInit, OnDestroy {
 
   groupedConversations: Record<string, Conversation[]> = {};
   selectedConversation: Conversation | null = null;
+  isDarkMode: boolean = false;
+  private themeSubscription!: Subscription;
 
   constructor(
     private chatService: ChatService,
     public router: Router,
-    private displayService: DisplayService
+    private displayService: DisplayService,
+    private themeService: ThemeService // Inject ThemeService
   ) {}
 
   /**
    * Angular lifecycle hook that initializes the component's state.
-   * It subscribes to a list of conversations from the chat service.
-   * If no conversations are present, it creates a new one.
-   * Otherwise, it groups existing conversations by date and stores them accordingly.
    */
-  ngOnInit(): void {  // Fixed: Removed async and Promise<void>
+  ngOnInit(): void {
+    // Subscribe to theme changes to determine if dark mode is active
+    this.themeSubscription = this.themeService.getEffectiveTheme$().subscribe(theme => {
+      this.isDarkMode = theme === 'dark';
+    });
+
     // Subscribe to conversations
     this.chatService.getConversations().subscribe(conversations => {
       if (conversations.length === 0) {
@@ -52,8 +59,16 @@ export class SidebarComponent implements OnInit {
   }
 
   /**
+   * Angular lifecycle hook that cleans up the component's subscriptions.
+   */
+  ngOnDestroy(): void {
+    if (this.themeSubscription) {
+      this.themeSubscription.unsubscribe();
+    }
+  }
+
+  /**
    * Groups conversations into time-based categories for display.
-   * Each group is also sorted by newest first.
    */
   groupConversationsByDate(conversations: Conversation[]): { [key: string]: Conversation[] } {
     const groups: { [key: string]: Conversation[] } = {
