@@ -4,14 +4,14 @@ import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
-
+import { DisplayService } from '../sidebar/service/display.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ChatService {
   // The conversation this service is managing
-  private conversation: Conversation = new Conversation(1, 1, "default", ["user"])
+  private conversation!: Conversation;
   // TODO: Start with conversation null, only create new conversation once the first message is sent!
   //  (e.g. we don't wanna have empty conversations with no messages)
 
@@ -22,72 +22,152 @@ export class ChatService {
   private conversationsSubject = new BehaviorSubject<Conversation[]>([]);
   public conversations$: Observable<Conversation[]> = this.conversationsSubject.asObservable();
 
+  private isNewConversationSubject = new BehaviorSubject<boolean>(false);
+  public isNewConversation$ = this.isNewConversationSubject.asObservable();
+
+  // Add loading state for sync operations
+  private isSyncingSubject = new BehaviorSubject<boolean>(false);
+  public isSyncing$ = this.isSyncingSubject.asObservable();
+
+  private syncPromise: Promise<void> | null = null;
+
   // Constructor
   constructor(
     private dbService: DBService,
-    private apiService: ApiService
-
+    private apiService: ApiService,
+    private displayService: DisplayService
   ) {
-    // Wait for the database to be ready
-    this.dbService.getDatabaseReadyPromise().then(() => {
-      // Load the default conversation from the database
-      this.dbService.getConversation(this.conversation.id).then((conversation: any) => {
-        // Check if the conversation exists
-        if (conversation != undefined) {
-          // Load the conversation messages from the database
-          this.dbService.getMessagesByConversationId(conversation.id).then((messages: Message[]) => {
-            // Check if the conversation has any messages
-            if(messages !== undefined) {
-              // Sort the messages by time
-              messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
-
-              // Add each message to the messages array
-              this.messagesSubject.next([...this.messagesSubject.getValue(), ...messages]);
-            }
-            console.log("Conversation loaded!");
-          });
-        } else {
-          // Add the default conversation to the database
-          this.dbService.addConversation(this.conversation).then(() => {
-          console.log("New conversation created!");
-          });
-        this.loadAllConversations();
-        }
-
-        // Check for new messages
-        this.refreshConversation();
-      });
-    });
+    this.initializeService();
   }
 
-  // Refresh the conversation
-  private async refreshConversation() {
-    // TODO: Add a way to handle / load conversations that don't exist on the client side
+  private async initializeService() {
+    await this.dbService.getDatabaseReadyPromise();
+
+    // Load local data first (fast)
+    await this.loadAllConversations();
+    const localConversations = this.conversationsSubject.getValue();
+
+    // Display local data immediately
+    if (localConversations.length > 0) {
+      const latest = localConversations[0]; // Already sorted by loadAllConversations
+      await this.loadConversation(latest);
+      this.displayService.setActiveConversation(latest.id);
+    } else {
+      this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
+      this.displayService.setActiveConversation(0);
+    }
+
+    // Sync with server in background (don't await)
+    this.syncInBackground();
+  }
+
+  private async syncInBackground() {
+    // Prevent multiple simultaneous syncs
+    if (this.syncPromise) {
+      return this.syncPromise;
+    }
+
+    this.syncPromise = this.performSync();
     try {
-      const conversations = await this.apiService.getConversationsByUser();
-      if (conversations.length === 0) {
-        console.log('No refresh of conversations necessary!');
+      await this.syncPromise;
+    } finally {
+      this.syncPromise = null;
+    }
+  }
+
+  private async performSync() {
+    this.isSyncingSubject.next(true);
+
+    try {
+      const serverConversations = await this.apiService.getConversations();
+
+      if (serverConversations.length === 0) {
+        console.log('No conversations on server');
         return;
       }
-      const hashsum = await this.conversation.computeHash(this.dbService);
 
-      if (hashsum !== conversations[0].hashsum) {
-        console.log('Conversation hashes didnt match!');
+      // Update conversation list if different
+      await this.mergeServerConversations(serverConversations);
 
-        console.log('Refreshing conversation:', conversations[0]);
-
-        // Get the latest messages and add them to the conversation
-        this.apiService.getConversationMessages(conversations[0].id, 20).then((messages) => {
-          console.log('Deleting old messages from conversation...');
-          this.dbService.deleteMessagesByConversationId(this.conversation.id);
-
-          console.log('Adding messages to conversation:', messages);
-          this.addMessage(messages);
-        });
+      // Only sync current conversation's messages
+      const currentConvId = this.conversation?.id;
+      if (currentConvId && currentConvId !== 0) {
+        const serverConv = serverConversations.find(c => c.id === currentConvId);
+        if (serverConv) {
+          await this.syncConversationIfNeeded(serverConv);
+        }
       }
     } catch (error) {
-      console.error('Error refreshing conversation:', error);
-      throw error;
+      console.error('Background sync failed:', error);
+      // Don't throw - we have local data
+    } finally {
+      this.isSyncingSubject.next(false);
+    }
+  }
+
+  private async mergeServerConversations(serverConversations: any[]) {
+    // Get local conversations
+    const localConversations = await this.dbService.getAllConversations();
+    const localConvMap = new Map(localConversations.map(c => [c.id, c]));
+
+    let hasChanges = false;
+
+    // Check for new conversations from server
+    for (const serverConv of serverConversations) {
+      if (!localConvMap.has(serverConv.id)) {
+        // This is a new conversation from server - we need to fetch its details
+        // For now, we'll create a placeholder. In a real app, you'd fetch full details
+        const newConv = new Conversation(
+          serverConv.id,
+          this.displayService.activeConversationId$.value || 1, // Use current user ID
+          `Conversation ${serverConv.id}`,
+          ['user', 'Assistant']
+        );
+        await this.dbService.addConversation(newConv);
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      await this.loadAllConversations();
+    }
+  }
+
+  private async syncConversationIfNeeded(serverConv: any) {
+    const localHash = await this.conversation.computeHash(this.dbService);
+
+    if (localHash !== serverConv.hashsum) {
+      console.log('Syncing messages for conversation:', serverConv.id);
+
+      // Get server messages
+      const serverMessages = await this.apiService.getConversationMessages(
+        serverConv.id,
+        50 // Get more messages during sync
+      );
+
+      // Update local database
+      await this.dbService.deleteMessagesByConversationId(serverConv.id);
+      for (const msg of serverMessages) {
+        await this.dbService.addMessage(msg);
+      }
+
+      // Only update UI if still viewing this conversation
+      if (this.conversation.id === serverConv.id) {
+        serverMessages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
+        this.messagesSubject.next(serverMessages);
+      }
+    }
+  }
+
+  // Refresh the conversation - now just calls sync
+  private async refreshConversation() {
+    await this.syncInBackground();
+  }
+
+  // Public method for manual sync
+  public async syncCurrentConversation() {
+    if (this.conversation?.id && this.conversation.id !== 0) {
+      await this.syncInBackground();
     }
   }
 
@@ -97,11 +177,6 @@ export class ChatService {
   private addMessage(message: Message | Message[]) {
     // Check if the message is an array
     if (Array.isArray(message)) {
-      // Add the conversation ID to each message
-      //message.forEach((message) => {
-      //  message.conversationId = this.conversation.id;
-      //});
-
       // Sort the messages by time
       message.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
 
@@ -123,7 +198,25 @@ export class ChatService {
 
   // Send a message
   public async sendMessage(content: string, roleName: string = 'user') {
-    // Create a new message object
+    if (this.isNewConversationSubject.getValue()) {
+      // First message in a new chat. Create the conversation.
+      const title = content.length > 30 ? content.substring(0, 27) + '...' : content;
+      const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
+
+      try {
+        const createdConv = await this.apiService.createConversation(newConvData);
+        this.conversation = createdConv;
+        await this.dbService.addConversation(this.conversation);
+        this.isNewConversationSubject.next(false);
+        await this.loadAllConversations();
+        this.displayService.setActiveConversation(this.conversation.id);
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        // Optionally show an error to the user
+        return;
+      }
+    }
+
     const message = new Message({
       id: Math.floor(new Date().getTime() / 1000) ,
       conversationId: this.conversation.id,
@@ -136,19 +229,26 @@ export class ChatService {
     this.addMessage(message);
 
     // Send the message to the backend
-    this.apiService.sendMessage(message).then((response) => {
-      if(message.id != response.id){
-        console.error('Message ID mismatch:', message.id, response.id);
+    try {
+      const response = await this.apiService.sendMessage(message);
+      if(message.id !== response.id){
+        console.log('Message ID mismatch, updating local state:', message.id, response.id);
+        await this.dbService.addMessage(response);
+        await this.dbService.deleteMessage(message.id);
 
-        // Update the message in the local state
-        this.dbService.addMessage(response);
-        this.dbService.deleteMessage(message.id);
-
-        console.log('Message ID mismatch resolved:', message.id, response.id);
+        const messages = this.messagesSubject.getValue();
+        const index = messages.findIndex(m => m.id === message.id);
+        if(index !== -1) {
+          messages[index] = response;
+          this.messagesSubject.next([...messages]);
+        }
       } else {
-        console.log('Message sent:', response);
+        console.log('Message sent and ID matched:', response);
       }
-    });
+    } catch(error) {
+      console.error('Error sending message:', error);
+      // Handle error, e.g., mark the message as failed to send
+    }
 
     // Update conversation timestamp
     this.conversation.updatedAt = new Date();
@@ -163,8 +263,8 @@ export class ChatService {
     const currentMessages = this.messagesSubject.getValue();
     // Convert the last message to a Message instance if it's not already one
     const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message
-    ? currentMessages[currentMessages.length - 1]
-    : new Message(currentMessages[currentMessages.length - 1]);
+      ? currentMessages[currentMessages.length - 1]
+      : new Message(currentMessages[currentMessages.length - 1]);
 
     console.log('Generating message:', lastMessage, participant);
 
@@ -235,12 +335,20 @@ export class ChatService {
 
   // Loads a specific conversation and its messages into memory.
   public async loadConversation(conversation: Conversation) {
-    this.conversation = conversation;
+    if (conversation.id === 0) {
+      this.isNewConversationSubject.next(true);
+      this.conversation = conversation;
+      this.messagesSubject.next([]);
+    } else {
+      this.isNewConversationSubject.next(false);
+      this.conversation = conversation;
+      const messages = await this.dbService.getMessagesByConversationId(conversation.id);
+      messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
+      this.messagesSubject.next(messages);
 
-    const messages = await this.dbService.getMessagesByConversationId(conversation.id);
-    messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
-
-    this.messagesSubject.next(messages);
+      // Trigger background sync for this conversation
+      this.syncInBackground();
+    }
   }
 
   // Create a new conversation
@@ -285,5 +393,17 @@ export class ChatService {
     await this.dbService.deleteConversation(conversationId);
     // Reload conversations
     await this.loadAllConversations();
+
+    // If we deleted the current conversation, load a new one
+    if (this.conversation?.id === conversationId) {
+      const remaining = this.conversationsSubject.getValue();
+      if (remaining.length > 0) {
+        await this.loadConversation(remaining[0]);
+        this.displayService.setActiveConversation(remaining[0].id);
+      } else {
+        this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
+        this.displayService.setActiveConversation(0);
+      }
+    }
   }
 }

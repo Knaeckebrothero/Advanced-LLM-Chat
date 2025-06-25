@@ -1,5 +1,5 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
 import { Conversation } from '../data/objects/conversation';
 import { ChatService } from '../chat/chat.service';
@@ -9,7 +9,6 @@ import { MatIcon } from "@angular/material/icon";
 import { ThemeService } from 'src/styles/themes/theme.service';
 import { Subscription } from 'rxjs';
 
-
 @Component({
   selector: 'app-sidebar',
   standalone: true,
@@ -17,69 +16,58 @@ import { Subscription } from 'rxjs';
   styleUrls: ['./sidebar.component.scss'],
   imports: [
     CommonModule,
+    // From 'develop'
     ConversationComponent,
     MatIcon
   ]
 })
 export class SidebarComponent implements OnInit, OnDestroy {
-
-  groupedConversations: Record<string, Conversation[]> = {};
-  selectedConversation: Conversation | null = null;
-  isDarkMode: boolean = false;
-  private themeSubscription!: Subscription;
+  // --- PROPERTIES ---
+  groupedConversations: { [key: string]: Conversation[] } = {};
+  isDarkMode: boolean = false; // From 'current' for theme-aware logo
+  private themeSubscription!: Subscription; // From 'current'
 
   constructor(
-    private chatService: ChatService,
+    // Services from both branches are injected
+    public chatService: ChatService,
     public router: Router,
-    private displayService: DisplayService,
-    private themeService: ThemeService // Inject ThemeService
+    public displayService: DisplayService,
+    private themeService: ThemeService // From 'current'
   ) {}
 
-  /**
-   * Angular lifecycle hook that initializes the component's state.
-   */
+  // --- LIFECYCLE HOOKS ---
   ngOnInit(): void {
-    // Subscribe to theme changes to determine if dark mode is active
+    // Theme subscription from 'current' branch
     this.themeSubscription = this.themeService.getEffectiveTheme$().subscribe(theme => {
       this.isDarkMode = theme === 'dark';
     });
 
-    // Subscribe to conversations
+    // Conversation subscription from 'develop' branch
     this.chatService.getConversations().subscribe(conversations => {
-      if (conversations.length === 0) {
-        // Auto-create first conversation
-        this.createNewConversation();
-      } else {
-        this.groupedConversations = this.groupConversationsByDate(conversations);
-      }
+      this.groupedConversations = this.groupConversationsByDate(conversations);
     });
 
-    // Initial load of all conversations
+    // Initial load from 'develop' branch
     this.chatService.loadAllConversations();
   }
 
-  /**
-   * Angular lifecycle hook that cleans up the component's subscriptions.
-   */
   ngOnDestroy(): void {
+    // Cleanup from 'current' branch
     if (this.themeSubscription) {
       this.themeSubscription.unsubscribe();
     }
   }
 
+  // --- DATA HANDLING ---
   /**
-   * Groups conversations into time-based categories for display.
+   * Groups conversations by date. Logic is identical in both branches.
    */
   groupConversationsByDate(conversations: Conversation[]): { [key: string]: Conversation[] } {
     const groups: { [key: string]: Conversation[] } = {
-      'Heute': [],
-      'Letzte 7 Tage': [],
-      'Diesen Monat': [],
-      'Älter': [],
+      'Heute': [], 'Letzte 7 Tage': [], 'Diesen Monat': [], 'Älter': [],
     };
-
     const now = new Date();
-    now.setHours(0, 0, 0, 0); // Reset time for accurate date comparison
+    now.setHours(0, 0, 0, 0);
 
     for (const conv of conversations) {
       const updated = new Date(conv.updatedAt);
@@ -92,57 +80,50 @@ export class SidebarComponent implements OnInit, OnDestroy {
         groups['Heute'].push(conv);
       } else if (diffDays > 0 && diffDays < 7) {
         groups['Letzte 7 Tage'].push(conv);
-      } else if (
-        updated.getMonth() === now.getMonth() &&
-        updated.getFullYear() === now.getFullYear() &&
-        updated.getTime() < now.getTime()
-      ) {
+      } else if (updated.getMonth() === now.getMonth() && updated.getFullYear() === now.getFullYear()) {
         groups['Diesen Monat'].push(conv);
       } else {
         groups['Älter'].push(conv);
       }
     }
 
-    // Sort each group by newest first
     for (const key in groups) {
-      groups[key].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
+      groups[key].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     }
-
     return groups;
   }
 
+  // --- EVENT HANDLERS & NAVIGATION ---
   /**
-   * Called when a conversation is selected (clicked).
-   * Passes the selected conversation to the ChatService.
+   * Handles selecting an existing conversation.
+   * This complete logic is from the 'develop' branch.
    */
   onSelectConversation(conversation: Conversation): void {
-    this.selectedConversation = conversation;
     this.chatService.loadConversation(conversation);
+    this.displayService.setActiveConversation(conversation.id);
     this.router.navigate(['/']);
     this.displayService.closeSidebarOnMobile();
   }
 
   /**
-   * Creates a new conversation with default values.
+   * Creates a new temporary conversation state.
+   * This functionality is taken directly from the 'develop' branch.
    */
-  async createNewConversation(): Promise<void> {
-    const newConversation = new Conversation(
-      Date.now(), // Temporary ID
-      1, // Current user ID
-      'New Chat', // Default name
-      ['user', 'Assistant'] // Default participants
+  createNewConversation(): void {
+    const tempConversation = new Conversation(
+      0, // Using 0 as a temporary ID for an unsaved chat
+      1,
+      'New Chat',
+      ['user', 'Assistant']
     );
 
-    await this.chatService.createConversation(newConversation);
-    // Fixed: Changed to use the correct service method
-    await this.chatService.loadAllConversations(); // Refresh the list
-    this.onSelectConversation(newConversation);
+    this.chatService.loadConversation(tempConversation);
+    this.displayService.setActiveConversation(0); // Highlight "New Chat" button by setting active ID to 0
+    this.displayService.closeSidebarOnMobile();
   }
 
   /**
-   * Navigates to a specific route and closes sidebar on mobile
+   * Navigates to a specific route. Logic is identical in both branches.
    */
   navigateTo(route: string): void {
     this.router.navigate([route]);

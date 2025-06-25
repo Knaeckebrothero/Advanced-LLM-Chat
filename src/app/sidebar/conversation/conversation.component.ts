@@ -3,9 +3,8 @@ import { Conversation } from '../../data/objects/conversation';
 import { Message } from '../../data/objects/message';
 import { DBService } from '../../data/db.service';
 import { CommonModule } from '@angular/common';
-import {ChatService} from "../../chat/chat.service";
-import {FormsModule} from "@angular/forms";
-
+import { ChatService } from "../../chat/chat.service";
+import { FormsModule } from "@angular/forms";
 
 @Component({
   selector: 'app-conversation',
@@ -15,9 +14,11 @@ import {FormsModule} from "@angular/forms";
   styleUrls: ['./conversation.component.scss']
 })
 export class ConversationComponent implements OnInit {
+  // --- PROPERTIES ---
+  // Using isSelected from the current branch to match the merged CSS.
+  @Input() isSelected = false;
   @Input() conversation!: Conversation;
   @Output() selected = new EventEmitter<Conversation>();
-  @Input() isSelected = false;
 
   messages: Message[] = [];
   editing = false;
@@ -25,42 +26,55 @@ export class ConversationComponent implements OnInit {
 
   constructor(private chatService: ChatService, private db: DBService) {}
 
-  // Lifecycle hook: called once after the component is initialized.
-  // Loads messages related to this conversation from the local database.
-  // (This could be used later for message previews or synchronization.)
+  // --- LIFECYCLE HOOKS ---
   async ngOnInit() {
     this.messages = await this.conversation.getLatestMessages(this.db);
   }
 
-  // Emits the selected conversation to the parent component when the user clicks on this conversation.
-  onClick(): void {
+  // --- EVENT HANDLERS ---
+
+  /**
+   * Emits the conversation to the parent component.
+   * This is the primary click action, taken from the 'develop' branch logic.
+   */
+  onSelect(): void {
     this.selected.emit(this.conversation);
   }
 
   /**
-   * Handles the right-click event by preventing the default context menu
-   * and initiating the editing process.
-   *
-   * @param {Event} event - The event object associated with the right-click action.
-   * @return {void} This method does not return a value.
+   * Handles the right-click event.
+   * This version from 'develop' prevents the default menu AND starts the editing mode.
+   * @param {Event} event - The right-click event object.
    */
   onRightClick(event: Event): void {
     event.preventDefault();
+    this.startEditing();
   }
 
+  // --- EDITING AND DELETION METHODS ---
+
+  /**
+   * Initiates the editing mode for the conversation name.
+   */
   startEditing(): void {
     this.editing = true;
     this.newName = this.conversation.name;
   }
 
+  /**
+   * Finalizes the editing process and updates the conversation name.
+   */
   async finishEditing(): Promise<void> {
-    if (this.newName && this.newName !== this.conversation.name) {
+    if (this.newName && this.newName.trim() !== '' && this.newName !== this.conversation.name) {
       this.conversation.name = this.newName;
       await this.chatService.updateConversation(this.conversation);
     }
     this.editing = false;
   }
 
+  /**
+   * Cancels the editing process.
+   */
   cancelEditing(): void {
     this.editing = false;
     this.newName = '';
@@ -68,13 +82,12 @@ export class ConversationComponent implements OnInit {
 
   /**
    * Deletes the current conversation after user confirmation.
-   * Prompts the user with a confirmation dialog before proceeding with the deletion.
-   * If the user confirms, the conversation is deleted using the chat service.
-   *
-   * @return {Promise<void>} A promise that resolves when the conversation is successfully deleted or is rejected if an error occurs.
+   * The self-contained logic from the current branch is preserved.
    */
   async deleteConversation(): Promise<void> {
-    if (confirm('Delete this conversation?')) {
+    // Note: confirm() can be disruptive. For a better user experience,
+    // consider replacing this with a custom modal dialog in the future.
+    if (confirm('Are you sure you want to delete this conversation?')) {
       await this.chatService.deleteConversation(this.conversation.id);
     }
   }

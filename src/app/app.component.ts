@@ -1,46 +1,68 @@
-import {Component, OnDestroy, OnInit} from '@angular/core';
-import {DisplayService} from "./sidebar/service/display.service";
-
-
-import {NavigationEnd, Router} from '@angular/router'; // Import Router and NavigationEnd
-import {Subscription} from 'rxjs'; // Import Subscription
-import {filter} from 'rxjs/operators'; // Import filter operator
-
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { DisplayService } from "./sidebar/service/display.service";
+import { NavigationEnd, Router } from '@angular/router';
+import { Subscription, interval } from 'rxjs';
+import { filter } from 'rxjs/operators';
+import { ChatService } from './chat/chat.service';
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss'],
-  standalone: false // This makes AppComponent a non-standalone component
+  standalone: false
 })
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Advanced LLM Chat';
   isLoginPage: boolean = false;
-  showMenuIcon: boolean = true; // Property to control menu icon visibility
-  private routerSubscription: Subscription | undefined; // To store the subscription
+  showMenuIcon: boolean = true;
+  private routerSubscription: Subscription | undefined;
+  private syncSubscription: Subscription | undefined;
+  private visibilityChangeHandler: () => void;
 
-  // Make displayService public to allow template to access its methods and observables
-  constructor(public displayService: DisplayService,
-              private router: Router
+  constructor(
+    public displayService: DisplayService, // Kept public for template access from current branch
+    private router: Router,
+    private chatService: ChatService // Injected from develop branch
   ) {
+    // This logic from develop ensures data syncs when the tab becomes active
+    this.visibilityChangeHandler = () => {
+      if (!document.hidden) {
+        this.chatService.syncCurrentConversation();
+      }
+    };
   }
 
-
   ngOnInit() {
+    // Combined router event subscription
     this.routerSubscription = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd)
     ).subscribe((event: NavigationEnd) => {
-      // Check if the current route is the login page
-      const currentUrl = event.urlAfterRedirects;
-      this.showMenuIcon = !(event.url === '/login' || event.urlAfterRedirects === '/login');
-      this.isLoginPage = currentUrl === '/login';
+      const isLoginRoute = event.url === '/login' || event.urlAfterRedirects === '/login';
+      // This handles the menu icon visibility from both branches
+      this.showMenuIcon = !isLoginRoute;
+      // This sets the login page flag from the current branch
+      this.isLoginPage = isLoginRoute;
     });
+
+    // This periodic sync logic is from the develop branch
+    this.syncSubscription = interval(30000).subscribe(() => {
+      this.chatService.syncCurrentConversation();
+    });
+
+    // This event listener from develop syncs when the app window regains focus
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 
   ngOnDestroy() {
-    // Unsubscribe to prevent memory leaks
+    // Unsubscribe from all subscriptions and remove event listeners to prevent memory leaks
     if (this.routerSubscription) {
       this.routerSubscription.unsubscribe();
     }
+
+    if (this.syncSubscription) {
+      this.syncSubscription.unsubscribe();
+    }
+
+    document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 }

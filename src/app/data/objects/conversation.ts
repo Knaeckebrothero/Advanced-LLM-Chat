@@ -67,11 +67,24 @@ export class Conversation {
         return hashValue;
     }
 
-    // Convert to API check format
-    //toApiCheck() {
-    //    return {
-    //        id: this.id,
-    //        hashsum: this.computeHash()
-    //    };
-    //}
+  // Convert to API check format
+  //toApiCheck() {
+  //    return {
+  //        id: this.id,
+  //        hashsum: this.computeHash()
+  //    };
+  //}
+
+  static fromApiResponse(data: any): Conversation {
+    const participants = typeof data.participants === 'string' ? JSON.parse(data.participants) : data.participants;
+    const conv = new Conversation(
+      data.id,
+      data.userId,
+      data.name,
+      participants || [],
+    );
+    conv.createdAt = new Date(data.createdAt);
+    conv.updatedAt = new Date(data.updatedAt);
+    return conv;
+  }
 }

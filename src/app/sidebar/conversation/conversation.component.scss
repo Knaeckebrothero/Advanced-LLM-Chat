@@ -1,12 +1,20 @@
+/*
+  Merged Conversation Component SCSS
+
+  - The styling is primarily taken from the "current" branch to maintain the new theme and design system using CSS variables.
+  - Structural properties from the "develop" branch, like `position: relative` on the container, have been included where they don't conflict with the design.
+  - The `.selected` class is used for the active state, consistent with the merged HTML and the "current" branch's design.
+*/
 :host {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.5rem; // Using margin from current branch (was 8px in develop)
 }
 
 .conversation-container {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: space-between; // Kept from current branch to position elements
+  position: relative; // Added from develop branch
 }
 
 .conversation-button {
@@ -27,12 +35,14 @@
     color: var(--btn-hover-text);
   }
 
+  // The .selected class from the current branch is used, as specified in the merged HTML
   &.selected {
     background-color: var(--btn-selected-bg) !important;
     color: var(--btn-hover-text);
   }
 }
 
+// Input styles from the current branch are preserved for editing
 input {
   width: 100%;
   padding: 0.75rem 1rem;
@@ -43,6 +53,7 @@ input {
   color: var(--text-color);
 }
 
+// The subtle delete button design from the current branch is preserved
 .delete-button {
   background: none;
   border: none;
@@ -50,6 +61,7 @@ input {
   font-size: 1.25rem;
   cursor: pointer;
   padding: 0.5rem;
+  margin-left: 8px; // Added margin from develop for spacing
 
   &:hover {
     color: var(--delete-icon-hover);

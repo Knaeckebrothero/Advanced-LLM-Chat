@@ -1,6 +1,15 @@
+<!--
+  Merged Sidebar Component Template
+
+  - Design & Structure: The overall layout, class names (`sidebar-wrapper`, `branding-box`),
+    and theme-aware logo are taken from the "current" branch.
+  - Functionality: The logic for highlighting the active conversation and navigation links
+    is taken from the "develop" branch for more robust, reactive behavior.
+-->
 <div class="sidebar-wrapper">
   <div class="sidebar">
 
+    <!-- Branding from 'current' branch with theme-aware logo -->
     <div class="branding-box">
       <img [src]="isDarkMode ? 'assets/icons/robot_dark.svg' : 'assets/icons/robot.svg'"
            alt="Logo"
@@ -8,42 +17,52 @@
       <span class="branding-label">Recycling<br>Bot</span>
     </div>
 
+    <!-- 'New Chat' button with highlighting logic from 'develop' -->
     <button class="new-conversation-button"
-            (click)="createNewConversation()">
+            (click)="createNewConversation()"
+            [class.selected]="(displayService.activeConversationId$ | async) === null">
       <mat-icon>add</mat-icon>  New Chat
     </button>
 
+    <!-- Conversation list with grouping from 'current' and selection logic from 'develop' -->
     <ng-container *ngFor="let label of ['Heute','Letzte 7 Tage','Diesen Monat','Älter']">
       <ng-container *ngIf="groupedConversations[label]?.length">
         <div class="group-label">{{ label }}</div>
 
+        <!--
+          The app-conversation component uses the reactive highlighting from 'develop'
+          `(displayService.activeConversationId$ | async) === c.id`
+          but binds it to the `isSelected` property from the merged conversation component.
+        -->
         <app-conversation
           *ngFor="let c of groupedConversations[label]"
           [conversation]="c"
-          [isSelected]="c === selectedConversation"
+          [isSelected]="(displayService.activeConversationId$ | async) === c.id"
           (selected)="onSelectConversation($event)">
         </app-conversation>
       </ng-container>
     </ng-container>
 
+    <!-- Navigation links with more precise active-state checking from 'develop' -->
     <div class="sidebar-navigation-main-links">
       <button class="nav-button"
               (click)="navigateTo('/')"
-              [class.selected]="router.isActive('/', true)">
+              [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
         Chat
       </button>
       <button class="nav-button"
               (click)="navigateTo('/metrics')"
-              [class.selected]="router.isActive('/metrics', true)">
+              [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
         Metrics
       </button>
       <button class="nav-button"
               (click)="navigateTo('/settings')"
-              [class.selected]="router.isActive('/settings', true)">
+              [class.selected]="router.isActive('/settings', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
         Settings
       </button>
     </div>
 
+    <!-- User profile section from 'current' branch -->
     <div class="user">
       <div class="avatar">MM</div>
       <span class="username">Max Mustermann</span>
