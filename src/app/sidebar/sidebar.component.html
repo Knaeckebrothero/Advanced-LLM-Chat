@@ -3,8 +3,9 @@
     <img ngSrc="assets/icons/fra_uas_logo_white.png" alt="Logo" height="144" width="349"/>
   </div>
 
-  <!-- New Chat Button -->
-  <button class="new-conversation-button" (click)="createNewConversation()">
+  <button class="new-conversation-button"
+          [class.highlighted]="(displayService.activeConversationId$ | async) === 0"
+          (click)="createNewConversation()">
     <mat-icon>add</mat-icon>
     New Chat
   </button>
@@ -16,6 +17,7 @@
         <app-conversation
           *ngFor="let conv of groupedConversations[label]"
           [conversation]="conv"
+          [highlighted]="(displayService.activeConversationId$ | async) === conv.id"
           (selected)="onSelectConversation($event)">
         </app-conversation>
       </ng-container>
