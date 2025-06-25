@@ -36,7 +36,6 @@ export class SidebarComponent implements OnInit {
     public displayService: DisplayService,
     private dialog: MatDialog,
     private settingsService: SettingsService
-    public displayService: DisplayService
   ) {}
 
 
