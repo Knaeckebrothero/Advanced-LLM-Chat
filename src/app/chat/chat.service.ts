@@ -25,61 +25,149 @@ export class ChatService {
   private isNewConversationSubject = new BehaviorSubject<boolean>(false);
   public isNewConversation$ = this.isNewConversationSubject.asObservable();
 
+  // Add loading state for sync operations
+  private isSyncingSubject = new BehaviorSubject<boolean>(false);
+  public isSyncing$ = this.isSyncingSubject.asObservable();
+
+  private syncPromise: Promise<void> | null = null;
+
   // Constructor
   constructor(
     private dbService: DBService,
     private apiService: ApiService,
     private displayService: DisplayService
   ) {
-    // Wait for the database to be ready
-    this.dbService.getDatabaseReadyPromise().then(async () => {
-      await this.loadAllConversations();
-      const conversations = this.conversationsSubject.getValue();
-      if (conversations.length > 0) {
-        // Load the most recently updated conversation
-        const latestConversation = conversations.sort((a,b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
-        this.loadConversation(latestConversation);
-        this.displayService.setActiveConversation(latestConversation.id);
-      } else {
-        // No conversations exist, start in "new chat" mode.
-        this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
-        this.displayService.setActiveConversation(0);
-      }
-      this.refreshConversation();
-    });
+    this.initializeService();
   }
 
-  // Refresh the conversation
-  private async refreshConversation() {
-    // TODO: Add a way to handle / load conversations that don't exist on the client side
+  private async initializeService() {
+    await this.dbService.getDatabaseReadyPromise();
+
+    // Load local data first (fast)
+    await this.loadAllConversations();
+    const localConversations = this.conversationsSubject.getValue();
+
+    // Display local data immediately
+    if (localConversations.length > 0) {
+      const latest = localConversations[0]; // Already sorted by loadAllConversations
+      await this.loadConversation(latest);
+      this.displayService.setActiveConversation(latest.id);
+    } else {
+      this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
+      this.displayService.setActiveConversation(0);
+    }
+
+    // Sync with server in background (don't await)
+    this.syncInBackground();
+  }
+
+  private async syncInBackground() {
+    // Prevent multiple simultaneous syncs
+    if (this.syncPromise) {
+      return this.syncPromise;
+    }
+
+    this.syncPromise = this.performSync();
     try {
-      const conversations = await this.apiService.getConversations();
-      if (conversations.length === 0) {
-        console.log('No refresh of conversations necessary!');
+      await this.syncPromise;
+    } finally {
+      this.syncPromise = null;
+    }
+  }
+
+  private async performSync() {
+    this.isSyncingSubject.next(true);
+
+    try {
+      const serverConversations = await this.apiService.getConversations();
+
+      if (serverConversations.length === 0) {
+        console.log('No conversations on server');
         return;
       }
-      // This logic assumes we are always refreshing the current conversation.
-      // This might need to be adapted for multi-conversation views later.
-      const currentConvFromServer = conversations.find(c => c.id === this.conversation.id);
-      if (!currentConvFromServer) return;
 
-      const hashsum = await this.conversation.computeHash(this.dbService);
+      // Update conversation list if different
+      await this.mergeServerConversations(serverConversations);
 
-      if (hashsum !== currentConvFromServer.hashsum) {
-        console.log('Conversation hashes didnt match!');
-        console.log('Refreshing conversation:', currentConvFromServer);
-
-        // Get the latest messages and add them to the conversation
-        this.apiService.getConversationMessages(currentConvFromServer.id, 20).then((messages) => {
-          console.log('Deleting old messages from conversation...');
-          this.dbService.deleteMessagesByConversationId(this.conversation.id);
-          console.log('Adding messages to conversation:', messages);
-          this.addMessage(messages);
-        });
+      // Only sync current conversation's messages
+      const currentConvId = this.conversation?.id;
+      if (currentConvId && currentConvId !== 0) {
+        const serverConv = serverConversations.find(c => c.id === currentConvId);
+        if (serverConv) {
+          await this.syncConversationIfNeeded(serverConv);
+        }
       }
     } catch (error) {
-      console.error('Error refreshing conversation:', error);
-      throw error;
+      console.error('Background sync failed:', error);
+      // Don't throw - we have local data
+    } finally {
+      this.isSyncingSubject.next(false);
+    }
+  }
+
+  private async mergeServerConversations(serverConversations: any[]) {
+    // Get local conversations
+    const localConversations = await this.dbService.getAllConversations();
+    const localConvMap = new Map(localConversations.map(c => [c.id, c]));
+
+    let hasChanges = false;
+
+    // Check for new conversations from server
+    for (const serverConv of serverConversations) {
+      if (!localConvMap.has(serverConv.id)) {
+        // This is a new conversation from server - we need to fetch its details
+        // For now, we'll create a placeholder. In a real app, you'd fetch full details
+        const newConv = new Conversation(
+          serverConv.id,
+          this.displayService.activeConversationId$.value || 1, // Use current user ID
+          `Conversation ${serverConv.id}`,
+          ['user', 'Assistant']
+        );
+        await this.dbService.addConversation(newConv);
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      await this.loadAllConversations();
+    }
+  }
+
+  private async syncConversationIfNeeded(serverConv: any) {
+    const localHash = await this.conversation.computeHash(this.dbService);
+
+    if (localHash !== serverConv.hashsum) {
+      console.log('Syncing messages for conversation:', serverConv.id);
+
+      // Get server messages
+      const serverMessages = await this.apiService.getConversationMessages(
+        serverConv.id,
+        50 // Get more messages during sync
+      );
+
+      // Update local database
+      await this.dbService.deleteMessagesByConversationId(serverConv.id);
+      for (const msg of serverMessages) {
+        await this.dbService.addMessage(msg);
+      }
+
+      // Only update UI if still viewing this conversation
+      if (this.conversation.id === serverConv.id) {
+        serverMessages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
+        this.messagesSubject.next(serverMessages);
+      }
+    }
+  }
+
+  // Refresh the conversation - now just calls sync
+  private async refreshConversation() {
+    await this.syncInBackground();
+  }
+
+  // Public method for manual sync
+  public async syncCurrentConversation() {
+    if (this.conversation?.id && this.conversation.id !== 0) {
+      await this.syncInBackground();
     }
   }
 
@@ -89,11 +177,6 @@ export class ChatService {
   private addMessage(message: Message | Message[]) {
     // Check if the message is an array
     if (Array.isArray(message)) {
-      // Add the conversation ID to each message
-      //message.forEach((message) => {
-      //  message.conversationId = this.conversation.id;
-      //});
-
       // Sort the messages by time
       message.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
 
@@ -167,7 +250,6 @@ export class ChatService {
       // Handle error, e.g., mark the message as failed to send
     }
 
-
     // Update conversation timestamp
     this.conversation.updatedAt = new Date();
     await this.dbService.updateConversation(this.conversation);
@@ -181,8 +263,8 @@ export class ChatService {
     const currentMessages = this.messagesSubject.getValue();
     // Convert the last message to a Message instance if it's not already one
     const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message
-    ? currentMessages[currentMessages.length - 1]
-    : new Message(currentMessages[currentMessages.length - 1]);
+      ? currentMessages[currentMessages.length - 1]
+      : new Message(currentMessages[currentMessages.length - 1]);
 
     console.log('Generating message:', lastMessage, participant);
 
@@ -263,6 +345,9 @@ export class ChatService {
       const messages = await this.dbService.getMessagesByConversationId(conversation.id);
       messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
       this.messagesSubject.next(messages);
+
+      // Trigger background sync for this conversation
+      this.syncInBackground();
     }
   }
 
@@ -308,5 +393,17 @@ export class ChatService {
     await this.dbService.deleteConversation(conversationId);
     // Reload conversations
     await this.loadAllConversations();
+
+    // If we deleted the current conversation, load a new one
+    if (this.conversation?.id === conversationId) {
+      const remaining = this.conversationsSubject.getValue();
+      if (remaining.length > 0) {
+        await this.loadConversation(remaining[0]);
+        this.displayService.setActiveConversation(remaining[0].id);
+      } else {
+        this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
+        this.displayService.setActiveConversation(0);
+      }
+    }
   }
 }
