@@ -49,7 +49,6 @@ const routes: Routes = [
     AppComponent,
     ChatUiComponent,
     ChatUiMessageComponent,
-    SettingsComponent,
     MetricsComponent,
     StatusBarComponent,
     AuthCallbackComponent,

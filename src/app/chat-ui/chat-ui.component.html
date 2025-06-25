@@ -1,14 +1,22 @@
 <div class="chat-ui-container">
+
+  <div class="headbar">
+    <img
+      [src]="isDarkMode ? 'assets/icons/fra_uas_logo_white.png' : 'assets/icons/fra_uas_logo2.png'"
+      alt="FRA UAS Logo"
+      class="headbar-logo" />
+  </div>
+
     <div class="message-container" #messageContainer>
         <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
-    </div>  
+    </div>
     <div class="input-container">
         <div class="textfield-container">
             <textarea [(ngModel)]="inputField" class="chat-input" rows="1" placeholder="Type your message..." (keydown)="handleEnterKeyPress($event)"></textarea>
         </div>
 
         <div class="button-container">
-            <button class="generate-button" mat-raised-button color="primary" (click)="generateMessage()">GEN</button>         
+            <button class="generate-button" mat-raised-button color="primary" (click)="generateMessage()">GEN</button>
             <button class="send-button" mat-raised-button color="primary" (click)="inputUserMessage()">SND</button>
         </div>
     </div>

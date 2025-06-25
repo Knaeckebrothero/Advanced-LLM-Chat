@@ -1,6 +1,10 @@
-@use 'src/styles/variables' as vars;
+/* ------------- Globale Schriftfarbe aus Theme ---------------------- */
+:host {
+  color: var(--text-color);
+  font-family: 'Segoe UI', Roboto, sans-serif;
+}
 
-// Ensure the message display container takes up the full width so that the messages are displayed in a column.
+/* -------- Container der Message-Liste ------------------------------ */
 .message-display-container {
   display: flex;
   flex-direction: column;
@@ -9,133 +13,70 @@
   overflow-y: auto;
 }
 
-// Message component styles
+/* -------- Einzelfenster einer Message ------------------------------ */
 .message {
-  //
   display: flex;
-  // Aligns the message to the left or right side of the screen
   flex-direction: column;
   max-width: 60%;
-  // Adds space between the message and the edge of the screen
   padding: 10px;
-  // Gives the message rounded corners
   border-radius: 20px;
-  // Elevates the message from the background
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  // Adds space between messages
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
   margin-bottom: 20px;
-  // Set the font color
-  color: vars.$color-font-dark;
-  //
   word-wrap: break-word;
   text-align: left;
   position: relative;
+  color: var(--text-color);
 
-  // Adjusts the messages for the user
+  /* -------- Nachrichten des Users (rechts) -------- */
   &.message-user {
-    // Aligns the message to the right side of the screen
     align-self: flex-end;
-    // Flattens the top left corner
     border-top-right-radius: 0;
-    // Secondary color background for messages of the user
-    background-color: vars.$color-secondary;
-    // Hide the username
-    .message-user-name {
-      display: none;
-    }
+    background-color: var(--msg-user-bg);   /* Theme-Variable */
+    .message-user-name { display: none; }
   }
 
-  // Adjusts the messages for others
+  /* -------- Nachrichten des Assistenten (links) --- */
   &.message-not-user {
-    // Aligns the message to the left side of the screen
     align-self: flex-start;
-    // Flattens the top right corner
     border-top-left-radius: 0;
-    // Primary color background for messages of others
-    background-color: vars.$color-primary;
+    background-color: var(--msg-assistant-bg); /* Theme-Variable */
   }
 
-  // Adjusts the messages for the system
+  /* -------- Systemnachrichten (zentriert) -------- */
   &.message-system {
-    // Center the message
     align-self: center;
-    border-radius: 0px;
-    background-color: vars.$color-secondary;
-    .message-user-name {
-      display: none;
-    }
-
+    border-radius: 0;
+    background-color: var(--msg-system-bg, var(--msg-user-bg));
+    .message-user-name { display: none; }
     .message-footer {
       align-self: center;
-      .message-timestamp {
-        display: none;
-      }
+      .message-timestamp { display: none; }
     }
   }
 }
 
-// Message username
-.message-user-name {
-  // Space between username and message text
-  margin-bottom: 4px;
-  // Slightly smaller font for username
-  font-size: 0.80em;
-}
+/* -------- Username / Textdarstellung ------------------------------- */
+.message-user-name   { margin-bottom: 4px; font-size: .8em; }
+.message-body        { font-size: 1em;    }
+.message-footer      { display: flex; justify-content: space-between; }
+.message-timestamp   { font-size: .5em; margin-top: 4px; align-self: flex-end; }
 
-// Message content
-.message-body {
-  // Font size for message text content
-  font-size: 1em;
-}
-
-// Message footer
-.message-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-// Message timestamp
-.message-timestamp {
-  align-self: flex-end;
-  // Smaller font for timestamp
-  font-size: 0.50em;
-  // Space between message text and timestamp
-  margin-top: 4px;
-}
-
-// Message actions
+/* -------- Aktionsbuttons ------------------------------------------- */
 .message-actions {
-  display: flex;
-  align-items: center;
-  // This ensures the buttons are on the same level as the timestamp
-  margin-bottom: -10px;
-
+  display: flex; align-items: center; margin-bottom: -10px;
   button {
-    // Reduce the size of the icons
-    mat-icon {
-      font-size: 15px;
-      height: 15px;
-      width: 15px;
-    }
-    // Adjust padding to ensure icons are not too close to each other
-    &:not(:last-child) {
-      margin-right: 3px;
-    }
+    mat-icon { font-size: 15px; height: 15px; width: 15px; }
+    &:not(:last-child) { margin-right: 3px; }
   }
 }
 
-// Display parts of the message in italic if wrapped in <em> tags
-em {
-  font-style: italic;
-}
+/* -------- Kursiv-Text in <em> -------------------------------------- */
+em { font-style: italic; }
 
-// Responsive adjustment, allowing the message to take more space on smaller screens
+/* -------- Responsive ---------------------------------------------- */
 @media (max-width: 768px) {
   .message {
     max-width: 75%;
-    &.message-user {
-      margin-right: 5%;
-    }
+    &.message-user { margin-right: 5%; }
   }
 }

@@ -1,6 +1,7 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
+import { ThemeService } from 'src/styles/themes/theme.service';
 
 
 @Component({
@@ -26,7 +27,12 @@ export class ChatUiComponent implements AfterViewChecked {
   messages = this.chatService.messages;
 
   // Constructor
-  constructor(private chatService: ChatService) {}
+  constructor(private chatService: ChatService, private themeService: ThemeService) {}
+
+  // Getter to check if dark mode is enabled to change the fra uas logo
+  get isDarkMode(): boolean {
+    return this.themeService.getCurrentTheme() === 'dark';
+  }
 
   // Method to scroll to the bottom of the chat window.
   private scrollToBottom(): void {

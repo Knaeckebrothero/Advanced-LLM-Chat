@@ -15,14 +15,14 @@ import { MatIcon } from "@angular/material/icon";
   styleUrls: ['./sidebar.component.scss'],
   imports: [
     CommonModule,
-    NgOptimizedImage,
     ConversationComponent,
     MatIcon
   ]
 })
 export class SidebarComponent implements OnInit {
 
-  groupedConversations: { [key: string]: Conversation[] } = {};
+  groupedConversations: Record<string, Conversation[]> = {};
+  selectedConversation: Conversation | null = null;
 
   constructor(
     private chatService: ChatService,
@@ -103,9 +103,10 @@ export class SidebarComponent implements OnInit {
    * Passes the selected conversation to the ChatService.
    */
   onSelectConversation(conversation: Conversation): void {
+    this.selectedConversation = conversation;
     this.chatService.loadConversation(conversation);
-    this.router.navigate(['/']); // Navigate to the main chat view
-    this.displayService.closeSidebarOnMobile(); // Close sidebar on mobile if open
+    this.router.navigate(['/']);
+    this.displayService.closeSidebarOnMobile();
   }
 
   /**

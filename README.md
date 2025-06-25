@@ -1,4 +1,4 @@
-# Advanced LLM Chat
+python -m uvicorn backend_mockup:app --reload --host localhost --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem# Advanced LLM Chat
 
 A modern, Angular-based chat application for interacting with large language models (LLMs). This project provides a responsive interface with real-time message updates, conversation persistence, and convenient navigation between chat, metrics, and settings.
 

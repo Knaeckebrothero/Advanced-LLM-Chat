@@ -1,111 +1,68 @@
-/* src/app/app.component.scss */
-@use 'src/styles/variables' as vars;
+/* -------------------------------------------------------------
+   Globale Container-Layout-Klassen
+--------------------------------------------------------------*/
+.app-layout        { display: flex; min-height: 100vh; width: 100%; }
+.sidebar-container { margin: 1rem; width: 280px; flex-shrink: 0; }
+.main-content      { flex: 1; padding: 1rem; }
 
+/* -------------------------------------------------------------
+   Mobile Burger-Sidebar (falls du sie weiter nutzt)
+--------------------------------------------------------------*/
 $burger-area-height: 60px;
 $burger-area-width: 60px;
 
-.app-container {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
+.app-container   { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
 
+/* Burger-Button oben links */
 .burger-container {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: $burger-area-width;
-  height: $burger-area-height;
-  /* Ensure the background is always transparent or remove the .sidebar-closed specific background.
-    The transition for background-color can also be removed if it's always transparent.
-  */
-  background-color: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  top: 0; left: 0;
+  width: $burger-area-width; height: $burger-area-height;
+  background: transparent;
+  display: flex; align-items: center; justify-content: center;
   z-index: 1002;
-  // transition: background-color 0.3s ease-in-out; // Optional: remove if no background change
-
-  /* Remove or comment out this block to prevent the blue background
-    when the sidebar is closed.
-  */
-  /*
-  &.sidebar-closed {
-    background-color: #2C8BCC; // This line causes the blue background
-  }
-  */
 }
 
 .burger-menu-button {
-  width: 30px;
-  height: 24px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  box-sizing: border-box;
+  width: 30px; height: 24px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  background: transparent; border: none; cursor: pointer; padding: 0;
 
   .burger-line {
-    width: 100%;
-    height: 3px;
-    background-color: vars.$color-font-light;
+    width: 100%; height: 3px;
+    background: var(--burger-line, #ffffff);
     border-radius: 2px;
+    transition: background-color .3s;
   }
 }
 
+/* Ausfahrbare Sidebar (mobil) */
 .sidebar-element {
-  width: 260px;
-  position: fixed;
-  left: 0;
-  top: 0;
-  height: 100vh;
+  width: 260px; height: 100vh;
+  position: fixed; left: 0; top: 0;
   transform: translateX(-100%);
-  transition: transform 0.3s ease-in-out;
+  transition: transform .3s;
   z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  background-color: #2C8BCC;
+  display: flex; flex-direction: column;
+  background: var(--sidebar-bg);
   padding-top: $burger-area-height;
-  box-sizing: border-box;
 
-  &.open {
-    transform: translateX(0);
-  }
+  &.open { transform: translateX(0); }
 }
 
+/* Inhalt verschieben, wenn Sidebar offen (Desktop) */
 .content-wrapper {
   flex-grow: 1;
   height: 100vh;
   overflow-y: auto;
-  background-color: vars.$color-background;
-  transition: margin-left 0.3s ease-in-out;
-  position: relative;
+  background: var(--bg-color);
+  transition: margin-left .3s;
+
+  &.sidebar-open { margin-left: 260px; }
 }
 
-// Desktop and larger screens
-@media (min-width: 769px) {
-  .content-wrapper {
-    &.sidebar-open {
-      margin-left: 260px;
-    }
-  }
-}
-
-// Mobile/Tablet screens
+/* Mobile / Tablet Breakpoints */
 @media (max-width: 768px) {
-  .sidebar-element {
-    width: 85%;
-    &.open {
-      box-shadow: 3px 0px 15px rgba(0,0,0,0.2);
-    }
-  }
-  .content-wrapper {
-    &.sidebar-open {
-      margin-left: 0;
-    }
-  }
+  .sidebar-element { width: 85%; &.open { box-shadow: 3px 0 15px rgba(0,0,0,.2); } }
+  .content-wrapper.sidebar-open { margin-left: 0; }
 }

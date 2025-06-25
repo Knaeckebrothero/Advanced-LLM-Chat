@@ -1,5 +1,5 @@
 <div class="conversation-container">
-  <button class="conversation-button" (click)="onClick()" (contextmenu)="onRightClick($event)">
+  <button class="conversation-button" [class.selected]="isSelected" (click)="onClick()" (contextmenu)="onRightClick($event)">
     <div *ngIf="!editing">{{ conversation.name }}</div>
     <input *ngIf="editing"
            [(ngModel)]="newName"

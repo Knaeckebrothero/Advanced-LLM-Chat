@@ -1,54 +1,57 @@
+:host {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
 .conversation-container {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
-  position: relative;
+  justify-content: space-between;
 }
 
-button.conversation-button {
-  flex: 1;
+.conversation-button {
+  width: 100%;
+  background-color: var(--btn-bg);
+  color: var(--btn-text);
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
   text-align: left;
-  background-color: #2C8BCC;
-  border: none;
-  color: white;
-  padding: 12px;
-  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s ease-in-out;
+  transition: background-color 0.3s ease, color 0.3s ease;
 
   &:hover {
-    background-color: #1A6DA8;
+    background-color: var(--btn-hover-bg);
+    color: var(--btn-hover-text);
   }
 
-  &.active {
-    background-color: #154D96;
-  }
-
-  div {
-    font-size: 14px;
+  &.selected {
+    background-color: var(--btn-selected-bg) !important;
+    color: var(--btn-hover-text);
   }
 }
 
-button.delete-button {
-  background-color: #e74c3c;
+input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--input-border-color);
+  border-radius: 0.5rem;
+  font-size: 14px;
+  background-color: var(--input-bg);
+  color: var(--text-color);
+}
+
+.delete-button {
+  background: none;
   border: none;
-  color: white;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  color: var(--delete-icon);
+  font-size: 1.25rem;
   cursor: pointer;
-  margin-left: 8px;
-  transition: background-color 0.2s ease-in-out;
+  padding: 0.5rem;
 
   &:hover {
-    background-color: #c0392b;
-  }
-
-  .delete-icon {
-    font-size: 18px;
-    font-weight: bold;
+    color: var(--delete-icon-hover);
   }
 }

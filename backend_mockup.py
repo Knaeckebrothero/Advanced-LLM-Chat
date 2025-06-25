@@ -367,7 +367,7 @@ async def generate_llm_response(prompt: str) -> str:
   try:
     # Use Meta's Llama model through Replicate
     output = replicate.run(
-      "meta/meta-llama-3.1-405b-instruct",
+      "meta/meta-llama-3.1-8b-instruct",
       input={
         "prompt": prompt,
         "temperature": 0.6,

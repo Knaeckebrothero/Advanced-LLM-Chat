@@ -1,41 +1,57 @@
-<div class="sidebar">
-  <div class="logo">
-    <img ngSrc="assets/icons/fra_uas_logo_white.png" alt="Logo" height="144" width="349"/>
-  </div>
+<!-- Weiße Karte -->
+<div class="sidebar-wrapper">
+  <div class="sidebar">
 
-  <!-- New Chat Button -->
-  <button class="new-conversation-button" (click)="createNewConversation()">
-    <mat-icon>add</mat-icon>
-    New Chat
-  </button>
+    <!-- Logo ---------------------------------------------------------- -->
+    <div class="branding-box">
+      <img src="assets/icons/logo-recyclingbot.png" alt="Logo" class="logo-icon" />
+      <span class="branding-label">Recycling<br>Bot</span>
+    </div>
 
-  <div class="conversation-list">
-    <ng-container *ngFor="let label of ['Heute', 'Letzte 7 Tage', 'Diesen Monat', 'Älter']">
+    <!-- New Chat ------------------------------------------------------ -->
+    <button class="new-conversation-button"
+            (click)="createNewConversation()">
+      <mat-icon>add</mat-icon>  New Chat
+    </button>
+
+    <!-- Conversation-Listen ------------------------------------------ -->
+    <ng-container *ngFor="let label of ['Heute','Letzte 7 Tage','Diesen Monat','Älter']">
       <ng-container *ngIf="groupedConversations[label]?.length">
         <div class="group-label">{{ label }}</div>
+
         <app-conversation
-          *ngFor="let conv of groupedConversations[label]"
-          [conversation]="conv"
+          *ngFor="let c of groupedConversations[label]"
+          [conversation]="c"
+          [isSelected]="c === selectedConversation"
           (selected)="onSelectConversation($event)">
         </app-conversation>
       </ng-container>
     </ng-container>
-  </div>
 
-  <div class="sidebar-navigation-main-links">
-    <button class="nav-button" (click)="navigateTo('/')" [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      Chat
-    </button>
-    <button class="nav-button" (click)="navigateTo('/metrics')" [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      Metrics
-    </button>
-    <button class="nav-button" (click)="navigateTo('/settings')" [class.selected]="router.isActive('/settings', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      Settings
-    </button>
-  </div>
+    <!-- Navigation ---------------------------------------------------- -->
+    <div class="sidebar-navigation-main-links">
+      <button class="nav-button"
+              (click)="navigateTo('/')"
+              [class.selected]="router.isActive('/', true)">
+        Chat
+      </button>
+      <button class="nav-button"
+              (click)="navigateTo('/metrics')"
+              [class.selected]="router.isActive('/metrics', true)">
+        Metrics
+      </button>
+      <button class="nav-button"
+              (click)="navigateTo('/settings')"
+              [class.selected]="router.isActive('/settings', true)">
+        Settings
+      </button>
+    </div>
 
-  <div class="user">
-    <div class="avatar">MM</div>
-    <div class="username">Max Mustermann</div>
+    <!-- User-Info ----------------------------------------------------- -->
+    <div class="user">
+      <div class="avatar">MM</div>
+      <span class="username">Max Mustermann</span>
+    </div>
+
   </div>
 </div>

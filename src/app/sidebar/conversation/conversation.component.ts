@@ -17,6 +17,7 @@ import {FormsModule} from "@angular/forms";
 export class ConversationComponent implements OnInit {
   @Input() conversation!: Conversation;
   @Output() selected = new EventEmitter<Conversation>();
+  @Input() isSelected = false;
 
   messages: Message[] = [];
   editing = false;
@@ -45,7 +46,6 @@ export class ConversationComponent implements OnInit {
    */
   onRightClick(event: Event): void {
     event.preventDefault();
-    this.startEditing();
   }
 
   startEditing(): void {

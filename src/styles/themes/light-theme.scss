@@ -1,0 +1,49 @@
+body.light {
+  --bg-color: #e6f0fc;
+  --text-color: #144d96;
+
+  /* ── SIDEBAR ─ */
+  --sidebar-bg: #ffffff;
+  --sidebar-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+  --sidebar-radius: 1rem;
+
+  --sidebar-brand-bg: #144d96;
+  --sidebar-brand-text: #ffffff;
+
+  --btn-text: #144d96;
+  --btn-bg: transparent;
+  --btn-hover-bg: #e6f0fc;
+  --btn-hover-text: #144d96;
+  --btn-selected-bg: #e6f0fc;
+
+  --divider-color: #ccc;
+  --label-muted: #6c757d;
+  --user-avatar: #144d96;
+
+  /* ── MESSAGE BUBBLE ─ */
+  --msg-user-bg: #e6f0fc;
+  --msg-assistant-bg: #d8ebff;
+
+  /* ── INPUT FIELD ─ */
+  --input-bg: #ffffff;
+  --input-border: #cccccc;
+  --input-text: #144d96;
+  --input-placeholder: #888;
+
+  /* ── CONVERSATION ─ */
+  --conversation-bg: #ffffff;
+  --conversation-text: #144d96;
+  --conversation-hover-bg: #e6f0fc;
+  --conversation-hover-text: #144d96;
+  --conversation-selected-bg: #e6f0fc;
+  --conversation-selected-text: #144d96;
+
+  --delete-icon: #999;
+  --delete-icon-hover: #d9534f;
+
+  --input-bg: #ffffff;
+  --input-border-color: #ccc;
+
+  /* ── APP.SCSS ─ */
+  --burger-line: #144d96;
+}

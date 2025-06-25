@@ -1,0 +1,47 @@
+/* src/styles/themes/dark-theme.scss */
+body.dark {
+  --bg-color:            #481457;  /* Basislila – wird für Fallback verwendet */
+  --text-color:          #ffffff;
+
+  /* Hintergrund-Muster */
+  --bg-pattern-1:        #6E2B99;
+  --bg-pattern-2:        #481457;
+  --bg-pattern-3:        #7B30AB;
+  --bg-pattern-4:        #5C287E;
+
+  /* ── SIDEBAR ────────────────────────────────────────────── */
+  --sidebar-bg:          #353535;
+  --sidebar-shadow:      0 4px 16px rgba(0, 0, 0, .6);
+  --sidebar-radius:      1rem;
+
+  --sidebar-brand-bg:    #481457;    /* BrandingBox-Hintergrund */
+  --sidebar-brand-text:  #ffffff;
+
+  --btn-bg:            transparent;
+  --btn-hover-bg:      #7B30AB; // Hover-Lila
+  --btn-selected-bg:   #5C287E; // Ausgewählt-Lila
+  --btn-hover-text:    #ffffff;
+  --btn-text:          #e4e6eb;
+
+  --divider-color:       #6b6b6b;
+  --label-muted:         #bbbbbb;
+  --user-avatar:         #5C287E;
+
+  /* ── MESSAGE BUBBLE ─────────────────────────────────────── */
+  --msg-user-bg:         #353535;
+  --msg-assistant-bg:    #ffffff;
+
+  /* ── INPUT FIELD ─────────────────────────────────────────── */
+  --input-bg:            #353535;
+  --input-border:        #5C287E;
+  --input-text:          #ffffff;
+
+  /* ── BUTTONS ─────────────────────────────────────────────── */
+  --button-bg:           #5C287E;
+  --button-text:         #ffffff;
+  --button-hover-bg:     #7B30AB;
+
+  /* ── LINKS, HINTS, ETC. ─────────────────────────────────── */
+  --link-color:          #04ffb9;
+  --hint-color:          #ffff00;
+}

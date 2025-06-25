@@ -1,4 +1,6 @@
-<div class="settings-ui">
-  <p>Settings</p>
+<div class="settings-container">
+    <label class="theme-toggle">
+        <input type="checkbox" [checked]="isDarkMode" (change)="toggleDarkMode($event)" />
+        Dark Mode aktivieren
+    </label>
 </div>
-  
