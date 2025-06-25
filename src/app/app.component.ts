@@ -5,7 +5,6 @@ import {DisplayService} from "./sidebar/service/display.service";
 import {NavigationEnd, Router} from '@angular/router'; // Import Router and NavigationEnd
 import {Subscription} from 'rxjs'; // Import Subscription
 import {filter} from 'rxjs/operators'; // Import filter operator
-import { ThemeService } from '../styles/themes/theme.service';
 
 
 @Component({
@@ -22,17 +21,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // Make displayService public to allow template to access its methods and observables
   constructor(public displayService: DisplayService,
-              private router: Router, // Inject Router
-              private themeService: ThemeService
-
-
+              private router: Router
   ) {
   }
 
 
   ngOnInit() {
-    const currentTheme = this.themeService.getCurrentTheme(); // 'light' oder 'dark'
-    this.themeService.applyTheme(currentTheme); // setzt z. B. html.class = 'light-theme'
     this.routerSubscription = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd)
     ).subscribe((event: NavigationEnd) => {

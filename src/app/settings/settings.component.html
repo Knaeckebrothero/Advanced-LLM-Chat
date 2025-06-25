@@ -1,6 +1,19 @@
 <div class="settings-container">
-    <label class="theme-toggle">
-        <input type="checkbox" [checked]="isDarkMode" (change)="toggleDarkMode($event)" />
-        Dark Mode aktivieren
-    </label>
+  <div class="theme-selection">
+    <h3>Theme</h3>
+    <div class="radio-group">
+      <label>
+        <input type="radio" name="theme" value="light" [checked]="selectedTheme === 'light'" (change)="setTheme($event)">
+        Light
+      </label>
+      <label>
+        <input type="radio" name="theme" value="dark" [checked]="selectedTheme === 'dark'" (change)="setTheme($event)">
+        Dark
+      </label>
+      <label>
+        <input type="radio" name="theme" value="os" [checked]="selectedTheme === 'os'" (change)="setTheme($event)">
+        OS Default
+      </label>
+    </div>
+  </div>
 </div>
