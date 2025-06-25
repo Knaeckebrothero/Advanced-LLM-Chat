@@ -4,6 +4,7 @@ import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
+import { Settings } from '../settings/settings.service';
 
 
 @Injectable({
@@ -36,6 +37,19 @@ export class ApiService {
       // TODO: Do we still need this now that we have the auth.guard?
       withCredentials: true  // Cookies
     };
+  }
+
+  async getLLMs(): Promise<string[]> {
+    const endpoint = `${this.baseUrl}/api/llms`;
+    try {
+      const response = await lastValueFrom(
+        this.http.get<string[]>(endpoint, this.getHttpOptions())
+      );
+      return response;
+    } catch (error) {
+      console.error('Error requesting LLMs:', error);
+      throw error;
+    }
   }
 
   async getConversations(): Promise<Conversation[]>{
@@ -102,8 +116,8 @@ export class ApiService {
     try {
       const response = await lastValueFrom(
         this.http.post<{ id: number }>(endpoint, body, {
-            ...this.getHttpOptions(),
-            observe: 'response' }
+          ...this.getHttpOptions(),
+          observe: 'response' }
         )
       );
 
@@ -123,9 +137,14 @@ export class ApiService {
     }
   }
 
-  async generateMessage(lastMessage: Message, participant: string): Promise<Message> {
+  async generateMessage(lastMessage: Message, participant: string, settings: Settings): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/generate`;
-    const body = lastMessage.toApiGenerate(participant);
+    const body = {
+      ...lastMessage.toApiGenerate(participant),
+      temperature: settings.temperature,
+      top_p: settings.top_p,
+      systemPrompt: settings.systemPrompt
+    };
 
     try {
       const response = await lastValueFrom(

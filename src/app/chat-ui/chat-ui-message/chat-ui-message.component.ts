@@ -13,7 +13,7 @@ import { ChatUiComponent } from '../chat-ui.component';
 export class ChatUiMessageComponent {
   // Pass the message object from the parent component
   @Input() message!: Message;
-  
+
   // Variables
   editing: boolean = false;
   backupContent!: string;
