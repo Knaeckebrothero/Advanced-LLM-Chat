@@ -144,8 +144,6 @@ def get_db():
     conn.close()
 
 
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
   """
@@ -448,6 +446,25 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
     return ""
 
 
+def verify_conversation_ownership(conversation_id: int, user_id: int) -> bool:
+  """
+  Verifies that a user owns a specific conversation.
+  Returns True if the user owns the conversation, False otherwise.
+  """
+  with get_db() as conn:
+    cur = conn.cursor()
+    cur.execute(
+      "SELECT userId FROM conversations WHERE id = ?",
+      (conversation_id,)
+    )
+    result = cur.fetchone()
+
+    if not result:
+      return False
+
+    return result['userId'] == user_id
+
+
 # Load environment variables from .env file
 load_dotenv(find_dotenv())
 
@@ -638,12 +655,15 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
 
         return Conversation(**dict(new_conv_row))
 
+
 @app.get("/api/conversation/messages/{conversation_id}/{timestamp}/{messages_count}",
          response_model=List[MessageResponse],
          responses={
            status.HTTP_204_NO_CONTENT: {"description": "No messages found"},
            status.HTTP_206_PARTIAL_CONTENT: {"description": "Partial content, more messages available"},
            status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Conversation ID or timestamp missing"},
+           status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+           status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Conversation not found"},
            status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
          },
          tags=["Conversation"])
@@ -663,6 +683,11 @@ async def get_conversation_messages(
     if not conversation_id or timestamp is None:
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Conversation ID and latest timestamp are required")
+
+    # Verify ownership
+    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+      response.status_code = status.HTTP_403_FORBIDDEN
+      return ErrorResponse(error="Access denied to this conversation")
 
     with get_db() as conn:
       cur = conn.cursor()
@@ -701,6 +726,7 @@ async def get_conversation_messages(
           status_code=status.HTTP_201_CREATED,
           responses={
             status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Message content cannot be empty"},
+            status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
             status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
           },
           tags=["Message"])
@@ -716,6 +742,11 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Message content cannot be empty")
 
+    # Verify ownership
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+      response.status_code = status.HTTP_403_FORBIDDEN
+      return ErrorResponse(error="Access denied to this conversation")
+
     message_id = int(time.time() * 1000)
 
     with get_db() as conn:
@@ -725,7 +756,8 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
         INSERT INTO messages (id, conversationId, roleName, content, time)
         VALUES (?, ?, ?, ?, ?)
         """,
-        (message_id, request_body.conversationId, request_body.roleName, request_body.content, request_body.time)
+        (message_id, request_body.conversationId, request_body.roleName,
+         request_body.content, request_body.time)
       )
       conn.commit()
 
@@ -742,6 +774,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
           status_code=status.HTTP_201_CREATED,
           responses={
             status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Conversation ID missing"},
+            status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
             status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
           },
           tags=["Message"])
@@ -756,6 +789,11 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
     if not request_body.conversationId:
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Conversation ID missing or invalid in request")
+
+    # Verify ownership
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+      response.status_code = status.HTTP_403_FORBIDDEN
+      return ErrorResponse(error="Access denied to this conversation")
 
     # Get conversation context for the LLM
     context = await get_conversation_context(request_body.conversationId)
@@ -798,11 +836,13 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
            status_code=status.HTTP_204_NO_CONTENT,
            responses={
              status.HTTP_400_BAD_REQUEST: {"description": "Message ID missing or invalid request"},
+             status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
              status.HTTP_404_NOT_FOUND: {"description": "Message not found"},
              status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
            },
            tags=["Message"])
-async def patch_message(request_body: MessagePatch, response: Response, current_user: dict = Depends(get_current_user)):
+async def patch_message(request_body: MessagePatch, response: Response,
+                        current_user: dict = Depends(get_current_user)):
   """
   Endpoint to update the content of an existing message.
   """
@@ -812,6 +852,11 @@ async def patch_message(request_body: MessagePatch, response: Response, current_
     if not request_body.id:
       response.status_code = status.HTTP_400_BAD_REQUEST
       return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Message ID missing")
+
+    # Verify ownership
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+      response.status_code = status.HTTP_403_FORBIDDEN
+      return ErrorResponse(error="Access denied to this conversation")
 
     with get_db() as conn:
       cur = conn.cursor()
@@ -841,6 +886,7 @@ async def patch_message(request_body: MessagePatch, response: Response, current_
             status_code=status.HTTP_204_NO_CONTENT,
             responses={
               status.HTTP_400_BAD_REQUEST: {"description": "Conversation ID or Message ID missing"},
+              status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
               status.HTTP_404_NOT_FOUND: {"description": "Message not found"},
               status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
             },
@@ -855,7 +901,13 @@ async def delete_message(conversation_id: int, message_id: int, response: Respon
   try:
     if not conversation_id or not message_id:
       response.status_code = status.HTTP_400_BAD_REQUEST
-      return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Conversation ID or Message ID missing")
+      return Response(status_code=status.HTTP_400_BAD_REQUEST,
+                      content="Conversation ID or Message ID missing")
+
+    # Verify ownership
+    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+      response.status_code = status.HTTP_403_FORBIDDEN
+      return ErrorResponse(error="Access denied to this conversation")
 
     with get_db() as conn:
       cur = conn.cursor()
