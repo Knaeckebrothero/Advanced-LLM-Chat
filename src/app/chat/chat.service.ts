@@ -37,7 +37,7 @@ export class ChatService {
   constructor(
     private dbService: DBService,
     private apiService: ApiService,
-    private settingsService: SettingsService
+    private settingsService: SettingsService,
     private displayService: DisplayService
   ) {
     this.initializeService();
