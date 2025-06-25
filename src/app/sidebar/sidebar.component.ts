@@ -33,7 +33,7 @@ export class SidebarComponent implements OnInit {
   constructor(
     private chatService: ChatService,
     public router: Router,
-    private displayService: DisplayService,
+    public displayService: DisplayService,
     private dialog: MatDialog,
     private settingsService: SettingsService
   ) {}
