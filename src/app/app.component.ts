@@ -1,39 +1,52 @@
 import {Component, OnDestroy, OnInit} from '@angular/core';
 import {DisplayService} from "./sidebar/service/display.service";
-
-
-import {NavigationEnd, Router} from '@angular/router'; // Import Router and NavigationEnd
-import {Subscription} from 'rxjs'; // Import Subscription
-import {filter} from 'rxjs/operators'; // Import filter operator
+import {NavigationEnd, Router} from '@angular/router';
+import {Subscription, interval} from 'rxjs';
+import {filter} from 'rxjs/operators';
+import {ChatService} from './chat/chat.service';
 
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss'],
-  standalone: false // This makes AppComponent a non-standalone component
+  standalone: false
 })
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Advanced LLM Chat';
-  showMenuIcon: boolean = true; // Property to control menu icon visibility
-  private routerSubscription: Subscription | undefined; // To store the subscription
+  showMenuIcon: boolean = true;
+  private routerSubscription: Subscription | undefined;
+  private syncSubscription: Subscription | undefined;
+  private visibilityChangeHandler: () => void; // Store the handler reference
 
-  // Make displayService public to allow template to access its methods and observables
-  constructor(public displayService: DisplayService,
-              private router: Router // Inject Router
-
-
+  constructor(
+    public displayService: DisplayService,
+    private router: Router,
+    private chatService: ChatService // Use proper type instead of 'any'
   ) {
+    // Bind the handler so we can remove it later
+    this.visibilityChangeHandler = () => {
+      if (!document.hidden) {
+        this.chatService.syncCurrentConversation();
+      }
+    };
   }
 
-
   ngOnInit() {
+    // Router subscription
     this.routerSubscription = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd)
     ).subscribe((event: NavigationEnd) => {
-      // Check if the current route is the login page
       this.showMenuIcon = !(event.url === '/login' || event.urlAfterRedirects === '/login');
     });
+
+    // Periodic sync every 30 seconds
+    this.syncSubscription = interval(30000).subscribe(() => {
+      this.chatService.syncCurrentConversation();
+    });
+
+    // Sync when app regains focus
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 
   ngOnDestroy() {
@@ -41,5 +54,12 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.routerSubscription) {
       this.routerSubscription.unsubscribe();
     }
+
+    if (this.syncSubscription) {
+      this.syncSubscription.unsubscribe();
+    }
+
+    // Remove event listener using the same handler reference
+    document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 }
