@@ -23,6 +23,16 @@ from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timedelta, UTC
 
 
+# List of available LLMs
+AVAILABLE_LLMS = [
+    "deepseek-ai/deepseek-v3",
+    "openai/gpt-4o",
+    "meta/meta-llama-3-8b-instruct",
+    "meta/meta-llama-3-70b-instruct",
+    "meta/meta-llama-3.1-405b-instruct",
+]
+
+
 class ErrorResponse(BaseModel):
   """
   Represents an error response model for providing error details to clients.
@@ -75,9 +85,9 @@ class ApiMessageGenerate(BaseModel):
   conversationId: int
   roleName: str
   time: int
-  temperature: float = 0.5
-  top_p: float = 0.5
-  systemPrompt: str = "You are a helpful assistant!"
+  temperature: Optional[float] = None
+  top_p: Optional[float] = None
+  systemPrompt: Optional[str] = None
 
 
 class MessagePatch(BaseModel):
@@ -118,15 +128,6 @@ class AppSettings(BaseModel):
   systemPrompt: str
   darkMode: int
   languageIsEnglish: int
-
-_settings: AppSettings = AppSettings(
-   model="GPT 4o",
-   temperature=0.5,
-   top_p=0.5,
-   systemPrompt="",
-   darkMode = 0,
-   languageIsEnglish = 0
-   )
 
 
 @contextmanager
@@ -399,14 +400,14 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
   return hash_value
 
 
-async def generate_llm_response(prompt: str, temperature: float, top_p: float, system_prompt: str) -> str:
+async def generate_llm_response(prompt: str, temperature: float, top_p: float, system_prompt: str, model: str) -> str:
   """
   Generates a text response using a Large Language Model (LLM) via Replicate API.
   """
   try:
     # Use Meta's Llama model through Replicate
     output = replicate.run(
-      "meta/meta-llama-3.1-405b-instruct",
+      model,
       input={
         "prompt": prompt,
         "temperature": temperature,
@@ -417,6 +418,7 @@ async def generate_llm_response(prompt: str, temperature: float, top_p: float, s
     )
     print("\n".join([
         f"LLM Input:",
+        f"  model = {model}",
         f"  temp = {temperature}",
         f"  top_p = {top_p}",
         f"  system_prompt = {system_prompt}",
@@ -486,6 +488,14 @@ app = FastAPI(
 
 # Initialize the database on startup
 init_db()
+
+
+@app.get("/api/llms", response_model=List[str], tags=["LLM"])
+async def get_llms():
+    """
+    Get the list of available LLMs.
+    """
+    return AVAILABLE_LLMS
 
 
 @app.get(app.openapi_url, include_in_schema=False)
@@ -627,11 +637,11 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         row = cur.fetchone()
 
         if row:
-            return AppSettings(**row)
+            return AppSettings(**dict(row))
         else:
             # Fallback defaults if user has no settings yet
             return AppSettings(
-                model="GPT 4o",
+                model="openai/gpt-4o",
                 temperature=0.5,
                 top_p=0.5,
                 systemPrompt="You are a helpful assistant!",
@@ -802,11 +812,11 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
       row = cur.fetchone()
 
       if row:
-          settings = AppSettings(**dict(row))
-          print(f"Using settings from DB: {settings}")
+          db_settings = AppSettings(**dict(row))
+          print(f"Using settings from DB: {db_settings}")
       else:
-        settings = AppSettings(
-          model="GPT 4o",
+        db_settings = AppSettings(
+          model="openai/gpt-4o",
           temperature=0.5,
           top_p=0.5,
           systemPrompt="You are a helpful assistant!",
@@ -814,15 +824,21 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
           languageIsEnglish=0
         )
 
+    temperature = request_body.temperature if request_body.temperature is not None else db_settings.temperature
+    top_p = request_body.top_p if request_body.top_p is not None else db_settings.top_p
+    system_prompt = request_body.systemPrompt if request_body.systemPrompt is not None else db_settings.systemPrompt
+    model = db_settings.model
+
     # Get conversation context for the LLM
     context = await get_conversation_context(request_body.conversationId)
 
     # Generate AI response
     ai_response_content = await generate_llm_response(
       context,
-      settings.temperature,
-      settings.top_p,
-      settings.systemPrompt
+      temperature,
+      top_p,
+      system_prompt,
+      model
     )
 
     message_id = int(time.time() * 1000)

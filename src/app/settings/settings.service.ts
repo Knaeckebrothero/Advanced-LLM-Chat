@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { ApiService } from '../api/api.service';
 
 // Interface that matches the backend structure
 export interface Settings {
@@ -17,7 +18,14 @@ export class SettingsService {
   private readonly API_URL = 'https://localhost:8443/api/settings';
   private readonly LOCAL_KEY = 'user_settings';
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private apiService: ApiService) {}
+
+  /**
+   * Get available LLMs from backend.
+   */
+  getLLMs(): Promise<string[]> {
+    return this.apiService.getLLMs();
+  }
 
   /**
    * Load settings from backend.

@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
+import { SettingsService } from '../settings/settings.service';
 
 
 @Injectable({
@@ -25,7 +26,8 @@ export class ChatService {
   // Constructor
   constructor(
     private dbService: DBService,
-    private apiService: ApiService
+    private apiService: ApiService,
+    private settingsService: SettingsService
 
   ) {
     // Wait for the database to be ready
@@ -169,7 +171,8 @@ export class ChatService {
     console.log('Generating message:', lastMessage, participant);
 
     try {
-      const generatedMessage = await this.apiService.generateMessage(lastMessage, participant);
+      const settings = await firstValueFrom(this.settingsService.getSettings());
+      const generatedMessage = await this.apiService.generateMessage(lastMessage, participant, settings);
 
       // Add to local state and database
       this.addMessage(generatedMessage);
