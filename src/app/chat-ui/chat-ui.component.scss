@@ -28,10 +28,21 @@
   margin-bottom: 1rem;
 }
 
+/* Common styles for the logo (sizing) */
 .headbar-logo {
-  height: 100px;
-  object-fit: contain;
+  height: 120px;
+  width: 450px;
 }
+
+/* Styles for the white version of the logo used in dark mode */
+.white-logo {
+  background-color: #FFFFFF;
+  mask-image: url('src/assets/icons/fra_logo_svg.svg');
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+
 
 /* Nachrichtenbereich */
 .message-container {

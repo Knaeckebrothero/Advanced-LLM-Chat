@@ -32,7 +32,7 @@ import {provideHttpClient, withInterceptorsFromDi} from '@angular/common/http';
 import {FormsModule, ReactiveFormsModule} from '@angular/forms';
 import {RouterModule, Routes} from '@angular/router';
 import {SidebarComponent} from "./sidebar/sidebar.component";
-import {CommonModule} from '@angular/common';
+import {CommonModule, NgOptimizedImage} from '@angular/common';
 
 
 // Routes
@@ -75,7 +75,7 @@ const routes: Routes = [
         enabled: !isDevMode(),
         registrationStrategy: 'registerWhenStable:30000'
       }),
-    BrowserAnimationsModule, SidebarComponent, SidebarComponent, ConversationComponent
+    BrowserAnimationsModule, SidebarComponent, SidebarComponent, ConversationComponent, NgOptimizedImage
   ],
   providers: [
     provideHttpClient(withInterceptorsFromDi()),

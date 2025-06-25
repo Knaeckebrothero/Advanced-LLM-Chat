@@ -2,22 +2,25 @@
 
   <div class="headbar">
     <img
-      [src]="isDarkMode ? 'assets/icons/fra_uas_logo_white.png' : 'assets/icons/fra_uas_logo2.png'"
-      alt="FRA UAS Logo"
-      class="headbar-logo" />
+      *ngIf="!isDarkMode"
+      class="headbar-logo"
+      src="assets/icons/fra_logo_svg.svg"
+      alt="FRA UAS Logo"/>
+
+    <div *ngIf="isDarkMode" class="headbar-logo white-logo"></div>
   </div>
 
-    <div class="message-container" #messageContainer>
-        <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
+  <div class="message-container" #messageContainer>
+    <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
+  </div>
+  <div class="input-container">
+    <div class="textfield-container">
+      <textarea [(ngModel)]="inputField" class="chat-input" rows="1" placeholder="Type your message..." (keydown)="handleEnterKeyPress($event)"></textarea>
     </div>
-    <div class="input-container">
-        <div class="textfield-container">
-            <textarea [(ngModel)]="inputField" class="chat-input" rows="1" placeholder="Type your message..." (keydown)="handleEnterKeyPress($event)"></textarea>
-        </div>
 
-        <div class="button-container">
-            <button class="generate-button" mat-raised-button color="primary" (click)="generateMessage()">GEN</button>
-            <button class="send-button" mat-raised-button color="primary" (click)="inputUserMessage()">SND</button>
-        </div>
+    <div class="button-container">
+      <button class="generate-button" mat-raised-button color="primary" (click)="generateMessage()">GEN</button>
+      <button class="send-button" mat-raised-button color="primary" (click)="inputUserMessage()">SND</button>
     </div>
+  </div>
 </div>

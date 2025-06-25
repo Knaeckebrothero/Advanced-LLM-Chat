@@ -1,16 +1,17 @@
-import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewChecked, OnInit, OnDestroy } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
 import { ThemeService } from 'src/styles/themes/theme.service';
+import { Subscription } from 'rxjs';
 
 
 @Component({
-    selector: 'app-chat-ui',
-    templateUrl: './chat-ui.component.html',
-    styleUrls: ['./chat-ui.component.scss'],
-    standalone: false
+  selector: 'app-chat-ui',
+  templateUrl: './chat-ui.component.html',
+  styleUrls: ['./chat-ui.component.scss'],
+  standalone: false
 })
-export class ChatUiComponent implements AfterViewChecked {
+export class ChatUiComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
@@ -19,6 +20,9 @@ export class ChatUiComponent implements AfterViewChecked {
   userName: string = 'user';
   aiName: string = 'Assistant';
   conversationId: number = 1;
+  isDarkMode: boolean = false;
+  private themeSubscription!: Subscription;
+
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
@@ -29,9 +33,18 @@ export class ChatUiComponent implements AfterViewChecked {
   // Constructor
   constructor(private chatService: ChatService, private themeService: ThemeService) {}
 
-  // Getter to check if dark mode is enabled to change the fra uas logo
-  get isDarkMode(): boolean {
-    return this.themeService.getCurrentTheme() === 'dark';
+  ngOnInit(): void {
+    // Subscribe to theme changes to toggle the logo
+    this.themeSubscription = this.themeService.getEffectiveTheme$().subscribe(theme => {
+      this.isDarkMode = theme === 'dark';
+    });
+  }
+
+  ngOnDestroy(): void {
+    // Unsubscribe to prevent memory leaks
+    if (this.themeSubscription) {
+      this.themeSubscription.unsubscribe();
+    }
   }
 
   // Method to scroll to the bottom of the chat window.
