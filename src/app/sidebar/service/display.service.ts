@@ -1,16 +1,31 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 
 @Injectable({
   providedIn: 'root'
 })
-export class DisplayService {
+export class DisplayService implements OnDestroy {
   private isSidebarOpenSubject = new BehaviorSubject<boolean>(true);
   public isSidebarOpen$: Observable<boolean> = this.isSidebarOpenSubject.asObservable();
 
+  public activeConversationId$ = new BehaviorSubject<number | null>(null);
+  private resizeListener: () => void;
+
   constructor() {
     this.handleResize(); // Set initial state
-    window.addEventListener('resize', () => this.handleResize());
+    this.resizeListener = () => this.handleResize();
+    window.addEventListener('resize', this.resizeListener);
+  }
+
+  // Cleanup on destruction to prevent memory leaks
+  ngOnDestroy() {
+    if (this.resizeListener) {
+      window.removeEventListener('resize', this.resizeListener);
+    }
+  }
+
+  public setActiveConversation(conversationId: number | null) {
+    this.activeConversationId$.next(conversationId);
   }
 
   private handleResize(): void {
