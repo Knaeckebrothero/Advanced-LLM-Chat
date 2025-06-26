@@ -1,9 +1,14 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { DisplayService } from "./sidebar/service/display.service";
 import { NavigationEnd, Router } from '@angular/router';
-import { Subscription, interval } from 'rxjs';
-import { filter } from 'rxjs/operators';
+import { Subscription, interval, of } from 'rxjs';
+import { filter, catchError } from 'rxjs/operators';
+
+// Services
+import { DisplayService } from "./sidebar/service/display.service";
 import { ChatService } from './chat/chat.service';
+import { SettingsService } from './settings/settings.service';
+import {ThemeService} from "../styles/themes/theme.service";
+
 
 @Component({
   selector: 'app-root',
@@ -15,16 +20,19 @@ export class AppComponent implements OnInit, OnDestroy {
   title = 'Advanced LLM Chat';
   isLoginPage: boolean = false;
   showMenuIcon: boolean = true;
+
   private routerSubscription: Subscription | undefined;
   private syncSubscription: Subscription | undefined;
   private visibilityChangeHandler: () => void;
 
   constructor(
-    public displayService: DisplayService, // Kept public for template access from current branch
+    public displayService: DisplayService,
     private router: Router,
-    private chatService: ChatService // Injected from develop branch
+    private chatService: ChatService,
+    // --- ADDED: Services needed for initial theme loading ---
+    private settingsService: SettingsService,
+    private themeService: ThemeService
   ) {
-    // This logic from develop ensures data syncs when the tab becomes active
     this.visibilityChangeHandler = () => {
       if (!document.hidden) {
         this.chatService.syncCurrentConversation();
@@ -33,36 +41,56 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    // Combined router event subscription
+    // --- ADDED: Load the user's saved theme immediately on startup ---
+    this.loadUserTheme();
+
+    // Combined router event subscription (Original logic preserved)
     this.routerSubscription = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd)
     ).subscribe((event: NavigationEnd) => {
       const isLoginRoute = event.url === '/login' || event.urlAfterRedirects === '/login';
-      // This handles the menu icon visibility from both branches
       this.showMenuIcon = !isLoginRoute;
-      // This sets the login page flag from the current branch
       this.isLoginPage = isLoginRoute;
     });
 
-    // This periodic sync logic is from the develop branch
+    // Periodic sync logic (Original logic preserved)
     this.syncSubscription = interval(30000).subscribe(() => {
       this.chatService.syncCurrentConversation();
     });
 
-    // This event listener from develop syncs when the app window regains focus
+    // Sync on window focus (Original logic preserved)
     document.addEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 
   ngOnDestroy() {
-    // Unsubscribe from all subscriptions and remove event listeners to prevent memory leaks
+    // Unsubscribe from all subscriptions to prevent memory leaks
     if (this.routerSubscription) {
       this.routerSubscription.unsubscribe();
     }
-
     if (this.syncSubscription) {
       this.syncSubscription.unsubscribe();
     }
-
     document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+  }
+
+  /**
+   * --- ADDED: New method to fetch user settings on app load ---
+   * This fetches the saved settings and applies the theme before the UI
+   * is fully rendered, preventing the "flash of wrong theme".
+   */
+  private loadUserTheme(): void {
+    this.settingsService.getSettings().pipe(
+      // If this call fails (e.g., user not logged in), catch the error
+      // and return a null observable to continue gracefully.
+      catchError(() => of(null))
+    ).subscribe(settings => {
+      if (settings) {
+        // If settings were loaded successfully, apply the saved theme.
+        this.themeService.setTheme(settings.theme);
+      } else {
+        // If no settings were found (e.g., not logged in), apply the OS default theme.
+        this.themeService.setTheme('os');
+      }
+    });
   }
 }
