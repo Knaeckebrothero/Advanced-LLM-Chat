@@ -45,6 +45,7 @@ export class ChatUiComponent implements AfterViewChecked {
   }
   // TODO: Do we want to move this to the app.component?
 
+  // TODO: Deprecated
   // Function to handle Enter key in textarea
   handleEnterKeyPress(event: KeyboardEvent) {
     if (event.key === 'Enter') {
