@@ -1,10 +1,10 @@
-/* ------------- Globale Schriftfarbe aus Theme ---------------------- */
+/* Global font color from theme */
 :host {
   color: var(--text-color);
   font-family: 'Segoe UI', Roboto, sans-serif;
 }
 
-/* -------- Container der Message-Liste ------------------------------ */
+/* Container for the message list */
 .message-display-container {
   display: flex;
   flex-direction: column;
@@ -13,40 +13,40 @@
   overflow-y: auto;
 }
 
-/* -------- Einzelfenster einer Message ------------------------------ */
+/* Individual message bubble */
 .message {
   display: flex;
   flex-direction: column;
   max-width: 60%;
-  padding: 10px;
+  padding: 10px 15px;
   border-radius: 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
   margin-bottom: 20px;
   word-wrap: break-word;
   text-align: left;
   position: relative;
-  color: var(--text-color);
+  color: var(--text-color); /* Theme variable for text */
 
-  /* -------- Nachrichten des Users (rechts) -------- */
+  /* User messages (right-aligned) */
   &.message-user {
     align-self: flex-end;
     border-top-right-radius: 0;
-    background-color: var(--msg-user-bg);   /* Theme-Variable */
+    background-color: var(--msg-user-bg); /* Theme variable */
     .message-user-name { display: none; }
   }
 
-  /* -------- Nachrichten des Assistenten (links) --- */
+  /* Assistant messages (left-aligned) */
   &.message-not-user {
     align-self: flex-start;
     border-top-left-radius: 0;
-    background-color: var(--msg-assistant-bg); /* Theme-Variable */
+    background-color: var(--msg-assistant-bg); /* Theme variable */
   }
 
-  /* -------- Systemnachrichten (zentriert) -------- */
+  /* System messages (centered) */
   &.message-system {
     align-self: center;
     border-radius: 0;
-    background-color: var(--msg-system-bg, var(--msg-user-bg));
+    background-color: var(--msg-system-bg, var(--msg-user-bg)); /* Theme variable */
     .message-user-name { display: none; }
     .message-footer {
       align-self: center;
@@ -55,28 +55,57 @@
   }
 }
 
-/* -------- Username / Textdarstellung ------------------------------- */
-.message-user-name   { margin-bottom: 4px; font-size: .8em; }
-.message-body        { font-size: 1em;    }
-.message-footer      { display: flex; justify-content: space-between; }
-.message-timestamp   { font-size: .5em; margin-top: 4px; align-self: flex-end; }
+/* Message body text with improved formatting from 'input' branch */
+.message-body {
+  font-size: 1em;
+  white-space: pre-wrap;     /* Preserves line breaks and spaces */
+  word-wrap: break-word;       /* Deprecated, but good fallback */
+  overflow-wrap: break-word;   /* Standard-compliant word wrapping */
+  max-width: 100%;
+}
 
-/* -------- Aktionsbuttons ------------------------------------------- */
+/* Footer containing actions and timestamp */
+.message-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center; /* Vertically align items in the footer */
+}
+
+.message-user-name {
+  margin-bottom: 4px;
+  font-size: .8em;
+  font-weight: 600;
+  color: var(--label-muted); /* Theme variable for muted text */
+}
+
+.message-timestamp {
+  font-size: .65em;
+  margin-top: 8px;
+  align-self: flex-end;
+  color: var(--label-muted); /* Theme variable */
+}
+
+/* Action buttons (edit, delete, etc.) */
 .message-actions {
-  display: flex; align-items: center; margin-bottom: -10px;
+  display: flex;
+  align-items: center;
+
   button {
-    mat-icon { font-size: 15px; height: 15px; width: 15px; }
+    color: var(--label-muted);
+    mat-icon { font-size: 16px; height: 16px; width: 16px; }
     &:not(:last-child) { margin-right: 3px; }
   }
 }
 
-/* -------- Kursiv-Text in <em> -------------------------------------- */
-em { font-style: italic; }
+/* Italicized text */
+em {
+  font-style: italic;
+}
 
-/* -------- Responsive ---------------------------------------------- */
+/* Responsive adjustments for smaller screens */
 @media (max-width: 768px) {
   .message {
-    max-width: 75%;
+    max-width: 85%;
     &.message-user { margin-right: 5%; }
   }
 }

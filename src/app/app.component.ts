@@ -7,8 +7,7 @@ import { filter, catchError } from 'rxjs/operators';
 import { DisplayService } from "./sidebar/service/display.service";
 import { ChatService } from './chat/chat.service';
 import { SettingsService } from './settings/settings.service';
-import {ThemeService} from "../styles/themes/theme.service";
-
+import { ThemeService } from "../styles/themes/theme.service";
 
 @Component({
   selector: 'app-root',
@@ -29,7 +28,6 @@ export class AppComponent implements OnInit, OnDestroy {
     public displayService: DisplayService,
     private router: Router,
     private chatService: ChatService,
-    // --- ADDED: Services needed for initial theme loading ---
     private settingsService: SettingsService,
     private themeService: ThemeService
   ) {
@@ -41,24 +39,23 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    // --- ADDED: Load the user's saved theme immediately on startup ---
+    // Load the user's saved theme immediately on startup to prevent a "flash"
     this.loadUserTheme();
 
-    // Combined router event subscription (Original logic preserved)
+    // Subscribe to router events to determine if the login page is active
     this.routerSubscription = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd)
     ).subscribe((event: NavigationEnd) => {
-      const isLoginRoute = event.url === '/login' || event.urlAfterRedirects === '/login';
-      this.showMenuIcon = !isLoginRoute;
-      this.isLoginPage = isLoginRoute;
+      this.isLoginPage = event.url === '/login' || event.urlAfterRedirects === '/login';
+      this.showMenuIcon = !this.isLoginPage;
     });
 
-    // Periodic sync logic (Original logic preserved)
+    // Periodically sync the current conversation every 30 seconds
     this.syncSubscription = interval(30000).subscribe(() => {
       this.chatService.syncCurrentConversation();
     });
 
-    // Sync on window focus (Original logic preserved)
+    // Add an event listener to sync when the window regains focus
     document.addEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 
@@ -74,21 +71,20 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * --- ADDED: New method to fetch user settings on app load ---
-   * This fetches the saved settings and applies the theme before the UI
-   * is fully rendered, preventing the "flash of wrong theme".
+   * Fetches user settings on app load to apply the correct theme.
+   * This prevents a flash of the default theme before the user's preference is loaded.
    */
   private loadUserTheme(): void {
     this.settingsService.getSettings().pipe(
-      // If this call fails (e.g., user not logged in), catch the error
-      // and return a null observable to continue gracefully.
+      // If the call fails (e.g., user not logged in), catch the error
+      // and continue gracefully by returning a null observable.
       catchError(() => of(null))
     ).subscribe(settings => {
-      if (settings) {
-        // If settings were loaded successfully, apply the saved theme.
+      if (settings && settings.theme) {
+        // If settings were loaded, apply the saved theme.
         this.themeService.setTheme(settings.theme);
       } else {
-        // If no settings were found (e.g., not logged in), apply the OS default theme.
+        // If no settings were found, apply the OS default theme as a fallback.
         this.themeService.setTheme('os');
       }
     });

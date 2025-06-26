@@ -1,0 +1,174 @@
+// Import the project's variables and mixins
+@use 'src/styles/variables' as vars;
+@use 'src/styles/mixins' as mixins;
+
+// Main container for the entire input field component
+.input-field-container {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--input-bg);
+  border-radius: 24px;
+  padding: 12px;
+  margin: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+
+  // Add a subtle border
+  border: 1px solid var(--input-border);
+
+  // Hover effect for the entire container
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  // When focused, add a highlight
+  &:focus-within {
+    border-color: var(--link-color);
+    box-shadow: 0 4px 12px rgba(vars.$color-primary, 0.2);
+  }
+}
+
+// Area containing the textarea
+.input-content-area {
+  width: 100%;
+  padding: 8px 12px;
+}
+
+// The actual textarea element
+.message-textarea {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-family: vars.$font-family-base;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--input-text);
+
+  // Minimum and maximum height constraints
+  min-height: 24px;
+  max-height: 150px; // Approximately 5-6 lines
+
+  // Smooth transition when height changes
+  transition: height 0.2s ease;
+
+  // Custom scrollbar styling
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 2px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.3);
+    }
+  }
+
+  // Placeholder styling
+  &::placeholder {
+    color: rgba(var(--input-text), 0.5);
+  }
+}
+
+// Container for action buttons
+.action-buttons-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+  min-height: 40px;
+}
+
+// Left side button group
+.left-actions {
+  display: flex;
+  gap: 4px;
+}
+
+// Right side button group
+.right-actions {
+  display: flex;
+  gap: 4px;
+}
+
+// Base styling for all action buttons
+.action-button {
+  // Override some Material button defaults for a cleaner look
+  &.mat-mdc-icon-button {
+    width: 36px;
+    height: 36px;
+    padding: 6px;
+
+    .mat-icon {
+      font-size: 22px;
+      width: 22px;
+      height: 22px;
+      color: var(--input-text);
+      transition: color 0.2s ease;
+    }
+
+    // Hover state
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+
+      .mat-icon {
+        color: var(--link-color);
+      }
+    }
+  }
+
+  // Special styling for send button
+  &.send-button {
+    .mat-icon {
+      color: var(--link-color);
+    }
+
+    &:hover {
+      background-color: rgba(vars.$color-primary, 0.1);
+    }
+  }
+
+  // Special styling for mic button
+  &.mic-button {
+    &:hover {
+      background-color: rgba(vars.$color-accent, 0.1);
+
+      .mat-icon {
+        color: var(--color-accent);
+      }
+    }
+  }
+}
+
+// Responsive adjustments for mobile devices
+@media (max-width: 768px) {
+  .input-field-container {
+    margin: 8px;
+    padding: 10px;
+    border-radius: 20px;
+  }
+
+  .input-content-area {
+    padding: 6px 10px;
+  }
+
+  .message-textarea {
+    font-size: 16px; // Prevents zoom on iOS
+  }
+
+  .action-button {
+    &.mat-mdc-icon-button {
+      width: 40px;
+      height: 40px;
+      padding: 8px;
+    }
+  }
+}
