@@ -199,8 +199,8 @@ export class ChatService {
     }
   }
 
-  // Send a message
-  public async sendMessage(content: string, roleName: string = 'user') {
+// Send a message
+  public async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
     if (this.isNewConversationSubject.getValue()) {
       // First message in a new chat. Create the conversation.
       const title = content.length > 30 ? content.substring(0, 27) + '...' : content;
@@ -215,13 +215,13 @@ export class ChatService {
         this.displayService.setActiveConversation(this.conversation.id);
       } catch (error) {
         console.error('Failed to create conversation:', error);
-        // Optionally show an error to the user
-        return;
+        // Re-throw to let the caller handle it
+        throw new Error('Failed to create conversation');
       }
     }
 
     const message = new Message({
-      id: Math.floor(new Date().getTime() / 1000) ,
+      id: Math.floor(new Date().getTime() / 1000),
       conversationId: this.conversation.id,
       roleName: roleName,
       content: content,
@@ -250,7 +250,8 @@ export class ChatService {
       }
     } catch(error) {
       console.error('Error sending message:', error);
-      // Handle error, e.g., mark the message as failed to send
+      // Remove the optimistically added message or mark it as failed
+      throw new Error('Failed to send message');
     }
 
     // Update conversation timestamp
@@ -259,6 +260,9 @@ export class ChatService {
 
     // This will trigger re-grouping in sidebar
     await this.loadAllConversations();
+
+    // Trigger a sync after sending the message (especially important for new conversations)
+    this.syncInBackground();
   }
 
   // Generate a message
