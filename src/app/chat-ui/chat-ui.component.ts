@@ -76,22 +76,32 @@ export class ChatUiComponent implements AfterViewChecked {
     }
   }
 
-  // TODO: Deprecated!
+  // TODO: Deprecated, this should be merged with the onMessageSent method!
   // Generate a new message
-  generateMessage() {
-    this.chatService.generateMessage(this.aiName);
+  async generateMessage(): Promise<void> {
+    try {
+      await this.chatService.generateMessage(this.aiName);
+    } catch (error) {
+      console.error('Error generating AI response:', error);
+      // Optionally show an error to the user
+    }
   }
 
   // Handle message sent from the input component
-  onMessageSent(message: string): void {
+  async onMessageSent(message: string): Promise<void> {
     if (message.trim()) {
-      // Use existing logic from inputUserMessage()
-      this.chatService.sendMessage(message);  // TODO: Promis is ignored!
-      console.log('User added message:', message);
-      this.scrollToBottom();
+      try {
+        // Wait for the message to be sent (and conversation created if needed)
+        await this.chatService.sendMessage(message);
+        console.log('User added message:', message);
+        this.scrollToBottom();
 
-      // Generate AI response after user message
-      this.generateMessage();
+        // NOW generate AI response after message is confirmed sent
+        await this.generateMessage();
+      } catch (error) {
+        console.error('Error sending message:', error);
+        // Optionally show an error to the user
+      }
     }
   }
 

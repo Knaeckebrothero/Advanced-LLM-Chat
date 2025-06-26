@@ -40,8 +40,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.showMenuIcon = !(event.url === '/login' || event.urlAfterRedirects === '/login');
     });
 
-    // Periodic sync every 30 seconds
-    this.syncSubscription = interval(30000).subscribe(() => {
+    // TODO: Make this a env variable instead of a hardcoded value!
+    // Periodic sync every 60 seconds
+    this.syncSubscription = interval(60000).subscribe(() => {
       this.chatService.syncCurrentConversation();
     });
 
