@@ -1,15 +1,11 @@
 <div class="chat-ui-container">
-    <div class="message-container" #messageContainer>
-        <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
-    </div>  
-    <div class="input-container">
-        <div class="textfield-container">
-            <textarea [(ngModel)]="inputField" class="chat-input" rows="1" placeholder="Type your message..." (keydown)="handleEnterKeyPress($event)"></textarea>
-        </div>
+  <div class="message-container" #messageContainer>
+      <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
+  </div>
 
-        <div class="button-container">
-            <button class="generate-button" mat-raised-button color="primary" (click)="generateMessage()">GEN</button>         
-            <button class="send-button" mat-raised-button color="primary" (click)="inputUserMessage()">SND</button>
-        </div>
-    </div>
+  <app-chat-ui-inputfield
+    (messageSent)="onMessageSent($event)"
+    (audioRequested)="onAudioRequested()"
+    (fileRequested)="onFileRequested()">
+  </app-chat-ui-inputfield>
 </div>

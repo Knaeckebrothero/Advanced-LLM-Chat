@@ -10,7 +10,6 @@ import { Message } from '../data/objects/message';
     standalone: false
 })
 export class ChatUiComponent implements AfterViewChecked {
-
   // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
 
@@ -60,6 +59,7 @@ export class ChatUiComponent implements AfterViewChecked {
     }
   }
 
+  // TODO: Deprecated!
   // The addMessage method is called when the user submits a new message.
   inputUserMessage() {
     // The inputField property is checked to ensure that it is not empty.
@@ -75,9 +75,35 @@ export class ChatUiComponent implements AfterViewChecked {
     }
   }
 
+  // TODO: Deprecated!
   // Generate a new message
   generateMessage() {
     this.chatService.generateMessage(this.aiName);
+  }
+
+  // Handle message sent from the input component
+  onMessageSent(message: string): void {
+    if (message.trim()) {
+      // Use existing logic from inputUserMessage()
+      this.chatService.sendMessage(message);  // TODO: Promis is ignored!
+      console.log('User added message:', message);
+      this.scrollToBottom();
+
+      // Generate AI response after user message
+      this.generateMessage();
+    }
+  }
+
+  // Handle audio recording request
+  onAudioRequested(): void {
+    console.log('Audio recording requested');
+    // TODO: Implement audio recording functionality
+  }
+
+  // Handle file attachment request
+  onFileRequested(): void {
+    console.log('File attachment requested');
+    // TODO: Implement file upload functionality
   }
 
   /*

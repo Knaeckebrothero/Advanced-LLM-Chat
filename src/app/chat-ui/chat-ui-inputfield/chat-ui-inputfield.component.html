@@ -1,0 +1,58 @@
+<!-- Input field container that holds both the textarea and action buttons -->
+<div class="input-field-container">
+
+  <!-- Main input area with textarea -->
+  <div class="input-content-area">
+    <textarea
+      #messageTextarea
+      [(ngModel)]="messageText"
+      (input)="onTextareaInput()"
+      (keydown)="handleKeyPress($event)"
+      class="message-textarea"
+      placeholder="Type your message..."
+      rows="1"
+      aria-label="Message input">
+    </textarea>
+  </div>
+
+  <!-- Action buttons bar at the bottom -->
+  <div class="action-buttons-bar">
+    <!-- Left side buttons -->
+    <div class="left-actions">
+      <button
+        mat-icon-button
+        class="action-button"
+        (click)="handleFileClick()"
+        aria-label="Attach file"
+        title="Attach file">
+        <mat-icon>attach_file</mat-icon>
+      </button>
+    </div>
+
+    <!-- Right side buttons -->
+    <div class="right-actions">
+      <!-- Send button when there's content -->
+      <button
+        *ngIf="hasContent"
+        mat-icon-button
+        class="action-button send-button"
+        (click)="sendMessage()"
+        aria-label="Send message"
+        title="Send message">
+        <mat-icon>send</mat-icon>
+      </button>
+
+      <!-- Microphone button when input is empty -->
+      <button
+        *ngIf="!hasContent"
+        mat-icon-button
+        class="action-button mic-button"
+        (click)="handleActionClick()"
+        aria-label="Record voice message"
+        title="Record voice message">
+        <mat-icon>mic</mat-icon>
+      </button>
+    </div>
+  </div>
+
+</div>
