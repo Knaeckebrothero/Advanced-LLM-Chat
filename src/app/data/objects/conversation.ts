@@ -1,4 +1,3 @@
-import { inject } from '@angular/core';
 import { DBService } from '../db.service';
 import { Message } from './message';
 

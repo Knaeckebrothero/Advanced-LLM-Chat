@@ -5,7 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialogRef } from '@angular/material/dialog';
 
-import { SettingsService, Settings, Theme } from './settings.service';
+import { SettingsService, Settings } from './settings.service';
 import { StatusBarService } from '../status-bar/status-bar.service';
 import { ThemeService } from '../../styles/themes/theme.service';
 

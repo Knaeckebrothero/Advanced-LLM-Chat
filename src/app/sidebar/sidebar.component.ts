@@ -1,8 +1,8 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { CommonModule, NgOptimizedImage } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
-import { MatIcon, MatIconModule } from '@angular/material/icon'; // Note: Also added MatIconModule here for completeness
+import { MatIconModule } from '@angular/material/icon'; // Note: Also added MatIconModule here for completeness
 import { Subscription } from 'rxjs';
 import { MatTooltipModule } from '@angular/material/tooltip'; // Added for the info icons in the new settings HTML
 
@@ -10,7 +10,6 @@ import { Conversation } from '../data/objects/conversation';
 import { ChatService } from '../chat/chat.service';
 import { DisplayService } from "./service/display.service";
 import { ThemeService } from 'src/styles/themes/theme.service';
-import { SettingsService, Settings } from '../settings/settings.service';
 
 import { ConversationComponent } from './conversation/conversation.component';
 // FIXED: Added the missing import for SettingsComponent
