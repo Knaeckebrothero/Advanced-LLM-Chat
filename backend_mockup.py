@@ -4,24 +4,34 @@ It provides a simple API for sending and receiving messages in a conversation.
 The server uses SQLite as a database to store messages and conversation data.
 The server also uses Replicate to generate AI responses to messages in a conversation.
 """
-import os
-import sqlite3
-import trustme
-import time
-import replicate
-import secrets
 import asyncio
 import json
+import os
+import secrets
+import sqlite3
+import time
+from contextlib import contextmanager, asynccontextmanager
+from datetime import datetime, timedelta, UTC
+from pathlib import Path
+from typing import List, Dict, Optional, Literal
+
+import replicate
+import trustme
+from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Response, status, Request, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
-from typing import List, Dict, Optional
-from dotenv import load_dotenv, find_dotenv
-from pathlib import Path
-from contextlib import contextmanager, asynccontextmanager
-from datetime import datetime, timedelta, UTC
+from starlette.middleware.cors import CORSMiddleware
+
+# List of available LLMs
+AVAILABLE_LLMS = [
+  "deepseek-ai/deepseek-v3",
+  "openai/gpt-4o",
+  "meta/meta-llama-3-8b-instruct",
+  "meta/meta-llama-3-70b-instruct",
+  "meta/meta-llama-3.1-405b-instruct",
+]
 
 
 class ErrorResponse(BaseModel):
@@ -76,6 +86,9 @@ class ApiMessageGenerate(BaseModel):
   conversationId: int
   roleName: str
   time: int
+  temperature: Optional[float] = None
+  top_p: Optional[float] = None
+  systemPrompt: Optional[str] = None
 
 
 class MessagePatch(BaseModel):
@@ -105,6 +118,7 @@ class ConversationResponse(BaseModel):
   id: int
   hashsum: int
 
+
 class Conversation(BaseModel):
   id: int
   userId: int
@@ -113,9 +127,25 @@ class Conversation(BaseModel):
   createdAt: datetime
   updatedAt: datetime
 
+
 class ConversationCreateRequest(BaseModel):
   name: str
   participants: List[str]
+
+
+Theme = Literal['light', 'dark', 'os']
+
+
+class AppSettings(BaseModel):
+  """
+  Define the structure of the settings that the frontend can GET or PUT
+  """
+  model: str
+  temperature: float
+  top_p: float
+  systemPrompt: str
+  theme: Theme
+  languageIsEnglish: int
 
 
 @contextmanager
@@ -349,6 +379,19 @@ def init_db():
 
     conn.commit()
 
+    # Create Table for user-based settings
+    cur.execute('''
+      CREATE TABLE IF NOT EXISTS user_settings (
+        user_id INTEGER PRIMARY KEY,
+        model TEXT NOT NULL,
+        temperature REAL NOT NULL,
+        top_p REAL NOT NULL,
+        systemPrompt TEXT NOT NULL,
+        theme TEXT NOT NULL,
+        languageIsEnglish INTEGER NOT NULL
+      )
+    ''')
+
 
 def setup_development_certificates():
   """
@@ -392,22 +435,31 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
   return hash_value
 
 
-async def generate_llm_response(prompt: str) -> str:
+async def generate_llm_response(prompt: str, temperature: float, top_p: float, system_prompt: str, model: str) -> str:
   """
   Generates a text response using a Large Language Model (LLM) via Replicate API.
   """
   try:
     # Use Meta's Llama model through Replicate
     output = replicate.run(
-      "meta/meta-llama-3-8b-instruct",
+      model,
       input={
         "prompt": prompt,
-        "temperature": 0.6,
-        "top_p": 0.9,
+        "temperature": temperature,
+        "top_p": top_p,
         "max_tokens": 1024,
-        "system_prompt": "You are a helpful AI assistant engaged in a natural conversation."
+        "system_prompt": system_prompt,
       }
     )
+    print("\n".join([
+      f"LLM Input:",
+      f"  model = {model}",
+      f"  temp = {temperature}",
+      f"  top_p = {top_p}",
+      f"  system_prompt = {system_prompt}",
+      "  prompt:",
+      prompt
+    ]))
 
     # Replicate returns a generator, collect all parts of the streamed response
     return "".join(output)
@@ -491,6 +543,14 @@ app = FastAPI(
 init_db()
 
 
+@app.get("/api/llms", response_model=List[str], tags=["LLM"])
+async def get_llms():
+  """
+  Get the list of available LLMs.
+  """
+  return AVAILABLE_LLMS
+
+
 @app.get(app.openapi_url, include_in_schema=False)
 async def custom_openapi():
   """
@@ -530,14 +590,14 @@ async def mock_login(request: MockLoginRequest, response: Response):
     user = cur.fetchone()
 
     if not user:
-        # User doesn't exist, create a new one
-        user_name = request.email.split('@')[0].title()
-        cur.execute("INSERT INTO users (email, name) VALUES (?, ?)", (request.email, user_name))
-        user_id = cur.lastrowid
-        db.commit()
+      # User doesn't exist, create a new one
+      user_name = request.email.split('@')[0].title()
+      cur.execute("INSERT INTO users (email, name) VALUES (?, ?)", (request.email, user_name))
+      user_id = cur.lastrowid
+      db.commit()
     else:
-        user_id = user['id']
-        user_name = user['name']
+      user_id = user['id']
+      user_name = user['name']
 
   # Create session
   session_key = create_session(user_id, request.email)
@@ -586,8 +646,6 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 
 # API endpoints with authentication
-# backend_mockup.py
-
 @app.get("/api/conversations",
          response_model=List[ConversationResponse],
          responses={
@@ -632,33 +690,86 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
 
   except Exception as e:
     print(f"Error: {str(e)}")
-    # Raise an HTTPException instead of returning an ErrorResponse
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=str(e),
-    )
+    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    return ErrorResponse(error=str(e))
 
 
-@app.post("/api/conversation/create", response_model=Conversation, status_code=status.HTTP_201_CREATED, tags=["Conversation"])
+@app.get("/api/settings", response_model=AppSettings)
+async def get_settings(current_user: dict = Depends(get_current_user)):
+  user_id = current_user["user_id"]
+  with get_db() as db:
+    cur = db.cursor()
+    cur.execute("""
+                SELECT model, temperature, top_p, systemPrompt, theme, languageIsEnglish
+                FROM user_settings
+                WHERE user_id = ?
+                """, (user_id,))
+    row = cur.fetchone()
+
+    if row:
+      return AppSettings(**dict(row))
+    else:
+      # Fallback defaults if user has no settings yet
+      return AppSettings(
+        model="openai/gpt-4o",
+        temperature=0.5,
+        top_p=0.5,
+        systemPrompt="You are a helpful assistant!",
+        theme='os',  # <-- Changed from darkMode
+        languageIsEnglish=1
+      )
+
+
+@app.put("/api/settings")
+async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
+  user_id = current_user["user_id"]
+  with get_db() as db:
+    cur = db.cursor()
+    cur.execute("""
+                INSERT INTO user_settings (user_id, model, temperature, top_p, systemPrompt, theme, languageIsEnglish)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(user_id) DO UPDATE SET
+                  model = excluded.model,
+                                            temperature = excluded.temperature,
+                                            top_p = excluded.top_p,
+                                            systemPrompt = excluded.systemPrompt,
+                                            theme = excluded.theme,
+                                            languageIsEnglish = excluded.languageIsEnglish
+                """, (
+      user_id,
+      new_settings.model,
+      new_settings.temperature,
+      new_settings.top_p,
+      new_settings.systemPrompt,
+      new_settings.theme,  # <-- Changed from darkMode
+      new_settings.languageIsEnglish
+    ))
+    db.commit()
+  return {"message": "Settings saved"}
+
+
+@app.post("/api/conversation/create", response_model=Conversation, status_code=status.HTTP_201_CREATED,
+          tags=["Conversation"])
 async def create_conversation(req: ConversationCreateRequest, current_user: dict = Depends(get_current_user)):
-    """
-    Creates a new conversation for the authenticated user.
-    """
-    user_id = current_user['user_id']
-    with get_db() as conn:
-        cur = conn.cursor()
-        participants_json = json.dumps(req.participants)
-        cur.execute(
-            "INSERT INTO conversations (userId, name, participants) VALUES (?, ?, ?)",
-            (user_id, req.name, participants_json)
-        )
-        new_id = cur.lastrowid
-        conn.commit()
+  """
+  Creates a new conversation for the authenticated user.
+  """
+  user_id = current_user['user_id']
+  with get_db() as conn:
+    cur = conn.cursor()
+    participants_json = json.dumps(req.participants)
+    cur.execute(
+      "INSERT INTO conversations (userId, name, participants) VALUES (?, ?, ?)",
+      (user_id, req.name, participants_json)
+    )
+    new_id = cur.lastrowid
+    conn.commit()
 
-        cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?", (new_id,))
-        new_conv_row = cur.fetchone()
+    cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?",
+                (new_id,))
+    new_conv_row = cur.fetchone()
 
-        return Conversation(**dict(new_conv_row))
+    return Conversation(**dict(new_conv_row))
 
 
 @app.get("/api/conversation/messages/{conversation_id}/{timestamp}/{messages_count}",
@@ -791,24 +902,65 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
   print("Generate message called")
 
   try:
-    if not request_body.conversationId:
-      response.status_code = status.HTTP_400_BAD_REQUEST
-      return ErrorResponse(error="Conversation ID missing or invalid in request")
-
-    # Verify ownership
+    # Verify ownership of the conversation
     if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
-      response.status_code = status.HTTP_403_FORBIDDEN
-      return ErrorResponse(error="Access denied to this conversation")
+      raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied to this conversation"
+      )
+
+    if not request_body.conversationId:
+      raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Conversation ID missing or invalid in request"
+      )
+
+    # Get the latest user settings from the database
+    user_id = current_user["user_id"]
+    with get_db() as db:
+      cur = db.cursor()
+      cur.execute("""
+              SELECT model, temperature, top_p, systemPrompt, theme, languageIsEnglish
+              FROM user_settings
+              WHERE user_id = ?
+          """, (user_id,))
+      row = cur.fetchone()
+
+      if row:
+        db_settings = AppSettings(**dict(row))
+        print(f"Using settings from DB: {db_settings}")
+      else:
+        # Default settings if none are found for the user
+        db_settings = AppSettings(
+          model="openai/gpt-4o",
+          temperature=0.5,
+          top_p=0.5,
+          systemPrompt="You are a helpful assistant!",
+          theme='os',
+          languageIsEnglish=1
+        )
+
+    # Determine final parameters for the LLM call, allowing overrides from the request
+    temperature = request_body.temperature if request_body.temperature is not None else db_settings.temperature
+    top_p = request_body.top_p if request_body.top_p is not None else db_settings.top_p
+    system_prompt = request_body.systemPrompt if request_body.systemPrompt is not None else db_settings.systemPrompt
+    model = db_settings.model
 
     # Get conversation context for the LLM
     context = await get_conversation_context(request_body.conversationId)
 
-    # Generate AI response
-    ai_response_content = await generate_llm_response(context)
+    # Generate the AI response
+    ai_response_content = await generate_llm_response(
+      context,
+      temperature,
+      top_p,
+      system_prompt,
+      model
+    )
 
+    # Prepare the new message document
     message_id = int(time.time() * 1000)
     current_time = int(time.time())
-
     message_doc_data = {
       'id': message_id,
       'conversationId': request_body.conversationId,
@@ -817,6 +969,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
       'time': current_time
     }
 
+    # Save the generated message to the database
     with get_db() as conn:
       cur = conn.cursor()
       cur.execute(
@@ -832,9 +985,12 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
     return message_doc_data
 
   except Exception as e:
-    print(f"Error: {str(e)}")
-    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    return ErrorResponse(error=str(e))
+    print(f"Error in generate_message: {str(e)}")
+    # Raise an HTTPException for proper error handling by FastAPI
+    raise HTTPException(
+      status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+      detail=str(e)
+    )
 
 
 @app.patch("/api/message/patch",

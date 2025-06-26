@@ -28,7 +28,10 @@ export class ConversationComponent implements OnInit {
 
   // --- LIFECYCLE HOOKS ---
   async ngOnInit() {
-    this.messages = await this.conversation.getLatestMessages(this.db);
+    if (this.conversation?.id) {
+      this.messages = await this.db.getMessagesByConversationId(this.conversation.id);
+      this.messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
+    }
   }
 
   // --- EVENT HANDLERS ---

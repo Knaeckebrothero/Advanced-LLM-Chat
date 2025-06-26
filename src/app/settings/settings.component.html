@@ -1,19 +1,74 @@
-<div class="settings-container">
-  <div class="theme-selection">
-    <h3>Theme</h3>
-    <div class="radio-group">
-      <label>
-        <input type="radio" name="theme" value="light" [checked]="selectedTheme === 'light'" (change)="setTheme($event)">
-        Light
+<div class="settings-panel">
+
+  <div class="settings-header">
+    <h2 class="settings-title">Einstellungen</h2>
+    <button mat-icon-button (click)="cancel()" class="close-button" aria-label="Close settings">
+      <mat-icon>close</mat-icon>
+    </button>
+  </div>
+
+  <div class="settings-content">
+    <div class="settings-grid">
+
+      <label class="grid-label">Farbschema</label>
+      <div class="segmented-control">
+        <input type="radio" id="theme-light" name="theme" value="light" [(ngModel)]="settings.theme" (ngModelChange)="onThemeChange()">
+        <label for="theme-light"><mat-icon>light_mode</mat-icon></label>
+
+        <input type="radio" id="theme-dark" name="theme" value="dark" [(ngModel)]="settings.theme" (ngModelChange)="onThemeChange()">
+        <label for="theme-dark"><mat-icon>dark_mode</mat-icon></label>
+
+        <input type="radio" id="theme-os" name="theme" value="os" [(ngModel)]="settings.theme" (ngModelChange)="onThemeChange()">
+        <label for="theme-os"><mat-icon>brightness_auto</mat-icon></label>
+      </div>
+
+      <label for="model-select" class="grid-label">
+        Modell
+        <mat-icon mat-tooltip="Choose the AI model for generating responses.">info_outline</mat-icon>
       </label>
-      <label>
-        <input type="radio" name="theme" value="dark" [checked]="selectedTheme === 'dark'" (change)="setTheme($event)">
-        Dark
+      <select id="model-select" [(ngModel)]="settings.model" name="model" class="form-control">
+        <option *ngFor="let model of models" [value]="model">{{ model }}</option>
+      </select>
+
+      <label for="temperature-slider" class="grid-label">
+        Temp
+        <mat-icon mat-tooltip="Controls randomness. Lower is more predictable (logisch), higher is more creative.">info_outline</mat-icon>
       </label>
-      <label>
-        <input type="radio" name="theme" value="os" [checked]="selectedTheme === 'os'" (change)="setTheme($event)">
-        OS Default
+      <div class="slider-container">
+        <span class="slider-label-left">logisch</span>
+        <input type="range" id="temperature-slider" min="0" max="1" step="0.1" [(ngModel)]="settings.temperature" name="temperature" class="form-control">
+        <span class="slider-label-right">kreativ</span>
+      </div>
+
+      <label for="top-p-slider" class="grid-label">
+        Top-P
+        <mat-icon mat-tooltip="Controls diversity. Lower is more focused, higher is more diverse.">info_outline</mat-icon>
       </label>
+      <div class="slider-container">
+        <span class="slider-label-left">fokussiert</span>
+        <input type="range" id="top-p-slider" min="0" max="1" step="0.1" [(ngModel)]="settings.top_p" name="top_p" class="form-control">
+        <span class="slider-label-right">divers</span>
+      </div>
+
+      <label for="language-select" class="grid-label">
+        Sprache
+        <mat-icon mat-tooltip="Switch between English and German.">info_outline</mat-icon>
+      </label>
+      <select id="language-select" [(ngModel)]="settings.languageIsEnglish" name="language" class="form-control" (ngModelChange)="onLanguageChange()">
+        <option [ngValue]="1">English</option>
+        <option [ngValue]="0">Deutsch</option>
+      </select>
+
+      <label for="system-prompt" class="grid-label self-start">
+        System Prompt
+        <mat-icon mat-tooltip="Instructions for the AI that set the context for the conversation.">info_outline</mat-icon>
+      </label>
+      <textarea id="system-prompt" rows="3" [(ngModel)]="settings.systemPrompt" name="systemPrompt" class="form-control"></textarea>
     </div>
+  </div>
+
+  <div class="settings-footer">
+    <button class="reset-button" (click)="resetSettings()">Einstellungen zurücksetzen</button>
+    <button mat-flat-button color="primary" (click)="closeAndSave()">Save</button>
   </div>
 </div>

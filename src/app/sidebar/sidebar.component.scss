@@ -1,41 +1,83 @@
-/*
-  Merged Sidebar Component SCSS
-
-  - Design System: The styling is based on the 'current' branch to maintain the new,
-    theme-based design using CSS variables.
-  - Structure: The .sidebar-wrapper from 'current' is used to create the "card" effect.
-  - Functional Improvement: The custom scrollbar styling from 'develop' has been
-    integrated and adapted to use CSS variables for theme consistency.
-  - Class Consistency: All class names and states (e.g., .selected) align with the
-    merged HTML and TypeScript files.
-*/
-
 :host {
-  font-family: 'Segoe UI', Roboto, sans-serif;
-  font-size: 15px;
-  color: var(--text-color);
-}
-
-/* Main container from 'current' for the card effect */
-.sidebar-wrapper {
+  display: block;
   height: 100%;
-  background: var(--sidebar-bg);
-  border-radius: var(--sidebar-radius);
-  box-shadow: var(--sidebar-shadow);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
-/* Inner scrolling area */
 .sidebar {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
+  background-color: var(--sidebar-bg);
+  color: var(--text-color);
   display: flex;
   flex-direction: column;
+  height: 100%;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow: hidden; // Prevent parent from scrolling
+}
 
-  /* Custom scrollbar adapted from 'develop' with CSS variables */
+// Branding section from 'theme' branch
+.branding-box {
+  display: flex;
+  align-items: center;
+  background: var(--sidebar-brand-bg);
+  color: var(--sidebar-brand-text);
+  padding: .5rem .75rem;
+  border-radius: .75rem;
+  box-shadow: 0 4px 8px rgba(0,0,0,.15);
+  margin-bottom: 1.5rem;
+  gap: .75rem;
+}
+
+.logo-icon {
+  width: 40px;
+  height: auto;
+}
+
+.branding-label {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+
+.new-conversation-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background-color: var(--btn-bg);
+  border: 1px dashed var(--btn-text);
+  color: var(--btn-text);
+  text-align: center;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: var(--btn-hover-bg);
+    color: var(--btn-hover-text);
+    border-color: transparent;
+  }
+
+  &.selected {
+    background-color: var(--btn-selected-bg);
+    border-color: transparent;
+    font-weight: bold;
+  }
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.conversation-list {
+  flex-grow: 1;
+  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 
@@ -60,125 +102,95 @@
   }
 }
 
-/* Branding section from 'current' */
-.branding-box {
-  display: flex;
-  align-items: center;
-  background: var(--sidebar-brand-bg);
-  color: var(--sidebar-brand-text);
-  padding: .5rem .75rem;
-  border-radius: .75rem;
-  box-shadow: 0 4px 8px rgba(0,0,0,.15);
-  margin-bottom: 1.5rem;
-  gap: .75rem;
-}
-
-.logo-icon {
-  width: 40px;
-  height: 70px;
-}
-
-.branding-label {
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-/* New Chat Button from 'current', with added .selected state */
-.new-conversation-button {
-  width: 100%;
-  padding: .75rem;
-  border: 1px dashed var(--btn-text);
-  border-radius: .5rem;
-  background: var(--btn-bg);
-  color: var(--btn-text);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center; // Center content like in 'develop'
-  gap: .5rem;
-  margin-bottom: 1.5rem;
-  transition: background .2s, color .2s, border-color .2s;
-  cursor: pointer;
-
-  &:hover {
-    background: var(--btn-hover-bg);
-    color: var(--btn-hover-text);
-  }
-
-  &.selected {
-    background: var(--btn-selected-bg);
-    border-color: transparent;
-  }
-
-  mat-icon {
-    font-size: 20px;
-    width: 20px;
-    height: 20px;
-  }
-}
-
-/* Group Label from 'current' */
 .group-label {
-  font-weight: 600;
-  font-size: 13px;
+  font-size: 0.75rem;
   color: var(--label-muted);
-  margin: 1.25rem 0 .5rem;
+  margin: 1rem 0 0.5rem 0;
+  padding-left: 0.5rem;
+  font-weight: 600;
+  text-transform: uppercase;
   letter-spacing: .4px;
 }
 
-/* Navigation section and buttons from 'current' */
 .sidebar-navigation-main-links {
-  margin-top: 2rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
 }
 
 .nav-button {
   width: 100%;
-  text-align: left;
-  padding: .75rem;
+  background: none;
   border: none;
-  border-radius: .5rem;
-  background: transparent;
-  color: var(--btn-text);
-  font-size: 14px;
-  font-weight: 500;
-  transition: background .2s, color .2s;
+  color: var(--text-color);
+  text-align: left;
+  padding: 0.75rem 0.5rem;
+  border-radius: 6px;
   cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 0.4rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
 
   &:hover {
-    background: var(--btn-hover-bg);
+    background-color: var(--btn-hover-bg);
     color: var(--btn-hover-text);
   }
 
   &.selected {
-    background: var(--btn-selected-bg);
+    background-color: var(--btn-selected-bg);
     font-weight: bold;
   }
 }
 
-/* User section from 'current' */
-.user {
+.user-with-settings {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-top: auto;
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  padding-top: 1rem;
+  padding-top: 12px;
   border-top: 1px solid var(--divider-color);
-}
+  gap: 8px;
 
-.avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--user-avatar);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-}
+  .user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-color);
 
-.username {
-  font-weight: 500;
-  font-size: 14px;
+    .avatar {
+      background-color: var(--user-avatar);
+      color: #fff; // Typically white text on a colored avatar bg
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+
+    .username {
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  .settings-icon-button {
+    color: var(--text-color);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+
+    &:hover {
+      background-color: var(--btn-hover-bg);
+    }
+
+    mat-icon {
+      font-size: 22px;
+    }
+  }
 }

@@ -60,6 +60,14 @@ html, body {
     background-position: center;
   }
 }
+// This makes the Material Dialog container transparent,
+// allowing our custom-styled panel to show through without a background.
+.settings-dialog-panel .mdc-dialog__surface {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important; // Allows for potential glow effects
+}
+
 
 
 /* ===================================================================
