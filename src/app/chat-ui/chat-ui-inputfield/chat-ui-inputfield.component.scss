@@ -1,7 +1,3 @@
-// Import the project's variables and mixins
-@use 'src/styles/variables' as vars;
-@use 'src/styles/mixins' as mixins;
-
 // Main container for the entire input field component
 .input-field-container {
   display: flex;
@@ -13,18 +9,18 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
 
-  // Add a subtle border
-  border: 1px solid var(--input-border);
+  // Use theme border color for the default state
+  border: 1px solid var(--border-color);
 
   // Hover effect for the entire container
   &:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
-  // When focused, add a highlight
+  // When focused, add a highlight using the theme's primary color
   &:focus-within {
-    border-color: var(--link-color);
-    box-shadow: 0 4px 12px rgba(vars.$color-primary, 0.2);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); // Keep a subtle shadow
   }
 }
 
@@ -41,10 +37,10 @@
   outline: none;
   background: transparent;
   resize: none;
-  font-family: vars.$font-family-base;
+  font-family: 'Segoe UI', Roboto, sans-serif; // Using a standard font stack
   font-size: 16px;
   line-height: 1.5;
-  color: var(--input-text);
+  color: var(--text-color); // Use theme text color
 
   // Minimum and maximum height constraints
   min-height: 24px;
@@ -59,22 +55,21 @@
   }
 
   &::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 2px;
+    background: var(--scrollbar-track);
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--scrollbar-thumb);
     border-radius: 2px;
 
     &:hover {
-      background: rgba(0, 0, 0, 0.3);
+      background: var(--scrollbar-thumb-hover);
     }
   }
 
-  // Placeholder styling
+  // Placeholder styling using a theme variable
   &::placeholder {
-    color: rgba(var(--input-text), 0.5);
+    color: var(--text-muted-color);
   }
 }
 
@@ -101,7 +96,6 @@
 
 // Base styling for all action buttons
 .action-button {
-  // Override some Material button defaults for a cleaner look
   &.mat-mdc-icon-button {
     width: 36px;
     height: 36px;
@@ -111,38 +105,38 @@
       font-size: 22px;
       width: 22px;
       height: 22px;
-      color: var(--input-text);
+      color: var(--text-muted-color); // Default icon color
       transition: color 0.2s ease;
     }
 
-    // Hover state
+    // Hover state uses primary theme color for the icon
     &:hover {
-      background-color: rgba(0, 0, 0, 0.05);
+      background-color: var(--btn-hover-bg);
 
       .mat-icon {
-        color: var(--link-color);
+        color: var(--primary-color);
       }
     }
   }
 
-  // Special styling for send button
+  // Special styling for send button to always be the primary color
   &.send-button {
     .mat-icon {
-      color: var(--link-color);
+      color: var(--primary-color);
     }
 
     &:hover {
-      background-color: rgba(vars.$color-primary, 0.1);
+      background-color: var(--btn-selected-bg); // Use a slightly darker hover
     }
   }
 
-  // Special styling for mic button
+  // Special styling for mic button (using accent color if available)
   &.mic-button {
     &:hover {
-      background-color: rgba(vars.$color-accent, 0.1);
+      background-color: var(--accent-color-hover, var(--btn-hover-bg));
 
       .mat-icon {
-        color: var(--color-accent);
+        color: var(--accent-color, var(--primary-color));
       }
     }
   }
