@@ -313,20 +313,34 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     try {
       // Create audio context
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log('AudioContext created, state:', this.audioContext.state);
 
       // Create analyser node
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 256;
+      this.analyser.fftSize = 2048; // Increased for better resolution
+      this.analyser.smoothingTimeConstant = 0.8; // Smooth out rapid changes
 
-      // Create data array for frequency data
-      const bufferLength = this.analyser.frequencyBinCount;
+      // Create data array for time domain data
+      const bufferLength = this.analyser.fftSize;
       this.dataArray = new Uint8Array(bufferLength);
 
       // Connect stream to analyser
       const source = this.audioContext.createMediaStreamSource(stream);
       source.connect(this.analyser);
+      // Note: We don't connect to destination to avoid feedback
 
       console.log('Audio analysis setup complete');
+      console.log('Analyser fftSize:', this.analyser.fftSize);
+      console.log('Data array length:', this.dataArray.length);
+
+      // Test if we're getting data
+      setTimeout(() => {
+        if (this.analyser && this.dataArray) {
+          this.analyser.getByteTimeDomainData(this.dataArray);
+          const hasSound = this.dataArray.some(value => Math.abs(value - 128) > 5);
+          console.log('Audio test - has sound:', hasSound);
+        }
+      }, 500);
     } catch (error) {
       console.error('Error setting up audio analysis:', error);
     }
@@ -336,7 +350,22 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   private async beginRecording(): Promise<void> {
     try {
       // Request microphone access
-      this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      // Set recording state first to show UI
+      this.isRecording = true;
+      this.recordingStartTime = Date.now();
+      this.recordingDuration = 0;
+
+      // Update canvas width and wait for it to render
+      this.updateWaveformWidth();
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Set up MediaRecorder
       const mimeType = this.getSupportedMimeType();
@@ -359,12 +388,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       };
 
       // Start recording
-      this.mediaRecorder.start();
-
-      this.isRecording = true;
-      this.recordingStartTime = Date.now();
-      this.recordingDuration = 0;
-      this.updateWaveformWidth();
+      this.mediaRecorder.start(100); // Collect data every 100ms
 
       // Start the timer
       this.recordingTimer = setInterval(() => {
@@ -554,74 +578,103 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Start waveform animation
   private startWaveformAnimation(): void {
-    if (!this.waveformCanvas) return;
+    // Wait a bit for canvas to be ready
+    setTimeout(() => {
+      if (!this.waveformCanvas || !this.waveformCanvas.nativeElement) {
+        console.error('Canvas not ready');
+        return;
+      }
 
-    const canvas = this.waveformCanvas.nativeElement;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      const canvas = this.waveformCanvas.nativeElement;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.error('Could not get canvas context');
+        return;
+      }
 
-    // Initialize waveform data
-    const barCount = 50;
-    this.waveformData = new Array(barCount).fill(0.3);
+      // Initialize waveform data
+      const barCount = 50;
+      this.waveformData = new Array(barCount).fill(0.3);
 
-    const animate = () => {
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      console.log('Starting waveform animation. Analyser:', !!this.analyser, 'DataArray:', !!this.dataArray);
 
-      // Get audio levels if analyser is available
-      if (this.analyser && this.dataArray) {
-        this.analyser.getByteFrequencyData(this.dataArray);
+      const animate = () => {
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Convert frequency data to waveform bars
-        const step = Math.floor(this.dataArray.length / barCount);
-        for (let i = 0; i < barCount; i++) {
-          const dataIndex = i * step;
-          const value = this.dataArray[dataIndex] / 255; // Normalize to 0-1
-          // Smooth the transition
-          this.waveformData[i] = this.waveformData[i] * 0.7 + value * 0.3;
+        // Get audio levels if analyser is available
+        if (this.analyser && this.dataArray) {
+          // Use time domain data for better waveform visualization
+          this.analyser.getByteTimeDomainData(this.dataArray);
+
+          // Calculate RMS (Root Mean Square) for volume level
+          let sum = 0;
+          for (let i = 0; i < this.dataArray.length; i++) {
+            const normalized = (this.dataArray[i] - 128) / 128; // Normalize to -1 to 1
+            sum += normalized * normalized;
+          }
+          const rms = Math.sqrt(sum / this.dataArray.length);
+          const volume = Math.min(1, rms * 5); // Scale up and cap at 1
+
+          // Create waveform effect based on volume
+          for (let i = 0; i < barCount; i++) {
+            // Create a wave pattern
+            const waveOffset = (i / barCount) * Math.PI * 2;
+            const waveValue = Math.sin(waveOffset + Date.now() * 0.001) * 0.3 + 0.7;
+            const targetValue = volume * waveValue;
+
+            // Smooth transition
+            this.waveformData[i] = this.waveformData[i] * 0.7 + targetValue * 0.3;
+          }
+
+          // Debug log every second
+          if (Date.now() % 1000 < 50) {
+            console.log('Audio volume:', volume.toFixed(2));
+          }
+        } else {
+          // Fallback to simulated waveform if audio analysis fails
+          console.warn('Using simulated waveform');
+          this.waveformData = this.waveformData.map((value, index) => {
+            const change = (Math.random() - 0.5) * 0.3;
+            const newValue = Math.max(0.1, Math.min(1, value + change));
+            return value * 0.7 + newValue * 0.3;
+          });
         }
-      } else {
-        // Fallback to simulated waveform if audio analysis fails
-        this.waveformData = this.waveformData.map((value, index) => {
-          const change = (Math.random() - 0.5) * 0.3;
-          const newValue = Math.max(0.1, Math.min(1, value + change));
-          return value * 0.7 + newValue * 0.3;
+
+        // Draw waveform
+        const barWidth = canvas.width / barCount;
+        const maxHeight = canvas.height * 0.8;
+
+        ctx.fillStyle = '#2C8BCC';
+        this.waveformData.forEach((value, index) => {
+          const barHeight = Math.max(4, value * maxHeight); // Minimum height of 4px
+          const x = index * barWidth + barWidth * 0.1;
+          const y = (canvas.height - barHeight) / 2;
+          const width = barWidth * 0.8;
+
+          // Draw rounded bars
+          const radius = Math.min(width / 2, 2);
+          ctx.beginPath();
+          ctx.moveTo(x + radius, y);
+          ctx.lineTo(x + width - radius, y);
+          ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+          ctx.lineTo(x + width, y + barHeight - radius);
+          ctx.quadraticCurveTo(x + width, y + barHeight, x + width - radius, y + barHeight);
+          ctx.lineTo(x + radius, y + barHeight);
+          ctx.quadraticCurveTo(x, y + barHeight, x, y + barHeight - radius);
+          ctx.lineTo(x, y + radius);
+          ctx.quadraticCurveTo(x, y, x + radius, y);
+          ctx.closePath();
+          ctx.fill();
         });
-      }
 
-      // Draw waveform
-      const barWidth = canvas.width / barCount;
-      const maxHeight = canvas.height * 0.8;
+        if (this.isRecording) {
+          this.waveformAnimationId = requestAnimationFrame(animate);
+        }
+      };
 
-      ctx.fillStyle = '#2C8BCC';
-      this.waveformData.forEach((value, index) => {
-        const barHeight = Math.max(4, value * maxHeight); // Minimum height of 4px
-        const x = index * barWidth + barWidth * 0.1;
-        const y = (canvas.height - barHeight) / 2;
-        const width = barWidth * 0.8;
-
-        // Draw rounded bars
-        const radius = Math.min(width / 2, 2);
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + barHeight - radius);
-        ctx.quadraticCurveTo(x + width, y + barHeight, x + width - radius, y + barHeight);
-        ctx.lineTo(x + radius, y + barHeight);
-        ctx.quadraticCurveTo(x, y + barHeight, x, y + barHeight - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
-        ctx.fill();
-      });
-
-      if (this.isRecording) {
-        this.waveformAnimationId = requestAnimationFrame(animate);
-      }
-    };
-
-    animate();
+      animate();
+    }, 100); // Give canvas time to initialize
   }
 
   // Hold-to-record event handlers
