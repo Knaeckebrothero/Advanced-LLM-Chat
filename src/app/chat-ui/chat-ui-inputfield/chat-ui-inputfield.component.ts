@@ -70,6 +70,14 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
   recordingDuration: number = 0; // Store duration in seconds
 
+  // Audio recording properties
+  mediaRecorder: MediaRecorder | null = null;
+  audioStream: MediaStream | null = null;
+  audioChunks: Blob[] = [];
+  audioContext: AudioContext | null = null;
+  analyser: AnalyserNode | null = null;
+  dataArray: Uint8Array | null = null;
+
   // Track if we have content to show appropriate button
   get hasContent(): boolean {
     return this.messageText.trim().length > 0 || this.filePreviews.length > 0;
@@ -98,6 +106,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       navigator.mediaDevices.enumerateDevices()
         .then(devices => {
           this.hasCamera = devices.some(device => device.kind === 'videoinput');
+
+          // Also check for audio input devices
+          const hasAudio = devices.some(device => device.kind === 'audioinput');
+          if (!hasAudio) {
+            console.warn('No audio input devices found');
+          }
         })
         .catch(() => {
           this.hasCamera = false;
@@ -271,31 +285,133 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     }
   }
 
+  // Get supported MIME type for recording
+  private getSupportedMimeType(): string {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/mpeg'
+    ];
+
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        console.log('Using MIME type:', type);
+        return type;
+      }
+    }
+
+    // Fallback to empty string (browser default)
+    console.log('Using browser default MIME type');
+    return '';
+  }
+
+  // Set up audio analysis for real waveform
+  private setupAudioAnalysis(stream: MediaStream): void {
+    try {
+      // Create audio context
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+      // Create analyser node
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 256;
+
+      // Create data array for frequency data
+      const bufferLength = this.analyser.frequencyBinCount;
+      this.dataArray = new Uint8Array(bufferLength);
+
+      // Connect stream to analyser
+      const source = this.audioContext.createMediaStreamSource(stream);
+      source.connect(this.analyser);
+
+      console.log('Audio analysis setup complete');
+    } catch (error) {
+      console.error('Error setting up audio analysis:', error);
+    }
+  }
+
   // Begin the recording process
-  private beginRecording(): void {
-    this.isRecording = true;
-    this.recordingStartTime = Date.now();
-    this.recordingDuration = 0;
-    this.updateWaveformWidth();
+  private async beginRecording(): Promise<void> {
+    try {
+      // Request microphone access
+      this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    // Start the timer
-    this.recordingTimer = setInterval(() => {
-      const elapsed = Date.now() - this.recordingStartTime;
-      this.recordingTime = new Date(elapsed);
-      this.recordingDuration = Math.floor(elapsed / 1000);
-    }, 100);
+      // Set up MediaRecorder
+      const mimeType = this.getSupportedMimeType();
+      this.mediaRecorder = new MediaRecorder(this.audioStream, { mimeType });
+      this.audioChunks = [];
 
-    // Start the waveform animation
-    this.startWaveformAnimation();
+      // Set up audio analysis for waveform
+      this.setupAudioAnalysis(this.audioStream);
 
-    console.log('Voice recording started');
+      // Handle data available event
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          this.audioChunks.push(event.data);
+        }
+      };
+
+      // Handle recording stop
+      this.mediaRecorder.onstop = () => {
+        console.log('MediaRecorder stopped');
+      };
+
+      // Start recording
+      this.mediaRecorder.start();
+
+      this.isRecording = true;
+      this.recordingStartTime = Date.now();
+      this.recordingDuration = 0;
+      this.updateWaveformWidth();
+
+      // Start the timer
+      this.recordingTimer = setInterval(() => {
+        const elapsed = Date.now() - this.recordingStartTime;
+        this.recordingTime = new Date(elapsed);
+        this.recordingDuration = Math.floor(elapsed / 1000);
+      }, 100);
+
+      // Start the waveform animation
+      this.startWaveformAnimation();
+
+      console.log('Voice recording started with real audio');
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      this.isRecording = false;
+
+      // Show error to user
+      if (error instanceof DOMException) {
+        if (error.name === 'NotAllowedError') {
+          alert('Microphone access denied. Please allow microphone access and try again.');
+        } else if (error.name === 'NotFoundError') {
+          alert('No microphone found. Please connect a microphone and try again.');
+        } else {
+          alert('Error accessing microphone: ' + error.message);
+        }
+      }
+    }
   }
 
   // Stop recording and create audio file
-  private stopRecording(): void {
-    if (!this.isRecording) return;
+  private async stopRecording(): Promise<void> {
+    if (!this.isRecording || !this.mediaRecorder) return;
 
     this.isRecording = false;
+
+    // Stop the MediaRecorder
+    this.mediaRecorder.stop();
+
+    // Stop all audio tracks
+    if (this.audioStream) {
+      this.audioStream.getTracks().forEach(track => track.stop());
+    }
+
+    // Close audio context
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
 
     // Stop timers
     if (this.recordingTimer) {
@@ -307,12 +423,25 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       cancelAnimationFrame(this.waveformAnimationId);
     }
 
-    // Create a mock audio file
-    this.createAudioFilePreview();
+    // Wait a bit for the last data chunk
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Create audio file from chunks
+    if (this.audioChunks.length > 0) {
+      const audioBlob = new Blob(this.audioChunks, {
+        type: this.mediaRecorder.mimeType || 'audio/webm'
+      });
+      await this.createAudioFilePreview(audioBlob);
+    }
 
     // Reset
     this.recordingTime = new Date(0);
     this.waveformData = [];
+    this.mediaRecorder = null;
+    this.audioStream = null;
+    this.audioContext = null;
+    this.analyser = null;
+    this.dataArray = null;
 
     console.log('Voice recording stopped');
   }
@@ -321,6 +450,21 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   cancelRecording(): void {
     this.isRecording = false;
 
+    // Stop the MediaRecorder if it exists
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+
+    // Stop all audio tracks
+    if (this.audioStream) {
+      this.audioStream.getTracks().forEach(track => track.stop());
+    }
+
+    // Close audio context
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+
     // Stop timers
     if (this.recordingTimer) {
       clearInterval(this.recordingTimer);
@@ -331,31 +475,34 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       cancelAnimationFrame(this.waveformAnimationId);
     }
 
-    // Reset
+    // Reset everything
     this.recordingTime = new Date(0);
     this.waveformData = [];
+    this.audioChunks = [];
+    this.mediaRecorder = null;
+    this.audioStream = null;
+    this.audioContext = null;
+    this.analyser = null;
+    this.dataArray = null;
 
     console.log('Voice recording cancelled');
   }
 
   // Send the voice message
-  sendVoiceMessage(): void {
-    this.stopRecording();
+  async sendVoiceMessage(): Promise<void> {
+    await this.stopRecording();
   }
 
   // Create audio file preview
-  private async createAudioFilePreview(): Promise<void> {
-    // Create a mock audio file (in real implementation, this would be the actual recording)
+  private async createAudioFilePreview(audioBlob: Blob): Promise<void> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const duration = this.formatDuration(this.recordingDuration);
-    const fileName = `voice-message-${timestamp}.webm`;
+    const extension = this.getFileExtension(audioBlob.type);
+    const fileName = `voice-message-${timestamp}.${extension}`;
 
-    // Create a mock blob (in real implementation, this would be the actual audio data)
-    const mockAudioData = new Blob(['mock audio data'], { type: 'audio/webm' });
-
-    // Create a File object
-    const audioFile = new File([mockAudioData], fileName, {
-      type: 'audio/webm',
+    // Create a File object from the blob
+    const audioFile = new File([audioBlob], fileName, {
+      type: audioBlob.type,
       lastModified: Date.now()
     });
 
@@ -364,10 +511,10 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       id: FilePreviewUtil.generateId(),
       file: audioFile,
       name: `Voice message (${duration})`,
-      size: mockAudioData.size,
-      sizeFormatted: FilePreviewUtil.formatFileSize(mockAudioData.size),
+      size: audioFile.size,
+      sizeFormatted: FilePreviewUtil.formatFileSize(audioFile.size),
       type: FileType.AUDIO,
-      mimeType: 'audio/webm',
+      mimeType: audioFile.type,
       uploadStatus: UploadStatus.PENDING
     };
 
@@ -376,6 +523,19 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     this.filesSelected.emit(this.filePreviews);
 
     console.log('Audio file created:', filePreview);
+  }
+
+  // Get file extension from MIME type
+  private getFileExtension(mimeType: string): string {
+    const typeMap: { [key: string]: string } = {
+      'audio/webm': 'webm',
+      'audio/ogg': 'ogg',
+      'audio/mp4': 'm4a',
+      'audio/mpeg': 'mp3',
+      'audio/wav': 'wav'
+    };
+
+    return typeMap[mimeType.split(';')[0]] || 'webm';
   }
 
   // Format duration in MM:SS format
@@ -408,12 +568,26 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Update waveform data with random variations to simulate audio input
-      this.waveformData = this.waveformData.map((value, index) => {
-        const change = (Math.random() - 0.5) * 0.3;
-        const newValue = Math.max(0.1, Math.min(1, value + change));
-        return value * 0.7 + newValue * 0.3; // Smooth the animation
-      });
+      // Get audio levels if analyser is available
+      if (this.analyser && this.dataArray) {
+        this.analyser.getByteFrequencyData(this.dataArray);
+
+        // Convert frequency data to waveform bars
+        const step = Math.floor(this.dataArray.length / barCount);
+        for (let i = 0; i < barCount; i++) {
+          const dataIndex = i * step;
+          const value = this.dataArray[dataIndex] / 255; // Normalize to 0-1
+          // Smooth the transition
+          this.waveformData[i] = this.waveformData[i] * 0.7 + value * 0.3;
+        }
+      } else {
+        // Fallback to simulated waveform if audio analysis fails
+        this.waveformData = this.waveformData.map((value, index) => {
+          const change = (Math.random() - 0.5) * 0.3;
+          const newValue = Math.max(0.1, Math.min(1, value + change));
+          return value * 0.7 + newValue * 0.3;
+        });
+      }
 
       // Draw waveform
       const barWidth = canvas.width / barCount;
@@ -421,13 +595,13 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
       ctx.fillStyle = '#2C8BCC';
       this.waveformData.forEach((value, index) => {
-        const barHeight = value * maxHeight;
+        const barHeight = Math.max(4, value * maxHeight); // Minimum height of 4px
         const x = index * barWidth + barWidth * 0.1;
         const y = (canvas.height - barHeight) / 2;
         const width = barWidth * 0.8;
 
         // Draw rounded bars
-        const radius = width / 2;
+        const radius = Math.min(width / 2, 2);
         ctx.beginPath();
         ctx.moveTo(x + radius, y);
         ctx.lineTo(x + width - radius, y);
@@ -490,6 +664,14 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     // Stop any ongoing recording
     if (this.isRecording) {
       this.cancelRecording();
+    }
+
+    // Clean up audio resources
+    if (this.audioStream) {
+      this.audioStream.getTracks().forEach(track => track.stop());
+    }
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      this.audioContext.close();
     }
 
     // Revoke any object URLs to free memory
