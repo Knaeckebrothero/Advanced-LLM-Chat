@@ -1,11 +1,12 @@
 <div class="chat-ui-container">
   <!-- Chat UI Header -->
   <div class="message-container" #messageContainer>
-      <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
+    <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
   </div>
 
   <!-- Input field for sending messages -->
   <app-chat-ui-inputfield
+    [externalFiles]="pendingFiles"
     (messageSent)="onMessageSent($event)"
     (audioRequested)="onAudioRequested()"
     (filesSelected)="onFileRequested($event)"
