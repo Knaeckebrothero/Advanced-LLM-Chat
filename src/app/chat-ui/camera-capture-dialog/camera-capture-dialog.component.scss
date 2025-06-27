@@ -186,10 +186,8 @@
   }
 }
 
-// Add these at the end of the file
-
+// TODO: Consider moving to a shared dialog styles file if you have multiple dialogs
 // Global styles for dialog container (these need to be global)
-// Consider moving to a shared dialog styles file if you have multiple dialogs
 :host ::ng-deep {
   .camera-capture-dialog-panel {
     .mat-mdc-dialog-container {

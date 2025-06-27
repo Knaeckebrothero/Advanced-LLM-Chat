@@ -42,6 +42,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     }
   }
 
+  // Input property to determine if the device is mobile
+  @Input() isMobile: boolean = false;
+
   filePreviews: FilePreview[] = [];
 
   // Event emitters for parent component communication

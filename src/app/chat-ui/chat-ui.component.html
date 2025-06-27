@@ -7,6 +7,7 @@
   <!-- Input field for sending messages -->
   <app-chat-ui-inputfield
     [externalFiles]="pendingFiles"
+    [isMobile]="isMobileDevice()"
     (messageSent)="onMessageSent($event)"
     (audioRequested)="onAudioRequested()"
     (filesSelected)="onFileRequested($event)"
