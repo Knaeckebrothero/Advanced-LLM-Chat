@@ -18,6 +18,7 @@ export class ChatUiComponent implements AfterViewChecked {
   userName: string = 'user';
   aiName: string = 'Assistant';
   conversationId: number = 1;
+  pendingFiles: FilePreview[] = [];
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';

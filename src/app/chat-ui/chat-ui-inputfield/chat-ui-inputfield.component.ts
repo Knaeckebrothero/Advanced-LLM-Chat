@@ -68,7 +68,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     // Check for camera support
     // We check for mediaDevices API and also if we're in a secure context (HTTPS)
     if (navigator.mediaDevices &&
-      navigator.mediaDevices.getUserMedia &&
+      typeof navigator.mediaDevices.getUserMedia === 'function' &&
       window.isSecureContext) {
       // Check if there are any video input devices
       navigator.mediaDevices.enumerateDevices()

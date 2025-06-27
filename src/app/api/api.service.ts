@@ -206,7 +206,25 @@ export class ApiService {
     files.forEach(fp => {
       formData.append('files', fp.file);
     });
+
     // TODO: Implement upload logic
+    // For now, return an empty array as a placeholder
+    // In a real implementation, this would call an API endpoint and return file URLs
+    const endpoint = `${this.baseUrl}/api/files/upload`;
+
+    try {
+      // This is a placeholder. In a real implementation, you would:
+      // const response = await lastValueFrom(
+      //   this.http.post<string[]>(endpoint, formData, { ...this.getHttpOptions() })
+      // );
+      // return response;
+
+      console.log('File upload requested (not yet implemented)');
+      return [];
+    } catch (error) {
+      console.error('Error uploading files:', error);
+      throw error;
+    }
   }
 
   // TODO: Implement create conversation
