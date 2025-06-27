@@ -123,13 +123,16 @@ export class ChatUiComponent implements AfterViewChecked {
   // Handle audio recording request
   onAudioRequested(): void {
     console.log('Audio recording requested');
-    // TODO: Implement audio recording functionality
+    // The voice recording is now handled internally by the input field component
+    // This method is called when using tap-to-record mode
+    // The component will handle the recording UI and create an audio file preview
+    // which will be added to the files list automatically
   }
 
   // Handle file attachment request
   onFileRequested(filePreviews: FilePreview[]): void {
     console.log('Files selected:', filePreviews);
-    // TODO: Store files temporarily until message is sent
+    // Store files temporarily until message is sent
     this.pendingFiles = filePreviews;
   }
 

@@ -7,7 +7,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { FilePreview, FilePreviewUtil } from '../../data/objects/file-preview';
+import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../data/objects/file-preview';
 
 
 @Component({
@@ -30,6 +30,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // ViewChild to access the textarea element directly
   @ViewChild('messageTextarea') private messageTextarea!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
+  @ViewChild('waveformCanvas') private waveformCanvas!: ElementRef<HTMLCanvasElement>;
 
   // The message text bound to the textarea
   messageText: string = '';
@@ -58,6 +59,17 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   hasCamera: boolean = false;
   hasGeolocation: boolean = false;
 
+  // Voice recording properties
+  isRecording: boolean = false;
+  recordingStartTime: number = 0;
+  recordingTime: Date = new Date(0);
+  recordingTimer: any;
+  waveformAnimationId: any;
+  waveformWidth: number = 200;
+  waveformData: number[] = [];
+  isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
+  recordingDuration: number = 0; // Store duration in seconds
+
   // Track if we have content to show appropriate button
   get hasContent(): boolean {
     return this.messageText.trim().length > 0 || this.filePreviews.length > 0;
@@ -71,6 +83,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   ngAfterViewInit() {
     // Initial adjustment of textarea height
     this.adjustTextareaHeight();
+    // Set initial waveform width
+    this.updateWaveformWidth();
   }
 
   // Check what capabilities the device has
@@ -239,8 +253,245 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
 
+  // Voice Recording Methods
+
+  // Start recording
+  startRecording(): void {
+    if (!this.isHoldToRecord) {
+      this.toggleRecording();
+    }
+  }
+
+  // Toggle recording (for tap mode)
+  private toggleRecording(): void {
+    if (this.isRecording) {
+      this.stopRecording();
+    } else {
+      this.beginRecording();
+    }
+  }
+
+  // Begin the recording process
+  private beginRecording(): void {
+    this.isRecording = true;
+    this.recordingStartTime = Date.now();
+    this.recordingDuration = 0;
+    this.updateWaveformWidth();
+
+    // Start the timer
+    this.recordingTimer = setInterval(() => {
+      const elapsed = Date.now() - this.recordingStartTime;
+      this.recordingTime = new Date(elapsed);
+      this.recordingDuration = Math.floor(elapsed / 1000);
+    }, 100);
+
+    // Start the waveform animation
+    this.startWaveformAnimation();
+
+    console.log('Voice recording started');
+  }
+
+  // Stop recording and create audio file
+  private stopRecording(): void {
+    if (!this.isRecording) return;
+
+    this.isRecording = false;
+
+    // Stop timers
+    if (this.recordingTimer) {
+      clearInterval(this.recordingTimer);
+    }
+
+    // Stop animation
+    if (this.waveformAnimationId) {
+      cancelAnimationFrame(this.waveformAnimationId);
+    }
+
+    // Create a mock audio file
+    this.createAudioFilePreview();
+
+    // Reset
+    this.recordingTime = new Date(0);
+    this.waveformData = [];
+
+    console.log('Voice recording stopped');
+  }
+
+  // Cancel recording without saving
+  cancelRecording(): void {
+    this.isRecording = false;
+
+    // Stop timers
+    if (this.recordingTimer) {
+      clearInterval(this.recordingTimer);
+    }
+
+    // Stop animation
+    if (this.waveformAnimationId) {
+      cancelAnimationFrame(this.waveformAnimationId);
+    }
+
+    // Reset
+    this.recordingTime = new Date(0);
+    this.waveformData = [];
+
+    console.log('Voice recording cancelled');
+  }
+
+  // Send the voice message
+  sendVoiceMessage(): void {
+    this.stopRecording();
+  }
+
+  // Create audio file preview
+  private async createAudioFilePreview(): Promise<void> {
+    // Create a mock audio file (in real implementation, this would be the actual recording)
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const duration = this.formatDuration(this.recordingDuration);
+    const fileName = `voice-message-${timestamp}.webm`;
+
+    // Create a mock blob (in real implementation, this would be the actual audio data)
+    const mockAudioData = new Blob(['mock audio data'], { type: 'audio/webm' });
+
+    // Create a File object
+    const audioFile = new File([mockAudioData], fileName, {
+      type: 'audio/webm',
+      lastModified: Date.now()
+    });
+
+    // Create FilePreview
+    const filePreview: FilePreview = {
+      id: FilePreviewUtil.generateId(),
+      file: audioFile,
+      name: `Voice message (${duration})`,
+      size: mockAudioData.size,
+      sizeFormatted: FilePreviewUtil.formatFileSize(mockAudioData.size),
+      type: FileType.AUDIO,
+      mimeType: 'audio/webm',
+      uploadStatus: UploadStatus.PENDING
+    };
+
+    // Add to file previews
+    this.filePreviews = [...this.filePreviews, filePreview];
+    this.filesSelected.emit(this.filePreviews);
+
+    console.log('Audio file created:', filePreview);
+  }
+
+  // Format duration in MM:SS format
+  private formatDuration(seconds: number): string {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+
+  // Update waveform canvas width based on container
+  private updateWaveformWidth(): void {
+    // In a real implementation, you'd calculate this based on the container width
+    // For now, we'll use a fixed width that looks good
+    this.waveformWidth = window.innerWidth > 768 ? 400 : window.innerWidth - 150;
+  }
+
+  // Start waveform animation
+  private startWaveformAnimation(): void {
+    if (!this.waveformCanvas) return;
+
+    const canvas = this.waveformCanvas.nativeElement;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Initialize waveform data
+    const barCount = 50;
+    this.waveformData = new Array(barCount).fill(0.3);
+
+    const animate = () => {
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Update waveform data with random variations to simulate audio input
+      this.waveformData = this.waveformData.map((value, index) => {
+        const change = (Math.random() - 0.5) * 0.3;
+        const newValue = Math.max(0.1, Math.min(1, value + change));
+        return value * 0.7 + newValue * 0.3; // Smooth the animation
+      });
+
+      // Draw waveform
+      const barWidth = canvas.width / barCount;
+      const maxHeight = canvas.height * 0.8;
+
+      ctx.fillStyle = '#2C8BCC';
+      this.waveformData.forEach((value, index) => {
+        const barHeight = value * maxHeight;
+        const x = index * barWidth + barWidth * 0.1;
+        const y = (canvas.height - barHeight) / 2;
+        const width = barWidth * 0.8;
+
+        // Draw rounded bars
+        const radius = width / 2;
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + barHeight - radius);
+        ctx.quadraticCurveTo(x + width, y + barHeight, x + width - radius, y + barHeight);
+        ctx.lineTo(x + radius, y + barHeight);
+        ctx.quadraticCurveTo(x, y + barHeight, x, y + barHeight - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      if (this.isRecording) {
+        this.waveformAnimationId = requestAnimationFrame(animate);
+      }
+    };
+
+    animate();
+  }
+
+  // Hold-to-record event handlers
+  onMicTouchStart(event: TouchEvent): void {
+    if (this.isHoldToRecord) {
+      event.preventDefault();
+      this.beginRecording();
+    }
+  }
+
+  onMicTouchEnd(event: TouchEvent): void {
+    if (this.isHoldToRecord && this.isRecording) {
+      event.preventDefault();
+      this.stopRecording();
+    }
+  }
+
+  onMicMouseDown(event: MouseEvent): void {
+    if (this.isHoldToRecord && !this.isMobileDevice()) {
+      event.preventDefault();
+      this.beginRecording();
+    }
+  }
+
+  onMicMouseUp(event: MouseEvent): void {
+    if (this.isHoldToRecord && this.isRecording && !this.isMobileDevice()) {
+      event.preventDefault();
+      this.stopRecording();
+    }
+  }
+
+  onMicMouseLeave(event: MouseEvent): void {
+    if (this.isHoldToRecord && this.isRecording && !this.isMobileDevice()) {
+      this.stopRecording();
+    }
+  }
+
   // Clean up resources when component is destroyed
   ngOnDestroy(): void {
+    // Stop any ongoing recording
+    if (this.isRecording) {
+      this.cancelRecording();
+    }
+
     // Revoke any object URLs to free memory
     this.filePreviews.forEach(preview => {
       if (preview.preview && preview.preview.startsWith('blob:')) {
