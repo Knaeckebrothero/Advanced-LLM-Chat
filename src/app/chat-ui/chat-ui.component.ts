@@ -1,6 +1,7 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
+import { FilePreview } from '../data/objects/file-preview';
 
 
 @Component({
@@ -17,6 +18,7 @@ export class ChatUiComponent implements AfterViewChecked {
   userName: string = 'user';
   aiName: string = 'Assistant';
   conversationId: number = 1;
+  pendingFiles: FilePreview[] = [];
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
@@ -89,18 +91,26 @@ export class ChatUiComponent implements AfterViewChecked {
 
   // Handle message sent from the input component
   async onMessageSent(message: string): Promise<void> {
-    if (message.trim()) {
+    if (message.trim() || this.pendingFiles.length > 0) {
       try {
+        // Log files for demo purposes
+        if (this.pendingFiles.length > 0) {
+          console.log('Message sent with files:', this.pendingFiles);
+        }
+
         // Wait for the message to be sent (and conversation created if needed)
         await this.chatService.sendMessage(message);
         console.log('User added message:', message);
         this.scrollToBottom();
 
-        // NOW generate AI response after message is confirmed sent
+        // Clear pending files after sending
+        this.pendingFiles = [];
+
+        // Generate AI response after message is confirmed sent
         await this.generateMessage();
       } catch (error) {
         console.error('Error sending message:', error);
-        // Optionally show an error to the user
+        // TODO: Optionally show an error to the user
       }
     }
   }
@@ -112,10 +122,10 @@ export class ChatUiComponent implements AfterViewChecked {
   }
 
   // Handle file attachment request
-  onFileRequested(files: File[]): void {
-    console.log('Files selected:', files);
-    // TODO: Handle file preview display
-    // TODO: Prepare files for upload
+  onFileRequested(filePreviews: FilePreview[]): void {
+    console.log('Files selected:', filePreviews);
+    // TODO: Store files temporarily until message is sent
+    this.pendingFiles = filePreviews;
   }
 
   onCameraRequested(): void {

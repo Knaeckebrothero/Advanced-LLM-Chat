@@ -1,10 +1,13 @@
-import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit } from '@angular/core';
+import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { FilePreview, FilePreviewUtil } from '../../data/objects/file-preview';
 
 
 @Component({
@@ -16,12 +19,14 @@ import { MatTooltipModule } from '@angular/material/tooltip';
     MatIconModule,
     MatButtonModule,
     MatMenuModule,
-    MatTooltipModule
+    MatTooltipModule,
+    MatChipsModule,
+    MatProgressBarModule
   ],
   templateUrl: './chat-ui-inputfield.component.html',
   styleUrls: ['./chat-ui-inputfield.component.scss']
 })
-export class ChatUiInputfieldComponent implements AfterViewInit, OnInit {
+export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestroy {
   // ViewChild to access the textarea element directly
   @ViewChild('messageTextarea') private messageTextarea!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
@@ -29,10 +34,13 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit {
   // The message text bound to the textarea
   messageText: string = '';
 
+  // File previews array
+  filePreviews: FilePreview[] = [];
+
   // Event emitters for parent component communication
   @Output() messageSent = new EventEmitter<string>();
   @Output() audioRequested = new EventEmitter<void>();
-  @Output() fileRequested = new EventEmitter<File[]>();
+  @Output() filesSelected = new EventEmitter<FilePreview[]>();  // Changed from fileRequested
   @Output() cameraRequested = new EventEmitter<void>();
   @Output() locationRequested = new EventEmitter<void>();
 
@@ -59,7 +67,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit {
   private checkDeviceCapabilities(): void {
     // Check for camera support
     // We check for mediaDevices API and also if we're in a secure context (HTTPS)
-    if (navigator.mediaDevices && window.isSecureContext) {
+    if (navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === 'function' &&
+      window.isSecureContext) {
       // Check if there are any video input devices
       navigator.mediaDevices.enumerateDevices()
         .then(devices => {
@@ -102,9 +112,17 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit {
   // Send the message
   sendMessage(): void {
     const trimmedMessage = this.messageText.trim();
-    if (trimmedMessage) {
-      this.messageSent.emit(trimmedMessage);
+
+    // Check if we have either text or files to send
+    if (trimmedMessage || this.filePreviews.length > 0) {
+      // TODO: In the future, emit both message and files together
+      if (trimmedMessage) {
+        this.messageSent.emit(trimmedMessage);
+      }
+
+      // Clear the input and files after sending
       this.messageText = '';
+      this.clearFilePreviews();
 
       // Reset textarea height after sending
       setTimeout(() => this.adjustTextareaHeight(), 0);
@@ -151,23 +169,75 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit {
   }
 
   // Handle file selection from input
-  handleFileSelection(event: Event): void {
+  async handleFileSelection(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
     const files = input.files;
 
     if (files && files.length > 0) {
       const fileArray = Array.from(files);
-      this.fileRequested.emit(fileArray);
-      console.log('Files selected:', fileArray);
-      // TODO: Show file preview in UI
+
+      // Validate file sizes (10MB limit per file)
+      const invalidFiles = fileArray.filter(file => !FilePreviewUtil.validateFileSize(file, 10));
+      if (invalidFiles.length > 0) {
+        console.error('Some files exceed the 10MB limit:', invalidFiles);
+        // TODO: Show error message to user
+      }
+
+      // Create file previews for valid files
+      const validFiles = fileArray.filter(file => FilePreviewUtil.validateFileSize(file, 10));
+      const newPreviews: FilePreview[] = [];
+
+      for (const file of validFiles) {
+        try {
+          const preview = await FilePreviewUtil.createFromFile(file);
+          newPreviews.push(preview);
+        } catch (error) {
+          console.error('Error creating file preview:', error);
+        }
+      }
+
+      // Add to existing previews
+      this.filePreviews = [...this.filePreviews, ...newPreviews];
+
+      // Emit the file previews
+      this.filesSelected.emit(this.filePreviews);
+
+      console.log('Files selected:', this.filePreviews);
 
       // Reset the input so the same file can be selected again
       input.value = '';
     }
   }
 
+  // Remove a file preview
+  removeFilePreview(fileId: string): void {
+    this.filePreviews = this.filePreviews.filter(fp => fp.id !== fileId);
+    this.filesSelected.emit(this.filePreviews);
+  }
+
+  // Clear all file previews
+  clearFilePreviews(): void {
+    this.filePreviews = [];
+    this.filesSelected.emit(this.filePreviews);
+  }
+
+  // Get icon for file type (helper for template)
+  getFileIcon(type: string): string {
+    return FilePreviewUtil.getFileIcon(type as any);
+  }
+
   // Utility function to detect mobile devices
   isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+
+  // Clean up resources when component is destroyed
+  ngOnDestroy(): void {
+    // Revoke any object URLs to free memory
+    this.filePreviews.forEach(preview => {
+      if (preview.preview && preview.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(preview.preview);
+      }
+    });
   }
 }

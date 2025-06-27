@@ -5,6 +5,7 @@ import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
 import { Settings } from '../settings/settings.service';
+import { FilePreview } from '../data/objects/file-preview';
 
 
 @Injectable({
@@ -196,6 +197,34 @@ export class ApiService {
     const endpoint = `${this.baseUrl}/api/conversations/user/${userId}`;
     // ... implement API call
     return [];
+  }
+
+  // Method for file upload
+  async uploadFiles(files: FilePreview[]): Promise<string[]> {
+    // Convert FilePreview to FormData and upload
+    const formData = new FormData();
+    files.forEach(fp => {
+      formData.append('files', fp.file);
+    });
+
+    // TODO: Implement upload logic
+    // For now, return an empty array as a placeholder
+    // In a real implementation, this would call an API endpoint and return file URLs
+    const endpoint = `${this.baseUrl}/api/files/upload`;
+
+    try {
+      // This is a placeholder. In a real implementation, you would:
+      // const response = await lastValueFrom(
+      //   this.http.post<string[]>(endpoint, formData, { ...this.getHttpOptions() })
+      // );
+      // return response;
+
+      console.log('File upload requested (not yet implemented)');
+      return [];
+    } catch (error) {
+      console.error('Error uploading files:', error);
+      throw error;
+    }
   }
 
   // TODO: Implement create conversation

@@ -28,6 +28,130 @@
   }
 }
 
+// File preview area
+.file-preview-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  max-height: 120px;
+  overflow-y: auto;
+
+  // Custom scrollbar
+  &::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 2px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+  }
+}
+
+.file-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  max-width: 200px;
+  position: relative;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    .remove-file-button {
+      opacity: 1;
+    }
+  }
+}
+
+.file-thumbnail {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.file-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(vars.$color-primary, 0.1);
+  border-radius: 4px;
+  flex-shrink: 0;
+
+  .mat-icon {
+    font-size: 20px;
+    color: vars.$color-primary;
+  }
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; // Allow text truncation
+  flex: 1;
+
+  .file-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: vars.$color-font-dark;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-size {
+    font-size: 10px;
+    color: rgba(vars.$color-font-dark, 0.6);
+  }
+}
+
+.remove-file-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  flex-shrink: 0;
+
+  .mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: rgba(vars.$color-font-dark, 0.6);
+  }
+
+  &:hover {
+    background-color: rgba(vars.$color-accent-danger, 0.1);
+
+    .mat-icon {
+      color: vars.$color-accent-danger;
+    }
+  }
+}
+
 // Area containing the textarea
 .input-content-area {
   width: 100%;
