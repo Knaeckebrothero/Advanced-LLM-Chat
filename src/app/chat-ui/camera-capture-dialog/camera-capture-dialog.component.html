@@ -1,0 +1,92 @@
+<div class="camera-dialog-container">
+  <!-- Header -->
+  <div class="dialog-header">
+    <h2>Take Photo</h2>
+    <button mat-icon-button (click)="cancel()" class="close-button">
+      <mat-icon>close</mat-icon>
+    </button>
+  </div>
+
+  <!-- Content -->
+  <div class="dialog-content">
+    <!-- Loading spinner -->
+    <div *ngIf="isLoading" class="loading-container">
+      <mat-spinner diameter="50"></mat-spinner>
+      <p>Starting camera...</p>
+    </div>
+
+    <!-- Error message -->
+    <div *ngIf="error && !isLoading" class="error-container">
+      <mat-icon class="error-icon">error_outline</mat-icon>
+      <p>{{ error }}</p>
+      <button mat-raised-button color="primary" (click)="startCamera()">
+        <mat-icon>refresh</mat-icon>
+        Try Again
+      </button>
+    </div>
+
+    <!-- Camera preview -->
+    <div *ngIf="!error && !isLoading && !capturedImage" class="camera-container">
+      <video #videoElement
+             autoplay
+             playsinline
+             muted
+             class="camera-preview">
+        Your browser does not support video
+      </video>
+
+      <!-- Debug info (remove in production) -->
+      <div class="debug-info" style="position: absolute; bottom: 60px; left: 10px; color: white; font-size: 12px; background: rgba(0,0,0,0.5); padding: 5px;">
+        Stream active: {{ !!stream }}<br>
+        Video ready: {{ videoElement?.readyState === 4 }}
+      </div>
+
+      <!-- Camera controls -->
+      <div class="camera-controls">
+        <button mat-icon-button
+                *ngIf="hasMultipleCameras"
+                (click)="switchCamera()"
+                class="switch-camera-button"
+                matTooltip="Switch camera">
+          <mat-icon>flip_camera_ios</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Captured image preview -->
+    <div *ngIf="capturedImage" class="preview-container">
+      <img [src]="capturedImage" alt="Captured photo" class="captured-image">
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="dialog-actions">
+    <div *ngIf="!capturedImage && !error">
+      <button mat-stroked-button (click)="cancel()">
+        Cancel
+      </button>
+      <button mat-raised-button
+              color="primary"
+              (click)="capturePhoto()"
+              [disabled]="isLoading || !!error"
+              class="capture-button">
+        <mat-icon>photo_camera</mat-icon>
+        Capture
+      </button>
+    </div>
+
+    <div *ngIf="capturedImage">
+      <button mat-stroked-button (click)="retakePhoto()">
+        <mat-icon>refresh</mat-icon>
+        Retake
+      </button>
+      <button mat-raised-button color="primary" (click)="savePhoto()">
+        <mat-icon>check</mat-icon>
+        Use Photo
+      </button>
+    </div>
+  </div>
+
+  <!-- Hidden canvas for image capture -->
+  <canvas #canvasElement style="display: none;"></canvas>
+</div>

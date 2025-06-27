@@ -48,9 +48,9 @@
   <div class="action-buttons-bar">
     <!-- Left side buttons -->
     <div class="left-actions">
-      <!-- Camera button (only shown if device has camera) -->
+      <!-- Camera button (only shown if device has camera and is a mobile device) -->
       <button
-        *ngIf="hasCamera"
+        *ngIf="hasCamera && isMobile"
         mat-icon-button
         class="action-button camera-button"
         (click)="handleCameraClick()"

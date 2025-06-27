@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
+import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy, Input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -34,7 +34,17 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // The message text bound to the textarea
   messageText: string = '';
 
-  // File previews array
+  // File previews array - now with Input to receive files from parent
+  @Input() set externalFiles(files: FilePreview[]) {
+    if (files && files.length > 0) {
+      // Merge external files with existing ones
+      this.filePreviews = [...files];
+    }
+  }
+
+  // Input property to determine if the device is mobile
+  @Input() isMobile: boolean = false;
+
   filePreviews: FilePreview[] = [];
 
   // Event emitters for parent component communication
@@ -50,7 +60,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Track if we have content to show appropriate button
   get hasContent(): boolean {
-    return this.messageText.trim().length > 0;
+    return this.messageText.trim().length > 0 || this.filePreviews.length > 0;
   }
 
   ngOnInit() {
@@ -158,14 +168,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   handleCameraClick(): void {
     this.cameraRequested.emit();
     console.log('Camera requested');
-    // TODO: Implement camera capture functionality
   }
 
   // Handle location sharing
   handleLocationClick(): void {
     this.locationRequested.emit();
     console.log('Location sharing requested');
-    // TODO: Implement location sharing functionality
   }
 
   // Handle file selection from input

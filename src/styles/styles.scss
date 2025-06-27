@@ -29,6 +29,27 @@ html, body {
   background-color: vars.$color-background;
 }
 
+// TODO: Do these need to be here?
+// Camera dialog panel styles
+.camera-dialog {
+  .mat-mdc-dialog-container {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .mat-mdc-dialog-surface {
+    overflow: hidden;
+  }
+}
+
+// Ensure proper dialog backdrop for camera
+.cdk-overlay-backdrop {
+  &.cdk-overlay-backdrop-showing {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+}
+
 // Apply the theme to Angular Material components
 @include mat.all-component-themes($custom-theme);
 @include mat.elevation-classes();

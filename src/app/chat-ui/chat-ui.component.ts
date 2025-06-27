@@ -1,14 +1,16 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { MatDialog } from '@angular/material/dialog';
 import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
 import { FilePreview } from '../data/objects/file-preview';
+import { CameraCaptureDialogComponent } from './camera-capture-dialog/camera-capture-dialog.component';
 
 
 @Component({
-    selector: 'app-chat-ui',
-    templateUrl: './chat-ui.component.html',
-    styleUrls: ['./chat-ui.component.scss'],
-    standalone: false
+  selector: 'app-chat-ui',
+  templateUrl: './chat-ui.component.html',
+  styleUrls: ['./chat-ui.component.scss'],
+  standalone: false
 })
 export class ChatUiComponent implements AfterViewChecked {
   // The messageContainer property is bound to the message container in the template.
@@ -27,7 +29,10 @@ export class ChatUiComponent implements AfterViewChecked {
   messages = this.chatService.messages;
 
   // Constructor
-  constructor(private chatService: ChatService) {}
+  constructor(
+    private chatService: ChatService,
+    private dialog: MatDialog
+  ) {}
 
   // Method to scroll to the bottom of the chat window.
   private scrollToBottom(): void {
@@ -130,7 +135,32 @@ export class ChatUiComponent implements AfterViewChecked {
 
   onCameraRequested(): void {
     console.log('Camera access requested');
-    // TODO: Implement camera capture UI
+
+    // Open the camera capture dialog
+    const dialogRef = this.dialog.open(CameraCaptureDialogComponent, {
+      width: '90vw',
+      maxWidth: '600px',
+      height: '80vh',
+      panelClass: 'camera-capture-dialog-panel', // More specific class name
+      disableClose: false,
+      // Add these for better camera dialog styling
+      hasBackdrop: true,
+      backdropClass: 'camera-capture-backdrop'
+    });
+
+    // Handle the result
+    dialogRef.afterClosed().subscribe((result: FilePreview | undefined) => {
+      if (result) {
+        // Add the captured photo to pending files
+        this.pendingFiles = [...this.pendingFiles, result];
+        console.log('Photo captured and added to files:', result);
+
+        // Notify the input field component about the new file
+        // This is a bit of a workaround, but we need to pass the files back
+        // In a real implementation, you might want to use a service or state management
+        this.onFileRequested(this.pendingFiles);
+      }
+    });
   }
 
   onLocationRequested(): void {
