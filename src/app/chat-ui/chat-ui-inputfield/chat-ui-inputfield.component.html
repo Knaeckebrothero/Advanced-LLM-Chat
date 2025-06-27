@@ -19,14 +19,55 @@
   <div class="action-buttons-bar">
     <!-- Left side buttons -->
     <div class="left-actions">
+      <!-- Camera button (only shown if device has camera) -->
+      <button
+        *ngIf="hasCamera"
+        mat-icon-button
+        class="action-button camera-button"
+        (click)="handleCameraClick()"
+        aria-label="Take photo"
+        matTooltip="Take photo">
+        <mat-icon>photo_camera</mat-icon>
+      </button>
+
+      <!-- File attachment button with menu -->
       <button
         mat-icon-button
-        class="action-button"
-        (click)="handleFileClick()"
+        class="action-button attachment-button"
+        [matMenuTriggerFor]="attachmentMenu"
         aria-label="Attach file"
-        title="Attach file">
+        matTooltip="Attach file">
         <mat-icon>attach_file</mat-icon>
       </button>
+
+      <!-- Attachment menu -->
+      <mat-menu #attachmentMenu="matMenu" class="attachment-menu">
+        <!-- Camera option (only shown if device has camera) -->
+        <button
+          *ngIf="hasCamera"
+          mat-menu-item
+          (click)="handleFileMenuClick('camera')">
+          <mat-icon>photo_camera</mat-icon>
+          <span>Take Photo</span>
+        </button>
+
+        <!-- File upload option -->
+        <button
+          mat-menu-item
+          (click)="handleFileMenuClick('file')">
+          <mat-icon>folder_open</mat-icon>
+          <span>Choose File</span>
+        </button>
+
+        <!-- Location option (only shown if device supports geolocation) -->
+        <button
+          *ngIf="hasGeolocation"
+          mat-menu-item
+          (click)="handleFileMenuClick('location')">
+          <mat-icon>location_on</mat-icon>
+          <span>Share Location</span>
+        </button>
+      </mat-menu>
     </div>
 
     <!-- Right side buttons -->
@@ -38,7 +79,7 @@
         class="action-button send-button"
         (click)="sendMessage()"
         aria-label="Send message"
-        title="Send message">
+        matTooltip="Send message">
         <mat-icon>send</mat-icon>
       </button>
 
@@ -49,10 +90,19 @@
         class="action-button mic-button"
         (click)="handleActionClick()"
         aria-label="Record voice message"
-        title="Record voice message">
+        matTooltip="Record voice message">
         <mat-icon>mic</mat-icon>
       </button>
     </div>
   </div>
+
+  <!-- Hidden file input -->
+  <input
+    #fileInput
+    type="file"
+    (change)="handleFileSelection($event)"
+    multiple
+    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+    style="display: none;">
 
 </div>

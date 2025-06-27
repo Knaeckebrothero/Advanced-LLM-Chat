@@ -91,12 +91,14 @@
 .left-actions {
   display: flex;
   gap: 4px;
+  align-items: center;
 }
 
 // Right side button group
 .right-actions {
   display: flex;
   gap: 4px;
+  align-items: center;
 }
 
 // Base styling for all action buttons
@@ -146,6 +148,45 @@
       }
     }
   }
+
+  // Camera button styling
+  &.camera-button {
+    .mat-icon {
+      color: vars.$color-font-dark;
+    }
+
+    &:hover {
+      background-color: rgba(vars.$color-primary, 0.1);
+
+      .mat-icon {
+        color: vars.$color-primary;
+      }
+    }
+  }
+
+  // Attachment button styling
+  &.attachment-button {
+    .mat-icon {
+      color: vars.$color-font-dark;
+    }
+
+    &:hover {
+      background-color: rgba(vars.$color-primary, 0.1);
+
+      .mat-icon {
+        color: vars.$color-primary;
+      }
+    }
+
+    // When menu is open
+    &[aria-expanded="true"] {
+      background-color: rgba(vars.$color-primary, 0.15);
+
+      .mat-icon {
+        color: vars.$color-primary;
+      }
+    }
+  }
 }
 
 // Responsive adjustments for mobile devices
@@ -171,4 +212,36 @@
       padding: 8px;
     }
   }
+}
+
+// Attachment menu styling (applied globally since mat-menu renders outside component)
+::ng-deep .attachment-menu {
+  .mat-mdc-menu-panel {
+    min-width: 200px;
+    margin-top: 8px;
+  }
+
+  .mat-mdc-menu-item {
+    height: 48px;
+
+    .mat-icon {
+      margin-right: 16px;
+      color: vars.$color-primary;
+    }
+
+    &:hover {
+      background-color: rgba(vars.$color-primary, 0.08);
+    }
+
+    &:active {
+      background-color: rgba(vars.$color-primary, 0.12);
+    }
+  }
+}
+
+// Tooltip styling
+::ng-deep .mat-mdc-tooltip {
+  font-size: 12px;
+  padding: 4px 8px;
+  margin: 8px;
 }

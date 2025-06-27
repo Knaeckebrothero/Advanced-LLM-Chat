@@ -112,9 +112,20 @@ export class ChatUiComponent implements AfterViewChecked {
   }
 
   // Handle file attachment request
-  onFileRequested(): void {
-    console.log('File attachment requested');
-    // TODO: Implement file upload functionality
+  onFileRequested(files: File[]): void {
+    console.log('Files selected:', files);
+    // TODO: Handle file preview display
+    // TODO: Prepare files for upload
+  }
+
+  onCameraRequested(): void {
+    console.log('Camera access requested');
+    // TODO: Implement camera capture UI
+  }
+
+  onLocationRequested(): void {
+    console.log('Location sharing requested');
+    // TODO: Get and display current location
   }
 
   /*
