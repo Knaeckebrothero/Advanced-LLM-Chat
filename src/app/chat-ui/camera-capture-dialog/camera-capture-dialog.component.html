@@ -30,9 +30,16 @@
       <video #videoElement
              autoplay
              playsinline
-             class="camera-preview"
-             (loadedmetadata)="isLoading = false">
+             muted
+             class="camera-preview">
+        Your browser does not support video
       </video>
+
+      <!-- Debug info (remove in production) -->
+      <div class="debug-info" style="position: absolute; bottom: 60px; left: 10px; color: white; font-size: 12px; background: rgba(0,0,0,0.5); padding: 5px;">
+        Stream active: {{ !!stream }}<br>
+        Video ready: {{ videoElement?.readyState === 4 }}
+      </div>
 
       <!-- Camera controls -->
       <div class="camera-controls">

@@ -141,8 +141,11 @@ export class ChatUiComponent implements AfterViewChecked {
       width: '90vw',
       maxWidth: '600px',
       height: '80vh',
-      panelClass: 'camera-dialog',
-      disableClose: false
+      panelClass: 'camera-capture-dialog-panel', // More specific class name
+      disableClose: false,
+      // Add these for better camera dialog styling
+      hasBackdrop: true,
+      backdropClass: 'camera-capture-backdrop'
     });
 
     // Handle the result

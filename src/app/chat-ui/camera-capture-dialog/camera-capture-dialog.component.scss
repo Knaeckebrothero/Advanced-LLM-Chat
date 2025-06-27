@@ -186,28 +186,20 @@
   }
 }
 
-// Dark theme support
-:host-context(.dark-mode) {
-  .dialog-header {
-    background-color: vars.$color-background;
-    border-bottom-color: rgba(255, 255, 255, 0.12);
+// Add these at the end of the file
 
-    h2 {
-      color: vars.$color-font-light;
+// Global styles for dialog container (these need to be global)
+// Consider moving to a shared dialog styles file if you have multiple dialogs
+:host ::ng-deep {
+  .camera-capture-dialog-panel {
+    .mat-mdc-dialog-container {
+      padding: 0 !important;
+      overflow: hidden;
+
+      .mat-mdc-dialog-surface {
+        overflow: hidden;
+        border-radius: 8px;
+      }
     }
-  }
-
-  .dialog-content {
-    background-color: #1e1e1e;
-  }
-
-  .error-container p,
-  .loading-container p {
-    color: vars.$color-font-light;
-  }
-
-  .dialog-actions {
-    background-color: vars.$color-background;
-    border-top-color: rgba(255, 255, 255, 0.12);
   }
 }

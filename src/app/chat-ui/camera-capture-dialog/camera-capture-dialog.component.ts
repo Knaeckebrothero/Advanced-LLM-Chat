@@ -4,7 +4,7 @@ import { MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { FilePreview, FilePreviewUtil } from '../../data/objects/file-preview';
+import { FilePreviewUtil } from '../../data/objects/file-preview';
 
 
 @Component({
@@ -35,8 +35,33 @@ export class CameraCaptureDialogComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit() {
+    this.checkCameraAvailability();
     this.checkCameraCount();
     this.startCamera();
+  }
+
+  private async checkCameraAvailability() {
+    try {
+      // First check if the API is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('getUserMedia API not available');
+        this.error = 'Camera API not supported in this browser.';
+        this.isLoading = false;
+        return;
+      }
+
+      // Check if we're in a secure context
+      if (!window.isSecureContext) {
+        console.error('Not in secure context (HTTPS required)');
+        this.error = 'Camera requires HTTPS. Please use a secure connection.';
+        this.isLoading = false;
+        return;
+      }
+
+      console.log('Camera API available and in secure context');
+    } catch (error) {
+      console.error('Error checking camera availability:', error);
+    }
   }
 
   ngOnDestroy() {
@@ -47,7 +72,20 @@ export class CameraCaptureDialogComponent implements OnInit, OnDestroy {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+      console.log('All devices:', devices);
+      console.log('Video devices found:', videoDevices);
+
       this.hasMultipleCameras = videoDevices.length > 1;
+
+      // Log device details for debugging
+      videoDevices.forEach((device, index) => {
+        console.log(`Camera ${index + 1}:`, {
+          deviceId: device.deviceId,
+          label: device.label || 'Unnamed camera',
+          groupId: device.groupId
+        });
+      });
     } catch (error) {
       console.error('Error checking camera count:', error);
     }
@@ -61,45 +99,95 @@ export class CameraCaptureDialogComponent implements OnInit, OnDestroy {
       // Stop any existing stream
       this.stopCamera();
 
-      // Request camera access with preferred facing mode
-      const constraints: MediaStreamConstraints = {
+      // Log for debugging
+      console.log('Starting camera with facing mode:', this.facingMode);
+
+      // Try simpler constraints first (Linux compatibility)
+      let constraints: MediaStreamConstraints = {
         video: {
-          facingMode: this.facingMode,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          facingMode: this.facingMode
         }
       };
 
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (firstError) {
+        console.warn('Failed with facing mode, trying basic video constraint');
+        // Fallback to most basic constraint for Linux compatibility
+        constraints = { video: true };
+        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      }
 
-      // Wait for video element to be available
-      setTimeout(() => {
-        if (this.videoElement && this.videoElement.nativeElement) {
-          this.videoElement.nativeElement.srcObject = this.stream;
-          this.isLoading = false;
-        }
-      }, 100);
+      console.log('Got media stream:', this.stream);
+      console.log('Video tracks:', this.stream.getVideoTracks());
+
+      // Use a longer timeout and add event listeners for Linux systems
+      if (this.videoElement && this.videoElement.nativeElement) {
+        const video = this.videoElement.nativeElement;
+
+        // Set srcObject immediately
+        video.srcObject = this.stream;
+
+        // Handle the loadedmetadata event
+        video.onloadedmetadata = () => {
+          console.log('Video metadata loaded');
+          video.play().then(() => {
+            console.log('Video playing');
+            this.isLoading = false;
+          }).catch(playError => {
+            console.error('Error playing video:', playError);
+            this.error = 'Camera stream started but video playback failed.';
+            this.isLoading = false;
+          });
+        };
+
+        // Fallback timeout
+        setTimeout(() => {
+          if (this.isLoading) {
+            console.warn('Camera loading timeout');
+            this.isLoading = false;
+            if (!this.error) {
+              this.error = 'Camera is taking too long to respond. Please try again.';
+            }
+          }
+        }, 5000);
+      }
 
     } catch (error) {
       console.error('Error accessing camera:', error);
       this.isLoading = false;
 
       if (error instanceof DOMException) {
+        console.error('DOMException details:', error.name, error.message);
         switch(error.name) {
           case 'NotAllowedError':
-            this.error = 'Camera access denied. Please allow camera access and try again.';
+          case 'PermissionDeniedError':
+            this.error = 'Camera access denied. Please allow camera access in your browser settings and try again.';
             break;
           case 'NotFoundError':
-            this.error = 'No camera found on this device.';
+          case 'DevicesNotFoundError':
+            this.error = 'No camera found. Please check if your camera is connected and not being used by another application.';
             break;
           case 'NotReadableError':
-            this.error = 'Camera is already in use by another application.';
+          case 'TrackStartError':
+            this.error = 'Camera is already in use by another application. Please close other video apps and try again.';
+            break;
+          case 'OverconstrainedError':
+            this.error = 'Camera does not support the requested settings. Trying with basic settings...';
+            // Try again with basic constraints
+            try {
+              this.stream = await navigator.mediaDevices.getUserMedia({ video: true });
+              this.startCamera(); // Retry with the new stream
+              return;
+            } catch (retryError) {
+              this.error = 'Unable to access camera even with basic settings.';
+            }
             break;
           default:
-            this.error = 'Unable to access camera. Please try again.';
+            this.error = `Camera error (${error.name}): ${error.message}`;
         }
       } else {
-        this.error = 'An unexpected error occurred while accessing the camera.';
+        this.error = 'An unexpected error occurred while accessing the camera. Check browser console for details.';
       }
     }
   }
