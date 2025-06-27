@@ -53,14 +53,14 @@ export class ApiService {
     }
   }
 
-  async getConversations(): Promise<Conversation[]>{
+  async getConversations(): Promise<Conversation[]> {
     // Use the access token via session cookie instead of passing userId
     const endpoint = `${this.baseUrl}/api/conversations`;
     console.log('Requesting conversations for current user...');
 
-    try{
+    try {
       const response = await lastValueFrom(
-        this.http.get<Conversation[]>(endpoint, {
+        this.http.get<any[]>(endpoint, {
           ...this.getHttpOptions(),
           observe: 'response'
         })
@@ -69,7 +69,8 @@ export class ApiService {
       console.log('Response:', response);
 
       if (response.status === 200 && response.body) {
-        return response.body;
+        // Convert plain objects to Conversation instances using the static method
+        return response.body.map(data => Conversation.fromApiResponse(data));
       } else if (response.status === 204) {
         return [];
       } else {

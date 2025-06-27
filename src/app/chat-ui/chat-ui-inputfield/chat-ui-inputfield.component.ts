@@ -66,7 +66,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   recordingTimer: any;
   waveformAnimationId: any;
   waveformWidth: number = 200;
-  waveformData: number[] = [];
+  waveformData: Array<{x: number, height: number}> = [];
   isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
   recordingDuration: number = 0; // Store duration in seconds
 
@@ -578,7 +578,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Start waveform animation
   private startWaveformAnimation(): void {
-    // Wait a bit for canvas to be ready
+    // Wait for canvas to be ready
     setTimeout(() => {
       if (!this.waveformCanvas || !this.waveformCanvas.nativeElement) {
         console.error('Canvas not ready');
@@ -592,88 +592,208 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
         return;
       }
 
-      // Initialize waveform data
-      const barCount = 50;
-      this.waveformData = new Array(barCount).fill(0.3);
+      // Waveform configuration
+      const config = {
+        // Visual settings
+        lineWidth: 2,
+        primaryColor: '#4CA5DC',
+        secondaryColor: '#66c2ff',
+        glowColor: 'rgba(76, 165, 220, 0.3)',
+        backgroundColor: 'rgba(255, 255, 255, 0.02)',
 
-      console.log('Starting waveform animation. Analyser:', !!this.analyser, 'DataArray:', !!this.dataArray);
+        // Waveform behavior
+        samplesPerSecond: 60, // How many points to capture per second
+        scrollSpeed: 1, // Pixels per frame
+        smoothingFactor: 0.8, // How much to smooth between samples (0-1)
+        amplitudeScale: 0.9, // Scale factor for amplitude (0-1)
 
-      const animate = () => {
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Advanced effects
+        enableGlow: true,
+        enableGradient: true,
+        enableMirror: true, // Mirror waveform for symmetrical look
+      };
 
-        // Get audio levels if analyser is available
-        if (this.analyser && this.dataArray) {
-          // Use time domain data for better waveform visualization
-          this.analyser.getByteTimeDomainData(this.dataArray);
+      // Waveform data storage
+      const waveformData: number[] = [];
+      const maxSamples = Math.floor(canvas.width / 2); // Store enough samples to fill the canvas
 
-          // Calculate RMS (Root Mean Square) for volume level
-          let sum = 0;
-          for (let i = 0; i < this.dataArray.length; i++) {
-            const normalized = (this.dataArray[i] - 128) / 128; // Normalize to -1 to 1
-            sum += normalized * normalized;
-          }
-          const rms = Math.sqrt(sum / this.dataArray.length);
-          const volume = Math.min(1, rms * 5); // Scale up and cap at 1
+      // Smoothing variables
+      let smoothedAmplitude = 0;
+      let targetAmplitude = 0;
 
-          // Create waveform effect based on volume
-          for (let i = 0; i < barCount; i++) {
-            // Create a wave pattern
-            const waveOffset = (i / barCount) * Math.PI * 2;
-            const waveValue = Math.sin(waveOffset + Date.now() * 0.001) * 0.3 + 0.7;
-            const targetValue = volume * waveValue;
+      // Animation variables
+      let lastSampleTime = Date.now();
+      const sampleInterval = 1000 / config.samplesPerSecond;
 
-            // Smooth transition
-            this.waveformData[i] = this.waveformData[i] * 0.7 + targetValue * 0.3;
-          }
+      // Clear and prepare canvas
+      const prepareCanvas = () => {
+        ctx.fillStyle = config.backgroundColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      };
 
-          // Debug log every second
-          if (Date.now() % 1000 < 50) {
-            console.log('Audio volume:', volume.toFixed(2));
-          }
-        } else {
-          // Fallback to simulated waveform if audio analysis fails
-          console.warn('Using simulated waveform');
-          this.waveformData = this.waveformData.map((value, index) => {
-            const change = (Math.random() - 0.5) * 0.3;
-            const newValue = Math.max(0.1, Math.min(1, value + change));
-            return value * 0.7 + newValue * 0.3;
-          });
+      // Calculate amplitude from audio data
+      const getAudioLevel = (): number => {
+        if (!this.analyser || !this.dataArray) return 0;
+
+        this.analyser.getByteTimeDomainData(this.dataArray);
+
+        // Calculate RMS (Root Mean Square) for a more accurate representation
+        let sum = 0;
+        let max = 0;
+
+        for (let i = 0; i < this.dataArray.length; i++) {
+          const normalized = (this.dataArray[i] - 128) / 128; // Normalize to -1 to 1
+          sum += normalized * normalized;
+          max = Math.max(max, Math.abs(normalized));
         }
 
-        // Draw waveform
-        const barWidth = canvas.width / barCount;
-        const maxHeight = canvas.height * 0.8;
+        const rms = Math.sqrt(sum / this.dataArray.length);
 
-        ctx.fillStyle = '#2C8BCC';
-        this.waveformData.forEach((value, index) => {
-          const barHeight = Math.max(4, value * maxHeight); // Minimum height of 4px
-          const x = index * barWidth + barWidth * 0.1;
-          const y = (canvas.height - barHeight) / 2;
-          const width = barWidth * 0.8;
+        // Use a combination of RMS and peak for better visual response
+        const level = (rms * 0.7 + max * 0.3) * config.amplitudeScale;
 
-          // Draw rounded bars
-          const radius = Math.min(width / 2, 2);
+        return Math.min(1, level * 3); // Scale up and cap at 1
+      };
+
+      // Draw smooth waveform using bezier curves
+      const drawWaveform = () => {
+        // Clear canvas with slight fade for trailing effect
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (waveformData.length < 2) return;
+
+        const centerY = canvas.height / 2;
+
+        // Set up glow effect if enabled
+        if (config.enableGlow) {
+          ctx.shadowColor = config.glowColor;
+          ctx.shadowBlur = 10;
+        }
+
+        // Create gradient if enabled
+        if (config.enableGradient) {
+          const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+          gradient.addColorStop(0, 'rgba(76, 165, 220, 0.1)');
+          gradient.addColorStop(0.5, config.primaryColor);
+          gradient.addColorStop(1, config.secondaryColor);
+          ctx.strokeStyle = gradient;
+        } else {
+          ctx.strokeStyle = config.primaryColor;
+        }
+
+        ctx.lineWidth = config.lineWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Draw upper waveform
+        ctx.beginPath();
+
+        for (let i = 0; i < waveformData.length; i++) {
+          const x = i * 2; // Space between points
+          const amplitude = waveformData[i] * (canvas.height / 2 - 5); // Leave some margin
+          const y = centerY - amplitude;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            // Use quadratic bezier curves for smooth connections
+            const prevX = (i - 1) * 2;
+            const prevY = centerY - waveformData[i - 1] * (canvas.height / 2 - 5);
+            const cpX = (prevX + x) / 2;
+            const cpY = (prevY + y) / 2;
+
+            ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
+          }
+        }
+
+        // Extend to the current edge
+        const lastX = (waveformData.length - 1) * 2;
+        const lastY = centerY - waveformData[waveformData.length - 1] * (canvas.height / 2 - 5);
+        ctx.lineTo(lastX + 2, lastY);
+
+        ctx.stroke();
+
+        // Draw mirrored lower waveform if enabled
+        if (config.enableMirror) {
           ctx.beginPath();
-          ctx.moveTo(x + radius, y);
-          ctx.lineTo(x + width - radius, y);
-          ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-          ctx.lineTo(x + width, y + barHeight - radius);
-          ctx.quadraticCurveTo(x + width, y + barHeight, x + width - radius, y + barHeight);
-          ctx.lineTo(x + radius, y + barHeight);
-          ctx.quadraticCurveTo(x, y + barHeight, x, y + barHeight - radius);
-          ctx.lineTo(x, y + radius);
-          ctx.quadraticCurveTo(x, y, x + radius, y);
-          ctx.closePath();
-          ctx.fill();
-        });
 
+          for (let i = 0; i < waveformData.length; i++) {
+            const x = i * 2;
+            const amplitude = waveformData[i] * (canvas.height / 2 - 5);
+            const y = centerY + amplitude;
+
+            if (i === 0) {
+              ctx.moveTo(x, y);
+            } else {
+              const prevX = (i - 1) * 2;
+              const prevY = centerY + waveformData[i - 1] * (canvas.height / 2 - 5);
+              const cpX = (prevX + x) / 2;
+              const cpY = (prevY + y) / 2;
+
+              ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
+            }
+          }
+
+          ctx.stroke();
+        }
+
+        // Draw center line
+        ctx.strokeStyle = 'rgba(76, 165, 220, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(canvas.width, centerY);
+        ctx.stroke();
+
+        // Draw "live" indicator on the right edge
+        const liveX = Math.min(waveformData.length * 2 + 10, canvas.width - 10);
+        ctx.fillStyle = config.secondaryColor;
+        ctx.shadowColor = config.secondaryColor;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(liveX, centerY, 3, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      // Main animation loop
+      const animate = () => {
+        const now = Date.now();
+
+        // Sample audio at regular intervals
+        if (now - lastSampleTime >= sampleInterval) {
+          targetAmplitude = getAudioLevel();
+          lastSampleTime = now;
+        }
+
+        // Smooth the amplitude changes
+        smoothedAmplitude += (targetAmplitude - smoothedAmplitude) * config.smoothingFactor;
+
+        // Add new sample
+        waveformData.push(smoothedAmplitude);
+
+        // Remove old samples that have scrolled off screen
+        while (waveformData.length > maxSamples) {
+          waveformData.shift();
+        }
+
+        // Draw the waveform
+        drawWaveform();
+
+        // Continue animation if still recording
         if (this.isRecording) {
           this.waveformAnimationId = requestAnimationFrame(animate);
+        } else {
+          // Cleanup
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
       };
 
+      // Start the animation
+      prepareCanvas();
       animate();
+
     }, 100); // Give canvas time to initialize
   }
 
