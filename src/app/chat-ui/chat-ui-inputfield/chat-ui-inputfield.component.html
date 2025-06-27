@@ -1,6 +1,35 @@
 <!-- Input field container that holds both the textarea and action buttons -->
 <div class="input-field-container">
 
+  <!-- File preview area (shown when files are selected) -->
+  <div class="file-preview-area" *ngIf="filePreviews.length > 0">
+    <div class="file-preview-item" *ngFor="let preview of filePreviews">
+      <!-- Image preview -->
+      <div class="file-thumbnail" *ngIf="preview.type === 'image' && preview.preview">
+        <img [src]="preview.preview" [alt]="preview.name">
+      </div>
+
+      <!-- Icon for non-image files -->
+      <div class="file-icon" *ngIf="preview.type !== 'image' || !preview.preview">
+        <mat-icon>{{ getFileIcon(preview.type) }}</mat-icon>
+      </div>
+
+      <!-- File info -->
+      <div class="file-info">
+        <span class="file-name">{{ preview.name }}</span>
+        <span class="file-size">{{ preview.sizeFormatted }}</span>
+      </div>
+
+      <!-- Remove button -->
+      <button mat-icon-button
+              class="remove-file-button"
+              (click)="removeFilePreview(preview.id)"
+              aria-label="Remove file">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+  </div>
+
   <!-- Main input area with textarea -->
   <div class="input-content-area">
     <textarea

@@ -6,6 +6,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { ChatUiInputfieldComponent } from './chat-ui-inputfield.component';
+import { FilePreview, FileType, UploadStatus } from '../../data/objects/file-preview';
 
 
 describe('ChatUiInputfieldComponent', () => {
@@ -72,17 +73,20 @@ describe('ChatUiInputfieldComponent', () => {
     expect(component.locationRequested.emit).toHaveBeenCalled();
   });
 
-  it('should emit fileRequested event when files are selected', () => {
-    spyOn(component.fileRequested, 'emit');
-    const mockFiles = [new File([''], 'test.txt')];
+  it('should emit filesSelected event when files are selected', async () => {
+    spyOn(component.filesSelected, 'emit');
+    const mockFile = new File(['test content'], 'test.txt', { type: 'text/plain' });
     const mockEvent = {
       target: {
-        files: mockFiles
+        files: [mockFile]
       }
     } as any;
 
-    component.handleFileSelection(mockEvent);
-    expect(component.fileRequested.emit).toHaveBeenCalledWith(mockFiles);
+    await component.handleFileSelection(mockEvent);
+
+    expect(component.filesSelected.emit).toHaveBeenCalled();
+    expect(component.filePreviews.length).toBe(1);
+    expect(component.filePreviews[0].name).toBe('test.txt');
   });
 
   it('should handle Enter key to send message', () => {
@@ -100,5 +104,36 @@ describe('ChatUiInputfieldComponent', () => {
 
     component.handleKeyPress(event);
     expect(component.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('should remove file preview when removeFilePreview is called', () => {
+    // Add some test file previews
+    component.filePreviews = [
+      {
+        id: 'file-1',
+        file: new File([''], 'test1.txt'),
+        name: 'test1.txt',
+        size: 100,
+        sizeFormatted: '100 Bytes',
+        type: FileType.DOCUMENT,
+        mimeType: 'text/plain',
+        uploadStatus: UploadStatus.PENDING
+      },
+      {
+        id: 'file-2',
+        file: new File([''], 'test2.txt'),
+        name: 'test2.txt',
+        size: 200,
+        sizeFormatted: '200 Bytes',
+        type: FileType.DOCUMENT,
+        mimeType: 'text/plain',
+        uploadStatus: UploadStatus.PENDING
+      }
+    ];
+
+    component.removeFilePreview('file-1');
+
+    expect(component.filePreviews.length).toBe(1);
+    expect(component.filePreviews[0].id).toBe('file-2');
   });
 });

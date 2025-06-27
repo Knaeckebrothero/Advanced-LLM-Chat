@@ -5,6 +5,7 @@ import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
 import { Settings } from '../settings/settings.service';
+import { FilePreview } from '../data/objects/file-preview';
 
 
 @Injectable({
@@ -196,6 +197,16 @@ export class ApiService {
     const endpoint = `${this.baseUrl}/api/conversations/user/${userId}`;
     // ... implement API call
     return [];
+  }
+
+  // Method for file upload
+  async uploadFiles(files: FilePreview[]): Promise<string[]> {
+    // Convert FilePreview to FormData and upload
+    const formData = new FormData();
+    files.forEach(fp => {
+      formData.append('files', fp.file);
+    });
+    // TODO: Implement upload logic
   }
 
   // TODO: Implement create conversation

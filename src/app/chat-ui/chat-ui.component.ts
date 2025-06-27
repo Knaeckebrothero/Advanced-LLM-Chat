@@ -1,6 +1,7 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
+import { FilePreview } from '../data/objects/file-preview';
 
 
 @Component({
@@ -112,10 +113,10 @@ export class ChatUiComponent implements AfterViewChecked {
   }
 
   // Handle file attachment request
-  onFileRequested(files: File[]): void {
-    console.log('Files selected:', files);
-    // TODO: Handle file preview display
-    // TODO: Prepare files for upload
+  onFileRequested(filePreviews: FilePreview[]): void {
+    console.log('Files selected:', filePreviews);
+    // TODO: Store files temporarily until message is sent
+    this.pendingFiles = filePreviews;
   }
 
   onCameraRequested(): void {

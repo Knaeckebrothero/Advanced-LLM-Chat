@@ -6,6 +6,7 @@ import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { SettingsService } from '../settings/settings.service';
 import { DisplayService } from '../sidebar/service/display.service';
+import { FilePreview, UploadStatus } from '../data/objects/file-preview';
 
 
 @Injectable({
@@ -199,7 +200,7 @@ export class ChatService {
     }
   }
 
-// Send a message
+  // Send a message
   public async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
     if (this.isNewConversationSubject.getValue()) {
       // First message in a new chat. Create the conversation.
@@ -263,6 +264,15 @@ export class ChatService {
 
     // Trigger a sync after sending the message (especially important for new conversations)
     this.syncInBackground();
+  }
+
+  // Send a file inside a message
+  public async sendMessageWithFiles(
+    content: string,
+    files: FilePreview[],
+    roleName: string = 'user'
+  ): Promise<void> {
+    // TODO: Implementation for sending messages with attachments
   }
 
   // Generate a message

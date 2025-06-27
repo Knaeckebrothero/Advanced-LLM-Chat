@@ -1,9 +1,14 @@
+import { FilePreview } from './file-preview';
+
+
 export class Message {
   id: number;  // Id of the message
   conversationId: number;  // Id of the conversation the message belongs to
   roleName: string;  // Role name of the participant who sent the message
   content: string;  // Content of the message
   time: Date;  // Time the message was sent (in Date format)
+  attachments?: FilePreview[];
+
 
   constructor(data: {
       id: number,
@@ -46,7 +51,7 @@ export class Message {
           time: Math.floor(this.time.getTime() / 1000)
       };
   }
-  
+
   // Convert from API send format
   static fromApiSend(
     data: {
@@ -73,7 +78,7 @@ export class Message {
           time: Math.floor(this.time.getTime() / 1000)
       };
   }
-  
+
   // Convert from API generate format
   static fromApiGenerate(data: {
         id: number,
@@ -111,12 +116,12 @@ export class Message {
   // Compute hash value for this message
   computeHash(): number {
       if (!this.content) return 0;
-      
+
       let hashValue = 0;
       hashValue += this.content.charCodeAt(0);
       hashValue += this.content.charCodeAt(this.content.length - 1);
       hashValue += this.content.length;
-      
+
       return hashValue % (2**32);
   }
 }
