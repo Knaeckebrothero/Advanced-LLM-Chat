@@ -91,18 +91,26 @@ export class ChatUiComponent implements AfterViewChecked {
 
   // Handle message sent from the input component
   async onMessageSent(message: string): Promise<void> {
-    if (message.trim()) {
+    if (message.trim() || this.pendingFiles.length > 0) {
       try {
+        // Log files for demo purposes
+        if (this.pendingFiles.length > 0) {
+          console.log('Message sent with files:', this.pendingFiles);
+        }
+
         // Wait for the message to be sent (and conversation created if needed)
         await this.chatService.sendMessage(message);
         console.log('User added message:', message);
         this.scrollToBottom();
 
-        // NOW generate AI response after message is confirmed sent
+        // Clear pending files after sending
+        this.pendingFiles = [];
+
+        // Generate AI response after message is confirmed sent
         await this.generateMessage();
       } catch (error) {
         console.error('Error sending message:', error);
-        // Optionally show an error to the user
+        // TODO: Optionally show an error to the user
       }
     }
   }
