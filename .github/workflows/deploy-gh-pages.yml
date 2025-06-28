@@ -10,15 +10,15 @@ jobs:
 
     steps:
       - name: Checkout Develop Branch
-        uses: actions/checkout@v4  # Updated to v4
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for proper versioning
+          fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4  # Updated to v4
+        uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
-          cache: 'npm'  # Cache npm dependencies for faster builds
+          cache: 'npm'
 
       - name: Get Commit Info
         id: commit
@@ -38,6 +38,17 @@ jobs:
           echo "Building from develop branch commit: ${{ steps.commit.outputs.sha_short }}"
           ng build --configuration production --base-href "/Advanced-LLM-Chat/"
 
+      - name: Verify Build Output
+        run: |
+          echo "Checking build output structure:"
+          ls -la dist/
+          ls -la dist/advanced-llm-chat/
+          # Check if browser subdirectory exists (Angular 17+)
+          if [ -d "dist/advanced-llm-chat/browser" ]; then
+            echo "Found browser subdirectory (Angular 17+ structure)"
+            ls -la dist/advanced-llm-chat/browser/
+          fi
+
       - name: Checkout GitHub Pages Branch
         uses: actions/checkout@v4
         with:
@@ -50,10 +61,19 @@ jobs:
           # Clear existing files
           rm -rf gh-pages/*
 
-          # Copy new build files
-          cp -r dist/advanced-llm-chat/* gh-pages/
+          # Copy build files - handle both old and new Angular build structures
+          if [ -d "dist/advanced-llm-chat/browser" ]; then
+            echo "Copying from browser subdirectory (Angular 17+)"
+            cp -r dist/advanced-llm-chat/browser/* gh-pages/
+          else
+            echo "Copying from root dist directory (legacy structure)"
+            cp -r dist/advanced-llm-chat/* gh-pages/
+          fi
 
-          # Add a deployment info file
+          # Create .nojekyll file to prevent Jekyll processing
+          touch gh-pages/.nojekyll
+
+          # Add deployment info
           echo "Deployed from develop branch" > gh-pages/DEPLOYMENT_INFO.txt
           echo "Commit: ${{ steps.commit.outputs.sha_short }}" >> gh-pages/DEPLOYMENT_INFO.txt
           echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> gh-pages/DEPLOYMENT_INFO.txt
