@@ -526,4 +526,10 @@
   border-radius: 24px; // Match container border radius
   image-rendering: optimizeSpeed;
   image-rendering: -webkit-optimize-contrast;
+
+  // Hide the canvas when not recording but keep it in the DOM
+  &.hidden {
+    opacity: 0;
+    visibility: hidden;
+  }
 }

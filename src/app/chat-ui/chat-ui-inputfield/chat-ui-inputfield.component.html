@@ -1,10 +1,10 @@
 <!-- Input field container with background visualization -->
 <div class="input-field-container" [class.recording-mode]="isRecording">
 
-  <!-- Background waveform canvas (always present when recording) -->
+  <!-- Background waveform canvas (always present but only visible when recording) -->
   <canvas #waveformCanvas
-          *ngIf="isRecording"
           class="background-waveform-canvas"
+          [class.hidden]="!isRecording"
           [width]="canvasWidth"
           [height]="canvasHeight">
   </canvas>
