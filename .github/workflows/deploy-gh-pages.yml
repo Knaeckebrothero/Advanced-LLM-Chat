@@ -1,4 +1,4 @@
-name: Build and Deploy from Develop
+name: Build and Deploy to GitHub Pages
 on:
   push:
     branches:
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: gh-pages
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          token: ${{ secrets.DEPLOY_GH_PAGES }}
           path: gh-pages
 
       - name: Deploy to GitHub Pages
