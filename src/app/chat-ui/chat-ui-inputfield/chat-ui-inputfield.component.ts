@@ -10,7 +10,6 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../data/objects/file-preview';
 
 // Time-based bar visualization interfaces and classes
-// Time-based bar visualization interfaces and classes
 interface VisualizationBar {
   height: number;      // 1-100 normalized value
   timestamp: number;   // When bar was created
@@ -849,13 +848,6 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
-  // Update waveform canvas width based on container
-  private updateWaveformWidth(): void {
-    // In a real implementation, you'd calculate this based on the container width
-    // For now, we'll use a fixed width that looks good
-    this.waveformWidth = window.innerWidth > 768 ? 400 : window.innerWidth - 150;
-  }
-
   // Update canvas dimensions to match container
   private updateCanvasDimensions(): void {
     // Get the container element to match its size
@@ -870,23 +862,6 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
         // The visualizer will adapt to the new canvas size on next frame
       }
     }
-  }
-
-  // The time-based bar visualization has replaced these methods
-  private drawSmoothWaveformWithFill(): void {
-    // This method is kept as a stub for backward compatibility
-    // The actual visualization is now handled by TimeBasedBarVisualizer
-    console.log('drawSmoothWaveformWithFill is deprecated, using TimeBasedBarVisualizer instead');
-  }
-
-  // Start waveform animation - replaced by TimeBasedBarVisualizer
-  private startWaveformAnimation(): void {
-    // This method is completely replaced with a stub
-    // The actual visualization is now handled by TimeBasedBarVisualizer
-    console.log('startWaveformAnimation is deprecated, using TimeBasedBarVisualizer instead');
-
-    // No implementation needed as this method is no longer used
-    // All functionality has been moved to the TimeBasedBarVisualizer class
   }
 
   // Hold-to-record event handlers
