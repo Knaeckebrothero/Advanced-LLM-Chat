@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy, Input } from '@angular/core';
+import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy, Input, NgZone } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -8,6 +8,273 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../data/objects/file-preview';
+
+// Time-based bar visualization interfaces and classes
+interface VisualizationBar {
+  height: number;      // 1-100 normalized value
+  timestamp: number;   // When bar was created
+  x: number;           // Current x position
+}
+
+class TimeBasedBarVisualizer {
+  private bars: VisualizationBar[] = [];
+  private lastBarTime = 0;
+  private readonly BAR_INTERVAL = 500; // 0.5 seconds
+  private readonly BAR_WIDTH = 24; // Increased from 18 for bigger bars
+  private readonly BAR_GAP = 8; // Increased gap for better visual separation
+  private readonly TOTAL_BAR_SPACE = this.BAR_WIDTH + this.BAR_GAP; // Total space per bar
+  private readonly SCROLL_SPEED = 60; // Slightly increased for smoother movement
+
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private animationId: number | null = null;
+  private lastAnimationTime = 0;
+  private audioLevelCallback: () => number;
+  private renderer: OptimizedCanvasRenderer;
+
+  constructor(canvas: HTMLCanvasElement, audioLevelCallback: () => number) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false })!;
+    this.audioLevelCallback = audioLevelCallback;
+    this.renderer = new OptimizedCanvasRenderer(canvas, this.BAR_WIDTH, this.BAR_GAP, this.TOTAL_BAR_SPACE);
+  }
+
+  start(): void {
+    this.lastAnimationTime = performance.now();
+    this.lastBarTime = this.lastAnimationTime;
+    this.animationId = requestAnimationFrame(this.animate);
+  }
+
+  stop(): void {
+    if (this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+    this.bars = [];
+  }
+
+  private animate = (currentTime: number): void => {
+    const deltaTime = currentTime - this.lastAnimationTime;
+    this.lastAnimationTime = currentTime;
+
+    // Add new bar every 0.5 seconds
+    if (currentTime - this.lastBarTime >= this.BAR_INTERVAL) {
+      const audioLevel = this.audioLevelCallback();
+      this.addNewBar(audioLevel);
+      this.lastBarTime = currentTime;
+    }
+
+    // Update bar positions (scroll left)
+    this.updateBarPositions(deltaTime);
+
+    // Render frame
+    this.renderer.renderFrame(this.bars);
+
+    this.animationId = requestAnimationFrame(this.animate);
+  };
+
+  private addNewBar(height: number): void {
+    // Position new bars with proper spacing from the start
+    const lastBar = this.bars[this.bars.length - 1];
+    const startX = lastBar
+      ? lastBar.x + this.TOTAL_BAR_SPACE
+      : this.canvas.width;
+
+    this.bars.push({
+      height,
+      timestamp: Date.now(),
+      x: startX
+    });
+  }
+
+  private updateBarPositions(deltaTime: number): void {
+    const scrollDistance = (this.SCROLL_SPEED * deltaTime) / 1000;
+
+    // Update positions and remove off-screen bars
+    this.bars = this.bars.filter(bar => {
+      bar.x -= scrollDistance;
+      return bar.x > -(this.BAR_WIDTH + this.BAR_GAP); // Keep bars until fully off-screen including gap
+    });
+  }
+}
+
+class OptimizedCanvasRenderer {
+  private ctx: CanvasRenderingContext2D;
+  private readonly BAR_WIDTH: number;
+  private readonly BAR_GAP: number;
+  private readonly TOTAL_BAR_SPACE: number;
+
+  // Gradient for bars
+  private barGradient: CanvasGradient | null = null;
+
+  constructor(
+    private canvas: HTMLCanvasElement,
+    barWidth: number,
+    barGap: number,
+    totalBarSpace: number
+  ) {
+    this.ctx = canvas.getContext('2d', {
+      alpha: false,
+      desynchronized: true
+    })!;
+
+    this.BAR_WIDTH = barWidth;
+    this.BAR_GAP = barGap;
+    this.TOTAL_BAR_SPACE = totalBarSpace;
+
+    // Create gradient for bars
+    this.createBarGradient();
+  }
+
+  private createBarGradient(): void {
+    // Create a vertical gradient for more visual appeal
+    this.barGradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+    this.barGradient.addColorStop(0, '#66B3FF'); // Lighter blue at top
+    this.barGradient.addColorStop(0.5, '#4CA5DC'); // Medium blue in middle
+    this.barGradient.addColorStop(1, '#3399D6'); // Darker blue at bottom
+  }
+
+  renderFrame(bars: VisualizationBar[]): void {
+    // Clear with white background
+    this.ctx.fillStyle = '#FFFFFF';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // Only render visible bars
+    const visibleBars = bars.filter(bar =>
+      bar.x > -this.TOTAL_BAR_SPACE && bar.x < this.canvas.width
+    );
+
+    // Draw bars with gradient and rounded corners
+    if (this.barGradient) {
+      this.ctx.fillStyle = this.barGradient;
+    } else {
+      this.ctx.fillStyle = '#4CA5DC'; // Fallback color
+    }
+
+    visibleBars.forEach(bar => {
+      // Increase sensitivity and add minimum height for better visibility
+      const normalizedHeight = Math.max(bar.height * 1.8, 5); // Minimum 5px height
+      const barHeight = (normalizedHeight / 100) * this.canvas.height;
+      const cappedHeight = Math.min(barHeight, this.canvas.height - 4); // Leave 4px margin
+      const y = this.canvas.height - cappedHeight;
+
+      const x = Math.floor(bar.x);
+
+      // Draw rounded rectangle for each bar
+      this.drawRoundedRect(x, y, this.BAR_WIDTH, cappedHeight, 4);
+
+      // Add subtle shadow effect
+      this.ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+      this.ctx.shadowBlur = 4;
+      this.ctx.shadowOffsetX = 2;
+      this.ctx.shadowOffsetY = 2;
+      this.ctx.fill();
+
+      // Reset shadow for next bar
+      this.ctx.shadowBlur = 0;
+      this.ctx.shadowOffsetX = 0;
+      this.ctx.shadowOffsetY = 0;
+    });
+  }
+
+  private drawRoundedRect(x: number, y: number, width: number, height: number, radius: number): void {
+    // Ensure radius isn't larger than half the smallest dimension
+    radius = Math.min(radius, width / 2, height / 2);
+
+    this.ctx.beginPath();
+    // Top left corner
+    this.ctx.moveTo(x + radius, y);
+    // Top right corner
+    this.ctx.lineTo(x + width - radius, y);
+    this.ctx.arc(x + width - radius, y + radius, radius, -Math.PI / 2, 0);
+    // Bottom right corner
+    this.ctx.lineTo(x + width, y + height - radius);
+    this.ctx.arc(x + width - radius, y + height - radius, radius, 0, Math.PI / 2);
+    // Bottom left corner
+    this.ctx.lineTo(x + radius, y + height);
+    this.ctx.arc(x + radius, y + height - radius, radius, Math.PI / 2, Math.PI);
+    // Back to top left
+    this.ctx.lineTo(x, y + radius);
+    this.ctx.arc(x + radius, y + radius, radius, Math.PI, -Math.PI / 2);
+    this.ctx.closePath();
+  }
+}
+
+class VoiceAudioProcessor {
+  private analyser: AnalyserNode;
+  private timeDomainData: Uint8Array;
+  private smoother: AudioLevelSmoother;
+
+  constructor(audioContext: AudioContext, analyserNode: AnalyserNode) {
+    this.analyser = analyserNode;
+    this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0.3; // Light smoothing for voice
+
+    this.timeDomainData = new Uint8Array(this.analyser.fftSize);
+    this.smoother = new AudioLevelSmoother();
+  }
+
+  getVoiceLevel(): number {
+    // Use time domain for accurate voice levels
+    this.analyser.getByteTimeDomainData(this.timeDomainData);
+
+    // Calculate RMS
+    let sum = 0;
+    for (let i = 0; i < this.timeDomainData.length; i++) {
+      const sample = (this.timeDomainData[i] - 128) / 128; // Normalize to -1 to 1
+      sum += sample * sample;
+    }
+    const rms = Math.sqrt(sum / this.timeDomainData.length);
+
+    // Convert to decibels
+    const db = 20 * Math.log10(Math.max(rms, 0.0001)); // Avoid log(0)
+
+    // Normalize for voice (your specified mapping)
+    const normalized = this.normalizeVoiceLevel(db);
+
+    // Apply smoothing to prevent jumpy bars
+    return this.smoother.smooth(normalized);
+  }
+
+  private normalizeVoiceLevel(db: number): number {
+    // Voice-specific thresholds
+    const SILENCE_DB = -60;    // Maps to 1
+    const QUIET_DB = -40;      // Maps to 20
+    const NORMAL_DB = -25;     // Maps to 40
+    const LOUD_DB = -15;       // Maps to 60
+    const VERY_LOUD_DB = -5;   // Maps to 80
+    const MAX_DB = 0;          // Maps to 100
+
+    if (db <= SILENCE_DB) return 1;
+    if (db <= QUIET_DB) return this.lerp(1, 20, (db - SILENCE_DB) / (QUIET_DB - SILENCE_DB));
+    if (db <= NORMAL_DB) return this.lerp(20, 40, (db - QUIET_DB) / (NORMAL_DB - QUIET_DB));
+    if (db <= LOUD_DB) return this.lerp(40, 60, (db - NORMAL_DB) / (LOUD_DB - NORMAL_DB));
+    if (db <= VERY_LOUD_DB) return this.lerp(60, 80, (db - LOUD_DB) / (VERY_LOUD_DB - LOUD_DB));
+    return this.lerp(80, 100, Math.min(1, (db - VERY_LOUD_DB) / (MAX_DB - VERY_LOUD_DB)));
+  }
+
+  private lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * Math.max(0, Math.min(1, t));
+  }
+}
+
+// Smoothing algorithm optimized for voice
+class AudioLevelSmoother {
+  private currentLevel = 0;
+  private readonly ATTACK = 0.8;   // Fast response to speech onset
+  private readonly RELEASE = 0.15; // Slower decay for natural look
+
+  smooth(inputLevel: number): number {
+    if (inputLevel > this.currentLevel) {
+      // Attack phase - quick rise for speech onset
+      this.currentLevel = this.ATTACK * inputLevel + (1 - this.ATTACK) * this.currentLevel;
+    } else {
+      // Release phase - slower fall
+      this.currentLevel = this.RELEASE * inputLevel + (1 - this.RELEASE) * this.currentLevel;
+    }
+    return Math.round(this.currentLevel); // Round for consistent bar heights
+  }
+}
 
 
 @Component({
@@ -27,6 +294,7 @@ import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../data
   styleUrls: ['./chat-ui-inputfield.component.scss']
 })
 export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestroy {
+  constructor(private ngZone: NgZone) {}
   // ViewChild to access the textarea element directly
   @ViewChild('messageTextarea') private messageTextarea!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
@@ -64,9 +332,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   recordingStartTime: number = 0;
   recordingTime: Date = new Date(0);
   recordingTimer: any;
-  waveformAnimationId: any;
   waveformWidth: number = 200;
-  waveformData: Array<{x: number, height: number}> = [];
+  canvasWidth: number = 800;
+  canvasHeight: number = 80; // Taller to fill the input field
   isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
   recordingDuration: number = 0; // Store duration in seconds
 
@@ -76,7 +344,13 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   audioChunks: Blob[] = [];
   audioContext: AudioContext | null = null;
   analyser: AnalyserNode | null = null;
-  dataArray: Uint8Array | null = null;
+
+  // Time-based bar visualization properties
+  barVisualizer: TimeBasedBarVisualizer | null = null;
+  audioProcessor: VoiceAudioProcessor | null = null;
+
+  // Property for backward compatibility
+  private waveformAnimationId: number | null = null;
 
   // Track if we have content to show appropriate button
   get hasContent(): boolean {
@@ -91,8 +365,11 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   ngAfterViewInit() {
     // Initial adjustment of textarea height
     this.adjustTextareaHeight();
-    // Set initial waveform width
-    this.updateWaveformWidth();
+    // Set initial canvas dimensions
+    this.updateCanvasDimensions();
+
+    // Add resize listener for responsive canvas
+    window.addEventListener('resize', () => this.updateCanvasDimensions());
   }
 
   // Check what capabilities the device has
@@ -308,7 +585,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     return '';
   }
 
-  // Set up audio analysis for real waveform
+  // Set up audio analysis for time-based bar visualization
   private setupAudioAnalysis(stream: MediaStream): void {
     try {
       // Create audio context
@@ -317,30 +594,33 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
       // Create analyser node
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048; // Increased for better resolution
-      this.analyser.smoothingTimeConstant = 0.8; // Smooth out rapid changes
-
-      // Create data array for time domain data
-      const bufferLength = this.analyser.fftSize;
-      this.dataArray = new Uint8Array(bufferLength);
 
       // Connect stream to analyser
       const source = this.audioContext.createMediaStreamSource(stream);
       source.connect(this.analyser);
       // Note: We don't connect to destination to avoid feedback
 
-      console.log('Audio analysis setup complete');
-      console.log('Analyser fftSize:', this.analyser.fftSize);
-      console.log('Data array length:', this.dataArray.length);
+      // Create audio processor for voice level calculation
+      this.audioProcessor = new VoiceAudioProcessor(this.audioContext, this.analyser);
 
-      // Test if we're getting data
-      setTimeout(() => {
-        if (this.analyser && this.dataArray) {
-          this.analyser.getByteTimeDomainData(this.dataArray);
-          const hasSound = this.dataArray.some(value => Math.abs(value - 128) > 5);
-          console.log('Audio test - has sound:', hasSound);
-        }
-      }, 500);
+      // Update canvas dimensions before creating visualizer
+      this.updateCanvasDimensions();
+
+      // Create bar visualizer
+      if (this.waveformCanvas && this.waveformCanvas.nativeElement) {
+        // Run visualization outside Angular zone for better performance
+        this.ngZone.runOutsideAngular(() => {
+          this.barVisualizer = new TimeBasedBarVisualizer(
+            this.waveformCanvas.nativeElement,
+            () => this.audioProcessor?.getVoiceLevel() || 0
+          );
+
+          // Start the visualization
+          this.barVisualizer.start();
+        });
+      }
+
+      console.log('Audio analysis setup complete');
     } catch (error) {
       console.error('Error setting up audio analysis:', error);
     }
@@ -363,8 +643,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       this.recordingStartTime = Date.now();
       this.recordingDuration = 0;
 
-      // Update canvas width and wait for it to render
-      this.updateWaveformWidth();
+      // Update canvas dimensions and wait for it to render
+      this.updateCanvasDimensions();
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Set up MediaRecorder
@@ -397,8 +677,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
         this.recordingDuration = Math.floor(elapsed / 1000);
       }, 100);
 
-      // Start the waveform animation
-      this.startWaveformAnimation();
+      // Visualization is started in setupAudioAnalysis
 
       console.log('Voice recording started with real audio');
     } catch (error) {
@@ -442,9 +721,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       clearInterval(this.recordingTimer);
     }
 
-    // Stop animation
-    if (this.waveformAnimationId) {
-      cancelAnimationFrame(this.waveformAnimationId);
+    // Stop the bar visualization
+    if (this.barVisualizer) {
+      this.barVisualizer.stop();
     }
 
     // Wait a bit for the last data chunk
@@ -460,12 +739,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
     // Reset
     this.recordingTime = new Date(0);
-    this.waveformData = [];
     this.mediaRecorder = null;
     this.audioStream = null;
     this.audioContext = null;
     this.analyser = null;
-    this.dataArray = null;
+    this.audioProcessor = null;
+    this.barVisualizer = null;
 
     console.log('Voice recording stopped');
   }
@@ -494,20 +773,20 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       clearInterval(this.recordingTimer);
     }
 
-    // Stop animation
-    if (this.waveformAnimationId) {
-      cancelAnimationFrame(this.waveformAnimationId);
+    // Stop the bar visualization
+    if (this.barVisualizer) {
+      this.barVisualizer.stop();
     }
 
     // Reset everything
     this.recordingTime = new Date(0);
-    this.waveformData = [];
     this.audioChunks = [];
     this.mediaRecorder = null;
     this.audioStream = null;
     this.audioContext = null;
     this.analyser = null;
-    this.dataArray = null;
+    this.audioProcessor = null;
+    this.barVisualizer = null;
 
     console.log('Voice recording cancelled');
   }
@@ -569,293 +848,20 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
-  // Update waveform canvas width based on container
-  private updateWaveformWidth(): void {
-    // In a real implementation, you'd calculate this based on the container width
-    // For now, we'll use a fixed width that looks good
-    this.waveformWidth = window.innerWidth > 768 ? 400 : window.innerWidth - 150;
-  }
+  // Update canvas dimensions to match container
+  private updateCanvasDimensions(): void {
+    // Get the container element to match its size
+    const container = document.querySelector('.input-field-container');
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      this.canvasWidth = Math.floor(rect.width);
+      this.canvasHeight = Math.floor(rect.height) || 80; // Default height if not yet rendered
 
-  // Optional: Add these helper methods for additional visual effects
-  private drawSmoothWaveformWithFill(): void {
-    // Alternative implementation with filled waveform (like SoundCloud style)
-    // This can be called instead of the line-based waveform for a different look
-
-    const canvas = this.waveformCanvas.nativeElement;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const centerY = canvas.height / 2;
-
-    // Create gradient fill
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, 'rgba(76, 165, 220, 0.8)');
-    gradient.addColorStop(0.5, 'rgba(76, 165, 220, 0.4)');
-    gradient.addColorStop(1, 'rgba(76, 165, 220, 0.8)');
-
-    ctx.fillStyle = gradient;
-
-    // Draw filled waveform
-    ctx.beginPath();
-    ctx.moveTo(0, centerY);
-
-    // Top edge
-    for (let i = 0; i < this.waveformData.length; i++) {
-      const x = i * 2;
-      const amplitude = this.waveformData[i] * (canvas.height / 2 - 5);
-      const y = centerY - amplitude;
-
-      if (i === 0) {
-        ctx.lineTo(x, y);
-      } else {
-        const prevX = (i - 1) * 2;
-        const prevY = centerY - this.waveformData[i - 1] * (canvas.height / 2 - 5);
-        const cpX = (prevX + x) / 2;
-        const cpY = (prevY + y) / 2;
-        ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
+      // If currently recording, update the visualizer
+      if (this.barVisualizer && this.waveformCanvas?.nativeElement) {
+        // The visualizer will adapt to the new canvas size on next frame
       }
     }
-
-    // Bottom edge (mirrored)
-    for (let i = this.waveformData.length - 1; i >= 0; i--) {
-      const x = i * 2;
-      const amplitude = this.waveformData[i] * (canvas.height / 2 - 5);
-      const y = centerY + amplitude;
-
-      if (i === this.waveformData.length - 1) {
-        ctx.lineTo(x, y);
-      } else {
-        const nextX = (i + 1) * 2;
-        const nextY = centerY + this.waveformData[i + 1] * (canvas.height / 2 - 5);
-        const cpX = (nextX + x) / 2;
-        const cpY = (nextY + y) / 2;
-        ctx.quadraticCurveTo(nextX, nextY, cpX, cpY);
-      }
-    }
-
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  // Start waveform animation
-  private startWaveformAnimation(): void {
-    // Wait for canvas to be ready
-    setTimeout(() => {
-      if (!this.waveformCanvas || !this.waveformCanvas.nativeElement) {
-        console.error('Canvas not ready');
-        return;
-      }
-
-      const canvas = this.waveformCanvas.nativeElement;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        console.error('Could not get canvas context');
-        return;
-      }
-
-      // Waveform configuration
-      const config = {
-        // Visual settings
-        lineWidth: 2,
-        primaryColor: '#4CA5DC',
-        secondaryColor: '#66c2ff',
-        glowColor: 'rgba(76, 165, 220, 0.3)',
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
-
-        // Waveform behavior
-        samplesPerSecond: 60, // How many points to capture per second
-        scrollSpeed: 1, // Pixels per frame
-        smoothingFactor: 0.8, // How much to smooth between samples (0-1)
-        amplitudeScale: 0.9, // Scale factor for amplitude (0-1)
-
-        // Advanced effects
-        enableGlow: true,
-        enableGradient: true,
-        enableMirror: true, // Mirror waveform for symmetrical look
-      };
-
-      // Waveform data storage
-      const waveformData: number[] = [];
-      const maxSamples = Math.floor(canvas.width / 2); // Store enough samples to fill the canvas
-
-      // Smoothing variables
-      let smoothedAmplitude = 0;
-      let targetAmplitude = 0;
-
-      // Animation variables
-      let lastSampleTime = Date.now();
-      const sampleInterval = 1000 / config.samplesPerSecond;
-
-      // Clear and prepare canvas
-      const prepareCanvas = () => {
-        ctx.fillStyle = config.backgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      };
-
-      // Calculate amplitude from audio data
-      const getAudioLevel = (): number => {
-        if (!this.analyser || !this.dataArray) return 0;
-
-        this.analyser.getByteTimeDomainData(this.dataArray);
-
-        // Calculate RMS (Root Mean Square) for a more accurate representation
-        let sum = 0;
-        let max = 0;
-
-        for (let i = 0; i < this.dataArray.length; i++) {
-          const normalized = (this.dataArray[i] - 128) / 128; // Normalize to -1 to 1
-          sum += normalized * normalized;
-          max = Math.max(max, Math.abs(normalized));
-        }
-
-        const rms = Math.sqrt(sum / this.dataArray.length);
-
-        // Use a combination of RMS and peak for better visual response
-        const level = (rms * 0.7 + max * 0.3) * config.amplitudeScale;
-
-        return Math.min(1, level * 3); // Scale up and cap at 1
-      };
-
-      // Draw smooth waveform using bezier curves
-      const drawWaveform = () => {
-        // Clear canvas with slight fade for trailing effect
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        if (waveformData.length < 2) return;
-
-        const centerY = canvas.height / 2;
-
-        // Set up glow effect if enabled
-        if (config.enableGlow) {
-          ctx.shadowColor = config.glowColor;
-          ctx.shadowBlur = 10;
-        }
-
-        // Create gradient if enabled
-        if (config.enableGradient) {
-          const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
-          gradient.addColorStop(0, 'rgba(76, 165, 220, 0.1)');
-          gradient.addColorStop(0.5, config.primaryColor);
-          gradient.addColorStop(1, config.secondaryColor);
-          ctx.strokeStyle = gradient;
-        } else {
-          ctx.strokeStyle = config.primaryColor;
-        }
-
-        ctx.lineWidth = config.lineWidth;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        // Draw upper waveform
-        ctx.beginPath();
-
-        for (let i = 0; i < waveformData.length; i++) {
-          const x = i * 2; // Space between points
-          const amplitude = waveformData[i] * (canvas.height / 2 - 5); // Leave some margin
-          const y = centerY - amplitude;
-
-          if (i === 0) {
-            ctx.moveTo(x, y);
-          } else {
-            // Use quadratic bezier curves for smooth connections
-            const prevX = (i - 1) * 2;
-            const prevY = centerY - waveformData[i - 1] * (canvas.height / 2 - 5);
-            const cpX = (prevX + x) / 2;
-            const cpY = (prevY + y) / 2;
-
-            ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
-          }
-        }
-
-        // Extend to the current edge
-        const lastX = (waveformData.length - 1) * 2;
-        const lastY = centerY - waveformData[waveformData.length - 1] * (canvas.height / 2 - 5);
-        ctx.lineTo(lastX + 2, lastY);
-
-        ctx.stroke();
-
-        // Draw mirrored lower waveform if enabled
-        if (config.enableMirror) {
-          ctx.beginPath();
-
-          for (let i = 0; i < waveformData.length; i++) {
-            const x = i * 2;
-            const amplitude = waveformData[i] * (canvas.height / 2 - 5);
-            const y = centerY + amplitude;
-
-            if (i === 0) {
-              ctx.moveTo(x, y);
-            } else {
-              const prevX = (i - 1) * 2;
-              const prevY = centerY + waveformData[i - 1] * (canvas.height / 2 - 5);
-              const cpX = (prevX + x) / 2;
-              const cpY = (prevY + y) / 2;
-
-              ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
-            }
-          }
-
-          ctx.stroke();
-        }
-
-        // Draw center line
-        ctx.strokeStyle = 'rgba(76, 165, 220, 0.2)';
-        ctx.lineWidth = 1;
-        ctx.shadowBlur = 0;
-        ctx.beginPath();
-        ctx.moveTo(0, centerY);
-        ctx.lineTo(canvas.width, centerY);
-        ctx.stroke();
-
-        // Draw "live" indicator on the right edge
-        const liveX = Math.min(waveformData.length * 2 + 10, canvas.width - 10);
-        ctx.fillStyle = config.secondaryColor;
-        ctx.shadowColor = config.secondaryColor;
-        ctx.shadowBlur = 10;
-        ctx.beginPath();
-        ctx.arc(liveX, centerY, 3, 0, Math.PI * 2);
-        ctx.fill();
-      };
-
-      // Main animation loop
-      const animate = () => {
-        const now = Date.now();
-
-        // Sample audio at regular intervals
-        if (now - lastSampleTime >= sampleInterval) {
-          targetAmplitude = getAudioLevel();
-          lastSampleTime = now;
-        }
-
-        // Smooth the amplitude changes
-        smoothedAmplitude += (targetAmplitude - smoothedAmplitude) * config.smoothingFactor;
-
-        // Add new sample
-        waveformData.push(smoothedAmplitude);
-
-        // Remove old samples that have scrolled off screen
-        while (waveformData.length > maxSamples) {
-          waveformData.shift();
-        }
-
-        // Draw the waveform
-        drawWaveform();
-
-        // Continue animation if still recording
-        if (this.isRecording) {
-          this.waveformAnimationId = requestAnimationFrame(animate);
-        } else {
-          // Cleanup
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-      };
-
-      // Start the animation
-      prepareCanvas();
-      animate();
-
-    }, 100); // Give canvas time to initialize
   }
 
   // Hold-to-record event handlers
@@ -895,6 +901,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Clean up resources when component is destroyed
   ngOnDestroy(): void {
+    // Remove resize listener
+    window.removeEventListener('resize', () => this.updateCanvasDimensions());
+
     // Stop any ongoing recording
     if (this.isRecording) {
       this.cancelRecording();

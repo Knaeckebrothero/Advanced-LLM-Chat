@@ -1,5 +1,13 @@
-<!-- Input field container that holds both the textarea and action buttons -->
+<!-- Input field container with background visualization -->
 <div class="input-field-container" [class.recording-mode]="isRecording">
+
+  <!-- Background waveform canvas (always present when recording) -->
+  <canvas #waveformCanvas
+          *ngIf="isRecording"
+          class="background-waveform-canvas"
+          [width]="canvasWidth"
+          [height]="canvasHeight">
+  </canvas>
 
   <!-- File preview area (shown when files are selected) -->
   <div class="file-preview-area" *ngIf="filePreviews.length > 0 && !isRecording">
@@ -44,8 +52,8 @@
     </textarea>
   </div>
 
-  <!-- Voice recording visualization area (shown during recording) -->
-  <div class="voice-recording-area" *ngIf="isRecording">
+  <!-- Voice recording info area (shown during recording) -->
+  <div class="voice-recording-info" *ngIf="isRecording">
     <!-- Cancel recording button -->
     <button mat-icon-button
             class="cancel-recording-button"
@@ -54,20 +62,10 @@
       <mat-icon>close</mat-icon>
     </button>
 
-    <!-- Recording info and waveform -->
-    <div class="recording-content">
-      <!-- Recording indicator -->
-      <div class="recording-indicator">
-        <span class="recording-dot"></span>
-        <span class="recording-time">{{ recordingTime | date:'mm:ss' }}</span>
-      </div>
-
-      <!-- Waveform visualization -->
-      <canvas #waveformCanvas
-              class="waveform-canvas"
-              [width]="waveformWidth"
-              height="60">
-      </canvas>
+    <!-- Recording indicator -->
+    <div class="recording-indicator">
+      <span class="recording-dot"></span>
+      <span class="recording-time">{{ recordingTime | date:'mm:ss' }}</span>
     </div>
 
     <!-- Send voice message button -->

@@ -12,6 +12,7 @@
   margin: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
+  position: relative; // Important for absolute positioning of canvas
 
   // Add a subtle border
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -29,7 +30,7 @@
 
   // Recording mode styles
   &.recording-mode {
-    background-color: rgba(vars.$color-primary, 0.1);
+    background-color: #FFFFFF; // White background when recording
     border-color: vars.$color-primary;
     animation: recording-pulse 2s ease-in-out infinite;
   }
@@ -46,6 +47,8 @@
 
 // File preview area
 .file-preview-area {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -53,6 +56,7 @@
   border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   max-height: 120px;
   overflow-y: auto;
+  background: transparent; // Let the canvas show through
 
   // Custom scrollbar
   &::-webkit-scrollbar {
@@ -170,8 +174,11 @@
 
 // Area containing the textarea
 .input-content-area {
+  position: relative;
+  z-index: 1;
   width: 100%;
   padding: 8px 12px;
+  background: transparent; // Let the canvas show through
 }
 
 // The actual textarea element
@@ -218,24 +225,24 @@
   }
 }
 
-// Voice recording area
-.voice-recording-area {
+// Voice recording info area (replaces voice-recording-area)
+.voice-recording-info {
+  position: relative; // Above the canvas
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  justify-content: space-between;
+  padding: 16px 20px;
   min-height: 60px;
-  animation: slide-in 0.3s ease-out;
+  animation: fade-in 0.3s ease-out;
 }
 
-@keyframes slide-in {
+@keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateX(-20px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
   }
 }
 
@@ -244,6 +251,9 @@
     width: 40px;
     height: 40px;
     flex-shrink: 0;
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
     .mat-icon {
       color: vars.$color-accent-danger;
@@ -255,20 +265,17 @@
   }
 }
 
-.recording-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-}
-
 .recording-indicator {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
   color: vars.$color-font-dark;
+  background-color: rgba(255, 255, 255, 0.9); // Semi-transparent white background
+  padding: 6px 12px;
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .recording-dot {
@@ -293,33 +300,39 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Waveform canvas styling moved to the bottom of the file */
-
 .send-voice-button {
   &.mat-mdc-icon-button {
     width: 40px;
     height: 40px;
     flex-shrink: 0;
-    background-color: vars.$color-primary;
-    color: white;
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
     .mat-icon {
-      color: white;
+      color: vars.$color-primary;
     }
 
     &:hover {
       background-color: rgba(vars.$color-primary, 0.9);
+
+      .mat-icon {
+        color: white;
+      }
     }
   }
 }
 
 // Container for action buttons
 .action-buttons-bar {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 8px;
   min-height: 40px;
+  background-color: transparent; // Remove any background
 }
 
 // Left side button group
@@ -501,12 +514,16 @@
   margin: 8px;
 }
 
-.waveform-canvas {
+// Background waveform canvas that fills the entire container
+.background-waveform-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 60px;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 8px;
-  display: block;
+  height: 100%;
+  z-index: 0; // Behind all other content
+  pointer-events: none; // Allow clicks to pass through
+  border-radius: 24px; // Match container border radius
   image-rendering: optimizeSpeed;
   image-rendering: -webkit-optimize-contrast;
 }
