@@ -7,274 +7,12 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../data/objects/file-preview';
-
-// Time-based bar visualization interfaces and classes
-interface VisualizationBar {
-  height: number;      // 1-100 normalized value
-  timestamp: number;   // When bar was created
-  x: number;           // Current x position
-}
-
-class TimeBasedBarVisualizer {
-  private bars: VisualizationBar[] = [];
-  private lastBarTime = 0;
-  private readonly BAR_INTERVAL = 500; // 0.5 seconds
-  private readonly BAR_WIDTH = 24; // Increased from 18 for bigger bars
-  private readonly BAR_GAP = 8; // Increased gap for better visual separation
-  private readonly TOTAL_BAR_SPACE = this.BAR_WIDTH + this.BAR_GAP; // Total space per bar
-  private readonly SCROLL_SPEED = 60; // Slightly increased for smoother movement
-
-  private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
-  private animationId: number | null = null;
-  private lastAnimationTime = 0;
-  private audioLevelCallback: () => number;
-  private renderer: OptimizedCanvasRenderer;
-
-  constructor(canvas: HTMLCanvasElement, audioLevelCallback: () => number) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d', { alpha: false })!;
-    this.audioLevelCallback = audioLevelCallback;
-    this.renderer = new OptimizedCanvasRenderer(canvas, this.BAR_WIDTH, this.BAR_GAP, this.TOTAL_BAR_SPACE);
-  }
-
-  start(): void {
-    this.lastAnimationTime = performance.now();
-    this.lastBarTime = this.lastAnimationTime;
-    this.animationId = requestAnimationFrame(this.animate);
-  }
-
-  stop(): void {
-    if (this.animationId !== null) {
-      cancelAnimationFrame(this.animationId);
-      this.animationId = null;
-    }
-    this.bars = [];
-  }
-
-  private animate = (currentTime: number): void => {
-    const deltaTime = currentTime - this.lastAnimationTime;
-    this.lastAnimationTime = currentTime;
-
-    // Add new bar every 0.5 seconds
-    if (currentTime - this.lastBarTime >= this.BAR_INTERVAL) {
-      const audioLevel = this.audioLevelCallback();
-      this.addNewBar(audioLevel);
-      this.lastBarTime = currentTime;
-    }
-
-    // Update bar positions (scroll left)
-    this.updateBarPositions(deltaTime);
-
-    // Render frame
-    this.renderer.renderFrame(this.bars);
-
-    this.animationId = requestAnimationFrame(this.animate);
-  };
-
-  private addNewBar(height: number): void {
-    // Position new bars with proper spacing from the start
-    const lastBar = this.bars[this.bars.length - 1];
-    const startX = lastBar
-      ? lastBar.x + this.TOTAL_BAR_SPACE
-      : this.canvas.width;
-
-    this.bars.push({
-      height,
-      timestamp: Date.now(),
-      x: startX
-    });
-  }
-
-  private updateBarPositions(deltaTime: number): void {
-    const scrollDistance = (this.SCROLL_SPEED * deltaTime) / 1000;
-
-    // Update positions and remove off-screen bars
-    this.bars = this.bars.filter(bar => {
-      bar.x -= scrollDistance;
-      return bar.x > -(this.BAR_WIDTH + this.BAR_GAP); // Keep bars until fully off-screen including gap
-    });
-  }
-}
-
-class OptimizedCanvasRenderer {
-  private ctx: CanvasRenderingContext2D;
-  private readonly BAR_WIDTH: number;
-  private readonly BAR_GAP: number;
-  private readonly TOTAL_BAR_SPACE: number;
-
-  // Gradient for bars
-  private barGradient: CanvasGradient | null = null;
-
-  constructor(
-    private canvas: HTMLCanvasElement,
-    barWidth: number,
-    barGap: number,
-    totalBarSpace: number
-  ) {
-    this.ctx = canvas.getContext('2d', {
-      alpha: false,
-      desynchronized: true
-    })!;
-
-    this.BAR_WIDTH = barWidth;
-    this.BAR_GAP = barGap;
-    this.TOTAL_BAR_SPACE = totalBarSpace;
-
-    // Create gradient for bars
-    this.createBarGradient();
-  }
-
-  private createBarGradient(): void {
-    // Create a vertical gradient for more visual appeal
-    this.barGradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-    this.barGradient.addColorStop(0, '#66B3FF'); // Lighter blue at top
-    this.barGradient.addColorStop(0.5, '#4CA5DC'); // Medium blue in middle
-    this.barGradient.addColorStop(1, '#3399D6'); // Darker blue at bottom
-  }
-
-  renderFrame(bars: VisualizationBar[]): void {
-    // Clear with white background
-    this.ctx.fillStyle = '#FFFFFF';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    // Only render visible bars
-    const visibleBars = bars.filter(bar =>
-      bar.x > -this.TOTAL_BAR_SPACE && bar.x < this.canvas.width
-    );
-
-    // Draw bars with gradient and rounded corners
-    if (this.barGradient) {
-      this.ctx.fillStyle = this.barGradient;
-    } else {
-      this.ctx.fillStyle = '#4CA5DC'; // Fallback color
-    }
-
-    visibleBars.forEach(bar => {
-      // Increase sensitivity and add minimum height for better visibility
-      const normalizedHeight = Math.max(bar.height * 1.8, 5); // Minimum 5px height
-      const barHeight = (normalizedHeight / 100) * this.canvas.height;
-      const cappedHeight = Math.min(barHeight, this.canvas.height - 4); // Leave 4px margin
-      const y = this.canvas.height - cappedHeight;
-
-      const x = Math.floor(bar.x);
-
-      // Draw rounded rectangle for each bar
-      this.drawRoundedRect(x, y, this.BAR_WIDTH, cappedHeight, 4);
-
-      // Add subtle shadow effect
-      this.ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-      this.ctx.shadowBlur = 4;
-      this.ctx.shadowOffsetX = 2;
-      this.ctx.shadowOffsetY = 2;
-      this.ctx.fill();
-
-      // Reset shadow for next bar
-      this.ctx.shadowBlur = 0;
-      this.ctx.shadowOffsetX = 0;
-      this.ctx.shadowOffsetY = 0;
-    });
-  }
-
-  private drawRoundedRect(x: number, y: number, width: number, height: number, radius: number): void {
-    // Ensure radius isn't larger than half the smallest dimension
-    radius = Math.min(radius, width / 2, height / 2);
-
-    this.ctx.beginPath();
-    // Top left corner
-    this.ctx.moveTo(x + radius, y);
-    // Top right corner
-    this.ctx.lineTo(x + width - radius, y);
-    this.ctx.arc(x + width - radius, y + radius, radius, -Math.PI / 2, 0);
-    // Bottom right corner
-    this.ctx.lineTo(x + width, y + height - radius);
-    this.ctx.arc(x + width - radius, y + height - radius, radius, 0, Math.PI / 2);
-    // Bottom left corner
-    this.ctx.lineTo(x + radius, y + height);
-    this.ctx.arc(x + radius, y + height - radius, radius, Math.PI / 2, Math.PI);
-    // Back to top left
-    this.ctx.lineTo(x, y + radius);
-    this.ctx.arc(x + radius, y + radius, radius, Math.PI, -Math.PI / 2);
-    this.ctx.closePath();
-  }
-}
-
-class VoiceAudioProcessor {
-  private analyser: AnalyserNode;
-  private timeDomainData: Uint8Array;
-  private smoother: AudioLevelSmoother;
-
-  constructor(audioContext: AudioContext, analyserNode: AnalyserNode) {
-    this.analyser = analyserNode;
-    this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.3; // Light smoothing for voice
-
-    this.timeDomainData = new Uint8Array(this.analyser.fftSize);
-    this.smoother = new AudioLevelSmoother();
-  }
-
-  getVoiceLevel(): number {
-    // Use time domain for accurate voice levels
-    this.analyser.getByteTimeDomainData(this.timeDomainData);
-
-    // Calculate RMS
-    let sum = 0;
-    for (let i = 0; i < this.timeDomainData.length; i++) {
-      const sample = (this.timeDomainData[i] - 128) / 128; // Normalize to -1 to 1
-      sum += sample * sample;
-    }
-    const rms = Math.sqrt(sum / this.timeDomainData.length);
-
-    // Convert to decibels
-    const db = 20 * Math.log10(Math.max(rms, 0.0001)); // Avoid log(0)
-
-    // Normalize for voice (your specified mapping)
-    const normalized = this.normalizeVoiceLevel(db);
-
-    // Apply smoothing to prevent jumpy bars
-    return this.smoother.smooth(normalized);
-  }
-
-  private normalizeVoiceLevel(db: number): number {
-    // Voice-specific thresholds
-    const SILENCE_DB = -60;    // Maps to 1
-    const QUIET_DB = -40;      // Maps to 20
-    const NORMAL_DB = -25;     // Maps to 40
-    const LOUD_DB = -15;       // Maps to 60
-    const VERY_LOUD_DB = -5;   // Maps to 80
-    const MAX_DB = 0;          // Maps to 100
-
-    if (db <= SILENCE_DB) return 1;
-    if (db <= QUIET_DB) return this.lerp(1, 20, (db - SILENCE_DB) / (QUIET_DB - SILENCE_DB));
-    if (db <= NORMAL_DB) return this.lerp(20, 40, (db - QUIET_DB) / (NORMAL_DB - QUIET_DB));
-    if (db <= LOUD_DB) return this.lerp(40, 60, (db - NORMAL_DB) / (LOUD_DB - NORMAL_DB));
-    if (db <= VERY_LOUD_DB) return this.lerp(60, 80, (db - LOUD_DB) / (VERY_LOUD_DB - LOUD_DB));
-    return this.lerp(80, 100, Math.min(1, (db - VERY_LOUD_DB) / (MAX_DB - VERY_LOUD_DB)));
-  }
-
-  private lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * Math.max(0, Math.min(1, t));
-  }
-}
-
-// Smoothing algorithm optimized for voice
-class AudioLevelSmoother {
-  private currentLevel = 0;
-  private readonly ATTACK = 0.8;   // Fast response to speech onset
-  private readonly RELEASE = 0.15; // Slower decay for natural look
-
-  smooth(inputLevel: number): number {
-    if (inputLevel > this.currentLevel) {
-      // Attack phase - quick rise for speech onset
-      this.currentLevel = this.ATTACK * inputLevel + (1 - this.ATTACK) * this.currentLevel;
-    } else {
-      // Release phase - slower fall
-      this.currentLevel = this.RELEASE * inputLevel + (1 - this.RELEASE) * this.currentLevel;
-    }
-    return Math.round(this.currentLevel); // Round for consistent bar heights
-  }
-}
+import { FilePreview, FileType, UploadStatus } from '../../data/objects/file-preview';
+import { DeviceCapabilitiesService } from './services/device-capabilities.service';
+import { VoiceRecordingService, RecordingState } from './services/voice-recording.service';
+import { FileHandlingService } from './services/file-handling.service';
+import { RecordingConfig } from './models/recording-config.interface';
+import { DeviceCapabilities } from './models/input-field-state.interface';
 
 
 @Component({
@@ -294,7 +32,13 @@ class AudioLevelSmoother {
   styleUrls: ['./chat-ui-inputfield.component.scss']
 })
 export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestroy {
-  constructor(private ngZone: NgZone) {}
+  constructor(
+    private ngZone: NgZone,
+    private deviceCapabilitiesService: DeviceCapabilitiesService,
+    private voiceRecordingService: VoiceRecordingService,
+    private fileHandlingService: FileHandlingService
+  ) {}
+
   // ViewChild to access the textarea element directly
   @ViewChild('messageTextarea') private messageTextarea!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
@@ -338,28 +82,34 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
   recordingDuration: number = 0; // Store duration in seconds
 
-  // Audio recording properties
-  mediaRecorder: MediaRecorder | null = null;
-  audioStream: MediaStream | null = null;
-  audioChunks: Blob[] = [];
-  audioContext: AudioContext | null = null;
-  analyser: AnalyserNode | null = null;
-
-  // Time-based bar visualization properties
-  barVisualizer: TimeBasedBarVisualizer | null = null;
-  audioProcessor: VoiceAudioProcessor | null = null;
-
-  // Property for backward compatibility
-  private waveformAnimationId: number | null = null;
-
   // Track if we have content to show appropriate button
   get hasContent(): boolean {
     return this.messageText.trim().length > 0 || this.filePreviews.length > 0;
   }
 
+  // Subscription to recording state
+  private recordingStateSubscription: any;
+
   ngOnInit() {
-    // Check device capabilities
-    this.checkDeviceCapabilities();
+    // Subscribe to device capabilities
+    this.deviceCapabilitiesService.getCapabilities().subscribe(capabilities => {
+      this.hasCamera = capabilities.hasCamera;
+      this.hasGeolocation = capabilities.hasGeolocation;
+      this.isMobile = this.isMobile || capabilities.isMobile; // Use input or detected value
+    });
+
+    // Subscribe to recording state
+    this.recordingStateSubscription = this.voiceRecordingService.getRecordingState().subscribe(state => {
+      this.isRecording = state.isRecording;
+      this.recordingDuration = state.duration;
+
+      // Update recording time for display
+      if (state.isRecording) {
+        this.recordingTime = new Date(state.duration * 1000);
+      } else {
+        this.recordingTime = new Date(0);
+      }
+    });
   }
 
   ngAfterViewInit() {
@@ -370,33 +120,6 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
     // Add resize listener for responsive canvas
     window.addEventListener('resize', () => this.updateCanvasDimensions());
-  }
-
-  // Check what capabilities the device has
-  private checkDeviceCapabilities(): void {
-    // Check for camera support
-    // We check for mediaDevices API and also if we're in a secure context (HTTPS)
-    if (navigator.mediaDevices &&
-      typeof navigator.mediaDevices.getUserMedia === 'function' &&
-      window.isSecureContext) {
-      // Check if there are any video input devices
-      navigator.mediaDevices.enumerateDevices()
-        .then(devices => {
-          this.hasCamera = devices.some(device => device.kind === 'videoinput');
-
-          // Also check for audio input devices
-          const hasAudio = devices.some(device => device.kind === 'audioinput');
-          if (!hasAudio) {
-            console.warn('No audio input devices found');
-          }
-        })
-        .catch(() => {
-          this.hasCamera = false;
-        });
-    }
-
-    // Check for geolocation support
-    this.hasGeolocation = 'geolocation' in navigator && window.isSecureContext;
   }
 
   // Handle Enter key press - send on Enter, new line on Shift+Enter
@@ -490,24 +213,14 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       const fileArray = Array.from(files);
 
       // Validate file sizes (10MB limit per file)
-      const invalidFiles = fileArray.filter(file => !FilePreviewUtil.validateFileSize(file, 10));
+      const invalidFiles = fileArray.filter(file => !this.fileHandlingService.validateFileSize(file, 10));
       if (invalidFiles.length > 0) {
         console.error('Some files exceed the 10MB limit:', invalidFiles);
         // TODO: Show error message to user
       }
 
       // Create file previews for valid files
-      const validFiles = fileArray.filter(file => FilePreviewUtil.validateFileSize(file, 10));
-      const newPreviews: FilePreview[] = [];
-
-      for (const file of validFiles) {
-        try {
-          const preview = await FilePreviewUtil.createFromFile(file);
-          newPreviews.push(preview);
-        } catch (error) {
-          console.error('Error creating file preview:', error);
-        }
-      }
+      const newPreviews = await this.fileHandlingService.createFilePreviews(fileArray, 10);
 
       // Add to existing previews
       this.filePreviews = [...this.filePreviews, ...newPreviews];
@@ -536,12 +249,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Get icon for file type (helper for template)
   getFileIcon(type: string): string {
-    return FilePreviewUtil.getFileIcon(type as any);
+    return this.fileHandlingService.getFileIcon(type);
   }
 
-  // Utility function to detect mobile devices
+  // Utility function to detect mobile devices - now handled by DeviceCapabilitiesService
   isMobileDevice(): boolean {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return this.isMobile;
   }
 
   // Voice Recording Methods
@@ -562,127 +275,33 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     }
   }
 
-  // Get supported MIME type for recording
-  private getSupportedMimeType(): string {
-    const types = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/ogg;codecs=opus',
-      'audio/ogg',
-      'audio/mp4',
-      'audio/mpeg'
-    ];
-
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        console.log('Using MIME type:', type);
-        return type;
-      }
-    }
-
-    // Fallback to empty string (browser default)
-    console.log('Using browser default MIME type');
-    return '';
-  }
-
-  // Set up audio analysis for time-based bar visualization
-  private setupAudioAnalysis(stream: MediaStream): void {
-    try {
-      // Create audio context
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      console.log('AudioContext created, state:', this.audioContext.state);
-
-      // Create analyser node
-      this.analyser = this.audioContext.createAnalyser();
-
-      // Connect stream to analyser
-      const source = this.audioContext.createMediaStreamSource(stream);
-      source.connect(this.analyser);
-      // Note: We don't connect to destination to avoid feedback
-
-      // Create audio processor for voice level calculation
-      this.audioProcessor = new VoiceAudioProcessor(this.audioContext, this.analyser);
-
-      // Update canvas dimensions before creating visualizer
-      this.updateCanvasDimensions();
-
-      // Create bar visualizer
-      if (this.waveformCanvas && this.waveformCanvas.nativeElement) {
-        // Run visualization outside Angular zone for better performance
-        this.ngZone.runOutsideAngular(() => {
-          this.barVisualizer = new TimeBasedBarVisualizer(
-            this.waveformCanvas.nativeElement,
-            () => this.audioProcessor?.getVoiceLevel() || 0
-          );
-
-          // Start the visualization
-          this.barVisualizer.start();
-        });
-      }
-
-      console.log('Audio analysis setup complete');
-    } catch (error) {
-      console.error('Error setting up audio analysis:', error);
-    }
-  }
-
   // Begin the recording process
   private async beginRecording(): Promise<void> {
     try {
-      // Request microphone access
-      this.audioStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
+      // Update canvas dimensions before starting recording
+      this.updateCanvasDimensions();
+
+      // Create recording config
+      const config: RecordingConfig = {
+        isHoldToRecord: this.isHoldToRecord,
+        maxDuration: 300, // 5 minutes max
+        audioConstraints: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
         }
-      });
-
-      // Set recording state first to show UI
-      this.isRecording = true;
-      this.recordingStartTime = Date.now();
-      this.recordingDuration = 0;
-
-      // Update canvas dimensions and wait for it to render
-      this.updateCanvasDimensions();
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // Set up MediaRecorder
-      const mimeType = this.getSupportedMimeType();
-      this.mediaRecorder = new MediaRecorder(this.audioStream, { mimeType });
-      this.audioChunks = [];
-
-      // Set up audio analysis for waveform
-      this.setupAudioAnalysis(this.audioStream);
-
-      // Handle data available event
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          this.audioChunks.push(event.data);
-        }
       };
 
-      // Handle recording stop
-      this.mediaRecorder.onstop = () => {
-        console.log('MediaRecorder stopped');
-      };
+      // Start recording with visualization
+      await this.voiceRecordingService.startRecording(
+        config,
+        this.waveformCanvas?.nativeElement
+      );
 
-      // Start recording
-      this.mediaRecorder.start(100); // Collect data every 100ms
+      // Recording state is updated via subscription in ngOnInit
 
-      // Start the timer
-      this.recordingTimer = setInterval(() => {
-        const elapsed = Date.now() - this.recordingStartTime;
-        this.recordingTime = new Date(elapsed);
-        this.recordingDuration = Math.floor(elapsed / 1000);
-      }, 100);
-
-      // Visualization is started in setupAudioAnalysis
-
-      console.log('Voice recording started with real audio');
     } catch (error) {
-      console.error('Error accessing microphone:', error);
-      this.isRecording = false;
+      console.error('Error starting recording:', error);
 
       // Show error to user
       if (error instanceof DOMException) {
@@ -699,153 +318,30 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Stop recording and create audio file
   private async stopRecording(): Promise<void> {
-    if (!this.isRecording || !this.mediaRecorder) return;
+    try {
+      const result = await this.voiceRecordingService.stopRecording();
 
-    this.isRecording = false;
+      if (result) {
+        // Create file preview from recording result
+        const filePreview = this.fileHandlingService.createAudioFilePreview(result);
 
-    // Stop the MediaRecorder
-    this.mediaRecorder.stop();
-
-    // Stop all audio tracks
-    if (this.audioStream) {
-      this.audioStream.getTracks().forEach(track => track.stop());
+        // Add to file previews
+        this.filePreviews = [...this.filePreviews, filePreview];
+        this.filesSelected.emit(this.filePreviews);
+      }
+    } catch (error) {
+      console.error('Error stopping recording:', error);
     }
-
-    // Close audio context
-    if (this.audioContext) {
-      this.audioContext.close();
-    }
-
-    // Stop timers
-    if (this.recordingTimer) {
-      clearInterval(this.recordingTimer);
-    }
-
-    // Stop the bar visualization
-    if (this.barVisualizer) {
-      this.barVisualizer.stop();
-    }
-
-    // Wait a bit for the last data chunk
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Create audio file from chunks
-    if (this.audioChunks.length > 0) {
-      const audioBlob = new Blob(this.audioChunks, {
-        type: this.mediaRecorder.mimeType || 'audio/webm'
-      });
-      await this.createAudioFilePreview(audioBlob);
-    }
-
-    // Reset
-    this.recordingTime = new Date(0);
-    this.mediaRecorder = null;
-    this.audioStream = null;
-    this.audioContext = null;
-    this.analyser = null;
-    this.audioProcessor = null;
-    this.barVisualizer = null;
-
-    console.log('Voice recording stopped');
   }
 
   // Cancel recording without saving
   cancelRecording(): void {
-    this.isRecording = false;
-
-    // Stop the MediaRecorder if it exists
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop();
-    }
-
-    // Stop all audio tracks
-    if (this.audioStream) {
-      this.audioStream.getTracks().forEach(track => track.stop());
-    }
-
-    // Close audio context
-    if (this.audioContext) {
-      this.audioContext.close();
-    }
-
-    // Stop timers
-    if (this.recordingTimer) {
-      clearInterval(this.recordingTimer);
-    }
-
-    // Stop the bar visualization
-    if (this.barVisualizer) {
-      this.barVisualizer.stop();
-    }
-
-    // Reset everything
-    this.recordingTime = new Date(0);
-    this.audioChunks = [];
-    this.mediaRecorder = null;
-    this.audioStream = null;
-    this.audioContext = null;
-    this.analyser = null;
-    this.audioProcessor = null;
-    this.barVisualizer = null;
-
-    console.log('Voice recording cancelled');
+    this.voiceRecordingService.cancelRecording();
   }
 
   // Send the voice message
   async sendVoiceMessage(): Promise<void> {
     await this.stopRecording();
-  }
-
-  // Create audio file preview
-  private async createAudioFilePreview(audioBlob: Blob): Promise<void> {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const duration = this.formatDuration(this.recordingDuration);
-    const extension = this.getFileExtension(audioBlob.type);
-    const fileName = `voice-message-${timestamp}.${extension}`;
-
-    // Create a File object from the blob
-    const audioFile = new File([audioBlob], fileName, {
-      type: audioBlob.type,
-      lastModified: Date.now()
-    });
-
-    // Create FilePreview
-    const filePreview: FilePreview = {
-      id: FilePreviewUtil.generateId(),
-      file: audioFile,
-      name: `Voice message (${duration})`,
-      size: audioFile.size,
-      sizeFormatted: FilePreviewUtil.formatFileSize(audioFile.size),
-      type: FileType.AUDIO,
-      mimeType: audioFile.type,
-      uploadStatus: UploadStatus.PENDING
-    };
-
-    // Add to file previews
-    this.filePreviews = [...this.filePreviews, filePreview];
-    this.filesSelected.emit(this.filePreviews);
-
-    console.log('Audio file created:', filePreview);
-  }
-
-  // Get file extension from MIME type
-  private getFileExtension(mimeType: string): string {
-    const typeMap: { [key: string]: string } = {
-      'audio/webm': 'webm',
-      'audio/ogg': 'ogg',
-      'audio/mp4': 'm4a',
-      'audio/mpeg': 'mp3',
-      'audio/wav': 'wav'
-    };
-
-    return typeMap[mimeType.split(';')[0]] || 'webm';
-  }
-
-  // Format duration in MM:SS format
-  private formatDuration(seconds: number): string {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
   // Update canvas dimensions to match container
@@ -857,10 +353,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       this.canvasWidth = Math.floor(rect.width);
       this.canvasHeight = Math.floor(rect.height) || 80; // Default height if not yet rendered
 
-      // If currently recording, update the visualizer
-      if (this.barVisualizer && this.waveformCanvas?.nativeElement) {
-        // The visualizer will adapt to the new canvas size on next frame
-      }
+      // Note: The visualizer is now managed by VoiceRecordingService
+      // and will adapt to the canvas size automatically
     }
   }
 
@@ -904,17 +398,14 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     // Remove resize listener
     window.removeEventListener('resize', () => this.updateCanvasDimensions());
 
-    // Stop any ongoing recording
-    if (this.isRecording) {
-      this.cancelRecording();
+    // Unsubscribe from observables
+    if (this.recordingStateSubscription) {
+      this.recordingStateSubscription.unsubscribe();
     }
 
-    // Clean up audio resources
-    if (this.audioStream) {
-      this.audioStream.getTracks().forEach(track => track.stop());
-    }
-    if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close();
+    // Stop any ongoing recording
+    if (this.isRecording) {
+      this.voiceRecordingService.cancelRecording();
     }
 
     // Revoke any object URLs to free memory
