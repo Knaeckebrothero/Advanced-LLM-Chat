@@ -168,43 +168,23 @@ class AudioLevelSmoother {
 }
 
 class OptimizedCanvasRenderer {
-  private offscreenCanvas: HTMLCanvasElement;
-  private offscreenCtx: CanvasRenderingContext2D;
   private ctx: CanvasRenderingContext2D;
   private readonly BAR_WIDTH: number;
   private readonly BAR_GAP: number;
 
   constructor(private canvas: HTMLCanvasElement, barWidth: number, barGap: number) {
-    // Disable alpha channel for better performance
     this.ctx = canvas.getContext('2d', {
       alpha: false,
-      desynchronized: true // Hint for better performance
+      desynchronized: true
     })!;
 
     this.BAR_WIDTH = barWidth;
     this.BAR_GAP = barGap;
-
-    // Create offscreen canvas for bar pre-rendering
-    this.offscreenCanvas = document.createElement('canvas');
-    this.offscreenCanvas.width = this.BAR_WIDTH;
-    this.offscreenCanvas.height = canvas.height;
-    this.offscreenCtx = this.offscreenCanvas.getContext('2d')!;
-
-    // Pre-render gradient bar for reuse
-    this.preRenderBar();
-  }
-
-  private preRenderBar(): void {
-    const gradient = this.offscreenCtx.createLinearGradient(0, 0, 0, this.canvas.height);
-    gradient.addColorStop(0, '#4CA5DC');
-    gradient.addColorStop(1, '#357BA6'); // Slight gradient for depth
-    this.offscreenCtx.fillStyle = gradient;
-    this.offscreenCtx.fillRect(0, 0, this.BAR_WIDTH, this.canvas.height);
   }
 
   renderFrame(bars: VisualizationBar[]): void {
-    // Clear with solid color (faster than clearRect)
-    this.ctx.fillStyle = '#000000';
+    // Clear with white background
+    this.ctx.fillStyle = '#FFFFFF';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Only render visible bars
@@ -212,21 +192,19 @@ class OptimizedCanvasRenderer {
       bar.x > -this.BAR_WIDTH && bar.x < this.canvas.width
     );
 
-    // Batch similar operations
+    // Draw bars with simple blue color
+    this.ctx.fillStyle = '#E8F4FF'; // Very light blue from your color palette
+
     visibleBars.forEach(bar => {
-      const barHeight = (bar.height / 100) * this.canvas.height;
+      const barHeight = (bar.height / 100) * this.canvas.height * 0.6; // 60% of height for subtlety
       const y = this.canvas.height - barHeight;
 
       // Use integer coordinates to avoid sub-pixel rendering
       const x = Math.floor(bar.x);
       const height = Math.ceil(barHeight);
 
-      // Draw pre-rendered bar with clipping
-      this.ctx.drawImage(
-        this.offscreenCanvas,
-        0, 0, this.BAR_WIDTH, height,
-        x, y, this.BAR_WIDTH, height
-      );
+      // Simple rectangle, no effects
+      this.ctx.fillRect(x, y, this.BAR_WIDTH, height);
     });
   }
 }
@@ -288,6 +266,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   recordingTime: Date = new Date(0);
   recordingTimer: any;
   waveformWidth: number = 200;
+  canvasWidth: number = 800;
+  canvasHeight: number = 80; // Taller to fill the input field
   isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
   recordingDuration: number = 0; // Store duration in seconds
 
@@ -318,8 +298,11 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   ngAfterViewInit() {
     // Initial adjustment of textarea height
     this.adjustTextareaHeight();
-    // Set initial waveform width
-    this.updateWaveformWidth();
+    // Set initial canvas dimensions
+    this.updateCanvasDimensions();
+
+    // Add resize listener for responsive canvas
+    window.addEventListener('resize', () => this.updateCanvasDimensions());
   }
 
   // Check what capabilities the device has
@@ -553,6 +536,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Create audio processor for voice level calculation
       this.audioProcessor = new VoiceAudioProcessor(this.audioContext, this.analyser);
 
+      // Update canvas dimensions before creating visualizer
+      this.updateCanvasDimensions();
+
       // Create bar visualizer
       if (this.waveformCanvas && this.waveformCanvas.nativeElement) {
         // Run visualization outside Angular zone for better performance
@@ -590,8 +576,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       this.recordingStartTime = Date.now();
       this.recordingDuration = 0;
 
-      // Update canvas width and wait for it to render
-      this.updateWaveformWidth();
+      // Update canvas dimensions and wait for it to render
+      this.updateCanvasDimensions();
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Set up MediaRecorder
@@ -802,6 +788,22 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     this.waveformWidth = window.innerWidth > 768 ? 400 : window.innerWidth - 150;
   }
 
+  // Update canvas dimensions to match container
+  private updateCanvasDimensions(): void {
+    // Get the container element to match its size
+    const container = document.querySelector('.input-field-container');
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      this.canvasWidth = Math.floor(rect.width);
+      this.canvasHeight = Math.floor(rect.height) || 80; // Default height if not yet rendered
+
+      // If currently recording, update the visualizer
+      if (this.barVisualizer && this.waveformCanvas?.nativeElement) {
+        // The visualizer will adapt to the new canvas size on next frame
+      }
+    }
+  }
+
   // The time-based bar visualization has replaced these methods
   private drawSmoothWaveformWithFill(): void {
     // This method is kept as a stub for backward compatibility
@@ -856,6 +858,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Clean up resources when component is destroyed
   ngOnDestroy(): void {
+    // Remove resize listener
+    window.removeEventListener('resize', () => this.updateCanvasDimensions());
+
     // Stop any ongoing recording
     if (this.isRecording) {
       this.cancelRecording();
