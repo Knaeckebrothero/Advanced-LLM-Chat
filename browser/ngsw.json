@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1713683108203,
+  "timestamp": 1751096782215,
   "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
@@ -13,11 +13,10 @@
       "urls": [
         "/Advanced-LLM-Chat/favicon.ico",
         "/Advanced-LLM-Chat/index.html",
-        "/Advanced-LLM-Chat/main.2fecea25e6c138d9.js",
+        "/Advanced-LLM-Chat/main-6NFRB3MK.js",
         "/Advanced-LLM-Chat/manifest.webmanifest",
-        "/Advanced-LLM-Chat/polyfills.73d12d8384249e30.js",
-        "/Advanced-LLM-Chat/runtime.d8778fadc19d2802.js",
-        "/Advanced-LLM-Chat/styles.15b5a651c07301bf.css"
+        "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js",
+        "/Advanced-LLM-Chat/styles-CFD3PSPB.css"
       ],
       "patterns": []
     },
@@ -34,7 +33,9 @@
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-48-48.png",
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-512-512.png",
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-72-72.png",
-        "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-96-96.png"
+        "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-96-96.png",
+        "/Advanced-LLM-Chat/assets/icons/fra_uas_logo.png",
+        "/Advanced-LLM-Chat/assets/icons/fra_uas_logo_white.png"
       ],
       "patterns": []
     }
@@ -47,13 +48,14 @@
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-512-512.png": "12bbc09372f4ed79458361e6887c8700e4caa61f",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-72-72.png": "a337715d48ff4708860e9fdcb91358117ad83680",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-96-96.png": "785ff6437f1e82e4eeff8f931de2ef3e2f3af12e",
+    "/Advanced-LLM-Chat/assets/icons/fra_uas_logo.png": "cc94ce6aee554cebf5625887c57515cfb046865d",
+    "/Advanced-LLM-Chat/assets/icons/fra_uas_logo_white.png": "cb9faa8844b86535e5341ac5156710e29578b3c4",
     "/Advanced-LLM-Chat/favicon.ico": "22f6a4a3bcaafafb0254e0f2fa4ceb89e505e8b2",
-    "/Advanced-LLM-Chat/index.html": "1c2c2d14104d523160ff9bae3b4ccb928db5eb39",
-    "/Advanced-LLM-Chat/main.2fecea25e6c138d9.js": "7cf13a5de7b6b100a89fc364f528fcb962f2e7da",
+    "/Advanced-LLM-Chat/index.html": "8e88041126884e18f6752861646577f00e0a2855",
+    "/Advanced-LLM-Chat/main-6NFRB3MK.js": "5f892d601532a54e3a0182092b10b3fe774c0ca8",
     "/Advanced-LLM-Chat/manifest.webmanifest": "a81d65b6133d5367d68f9d650c1117eae6c0de62",
-    "/Advanced-LLM-Chat/polyfills.73d12d8384249e30.js": "da13f1ce18af73b1495a29271fbc916a0b7ae5cf",
-    "/Advanced-LLM-Chat/runtime.d8778fadc19d2802.js": "50a6ad543d9a89f21e71dbd3944ddf2c1442f795",
-    "/Advanced-LLM-Chat/styles.15b5a651c07301bf.css": "2bea6644d686a024359281ce9fb068dde440b009"
+    "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js": "f49b49a155bc7d192db62a4c15d0a612b460a667",
+    "/Advanced-LLM-Chat/styles-CFD3PSPB.css": "777767271d0ae78a386b4a3bf63648697118664e"
   },
   "navigationUrls": [
     {
