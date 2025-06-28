@@ -10,6 +10,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../data/objects/file-preview';
 
 // Time-based bar visualization interfaces and classes
+// Time-based bar visualization interfaces and classes
 interface VisualizationBar {
   height: number;      // 1-100 normalized value
   timestamp: number;   // When bar was created
@@ -20,9 +21,10 @@ class TimeBasedBarVisualizer {
   private bars: VisualizationBar[] = [];
   private lastBarTime = 0;
   private readonly BAR_INTERVAL = 500; // 0.5 seconds
-  private readonly BAR_WIDTH = 18; // Increased by 50% again as requested
-  private readonly BAR_GAP = 4; // Increased gap for more space between bars
-  private readonly SCROLL_SPEED = 20; // pixels per second
+  private readonly BAR_WIDTH = 24; // Increased from 18 for bigger bars
+  private readonly BAR_GAP = 8; // Increased gap for better visual separation
+  private readonly TOTAL_BAR_SPACE = this.BAR_WIDTH + this.BAR_GAP; // Total space per bar
+  private readonly SCROLL_SPEED = 60; // Slightly increased for smoother movement
 
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -33,9 +35,9 @@ class TimeBasedBarVisualizer {
 
   constructor(canvas: HTMLCanvasElement, audioLevelCallback: () => number) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d', { alpha: false })!; // Disable alpha for performance
+    this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.audioLevelCallback = audioLevelCallback;
-    this.renderer = new OptimizedCanvasRenderer(canvas, this.BAR_WIDTH, this.BAR_GAP);
+    this.renderer = new OptimizedCanvasRenderer(canvas, this.BAR_WIDTH, this.BAR_GAP, this.TOTAL_BAR_SPACE);
   }
 
   start(): void {
@@ -73,10 +75,16 @@ class TimeBasedBarVisualizer {
   };
 
   private addNewBar(height: number): void {
+    // Position new bars with proper spacing from the start
+    const lastBar = this.bars[this.bars.length - 1];
+    const startX = lastBar
+      ? lastBar.x + this.TOTAL_BAR_SPACE
+      : this.canvas.width;
+
     this.bars.push({
       height,
       timestamp: Date.now(),
-      x: this.canvas.width // Start at the right edge of the canvas
+      x: startX
     });
   }
 
@@ -86,8 +94,110 @@ class TimeBasedBarVisualizer {
     // Update positions and remove off-screen bars
     this.bars = this.bars.filter(bar => {
       bar.x -= scrollDistance;
-      return bar.x > -this.BAR_WIDTH; // Keep bars until fully off-screen
+      return bar.x > -(this.BAR_WIDTH + this.BAR_GAP); // Keep bars until fully off-screen including gap
     });
+  }
+}
+
+class OptimizedCanvasRenderer {
+  private ctx: CanvasRenderingContext2D;
+  private readonly BAR_WIDTH: number;
+  private readonly BAR_GAP: number;
+  private readonly TOTAL_BAR_SPACE: number;
+
+  // Gradient for bars
+  private barGradient: CanvasGradient | null = null;
+
+  constructor(
+    private canvas: HTMLCanvasElement,
+    barWidth: number,
+    barGap: number,
+    totalBarSpace: number
+  ) {
+    this.ctx = canvas.getContext('2d', {
+      alpha: false,
+      desynchronized: true
+    })!;
+
+    this.BAR_WIDTH = barWidth;
+    this.BAR_GAP = barGap;
+    this.TOTAL_BAR_SPACE = totalBarSpace;
+
+    // Create gradient for bars
+    this.createBarGradient();
+  }
+
+  private createBarGradient(): void {
+    // Create a vertical gradient for more visual appeal
+    this.barGradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+    this.barGradient.addColorStop(0, '#66B3FF'); // Lighter blue at top
+    this.barGradient.addColorStop(0.5, '#4CA5DC'); // Medium blue in middle
+    this.barGradient.addColorStop(1, '#3399D6'); // Darker blue at bottom
+  }
+
+  renderFrame(bars: VisualizationBar[]): void {
+    // Clear with white background
+    this.ctx.fillStyle = '#FFFFFF';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // Only render visible bars
+    const visibleBars = bars.filter(bar =>
+      bar.x > -this.TOTAL_BAR_SPACE && bar.x < this.canvas.width
+    );
+
+    // Draw bars with gradient and rounded corners
+    if (this.barGradient) {
+      this.ctx.fillStyle = this.barGradient;
+    } else {
+      this.ctx.fillStyle = '#4CA5DC'; // Fallback color
+    }
+
+    visibleBars.forEach(bar => {
+      // Increase sensitivity and add minimum height for better visibility
+      const normalizedHeight = Math.max(bar.height * 1.8, 5); // Minimum 5px height
+      const barHeight = (normalizedHeight / 100) * this.canvas.height;
+      const cappedHeight = Math.min(barHeight, this.canvas.height - 4); // Leave 4px margin
+      const y = this.canvas.height - cappedHeight;
+
+      const x = Math.floor(bar.x);
+
+      // Draw rounded rectangle for each bar
+      this.drawRoundedRect(x, y, this.BAR_WIDTH, cappedHeight, 4);
+
+      // Add subtle shadow effect
+      this.ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+      this.ctx.shadowBlur = 4;
+      this.ctx.shadowOffsetX = 2;
+      this.ctx.shadowOffsetY = 2;
+      this.ctx.fill();
+
+      // Reset shadow for next bar
+      this.ctx.shadowBlur = 0;
+      this.ctx.shadowOffsetX = 0;
+      this.ctx.shadowOffsetY = 0;
+    });
+  }
+
+  private drawRoundedRect(x: number, y: number, width: number, height: number, radius: number): void {
+    // Ensure radius isn't larger than half the smallest dimension
+    radius = Math.min(radius, width / 2, height / 2);
+
+    this.ctx.beginPath();
+    // Top left corner
+    this.ctx.moveTo(x + radius, y);
+    // Top right corner
+    this.ctx.lineTo(x + width - radius, y);
+    this.ctx.arc(x + width - radius, y + radius, radius, -Math.PI / 2, 0);
+    // Bottom right corner
+    this.ctx.lineTo(x + width, y + height - radius);
+    this.ctx.arc(x + width - radius, y + height - radius, radius, 0, Math.PI / 2);
+    // Bottom left corner
+    this.ctx.lineTo(x + radius, y + height);
+    this.ctx.arc(x + radius, y + height - radius, radius, Math.PI / 2, Math.PI);
+    // Back to top left
+    this.ctx.lineTo(x, y + radius);
+    this.ctx.arc(x + radius, y + radius, radius, Math.PI, -Math.PI / 2);
+    this.ctx.closePath();
   }
 }
 
@@ -164,53 +274,6 @@ class AudioLevelSmoother {
       this.currentLevel = this.RELEASE * inputLevel + (1 - this.RELEASE) * this.currentLevel;
     }
     return Math.round(this.currentLevel); // Round for consistent bar heights
-  }
-}
-
-class OptimizedCanvasRenderer {
-  private ctx: CanvasRenderingContext2D;
-  private readonly BAR_WIDTH: number;
-  private readonly BAR_GAP: number;
-
-  constructor(private canvas: HTMLCanvasElement, barWidth: number, barGap: number) {
-    this.ctx = canvas.getContext('2d', {
-      alpha: false,
-      desynchronized: true
-    })!;
-
-    this.BAR_WIDTH = barWidth;
-    this.BAR_GAP = barGap;
-  }
-
-  renderFrame(bars: VisualizationBar[]): void {
-    // Clear with white background
-    this.ctx.fillStyle = '#FFFFFF';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    // Only render visible bars
-    const visibleBars = bars.filter(bar =>
-      bar.x > -this.BAR_WIDTH && bar.x < this.canvas.width
-    );
-
-    // Draw bars with more saturated blue color
-    this.ctx.fillStyle = '#A0D0FF'; // More saturated blue color
-
-    visibleBars.forEach(bar => {
-      // Increase sensitivity - multiply by 1.5 to make bars go up to 60% higher
-      const barHeight = (bar.height / 100) * this.canvas.height * 1.5;
-      // Cap at canvas height to prevent overflow
-      const cappedHeight = Math.min(barHeight, this.canvas.height);
-      const y = this.canvas.height - cappedHeight;
-
-      // Calculate x position with gap
-      // Apply the gap by reducing the width of each bar
-      const x = Math.floor(bar.x);
-      const height = Math.ceil(cappedHeight);
-
-      // Draw the bar with width reduced by the gap
-      const barWidth = this.BAR_WIDTH - this.BAR_GAP;
-      this.ctx.fillRect(x, y, barWidth, height);
-    });
   }
 }
 
