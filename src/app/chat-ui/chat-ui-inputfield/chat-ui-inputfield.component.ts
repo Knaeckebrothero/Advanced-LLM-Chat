@@ -576,6 +576,67 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     this.waveformWidth = window.innerWidth > 768 ? 400 : window.innerWidth - 150;
   }
 
+  // Optional: Add these helper methods for additional visual effects
+  private drawSmoothWaveformWithFill(): void {
+    // Alternative implementation with filled waveform (like SoundCloud style)
+    // This can be called instead of the line-based waveform for a different look
+
+    const canvas = this.waveformCanvas.nativeElement;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const centerY = canvas.height / 2;
+
+    // Create gradient fill
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, 'rgba(76, 165, 220, 0.8)');
+    gradient.addColorStop(0.5, 'rgba(76, 165, 220, 0.4)');
+    gradient.addColorStop(1, 'rgba(76, 165, 220, 0.8)');
+
+    ctx.fillStyle = gradient;
+
+    // Draw filled waveform
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+
+    // Top edge
+    for (let i = 0; i < this.waveformData.length; i++) {
+      const x = i * 2;
+      const amplitude = this.waveformData[i] * (canvas.height / 2 - 5);
+      const y = centerY - amplitude;
+
+      if (i === 0) {
+        ctx.lineTo(x, y);
+      } else {
+        const prevX = (i - 1) * 2;
+        const prevY = centerY - this.waveformData[i - 1] * (canvas.height / 2 - 5);
+        const cpX = (prevX + x) / 2;
+        const cpY = (prevY + y) / 2;
+        ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
+      }
+    }
+
+    // Bottom edge (mirrored)
+    for (let i = this.waveformData.length - 1; i >= 0; i--) {
+      const x = i * 2;
+      const amplitude = this.waveformData[i] * (canvas.height / 2 - 5);
+      const y = centerY + amplitude;
+
+      if (i === this.waveformData.length - 1) {
+        ctx.lineTo(x, y);
+      } else {
+        const nextX = (i + 1) * 2;
+        const nextY = centerY + this.waveformData[i + 1] * (canvas.height / 2 - 5);
+        const cpX = (nextX + x) / 2;
+        const cpY = (nextY + y) / 2;
+        ctx.quadraticCurveTo(nextX, nextY, cpX, cpY);
+      }
+    }
+
+    ctx.closePath();
+    ctx.fill();
+  }
+
   // Start waveform animation
   private startWaveformAnimation(): void {
     // Wait for canvas to be ready
