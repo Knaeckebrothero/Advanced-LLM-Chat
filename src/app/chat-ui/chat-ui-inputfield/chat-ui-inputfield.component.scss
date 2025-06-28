@@ -11,7 +11,7 @@
   padding: 12px;
   margin: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
 
   // Add a subtle border
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -25,6 +25,22 @@
   &:focus-within {
     border-color: vars.$color-primary;
     box-shadow: 0 4px 12px rgba(vars.$color-primary, 0.2);
+  }
+
+  // Recording mode styles
+  &.recording-mode {
+    background-color: rgba(vars.$color-primary, 0.1);
+    border-color: vars.$color-primary;
+    animation: recording-pulse 2s ease-in-out infinite;
+  }
+}
+
+@keyframes recording-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(vars.$color-primary, 0.2);
+  }
+  50% {
+    box-shadow: 0 6px 20px rgba(vars.$color-primary, 0.4);
   }
 }
 
@@ -202,6 +218,101 @@
   }
 }
 
+// Voice recording area
+.voice-recording-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  min-height: 60px;
+  animation: slide-in 0.3s ease-out;
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.cancel-recording-button {
+  &.mat-mdc-icon-button {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+
+    .mat-icon {
+      color: vars.$color-accent-danger;
+    }
+
+    &:hover {
+      background-color: rgba(vars.$color-accent-danger, 0.1);
+    }
+  }
+}
+
+.recording-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: vars.$color-font-dark;
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  background-color: vars.$color-accent-danger;
+  border-radius: 50%;
+  animation: recording-blink 1.5s ease-in-out infinite;
+}
+
+@keyframes recording-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.recording-time {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Waveform canvas styling moved to the bottom of the file */
+
+.send-voice-button {
+  &.mat-mdc-icon-button {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background-color: vars.$color-primary;
+    color: white;
+
+    .mat-icon {
+      color: white;
+    }
+
+    &:hover {
+      background-color: rgba(vars.$color-primary, 0.9);
+    }
+  }
+}
+
 // Container for action buttons
 .action-buttons-bar {
   display: flex;
@@ -264,12 +375,20 @@
 
   // Special styling for mic button
   &.mic-button {
+    transition: all 0.2s ease;
+
     &:hover {
       background-color: rgba(vars.$color-accent, 0.1);
 
       .mat-icon {
         color: vars.$color-accent;
       }
+    }
+
+    // Active state for hold-to-record
+    &:active {
+      background-color: rgba(vars.$color-accent, 0.2);
+      transform: scale(1.1);
     }
   }
 
@@ -319,6 +438,10 @@
     margin: 8px;
     padding: 10px;
     border-radius: 20px;
+
+    &.recording-mode {
+      margin: 8px 4px; // Slightly less margin in recording mode
+    }
   }
 
   .input-content-area {
@@ -335,6 +458,14 @@
       height: 40px;
       padding: 8px;
     }
+  }
+
+  .voice-recording-area {
+    padding: 6px 8px;
+  }
+
+  .waveform-canvas {
+    height: 50px;
   }
 }
 
@@ -368,4 +499,14 @@
   font-size: 12px;
   padding: 4px 8px;
   margin: 8px;
+}
+
+.waveform-canvas {
+  width: 100%;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  display: block;
+  image-rendering: optimizeSpeed;
+  image-rendering: -webkit-optimize-contrast;
 }

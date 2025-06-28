@@ -1,8 +1,8 @@
 <!-- Input field container that holds both the textarea and action buttons -->
-<div class="input-field-container">
+<div class="input-field-container" [class.recording-mode]="isRecording">
 
   <!-- File preview area (shown when files are selected) -->
-  <div class="file-preview-area" *ngIf="filePreviews.length > 0">
+  <div class="file-preview-area" *ngIf="filePreviews.length > 0 && !isRecording">
     <div class="file-preview-item" *ngFor="let preview of filePreviews">
       <!-- Image preview -->
       <div class="file-thumbnail" *ngIf="preview.type === 'image' && preview.preview">
@@ -30,8 +30,8 @@
     </div>
   </div>
 
-  <!-- Main input area with textarea -->
-  <div class="input-content-area">
+  <!-- Main input area with textarea (hidden during recording) -->
+  <div class="input-content-area" *ngIf="!isRecording">
     <textarea
       #messageTextarea
       [(ngModel)]="messageText"
@@ -44,8 +44,43 @@
     </textarea>
   </div>
 
+  <!-- Voice recording visualization area (shown during recording) -->
+  <div class="voice-recording-area" *ngIf="isRecording">
+    <!-- Cancel recording button -->
+    <button mat-icon-button
+            class="cancel-recording-button"
+            (click)="cancelRecording()"
+            aria-label="Cancel recording">
+      <mat-icon>close</mat-icon>
+    </button>
+
+    <!-- Recording info and waveform -->
+    <div class="recording-content">
+      <!-- Recording indicator -->
+      <div class="recording-indicator">
+        <span class="recording-dot"></span>
+        <span class="recording-time">{{ recordingTime | date:'mm:ss' }}</span>
+      </div>
+
+      <!-- Waveform visualization -->
+      <canvas #waveformCanvas
+              class="waveform-canvas"
+              [width]="waveformWidth"
+              height="60">
+      </canvas>
+    </div>
+
+    <!-- Send voice message button -->
+    <button mat-icon-button
+            class="send-voice-button"
+            (click)="sendVoiceMessage()"
+            aria-label="Send voice message">
+      <mat-icon>send</mat-icon>
+    </button>
+  </div>
+
   <!-- Action buttons bar at the bottom -->
-  <div class="action-buttons-bar">
+  <div class="action-buttons-bar" *ngIf="!isRecording">
     <!-- Left side buttons -->
     <div class="left-actions">
       <!-- Camera button (only shown if device has camera and is a mobile device) -->
@@ -117,9 +152,14 @@
         *ngIf="!hasContent"
         mat-icon-button
         class="action-button mic-button"
-        (click)="handleActionClick()"
+        (click)="startRecording()"
+        (touchstart)="onMicTouchStart($event)"
+        (touchend)="onMicTouchEnd($event)"
+        (mousedown)="onMicMouseDown($event)"
+        (mouseup)="onMicMouseUp($event)"
+        (mouseleave)="onMicMouseLeave($event)"
         aria-label="Record voice message"
-        matTooltip="Record voice message">
+        matTooltip="Hold to record">
         <mat-icon>mic</mat-icon>
       </button>
     </div>

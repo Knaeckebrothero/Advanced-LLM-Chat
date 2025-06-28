@@ -79,11 +79,17 @@ export class ChatService {
     }
   }
 
+  // TODO: Move sync logic to a separate sync service!
   private async performSync() {
     this.isSyncingSubject.next(true);
 
     try {
-      const serverConversations = await this.apiService.getConversations();
+      const serverConversationsData = await this.apiService.getConversations();
+
+      // Convert plain objects to Conversation instances
+      const serverConversations = serverConversationsData.map(data =>
+        Conversation.fromApiResponse(data)
+      );
 
       if (serverConversations.length === 0) {
         console.log('No conversations on server');
@@ -109,7 +115,7 @@ export class ChatService {
     }
   }
 
-  private async mergeServerConversations(serverConversations: any[]) {
+  private async mergeServerConversations(serverConversations: Conversation[]) {
     // Get local conversations
     const localConversations = await this.dbService.getAllConversations();
     const localConvMap = new Map(localConversations.map(c => [c.id, c]));
@@ -138,7 +144,13 @@ export class ChatService {
   }
 
   private async syncConversationIfNeeded(serverConv: any) {
+    // TODO: Why is the received conversation object not converted to conversation already?
+    //const test123 = Conversation.fromApiResponse(this.conversation)
+    //console.log("Conversation hash: ", test123.computeHash(this.dbService))
+    //console.log(this.conversation)
+    //console.log("Conversation: ", this.conversation)
     const localHash = await this.conversation.computeHash(this.dbService);
+    // TODO: The issue is that this.conversation is null by default
 
     if (localHash !== serverConv.hashsum) {
       console.log('Syncing messages for conversation:', serverConv.id);
