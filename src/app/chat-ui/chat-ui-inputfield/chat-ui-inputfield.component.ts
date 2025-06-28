@@ -20,8 +20,8 @@ class TimeBasedBarVisualizer {
   private bars: VisualizationBar[] = [];
   private lastBarTime = 0;
   private readonly BAR_INTERVAL = 500; // 0.5 seconds
-  private readonly BAR_WIDTH = 8;
-  private readonly BAR_GAP = 2;
+  private readonly BAR_WIDTH = 18; // Increased by 50% again as requested
+  private readonly BAR_GAP = 4; // Increased gap for more space between bars
   private readonly SCROLL_SPEED = 20; // pixels per second
 
   private canvas: HTMLCanvasElement;
@@ -76,7 +76,7 @@ class TimeBasedBarVisualizer {
     this.bars.push({
       height,
       timestamp: Date.now(),
-      x: this.canvas.width - this.BAR_WIDTH
+      x: this.canvas.width // Start at the right edge of the canvas
     });
   }
 
@@ -192,19 +192,24 @@ class OptimizedCanvasRenderer {
       bar.x > -this.BAR_WIDTH && bar.x < this.canvas.width
     );
 
-    // Draw bars with simple blue color
-    this.ctx.fillStyle = '#E8F4FF'; // Very light blue from your color palette
+    // Draw bars with more saturated blue color
+    this.ctx.fillStyle = '#A0D0FF'; // More saturated blue color
 
     visibleBars.forEach(bar => {
-      const barHeight = (bar.height / 100) * this.canvas.height * 0.6; // 60% of height for subtlety
-      const y = this.canvas.height - barHeight;
+      // Increase sensitivity - multiply by 1.5 to make bars go up to 60% higher
+      const barHeight = (bar.height / 100) * this.canvas.height * 1.5;
+      // Cap at canvas height to prevent overflow
+      const cappedHeight = Math.min(barHeight, this.canvas.height);
+      const y = this.canvas.height - cappedHeight;
 
-      // Use integer coordinates to avoid sub-pixel rendering
+      // Calculate x position with gap
+      // Apply the gap by reducing the width of each bar
       const x = Math.floor(bar.x);
-      const height = Math.ceil(barHeight);
+      const height = Math.ceil(cappedHeight);
 
-      // Simple rectangle, no effects
-      this.ctx.fillRect(x, y, this.BAR_WIDTH, height);
+      // Draw the bar with width reduced by the gap
+      const barWidth = this.BAR_WIDTH - this.BAR_GAP;
+      this.ctx.fillRect(x, y, barWidth, height);
     });
   }
 }
