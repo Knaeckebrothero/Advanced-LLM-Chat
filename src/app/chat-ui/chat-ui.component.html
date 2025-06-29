@@ -3,7 +3,9 @@
   <div class="message-container" #messageContainer>
     <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
   </div>
-
+  <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
+    <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>
+  </div>
   <!-- Input field for sending messages -->
   <app-chat-ui-inputfield
     [externalFiles]="pendingFiles"

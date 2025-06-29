@@ -1,7 +1,9 @@
-import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewChecked, OnInit, OnDestroy } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
 import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
+import { AuthService } from '../auth/auth.service';
+import { Subscription } from 'rxjs';
 import { FilePreview } from '../data/objects/file-preview';
 import { CameraCaptureDialogComponent } from './camera-capture-dialog/camera-capture-dialog.component';
 
@@ -12,7 +14,8 @@ import { CameraCaptureDialogComponent } from './camera-capture-dialog/camera-cap
   styleUrls: ['./chat-ui.component.scss'],
   standalone: false
 })
-export class ChatUiComponent implements AfterViewChecked {
+export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
+
   // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
 
@@ -27,12 +30,33 @@ export class ChatUiComponent implements AfterViewChecked {
 
   // Messages are managed by the ChatService and are passed to this component via observable.
   messages = this.chatService.messages;
+  showGuestLimitWarning = false;
+  guestLimitWarningMessage: string | null = null;
+  private guestLimitSubscription!: Subscription;
+  private guestLimitResetTimeSubscription!: Subscription;
 
   // Constructor
-  constructor(
-    private chatService: ChatService,
-    private dialog: MatDialog
-  ) {}
+  constructor(private chatService: ChatService,
+              private authService: AuthService,
+              private dialog: MatDialog) {}
+
+  ngOnInit() {
+    this.guestLimitSubscription = this.authService.guestLimitReached$.subscribe(isReached => {
+      this.showGuestLimitWarning = isReached;
+    });
+    this.guestLimitResetTimeSubscription = this.authService.guestLimitResetTime$.subscribe(message => {
+      this.guestLimitWarningMessage = message;
+    });
+  }
+
+  ngOnDestroy() {
+    if (this.guestLimitSubscription) {
+      this.guestLimitSubscription.unsubscribe();
+    }
+    if (this.guestLimitResetTimeSubscription) {
+      this.guestLimitResetTimeSubscription.unsubscribe();
+    }
+  }
 
   // Method to scroll to the bottom of the chat window.
   private scrollToBottom(): void {
@@ -72,6 +96,7 @@ export class ChatUiComponent implements AfterViewChecked {
   inputUserMessage() {
     // The inputField property is checked to ensure that it is not empty.
     if (this.inputField !== '') {
+      this.authService.setGuestLimitReached(false, null); // Reset on new user message
       // The ChatService is used to add a new usermessage to the history.
       this.chatService.sendMessage(this.inputField);
       console.log('User added message:');

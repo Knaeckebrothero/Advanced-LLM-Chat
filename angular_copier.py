@@ -23,15 +23,16 @@ class AngularProjectCopier:
     'src/main.ts',
     'src/polyfills.ts',
     'src/test.ts',
-    '.github/workflows/main.yml',
-    '.github/workflows/docker-build.yml',
-    'docker/docker-compose.yml',
-    'docker/Dockerfile',
-    'docker/nginx.conf',
-    'docker/README.md',
     '.dockerignore',
     'requirements.txt'
     # Add any other files you want to copy (use relative paths)
+  ]
+
+  # --- New attribute ---
+  # Directories to be copied entirely (relative to repository root)
+  CONFIG_DIRS = [
+    '.github/workflows',
+    'docker'
   ]
 
   # File extensions to copy from the project
@@ -55,7 +56,6 @@ class AngularProjectCopier:
     # Add any other specific files you want to exclude
   }
 
-  # --- New attribute ---
   STRUCTURE_FILENAME = "original_project_structure.txt"
 
   def __init__(self, repo_root: str, src_path: str, dest_path: str):
@@ -88,10 +88,13 @@ class AngularProjectCopier:
     # Copy configuration files
     self._copy_config_files()
 
+    # --- New: Copy files from specified directories ---
+    self._copy_config_dirs_files()
+
     # Copy Angular source files from the specified src_path
     self._copy_source_files()
 
-    # --- New step: Generate structure file ---
+    # Generate structure file
     self._generate_structure_file()
 
     print(f"\nProject copy completed! Files are in: {self.dest_path}")
@@ -99,46 +102,79 @@ class AngularProjectCopier:
     if self.excluded_files_count > 0:
       print(f"Note: {self.excluded_files_count} files were excluded based on EXCLUDE_FILES list")
 
+  def _copy_file_with_flattened_name(self, source_file: Path):
+    """
+    Copies a file to the destination, creating a unique flat name.
+    Checks for excluded and already copied files.
+    Returns True if copied, False otherwise.
+    """
+    # Check if the file is in the exclude list by name
+    if source_file.name in self.EXCLUDE_FILES:
+      print(f"Skipping excluded file: {source_file.relative_to(self.repo_root)}")
+      self.excluded_files_count += 1
+      return False
+
+    rel_path_from_repo = source_file.relative_to(self.repo_root)
+    rel_path_str = str(rel_path_from_repo)
+
+    if rel_path_str in self.copied_files_relative_paths:
+      # Already copied, probably from CONFIG_FILES and now found again in source scan
+      return False
+
+    # Create a unique filename by joining the relative path parts
+    unique_filename_base = "_".join(rel_path_from_repo.parts).replace(rel_path_from_repo.suffix, '')
+    unique_filename = unique_filename_base + rel_path_from_repo.suffix
+    dest_file = self.dest_path / unique_filename
+
+    print(f"Copying '{rel_path_from_repo}' to '{unique_filename}'")
+    try:
+      shutil.copy2(source_file, dest_file)
+      self.copied_files_relative_paths.add(rel_path_str)
+      return True
+    except Exception as e:
+      print(f"Error copying {source_file} to {dest_file}: {e}")
+      return False
+
   def _copy_config_files(self):
     """
     Copy files specified in CONFIG_FILES from anywhere in the repository.
-    Paths in CONFIG_FILES should be relative to the repository root.
     """
     print("\n--- Copying specified files ---")
     copied_count = 0
     for config_file_rel_str in self.CONFIG_FILES:
-      config_file_rel = Path(config_file_rel_str)
-      source_file = self.repo_root / config_file_rel
-
-      # Check if the file is in the exclude list
-      if source_file.name in self.EXCLUDE_FILES:
-        print(f"Skipping excluded file from CONFIG_FILES: {config_file_rel_str}")
-        self.excluded_files_count += 1
-        continue
+      source_file = self.repo_root / config_file_rel_str
 
       if source_file.exists() and source_file.is_file():
-        # Create a flattened filename for the destination
-        # Use '_' instead of '.' for joining parts to avoid confusion with extension
-        flat_filename_parts = list(config_file_rel.parts)
-        # Keep the original suffix
-        original_suffix = config_file_rel.suffix
-        flat_filename_base = "_".join(flat_filename_parts).replace(original_suffix, '')
-        flat_filename = flat_filename_base + original_suffix
-
-        dest_file = self.dest_path / flat_filename
-
-        print(f"Copying '{config_file_rel_str}' to '{flat_filename}'")
-        try:
-          shutil.copy2(source_file, dest_file)
-          # Store the relative path from the repo root
-          self.copied_files_relative_paths.add(config_file_rel_str)
-          copied_count += 1
-        except Exception as e:
-          print(f"Error copying {source_file} to {dest_file}: {e}")
-
+        if self._copy_file_with_flattened_name(source_file):
+            copied_count += 1
       else:
         print(f"Warning: File not found or is not a file: {config_file_rel_str} (looked in {source_file})")
     print(f"Finished copying specified files. Copied {copied_count} file(s).")
+
+  # --- New Method ---
+  def _copy_config_dirs_files(self):
+    """
+    Copy all files from directories specified in CONFIG_DIRS.
+    """
+    print("\n--- Copying files from specified directories ---")
+    copied_count = 0
+    for dir_str in self.CONFIG_DIRS:
+        source_dir = self.repo_root / dir_str
+        if not source_dir.is_dir():
+            print(f"Warning: Directory not found, skipping: {dir_str}")
+            continue
+
+        print(f"Processing directory: {dir_str}")
+        for root, dirs, files in os.walk(source_dir):
+            # Exclude sub-directories
+            dirs[:] = [d for d in dirs if d not in self.EXCLUDE_DIRS]
+
+            for file in files:
+                file_path = Path(root) / file
+                if self._copy_file_with_flattened_name(file_path):
+                    copied_count += 1
+
+    print(f"Finished copying from specified directories. Copied {copied_count} file(s).")
 
   def _copy_source_files(self):
     """
@@ -150,65 +186,30 @@ class AngularProjectCopier:
       return
 
     copied_count = 0
-    # Walk through the source directory
     for root, dirs, files in os.walk(self.source_path, topdown=True):
-      # Modify dirs in-place to skip excluded directories
-      dirs[:] = [d for d in dirs if d not in self.EXCLUDE_DIRS and Path(root, d) not in self.EXCLUDE_DIRS] # Check full path too
+      dirs[:] = [d for d in dirs if d not in self.EXCLUDE_DIRS]
 
       current_dir = Path(root)
-
-      # Check if the current directory itself should be excluded (relative to repo_root)
       try:
         current_dir_rel_to_repo = current_dir.relative_to(self.repo_root)
         if any(part in self.EXCLUDE_DIRS for part in current_dir_rel_to_repo.parts):
-          # print(f"Skipping excluded directory: {current_dir_rel_to_repo}") # Optional debug
           continue
       except ValueError:
-        # This happens if current_dir is not inside repo_root, should not occur with resolve()
         print(f"Warning: Could not make path relative to repo root: {current_dir}")
         continue
 
-      # Copy files with matching extensions
       for file in files:
         file_path = current_dir / file
 
-        # Ensure it's not in an excluded dir (redundant check, but safe)
         if any(part in self.EXCLUDE_DIRS for part in file_path.relative_to(self.repo_root).parts):
           continue
 
-        # Check if file is explicitly excluded
-        if file in self.EXCLUDE_FILES:
-          rel_path = file_path.relative_to(self.repo_root)
-          print(f"Skipping excluded file: {rel_path}")
-          self.excluded_files_count += 1
-          continue
-
-        # Check if file should be copied (by extension or if it's a special Angular file)
-        should_copy = (file_path.suffix in self.CODE_EXTENSIONS or
-                       file in ['.angular-cli.json', '.browserslistrc'])
-
-        if should_copy:
-          # Create a unique filename by joining the relative path parts (relative to repo root)
-          rel_path_from_repo = file_path.relative_to(self.repo_root)
-
-          # Use '_' instead of '.' for joining parts
-          unique_filename_base = "_".join(rel_path_from_repo.parts).replace(rel_path_from_repo.suffix, '')
-          unique_filename = unique_filename_base + rel_path_from_repo.suffix
-
-          dest_file = self.dest_path / unique_filename
-
-          print(f"Copying '{rel_path_from_repo}' to '{unique_filename}'")
-          try:
-            shutil.copy2(file_path, dest_file)
-            # Store the relative path from the repo root
-            self.copied_files_relative_paths.add(str(file_path.relative_to(self.repo_root)))
-            copied_count += 1
-          except Exception as e:
-            print(f"Error copying {file_path} to {dest_file}: {e}")
+        if file_path.suffix in self.CODE_EXTENSIONS:
+            if self._copy_file_with_flattened_name(file_path):
+                copied_count += 1
 
     print(f"Finished copying source files. Copied {copied_count} file(s).")
 
-  # --- New Method ---
   def _generate_structure_file(self):
     """
     Generates a text file describing the original project structure
@@ -221,10 +222,7 @@ class AngularProjectCopier:
       print("No files were copied, skipping structure file generation.")
       return
 
-    # Sort paths for consistent output
     sorted_paths = sorted(list(self.copied_files_relative_paths))
-
-    # Build a tree structure (dictionary based)
     tree = {}
     for path_str in sorted_paths:
       path_parts = Path(path_str).parts
@@ -232,43 +230,35 @@ class AngularProjectCopier:
       for i, part in enumerate(path_parts):
         is_last_part = (i == len(path_parts) - 1)
         if is_last_part:
-          # Mark as file (using None, or could use a special marker)
-          node[part] = node.get(part) # Don't overwrite if dir exists with same name
-          if node[part] is None: # Only mark if not already a dir
+          node[part] = node.get(part)
+          if node[part] is None:
             node[part] = 'FILE'
         else:
-          # Ensure dictionary exists for directory part
           node = node.setdefault(part, {})
 
-    # Function to recursively format the tree
     def format_tree(node, indent=""):
       lines = []
-      # Sort items: directories first, then files
       items = sorted(node.items(), key=lambda item: (0, item[0]) if isinstance(item[1], dict) else (1, item[0]))
 
       for name, value in items:
         prefix = "|-- "
         connector = "|   "
-        if items.index((name, value)) == len(items) - 1: # Last item uses a different connector
+        if items.index((name, value)) == len(items) - 1:
           prefix = "└── "
           connector = "    "
 
-        if isinstance(value, dict): # It's a directory
+        if isinstance(value, dict):
           lines.append(f"{indent}{prefix}{name}/")
           lines.extend(format_tree(value, indent + connector))
-        elif value == 'FILE': # It's a file
+        elif value == 'FILE':
           lines.append(f"{indent}{prefix}{name}")
-        # Else: Could be a file that has the same name as a directory handled earlier, ignore.
       return lines
 
     try:
       with open(structure_file_path, 'w', encoding='utf-8') as f:
         f.write(f"Original Angular Project Structure (based on copied files relative to {self.repo_root.name}):\n")
-        f.write(f"{self.repo_root.name}/\n") # Add the root directory name
-
-        # Generate the tree starting from the root structure
-        structure_lines = format_tree(tree, indent="    ") # Start with indentation for root content
-
+        f.write(f"{self.repo_root.name}/\n")
+        structure_lines = format_tree(tree, indent="    ")
         for line in structure_lines:
           f.write(line + '\n')
       print(f"Successfully wrote structure to {structure_file_path}")
@@ -280,19 +270,11 @@ class AngularProjectCopier:
 
 # --- Main execution part ---
 if __name__ == "__main__":
-  # Load environment variables from .env file in the script's directory
   load_dotenv()
-
-  # Get the script's directory (assuming it's the repository root for this example)
   script_dir = Path(__file__).parent.resolve()
-  repo_root_path = script_dir # Modify if script is not at repo root
-
-  # Define source path for recursive search (relative to repo root)
-  # For Angular projects, typically the entire project structure matters
-  src_code_path = '.' # Start from repo root to get all Angular files
-
-  # Get the destination path from env var or use a default relative to script dir
-  copy_target_path_str = os.getenv('COPY_PATH', 'output_copy') # Default to './output_copy'
+  repo_root_path = script_dir
+  src_code_path = '.'
+  copy_target_path_str = os.getenv('COPY_PATH', 'output_copy')
   dest_copy_path = repo_root_path / copy_target_path_str / 'extracted_angular_project_files'
 
   print("--- Configuration ---")
@@ -301,11 +283,9 @@ if __name__ == "__main__":
   print(f"Destination Dir: {dest_copy_path}")
   print("---------------------\n")
 
-  # Create and run the copier
   try:
-    # Ensure repo_root and src_path are passed correctly
     copier = AngularProjectCopier(repo_root=str(repo_root_path),
-                                  src_path=str(repo_root_path / src_code_path), # Pass absolute path to init
+                                  src_path=str(repo_root_path / src_code_path),
                                   dest_path=str(dest_copy_path))
     copier.copy_project()
   except Exception as e:

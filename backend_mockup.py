@@ -45,6 +45,9 @@ class MockLoginRequest(BaseModel):
   email: str
   # In real implementation, this might include IDP tokens, SAML response, etc.
 
+class GuestLoginRequest(BaseModel):
+    ip_address: str
+
 
 class LoginResponse(BaseModel):
   """
@@ -52,6 +55,7 @@ class LoginResponse(BaseModel):
   """
   user: dict
   message: str
+  token: Optional[str] = None
 
 
 class ConversationState(BaseModel):
@@ -185,7 +189,7 @@ def generate_session_key(length=32) -> str:
   return secrets.token_urlsafe(length)
 
 
-def create_session(user_id: int, user_email: str, session_duration_hours=24) -> str:
+def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False) -> str:
   """
   Creates a session for a given user with a specified duration in hours.
   """
@@ -196,9 +200,9 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24) -> 
   with get_db() as db:
     db.execute(
       """
-      INSERT INTO sessions (session_key, user_id, email, expires_at)
-      VALUES (?, ?, ?, ?)
-      """, (session_key, user_id, user_email, expires_at.isoformat()))
+      INSERT INTO sessions (session_key, user_id, email, expires_at, is_guest)
+      VALUES (?, ?, ?, ?, ?)
+      """, (session_key, user_id, user_email, expires_at.isoformat(), is_guest))
 
     db.commit()
 
@@ -216,7 +220,7 @@ def validate_session(session_key: str) -> Optional[dict]:
     cur = conn.cursor()
     cur.execute(
       """
-      SELECT user_id, email, expires_at, last_activity
+      SELECT user_id, email, expires_at, last_activity, is_guest
       FROM sessions
       WHERE session_key = ?
       """, (session_key,))
@@ -243,7 +247,8 @@ def validate_session(session_key: str) -> Optional[dict]:
 
     return {
       "user_id": result["user_id"],
-      "email": result["email"]
+      "email": result["email"],
+      "is_guest": result["is_guest"]
     }
 
 
@@ -353,12 +358,22 @@ def init_db():
                                                       session_key TEXT PRIMARY KEY,
                                                       user_id INTEGER NOT NULL,
                                                       email TEXT NOT NULL,
+                                                      is_guest BOOLEAN DEFAULT FALSE,
                                                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                                       expires_at TIMESTAMP NOT NULL,
                                                       last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                                       FOREIGN KEY(user_id) REFERENCES users(id)
                 )
                 ''')
+
+    # Create guest_usage table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS guest_usage (
+            ip_address TEXT PRIMARY KEY,
+            request_count INTEGER NOT NULL,
+            last_request_at TIMESTAMP NOT NULL
+        )
+    ''')
 
     # Create index for faster querying by conversationId and time
     cur.execute('''
@@ -514,6 +529,40 @@ def verify_conversation_ownership(conversation_id: int, user_id: int) -> bool:
 
     return result['userId'] == user_id
 
+async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
+    if current_user and not current_user.get("is_guest"):
+        return  # Not a guest, no rate limit
+
+    ip_address = request.client.host
+    with get_db() as db:
+        cur = db.cursor()
+        cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
+        usage = cur.fetchone()
+
+        now = datetime.now(UTC)
+        limit_duration = timedelta(hours=3)
+        max_requests = 5
+
+        if usage:
+            last_request_at = datetime.fromisoformat(usage["last_request_at"])
+            if now - last_request_at > limit_duration:
+                # Reset counter
+                cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+            elif usage["request_count"] >= max_requests:
+                reset_time = last_request_at + limit_duration
+                retry_after_seconds = (reset_time - now).total_seconds()
+                headers = {"Retry-After": str(int(retry_after_seconds))}
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many requests. Please try again after {reset_time.isoformat()}",
+                    headers=headers
+                )
+            else:
+                cur.execute("UPDATE guest_usage SET request_count = request_count + 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+        else:
+            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
+        db.commit()
+
 
 # Load environment variables from .env file
 load_dotenv(find_dotenv())
@@ -574,6 +623,50 @@ async def custom_swagger_ui_html(req: Request):
     title=app.title + " - Swagger UI"
   )
 
+@app.post("/api/auth/guest-login", response_model=LoginResponse)
+async def guest_login(request: GuestLoginRequest, response: Response):
+    ip_address = request.ip_address
+    with get_db() as db:
+        cur = db.cursor()
+        cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
+        usage = cur.fetchone()
+
+        now = datetime.now(UTC)
+        limit_duration = timedelta(hours=3)
+        max_requests = 5
+
+        if usage:
+            last_request_at = datetime.fromisoformat(usage["last_request_at"])
+            if now - last_request_at > limit_duration:
+                cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+            elif usage["request_count"] >= max_requests:
+                reset_time = last_request_at + limit_duration
+                raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
+        else:
+            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
+
+        db.commit()
+
+    guest_email = f"guest_{secrets.token_hex(4)}@guest.com"
+    guest_user = {"id": 0, "email": guest_email, "name": "Guest"}
+
+    session_key = create_session(0, guest_email, is_guest=True)
+
+    response.set_cookie(
+        key="session",
+        value=session_key,
+        max_age=86400,  # 24 hours
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/"
+    )
+
+    return LoginResponse(
+        user=guest_user,
+        message="Guest login successful",
+        token=session_key
+    )
 
 @app.post("/api/auth/mock-login", response_model=LoginResponse)
 async def mock_login(request: MockLoginRequest, response: Response):
@@ -658,6 +751,9 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
   print("Get conversations for user called")
   user_id = current_user['user_id']
 
+  if current_user.get("is_guest"):
+        return []
+
   try:
     with get_db() as conn:
       cur = conn.cursor()
@@ -691,10 +787,21 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     return ErrorResponse(error=str(e))
 
-  
+
 @app.get("/api/settings", response_model=AppSettings)
 async def get_settings(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
+
+    if current_user.get("is_guest"):
+        return AppSettings(
+            model="openai/gpt-4o",
+            temperature=0.5,
+            top_p=0.5,
+            systemPrompt="You are a helpful assistant!",
+            darkMode=0,
+            languageIsEnglish=0
+        )
+
     with get_db() as db:
         cur = db.cursor()
         cur.execute("""
@@ -721,6 +828,9 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
 @app.put("/api/settings")
 async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
+    if current_user.get("is_guest"):
+        raise HTTPException(status_code=403, detail="Guests cannot save settings.")
+
     with get_db() as db:
         cur = db.cursor()
         cur.execute("""
@@ -797,7 +907,7 @@ async def get_conversation_messages(
       return ErrorResponse(error="Conversation ID and latest timestamp are required")
 
     # Verify ownership
-    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+    if not current_user.get("is_guest") and not verify_conversation_ownership(conversation_id, current_user['user_id']):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -855,7 +965,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       return ErrorResponse(error="Message content cannot be empty")
 
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+    if not current_user.get("is_guest") and not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -889,7 +999,8 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
             status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
             status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
           },
-          tags=["Message"])
+          tags=["Message"],
+          dependencies=[Depends(rate_limit_guest)])
 async def generate_message(request_body: ApiMessageGenerate, response: Response,
                            current_user: dict = Depends(get_current_user)):
   """
@@ -899,14 +1010,14 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
 
   try:
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+    if not current_user.get("is_guest") and not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
-    
+
     if not request_body.conversationId:
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Conversation ID missing or invalid in request")
-  
+
     # Get latest user settings from DB
     user_id = current_user["user_id"]
     with get_db() as db:
@@ -1003,7 +1114,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
       return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Message ID missing")
 
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+    if not current_user.get("is_guest") and not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -1054,7 +1165,7 @@ async def delete_message(conversation_id: int, message_id: int, response: Respon
                       content="Conversation ID or Message ID missing")
 
     # Verify ownership
-    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+    if not current_user.get("is_guest") and not verify_conversation_ownership(conversation_id, current_user['user_id']):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 

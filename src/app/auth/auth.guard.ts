@@ -20,8 +20,8 @@ export class AuthGuard implements CanActivate {
       take(1),
       map(user => {
         console.log('Current user in guard:', user);
-        if (user) {
-          console.log('User authenticated, allowing access');
+        if (user || this.authService.isGuest) {
+          console.log('User authenticated or guest, allowing access');
           return true;
         }
         console.log('User not authenticated, redirecting to login');

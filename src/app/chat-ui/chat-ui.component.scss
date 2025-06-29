@@ -33,6 +33,21 @@
   }
 }
 
+.guest-limit-warning {
+  background-color: #eaf6ff; // Light blue background
+  color: #144d96; // Dark blue text from Farbwelt 2 (2 c2a)
+  padding: 10px;
+  text-align: center;
+  border-top: 1px solid #3a72ba; // Medium blue border from Farbwelt 2 (2 c)
+  border-bottom: 1px solid #3a72ba; // Medium blue border from Farbwelt 2 (2 c)
+
+  a {
+    color: #144d96; // Dark blue link from Farbwelt 2 (2 c2a)
+    text-decoration: underline;
+    font-weight: bold;
+  }
+}
+
 .input-container {
   width: 100%;
   min-height: fit-content;
