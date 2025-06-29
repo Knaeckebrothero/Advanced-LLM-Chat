@@ -638,12 +638,12 @@ async def guest_login(request: GuestLoginRequest, response: Response):
         if usage:
             last_request_at = datetime.fromisoformat(usage["last_request_at"])
             if now - last_request_at > limit_duration:
-                cur.execute("UPDATE guest_usage SET request_count = 0, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+                cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
             elif usage["request_count"] >= max_requests:
                 reset_time = last_request_at + limit_duration
                 raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
         else:
-            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 0, ?)", (ip_address, now.isoformat()))
+            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
 
         db.commit()
 
