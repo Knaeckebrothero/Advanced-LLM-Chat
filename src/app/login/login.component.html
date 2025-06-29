@@ -38,13 +38,22 @@
           <span *ngIf="!loading">Login</span>
           <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
         </button>
+
+        <button
+          mat-stroked-button
+          color="accent"
+          (click)="skipLogin()"
+          class="full-width skip-button"
+        >
+          Skip for now
+        </button>
       </form>
     </mat-card-content>
 
     <mat-card-footer>
       <p class="login-hint">
         <mat-icon>info</mat-icon>
-        <span>Please enter your email to login.</span>
+        <span>Please enter your email to login or skip for now.</span>
       </p>
     </mat-card-footer>
   </mat-card>

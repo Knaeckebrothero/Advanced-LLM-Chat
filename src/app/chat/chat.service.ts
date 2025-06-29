@@ -6,6 +6,7 @@ import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { SettingsService } from '../settings/settings.service';
 import { DisplayService } from '../sidebar/service/display.service';
+import {AuthService} from "../auth/auth.service";
 
 
 @Injectable({
@@ -38,7 +39,8 @@ export class ChatService {
     private dbService: DBService,
     private apiService: ApiService,
     private settingsService: SettingsService,
-    private displayService: DisplayService
+    private displayService: DisplayService,
+    private authService: AuthService
   ) {
     this.initializeService();
   }
@@ -65,6 +67,9 @@ export class ChatService {
   }
 
   private async syncInBackground() {
+    if (this.authService.isGuest) {
+      return;
+    }
     // Prevent multiple simultaneous syncs
     if (this.syncPromise) {
       return this.syncPromise;
@@ -77,6 +82,8 @@ export class ChatService {
       this.syncPromise = null;
     }
   }
+
+
 
   private async performSync() {
     this.isSyncingSubject.next(true);
@@ -277,8 +284,24 @@ export class ChatService {
 
       // Add to local state and database
       this.addMessage(generatedMessage);
-    } catch (error) {
-      console.error('Error generating message:', error);
+      this.authService.setGuestLimitReached(false); // Reset on successful generation
+    } catch (error: any) {
+      if (error.status === 429) {
+        console.error('Guest limit reached:', error);
+        const detail = error.error?.detail;
+        let resetTimeMessage = 'Please try again later.';
+        if (detail && detail.includes('after')) {
+          const resetTimeISO = detail.split('after ')[1];
+          if (resetTimeISO) {
+            const resetDate = new Date(resetTimeISO);
+            const formattedTime = resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            resetTimeMessage = `You have reached your request limit. You can generate more answers after ${formattedTime}.`;
+          }
+        }
+        this.authService.setGuestLimitReached(true, resetTimeMessage);
+      } else {
+        console.error('Error generating message:', error);
+      }
       throw error;
     }
   }

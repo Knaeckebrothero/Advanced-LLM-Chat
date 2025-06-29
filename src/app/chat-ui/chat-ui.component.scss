@@ -1,40 +1,46 @@
+/* NOTE: This file assumes you have a variables file for colors and fonts.
+  Example: src/styles/_variables.scss
+  If not, replace variables like 'var(--text-color)' with actual color codes.
+*/
+
+// Set the base layout for the component host
 :host {
   display: flex;
   flex-direction: column;
   height: 100%;
   position: relative;
-  padding: 0 1rem;
   font-family: 'Segoe UI', Roboto, sans-serif;
   color: var(--text-color);
+  background-color: var(--background-color);
 }
 
-/* Gesamte UI-Struktur */
+// Main container for the chat interface
 .chat-ui-container {
   display: flex;
   flex-direction: column;
   flex: 1;
   padding: 1rem;
-  gap: 1rem;
-  overflow: hidden;
+  gap: 1rem; // Defines space between header, messages, and input
+  overflow: hidden; // Prevents the main container from scrolling
 }
 
-/* Headbar oben */
+// Styles for the headbar at the top
 .headbar {
   height: 64px;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   padding-right: 1rem;
-  margin-bottom: 1rem;
+  flex-shrink: 0; // Prevents the headbar from shrinking
 }
 
-/* Common styles for the logo (sizing) */
+// Common styles for the logo sizing
 .headbar-logo {
   height: 120px;
   width: 450px;
 }
 
-/* Styles for the white version of the logo used in dark mode */
+// Applies a white color mask to the logo, for use in dark mode
 .white-logo {
   background-color: #FFFFFF;
   mask-image: url('src/assets/icons/fra_logo_svg.svg');
@@ -43,64 +49,45 @@
   mask-repeat: no-repeat;
 }
 
-
-/* Nachrichtenbereich */
+// Styles for the message history area
 .message-container {
-  flex: 1;
-  overflow-y: auto;
+  flex: 1; // Allows the container to grow and fill available space
+  overflow-y: auto; // Enables vertical scrolling for messages
   padding: 1rem;
-  background: transparent;
-  border-radius: 0;
-  box-shadow: none;
+
+  // Custom scrollbar styling (from the second file)
+  &::-webkit-scrollbar {
+    width: 10px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--primary-color, #3a72ba); // Use variable with fallback
+    border-radius: 5px;
+  }
 }
 
-/* Eingabebereich fixiert am unteren Rand */
-.input-container {
-  display: flex;
-  flex-direction: row;
-  gap: 1rem;
-  align-items: flex-end;
+// Styles for the guest user message limit warning
+.guest-limit-warning {
+  background-color: var(--warning-bg, #eaf6ff);
+  color: var(--warning-text, #144d96);
   padding: 1rem;
-  background-color: var(--input-bg);
+  text-align: center;
+  border-top: 1px solid var(--warning-border, #3a72ba);
+  border-bottom: 1px solid var(--warning-border, #3a72ba);
+  flex-shrink: 0; // Prevents the warning from shrinking
+
+  a {
+    color: var(--warning-link-text, #144d96);
+    text-decoration: underline;
+    font-weight: bold;
+  }
+}
+
+// Styles for the host element of the input field component
+app-chat-ui-inputfield {
+  display: block; // Ensures the component is treated as a block-level element
+  padding: 1rem;
+  background-color: var(--input-area-bg, transparent);
   border-top: 1px solid var(--divider-color);
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
-  z-index: 1;
-}
-
-/* Textfeld */
-.textfield-container {
-  flex: 1;
-}
-
-.chat-input {
-  width: 100%;
-  min-height: 3rem;
-  border-radius: 0.5rem;
-  padding: 0.5rem;
-  resize: none;
-  font-size: 1rem;
-  border: 1px solid var(--input-border-color);
-  background-color: var(--input-bg);
-  color: var(--text-color);
-}
-
-/* Buttons */
-.button-container {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.generate-button,
-.send-button {
-  height: 100%;
-  font-weight: bold;
-  background-color: var(--btn-bg);
-  color: var(--btn-text);
-  border: 1px solid var(--input-border-color);
-  border-radius: 0.5rem;
-
-  &:hover {
-    background-color: var(--btn-hover-bg);
-    color: var(--btn-hover-text);
-  }
+  flex-shrink: 0; // Prevents the input area from shrinking
 }

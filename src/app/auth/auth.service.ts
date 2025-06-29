@@ -30,6 +30,12 @@ export class AuthService {
   private baseUrl: string = environment.apiUrl;
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
+  public isGuest = false;
+
+  private guestLimitReachedSubject = new BehaviorSubject<boolean>(false);
+  public guestLimitReached$ = this.guestLimitReachedSubject.asObservable();
+  private guestLimitResetTimeSubject = new BehaviorSubject<string | null>(null);
+  public guestLimitResetTime$ = this.guestLimitResetTimeSubject.asObservable();
 
   // Promise to track initialization
   private authInitialized: Promise<void>;
@@ -48,6 +54,11 @@ export class AuthService {
   // Make this return a Promise so APP_INITIALIZER can wait for it
   initializeAuth(): Promise<void> {
     return this.authInitialized;
+  }
+
+  setGuestLimitReached(isReached: boolean, resetTime: string | null = null) {
+    this.guestLimitReachedSubject.next(isReached);
+    this.guestLimitResetTimeSubject.next(resetTime);
   }
 
   async checkAuthStatus(): Promise<void> {
@@ -102,12 +113,37 @@ export class AuthService {
       );
 
       this.currentUserSubject.next(response.user);
+      this.isGuest = false;
       this.router.navigate(['/']);
     } catch (error) {
       console.error('Login failed:', error);
       throw new Error('Login failed');
     }
   }
+
+  async skipLogin(): Promise<void> {
+    try {
+      const ipResponse = await lastValueFrom(this.http.get<{ ip: string }>('https://api.ipify.org?format=json'));
+      const ip_address = ipResponse.ip;
+
+      const response = await lastValueFrom(
+        this.http.post<{ user: User, message: string, token: string }>(
+          `${this.baseUrl}/api/auth/guest-login`,
+          { ip_address },
+          { withCredentials: true }
+        )
+      );
+
+      this.isGuest = true;
+      this.currentUserSubject.next(response.user);
+      this.router.navigate(['/']);
+    } catch (error) {
+      console.error('Guest login failed:', error);
+      // Optionally show an error to the user
+      throw new Error('Guest login failed');
+    }
+  }
+
 
   // Placeholder for OAuth redirect (implement when adding IDP)
   private redirectToOAuthProvider(): void {
@@ -130,6 +166,7 @@ export class AuthService {
       );
 
       this.currentUserSubject.next(response.user);
+      this.isGuest = false;
       this.router.navigate(['/']);
     } catch (error) {
       console.error('Auth callback failed:', error);
@@ -140,15 +177,15 @@ export class AuthService {
   async logout(): Promise<void> {
     try {
       await lastValueFrom(
-        this.http.post(`${this.baseUrl}/api/auth/logout`, {})
+        this.http.post(`${this.baseUrl}/api/auth/logout`, {}, { withCredentials: true })
       );
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
       this.currentUserSubject.next(null);
-
+      this.isGuest = false;
       // For IDP logout, you might need to redirect to IDP logout URL
-      if (this.loginProvider.type === 'oauth') {
+      if (this.loginProvider.type === 'oauth' && !this.isGuest) {
         // window.location.href = `${idpLogoutUrl}`;
       } else {
         this.router.navigate(['/login']);

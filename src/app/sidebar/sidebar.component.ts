@@ -1,5 +1,5 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import {Component, OnDestroy, OnInit} from '@angular/core';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon'; // Note: Also added MatIconModule here for completeness
@@ -9,11 +9,15 @@ import { MatTooltipModule } from '@angular/material/tooltip'; // Added for the i
 import { Conversation } from '../data/objects/conversation';
 import { ChatService } from '../chat/chat.service';
 import { DisplayService } from "./service/display.service";
+import { MatIcon } from "@angular/material/icon";
+import { SettingsComponent } from "../settings/settings.component";
+import { SettingsService } from "../settings/settings.service";
+import { Settings } from '../settings/settings.service';
+import { AuthService } from '../auth/auth.service';
 import { ThemeService } from 'src/styles/themes/theme.service';
 
 import { ConversationComponent } from './conversation/conversation.component';
 // FIXED: Added the missing import for SettingsComponent
-import { SettingsComponent } from '../settings/settings.component';
 
 @Component({
   selector: 'app-sidebar',
@@ -31,6 +35,7 @@ import { SettingsComponent } from '../settings/settings.component';
 export class SidebarComponent implements OnInit, OnDestroy {
 
   groupedConversations: { [key: string]: Conversation[] } = {};
+  isGuest = false;
   isDarkMode: boolean = false;
   private themeSubscription!: Subscription;
 
@@ -39,10 +44,23 @@ export class SidebarComponent implements OnInit, OnDestroy {
     public router: Router,
     public displayService: DisplayService,
     private dialog: MatDialog,
-    private themeService: ThemeService
+    private themeService: ThemeService,
+    private authService: AuthService
   ) {}
 
+
+  /**
+   * Öffnet die Einstellungen als modales Dialogfenster.
+   * Nutzt die bestehende SettingsComponent und zeigt sie über MatDialog an.
+   */
+
+  /**
+   * Angular lifecycle hook that initializes the component's state.
+   * It subscribes to a list of conversations from the chat service.
+   * It groups existing conversations by date and stores them accordingly.
+   */
   ngOnInit(): void {
+    this.isGuest = this.authService.isGuest;
     // Subscribe to theme changes to toggle logo
     this.themeSubscription = this.themeService.getEffectiveTheme$().subscribe(theme => {
       this.isDarkMode = theme === 'dark';
@@ -79,6 +97,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   /**
    * Groups conversations into time-based categories for display.
+   * Each group is also sorted by newest first.
    */
   groupConversationsByDate(conversations: Conversation[]): { [key: string]: Conversation[] } {
     const groups: { [key: string]: Conversation[] } = {
@@ -89,7 +108,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
     };
 
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0); // Reset time for accurate date comparison
 
     for (const conv of conversations) {
       const updated = new Date(conv.updatedAt);
@@ -104,7 +123,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
         groups['Letzte 7 Tage'].push(conv);
       } else if (
         updated.getMonth() === now.getMonth() &&
-        updated.getFullYear() === now.getFullYear()
+        updated.getFullYear() === now.getFullYear() &&
+        updated.getTime() < now.getTime()
       ) {
         groups['Diesen Monat'].push(conv);
       } else {
@@ -112,6 +132,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
       }
     }
 
+    // Sort each group by newest first
     for (const key in groups) {
       groups[key].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -122,33 +143,34 @@ export class SidebarComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Loads a selected conversation into the main view.
+   * Called when a conversation is selected (clicked).
+   * Passes the selected conversation to the ChatService and updates highlighting.
    */
   onSelectConversation(conversation: Conversation): void {
     this.chatService.loadConversation(conversation);
     this.displayService.setActiveConversation(conversation.id);
-    this.router.navigate(['/']);
-    this.displayService.closeSidebarOnMobile();
+    this.router.navigate(['/']); // Navigate to the main chat view
+    this.displayService.closeSidebarOnMobile(); // Close sidebar on mobile if open
   }
 
   /**
-   * Creates a new temporary conversation state.
+   * Creates a new placeholder conversation.
    */
   createNewConversation(): void {
     const tempConversation = new Conversation(
       0, // Temporary ID for a new, unsaved chat
       1, // Placeholder user ID
-      'New Chat',
-      ['user', 'Assistant']
+      'New Chat', // Default name
+      ['user', 'Assistant'] // Default participants
     );
 
     this.chatService.loadConversation(tempConversation);
-    this.displayService.setActiveConversation(0);
+    this.displayService.setActiveConversation(0); // Highlight "New Chat" button
     this.displayService.closeSidebarOnMobile();
   }
 
   /**
-   * Navigates to a specific route.
+   * Navigates to a specific route and closes sidebar on mobile
    */
   navigateTo(route: string): void {
     this.router.navigate([route]);

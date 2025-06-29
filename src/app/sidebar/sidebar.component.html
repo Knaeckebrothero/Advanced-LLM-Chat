@@ -7,7 +7,6 @@
     <span class="branding-label"><strong> Recycling <br>Bot</strong></span>
   </div>
 
-  <!-- 'New Chat' button with highlighting logic -->
   <button class="new-conversation-button"
           [class.selected]="(displayService.activeConversationId$ | async) === 0"
           (click)="createNewConversation()">
@@ -40,8 +39,8 @@
     </button>
   </div>
 
-  <!-- User profile and settings button from 'develop' branch -->
-  <div class="user-with-settings">
+  <!-- Neuer Settings-Button unten -->
+  <div class="user-with-settings" *ngIf="!isGuest">
     <div class="user">
       <div class="avatar">MM</div>
       <div class="username">Max Mustermann</div>
