@@ -22,13 +22,20 @@ export class ChatUiMessageComponent {
 
   // Function to replace prompt relevant elements to format the message
   formatMessage(message: string): SafeHtml {
-    if(!this.editing) {}
-    const replacedMessage = message
-    .replace(/\{\{user\}\}/g, this.chatUI.userName) // Replace {{user}} with the user's name
-    .replace(this.chatUI.aiName + ':', '') // Remove the AI's name from the message
-    .replace(/"/ + this.chatUI.aiName + ':' + /"/, '') // Remove the AI's name from the message
-    .replace(/\*(.*?)\*/g, '<em>$1</em>'); // Replace asterix with <em> tags, *text* -> <em>text</em>
-    return this.sanitizer.bypassSecurityTrustHtml(replacedMessage);
+    if(!this.editing) {
+      const replacedMessage = message
+        // First, convert line breaks to <br> tags to preserve formatting
+        .replace(/\n/g, '<br>')
+        // Then do the other replacements
+        .replace(/\{\{user\}\}/g, this.chatUI.userName) // Replace {{user}} with the user's name
+        .replace(this.chatUI.aiName + ':', '') // Remove the AI's name from the message
+        .replace(/"/ + this.chatUI.aiName + ':' + /"/, '') // Remove the AI's name from the message
+        .replace(/\*(.*?)\*/g, '<em>$1</em>'); // Replace asterix with <em> tags, *text* -> <em>text</em>
+
+      return this.sanitizer.bypassSecurityTrustHtml(replacedMessage);
+    }
+    // Return the raw message when editing to preserve line breaks
+    return message;
   }
 
   // Edit message button

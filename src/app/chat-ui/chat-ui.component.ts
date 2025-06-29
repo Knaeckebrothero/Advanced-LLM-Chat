@@ -3,13 +3,14 @@ import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
 import { Subscription } from 'rxjs';
+import { FilePreview } from '../data/objects/file-preview';
 
 
 @Component({
-    selector: 'app-chat-ui',
-    templateUrl: './chat-ui.component.html',
-    styleUrls: ['./chat-ui.component.scss'],
-    standalone: false
+  selector: 'app-chat-ui',
+  templateUrl: './chat-ui.component.html',
+  styleUrls: ['./chat-ui.component.scss'],
+  standalone: false
 })
 export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
@@ -20,6 +21,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   userName: string = 'user';
   aiName: string = 'Assistant';
   conversationId: number = 1;
+  pendingFiles: FilePreview[] = [];
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
@@ -31,8 +33,11 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   private guestLimitSubscription!: Subscription;
   private guestLimitResetTimeSubscription!: Subscription;
 
-  // Constructor
-  constructor(private chatService: ChatService, private authService: AuthService) {}
+  // Constructor - REMOVED MatDialog dependency
+  constructor(
+    private chatService: ChatService,
+    private authService: AuthService
+  ) {}
 
   ngOnInit() {
     this.guestLimitSubscription = this.authService.guestLimitReached$.subscribe(isReached => {
@@ -68,52 +73,67 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
-  // TODO: Do we want to move this to the app.component?
 
-  // Function to handle Enter key in textarea
-  handleEnterKeyPress(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      if (this.isMobileDevice()) {
-        // It's a mobile device, allow line breaks on Enter
-        event.preventDefault(); // This line might be removed if you want to allow new lines
-      } else {
-        // It's not a mobile device, send the message
-        this.inputUserMessage();
-        event.preventDefault(); // Prevents new line even on desktop after sending message
+  // Handle message sent from the input component
+  async onMessageSent(message: string): Promise<void> {
+    if (message.trim() || this.pendingFiles.length > 0) {
+      try {
+        // Log files for demo purposes
+        if (this.pendingFiles.length > 0) {
+          console.log('Message sent with files:', this.pendingFiles);
+        }
+
+        // Wait for the message to be sent (and conversation created if needed)
+        await this.chatService.sendMessage(message);
+        console.log('User added message:', message);
+        this.scrollToBottom();
+
+        // Clear pending files after sending
+        this.pendingFiles = [];
+
+        // Generate AI response after message is confirmed sent
+        await this.generateMessage();
+      } catch (error) {
+        console.error('Error sending message:', error);
+        // TODO: Optionally show an error to the user
       }
     }
   }
 
-  // The addMessage method is called when the user submits a new message.
-  inputUserMessage() {
-    // The inputField property is checked to ensure that it is not empty.
-    if (this.inputField !== '') {
-      this.authService.setGuestLimitReached(false, null); // Reset on new user message
-      // The ChatService is used to add a new usermessage to the history.
-      this.chatService.sendMessage(this.inputField);
-      console.log('User added message:');
-
-      this.scrollToBottom();
-
-      // The input field is cleared.
-      this.inputField = '';
+  // Generate a new message
+  async generateMessage(): Promise<void> {
+    try {
+      await this.chatService.generateMessage(this.aiName);
+    } catch (error) {
+      console.error('Error generating AI response:', error);
+      // Optionally show an error to the user
     }
   }
 
-  // Generate a new message
-  generateMessage() {
-    this.chatService.generateMessage(this.aiName);
+  // Handle audio recording request
+  onAudioRequested(): void {
+    console.log('Audio recording requested');
+    // The voice recording is now handled internally by the input field component
   }
 
-  /*
-
-  // The inputSystemMessage method is called to add a new system message
-  inputSystemMessage(messageId: number) {
-    // The ChatService is used to add a new system message to the history.
-    this.chatService.systemAddMessage(messageId);
+  // Handle file attachment request
+  onFileRequested(filePreviews: FilePreview[]): void {
+    console.log('Files selected:', filePreviews);
+    // Store files temporarily until message is sent
+    this.pendingFiles = filePreviews;
   }
 
-  */
+  // SIMPLIFIED: Camera is now handled by the input component directly
+  onCameraRequested(): void {
+    console.log('Camera requested - handled by input component');
+    // The input component now handles camera directly
+    // No need for a dialog
+  }
+
+  onLocationRequested(): void {
+    console.log('Location sharing requested');
+    // TODO: Get and display current location
+  }
 
   // Method to delete a message
   deleteMessage(messageId: number) {

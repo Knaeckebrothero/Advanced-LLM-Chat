@@ -6,8 +6,8 @@ import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { SettingsService } from '../settings/settings.service';
 import { DisplayService } from '../sidebar/service/display.service';
+import { FilePreview, UploadStatus } from '../data/objects/file-preview';
 import {AuthService} from "../auth/auth.service";
-
 
 @Injectable({
   providedIn: 'root'
@@ -83,13 +83,17 @@ export class ChatService {
     }
   }
 
-
-
+  // TODO: Move sync logic to a separate sync service!
   private async performSync() {
     this.isSyncingSubject.next(true);
 
     try {
-      const serverConversations = await this.apiService.getConversations();
+      const serverConversationsData = await this.apiService.getConversations();
+
+      // Convert plain objects to Conversation instances
+      const serverConversations = serverConversationsData.map(data =>
+        Conversation.fromApiResponse(data)
+      );
 
       if (serverConversations.length === 0) {
         console.log('No conversations on server');
@@ -115,7 +119,7 @@ export class ChatService {
     }
   }
 
-  private async mergeServerConversations(serverConversations: any[]) {
+  private async mergeServerConversations(serverConversations: Conversation[]) {
     // Get local conversations
     const localConversations = await this.dbService.getAllConversations();
     const localConvMap = new Map(localConversations.map(c => [c.id, c]));
@@ -144,7 +148,13 @@ export class ChatService {
   }
 
   private async syncConversationIfNeeded(serverConv: any) {
+    // TODO: Why is the received conversation object not converted to conversation already?
+    //const test123 = Conversation.fromApiResponse(this.conversation)
+    //console.log("Conversation hash: ", test123.computeHash(this.dbService))
+    //console.log(this.conversation)
+    //console.log("Conversation: ", this.conversation)
     const localHash = await this.conversation.computeHash(this.dbService);
+    // TODO: The issue is that this.conversation is null by default
 
     if (localHash !== serverConv.hashsum) {
       console.log('Syncing messages for conversation:', serverConv.id);
@@ -207,7 +217,7 @@ export class ChatService {
   }
 
   // Send a message
-  public async sendMessage(content: string, roleName: string = 'user') {
+  public async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
     if (this.isNewConversationSubject.getValue()) {
       // First message in a new chat. Create the conversation.
       const title = content.length > 30 ? content.substring(0, 27) + '...' : content;
@@ -222,13 +232,13 @@ export class ChatService {
         this.displayService.setActiveConversation(this.conversation.id);
       } catch (error) {
         console.error('Failed to create conversation:', error);
-        // Optionally show an error to the user
-        return;
+        // Re-throw to let the caller handle it
+        throw new Error('Failed to create conversation');
       }
     }
 
     const message = new Message({
-      id: Math.floor(new Date().getTime() / 1000) ,
+      id: Math.floor(new Date().getTime() / 1000),
       conversationId: this.conversation.id,
       roleName: roleName,
       content: content,
@@ -257,7 +267,8 @@ export class ChatService {
       }
     } catch(error) {
       console.error('Error sending message:', error);
-      // Handle error, e.g., mark the message as failed to send
+      // Remove the optimistically added message or mark it as failed
+      throw new Error('Failed to send message');
     }
 
     // Update conversation timestamp
@@ -266,6 +277,18 @@ export class ChatService {
 
     // This will trigger re-grouping in sidebar
     await this.loadAllConversations();
+
+    // Trigger a sync after sending the message (especially important for new conversations)
+    this.syncInBackground();
+  }
+
+  // Send a file inside a message
+  public async sendMessageWithFiles(
+    content: string,
+    files: FilePreview[],
+    roleName: string = 'user'
+  ): Promise<void> {
+    // TODO: Implementation for sending messages with attachments
   }
 
   // Generate a message

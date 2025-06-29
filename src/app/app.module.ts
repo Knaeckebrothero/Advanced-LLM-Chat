@@ -7,6 +7,7 @@ import {StatusBarComponent} from './status-bar/status-bar.component';
 import {AuthCallbackComponent} from './auth/auth-callback/auth-callback.component';
 import {AuthGuard} from './auth/auth.guard';
 import {LoginComponent} from './login/login.component';
+import { ChatUiInputfieldComponent } from './chat-ui/chat-ui-inputfield/chat-ui-inputfield.component';
 
 // Services
 import {AuthService} from './auth/auth.service';
@@ -23,6 +24,7 @@ import {MatListModule} from '@angular/material/list';
 import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
 import {MatCardModule} from '@angular/material/card';
 import { MatDialogModule } from '@angular/material/dialog';
+
 // Default
 import {inject, isDevMode, NgModule, provideAppInitializer} from '@angular/core';
 import {BrowserModule} from '@angular/platform-browser';
@@ -70,7 +72,7 @@ const routes: Routes = [
     MatCardModule,
     MatDialogModule,
     CommonModule,
-    RouterModule.forRoot(routes),
+    ChatUiInputfieldComponent,
     RouterModule.forRoot(routes),
     ServiceWorkerModule.register(
       'ngsw-worker.js', {
