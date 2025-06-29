@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 
+
 @Component({
   selector: 'app-login',
   templateUrl: './login.component.html',
@@ -61,17 +62,5 @@ export class LoginComponent implements OnInit {
   loginWithProvider() {
     this.loading = true;
     this.authService.login();
-  }
-
-  async skipLogin() {
-    this.loading = true;
-    this.error = '';
-    try {
-      await this.authService.skipLogin();
-    } catch (error: any) {
-      this.error = error.error?.detail || 'An error occurred';
-    } finally {
-      this.loading = false;
-    }
   }
 }

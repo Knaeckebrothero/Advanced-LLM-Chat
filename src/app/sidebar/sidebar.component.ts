@@ -13,6 +13,7 @@ import { MatDialogModule } from '@angular/material/dialog';
 import { Settings } from '../settings/settings.service';
 import { AuthService } from '../auth/auth.service';
 
+
 @Component({
   selector: 'app-sidebar',
   standalone: true,
@@ -29,7 +30,6 @@ import { AuthService } from '../auth/auth.service';
 export class SidebarComponent implements OnInit {
 
   groupedConversations: { [key: string]: Conversation[] } = {};
-  isGuest = false;
 
   constructor(
     public chatService: ChatService,
@@ -40,6 +40,51 @@ export class SidebarComponent implements OnInit {
     private authService: AuthService
   ) {}
 
+  /**
+   * Gets the current user's name to display
+   */
+  getUserName(): string {
+    const user = this.authService.getCurrentUser();
+    if (user) {
+      return user.name || user.email;
+    }
+    return 'Guest';
+  }
+
+  /**
+   * Gets the initials for the avatar
+   */
+  getUserInitials(): string {
+    const user = this.authService.getCurrentUser();
+    if (user) {
+      if (user.name) {
+        const names = user.name.split(' ');
+        if (names.length >= 2) {
+          return names[0][0].toUpperCase() + names[names.length - 1][0].toUpperCase();
+        }
+        return user.name.substring(0, 2).toUpperCase();
+      } else if (user.email) {
+        return user.email.substring(0, 2).toUpperCase();
+      }
+    }
+    return 'G'; // Default for Guest
+  }
+
+  /**
+   * Handles click on user profile - navigates to login if guest, shows logout option if logged in
+   */
+  handleUserClick(): void {
+    if (this.authService.isGuest) {
+      // Navigate to login page
+      this.router.navigate(['/login']);
+      this.displayService.closeSidebarOnMobile();
+    } else {
+      // Show logout confirmation
+      if (confirm('Are you sure you want to logout?')) {
+        this.authService.logout();
+      }
+    }
+  }
 
   /**
    * Öffnet die Einstellungen als modales Dialogfenster.
@@ -64,7 +109,6 @@ export class SidebarComponent implements OnInit {
    * It groups existing conversations by date and stores them accordingly.
    */
   ngOnInit(): void {
-    this.isGuest = this.authService.isGuest;
     // Subscribe to conversations
     this.chatService.getConversations().subscribe(conversations => {
       this.groupedConversations = this.groupConversationsByDate(conversations);
