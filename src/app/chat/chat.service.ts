@@ -284,8 +284,14 @@ export class ChatService {
 
       // Add to local state and database
       this.addMessage(generatedMessage);
-    } catch (error) {
-      console.error('Error generating message:', error);
+      this.authService.setGuestLimitReached(false); // Reset on successful generation
+    } catch (error: any) {
+      if (error.status === 429) {
+        console.error('Guest limit reached:', error);
+        this.authService.setGuestLimitReached(true);
+      } else {
+        console.error('Error generating message:', error);
+      }
       throw error;
     }
   }
