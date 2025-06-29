@@ -1,19 +1,32 @@
-/* src/app/app.component.scss */
 @use 'src/styles/variables' as vars;
 
 $burger-area-height: 60px;
 $burger-area-width: 60px;
 
+// CSS custom properties for sidebar state and responsive values
+:host {
+  --sidebar-width: 260px;
+  --sidebar-state: 0; /* 0 = closed, 1 = open */
+  --animation-duration: 0.3s;
+  --animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .app-container {
   display: flex;
-  /* Fallback for browsers that don't support CSS variables */
+  // Fix 1: Use 100% instead of 100vw to exclude scrollbar width
+  width: 100%;
+  // Fallback for browsers that don't support CSS variables
   height: 100vh;
-  /* Use CSS variable set by JavaScript */
+  // Use CSS variable set by JavaScript
   height: calc(var(--vh, 1vh) * 100);
-  /* Modern browsers with dvh support */
+  // Modern browsers with dvh support
   height: 100dvh;
-  width: 100vw;
-  overflow: hidden;
+  // Fix 2: Prevent horizontal overflow with clip (better performance than hidden)
+  overflow: clip;
+  // Fix 3: Ensure border-box sizing
+  box-sizing: border-box;
+  // Fix 4: Relative positioning for absolute children
+  position: relative;
 }
 
 /* Progressive enhancement for modern browsers */
@@ -34,6 +47,8 @@ $burger-area-width: 60px;
   align-items: center;
   justify-content: center;
   z-index: 1002;
+  // Fix 5: Ensure it doesn't cause overflow
+  box-sizing: border-box;
 }
 
 .burger-menu-button {
@@ -57,57 +72,106 @@ $burger-area-width: 60px;
 }
 
 .sidebar-element {
-  width: 260px;
+  width: var(--sidebar-width);
   position: fixed;
   left: 0;
   top: 0;
   height: 100vh;
   height: calc(var(--vh, 1vh) * 100);
   height: 100dvh;
-  transform: translateX(-100%);
-  transition: transform 0.3s ease-in-out;
+  // Fix 6: Use CSS custom property for transform state
+  transform: translateX(calc((var(--sidebar-state) - 1) * 100%));
+  transition: transform var(--animation-duration) var(--animation-easing);
+  // Fix 7: Add will-change for animation optimization
+  will-change: transform;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   background-color: #2C8BCC;
   padding-top: $burger-area-height;
   box-sizing: border-box;
+  // Fix 8: Prevent sidebar content from overflowing
+  overflow-y: auto;
+  overflow-x: clip;
+  // Fix 9: Add CSS containment for performance
+  contain: layout paint style;
 
   &.open {
-    transform: translateX(0);
+    // Update CSS variable instead of direct transform
+    --sidebar-state: 1;
   }
 }
 
 .content-wrapper {
   flex-grow: 1;
+  // Fix 10: Critical - allow flex item to shrink below content size
+  min-width: 0;
   height: 100vh;
   height: calc(var(--vh, 1vh) * 100);
   height: 100dvh;
   overflow-y: auto;
+  // Fix 11: Prevent horizontal overflow in content
+  overflow-x: hidden;
   background-color: vars.$color-background;
-  transition: margin-left 0.3s ease-in-out;
+  transition: margin-left var(--animation-duration) var(--animation-easing);
   position: relative;
+  // Fix 12: Ensure proper box model
+  box-sizing: border-box;
+  // Fix 13: Add containment for performance
+  contain: layout style;
 }
 
-/* Rest of the styles remain the same... */
+// Desktop and larger screens
 @media (min-width: 769px) {
   .content-wrapper {
     &.sidebar-open {
-      margin-left: 260px;
+      margin-left: var(--sidebar-width);
     }
   }
 }
 
+// Mobile/Tablet screens
 @media (max-width: 768px) {
+  :host {
+    // Fix 14: Use vw with max constraint to prevent edge overflow
+    --sidebar-width: min(85vw, calc(100vw - 60px));
+  }
+
   .sidebar-element {
-    width: 85%;
+    // Fix 15: Ensure sidebar doesn't exceed viewport
+    max-width: calc(100% - 60px);
+
     &.open {
       box-shadow: 3px 0px 15px rgba(0,0,0,0.2);
     }
   }
+
   .content-wrapper {
     &.sidebar-open {
       margin-left: 0;
     }
   }
+}
+
+// Fix 16: PWA safe area support
+@supports (padding: env(safe-area-inset-left)) {
+  .app-container {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .sidebar-element {
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .content-wrapper {
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+// Fix 17: Global box-sizing reset (move to global styles if not already there)
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }

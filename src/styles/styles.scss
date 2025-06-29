@@ -18,22 +18,46 @@ $custom-theme: mat.m2-define-dark-theme((
   )
 ));
 
+// Global box-sizing reset - Critical for preventing overflow issues
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 // Global Styles
 html, body {
   height: 100vh;
-  width: 100vw;
+  // Fix: Use 100% instead of 100vw to exclude scrollbar width
+  width: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  // Fix: Use clip for better performance than hidden
+  overflow: clip;
   font-family: vars.$font-family-base;
   background-color: vars.$color-background;
 }
 
+// Prevent horizontal overflow on the root
+html {
+  overflow-x: hidden;
+  // Ensure smooth scrolling on iOS
+  -webkit-overflow-scrolling: touch;
+}
 
 // Apply the theme to Angular Material components
 @include mat.all-component-themes($custom-theme);
 @include mat.elevation-classes();
 @include mat.app-background();
+
+// Fix for flex items with text content
+.flex-text-container {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
 
 // Responsive and Accessibility Styles
 // Add here if needed

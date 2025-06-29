@@ -1,4 +1,4 @@
-import {Component, OnDestroy, OnInit} from '@angular/core';
+import {Component, OnDestroy, OnInit, HostListener} from '@angular/core';
 import {DisplayService} from "./sidebar/service/display.service";
 import {NavigationEnd, Router} from '@angular/router';
 import {Subscription, interval} from 'rxjs';
@@ -17,7 +17,7 @@ export class AppComponent implements OnInit, OnDestroy {
   showMenuIcon: boolean = true;
   private routerSubscription: Subscription | undefined;
   private syncSubscription: Subscription | undefined;
-  private visibilityChangeHandler: () => void; // Store the handler reference
+  private readonly visibilityChangeHandler: () => void; // Store the handler reference
 
   constructor(
     public displayService: DisplayService,
@@ -33,6 +33,12 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
+    // Set the CSS variable for viewport height (existing functionality)
+    this.setViewportHeight();
+
+    // Initialize sidebar state CSS variable
+    this.initializeSidebarState();
+
     // Router subscription
     this.routerSubscription = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd)
@@ -48,6 +54,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
     // Sync when app regains focus
     document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+
+    // Subscribe to sidebar state changes and update CSS variable
+    this.displayService.isSidebarOpen$.subscribe(isOpen => {
+      this.updateSidebarState(isOpen);
+    });
   }
 
   ngOnDestroy() {
@@ -62,5 +73,33 @@ export class AppComponent implements OnInit, OnDestroy {
 
     // Remove event listener using the same handler reference
     document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+  }
+
+  @HostListener('window:resize')
+  onResize() {
+    this.setViewportHeight();
+  }
+
+  /**
+   * Sets a CSS variable for the actual viewport height to handle mobile browser chrome
+   */
+  private setViewportHeight() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  }
+
+  /**
+   * Initialize sidebar state CSS variable
+   */
+  private initializeSidebarState() {
+    const currentState = this.displayService.getCurrentSidebarState();
+    document.documentElement.style.setProperty('--sidebar-state', currentState ? '1' : '0');
+  }
+
+  /**
+   * Update sidebar state CSS variable for smooth animations
+   */
+  private updateSidebarState(isOpen: boolean) {
+    document.documentElement.style.setProperty('--sidebar-state', isOpen ? '1' : '0');
   }
 }
