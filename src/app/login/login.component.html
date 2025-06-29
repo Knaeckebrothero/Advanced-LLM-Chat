@@ -10,13 +10,13 @@
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Email</mat-label>
           <input matInput
-            type="email"
-            [(ngModel)]="email"
-            name="email"
-            placeholder="Enter your email"
-            (keyup.enter)="login()"
-            [disabled]="loading"
-            required
+                 type="email"
+                 [(ngModel)]="email"
+                 name="email"
+                 placeholder="Enter your email"
+                 (keyup.enter)="login()"
+                 [disabled]="loading"
+                 required
           >
           <mat-error *ngIf="!email">
             Email is required
@@ -39,21 +39,14 @@
           <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
         </button>
 
-        <button
-          mat-stroked-button
-          color="accent"
-          (click)="skipLogin()"
-          class="full-width skip-button"
-        >
-          Skip for now
-        </button>
+        <!-- Removed skip login button as requested -->
       </form>
     </mat-card-content>
 
     <mat-card-footer>
       <p class="login-hint">
         <mat-icon>info</mat-icon>
-        <span>Please enter your email to login or skip for now.</span>
+        <span>Please enter your email to login.</span>
       </p>
     </mat-card-footer>
   </mat-card>

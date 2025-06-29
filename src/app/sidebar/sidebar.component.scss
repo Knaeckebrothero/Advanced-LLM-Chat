@@ -73,11 +73,22 @@
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   gap: 8px;
 
-  .user {
+  .user-button {
     display: flex;
     align-items: center;
     gap: 8px;
+    background: none;
+    border: none;
     color: white;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    flex: 1;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
 
     .avatar {
       background-color: white;
@@ -88,6 +99,7 @@
       text-align: center;
       line-height: 32px;
       font-weight: bold;
+      flex-shrink: 0;
     }
 
     .username {
@@ -96,6 +108,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      text-align: left;
     }
   }
 
