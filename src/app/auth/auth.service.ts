@@ -122,6 +122,13 @@ export class AuthService {
   }
 
   async skipLogin(): Promise<void> {
+    this.isGuest = true;
+    const guestUser: User = { id: -1, email: 'guest', name: 'Guest' };
+    this.currentUserSubject.next(guestUser);
+    this.router.navigate(['/']);
+  }
+
+  async registerGuest(): Promise<void> {
     try {
       const ipResponse = await lastValueFrom(this.http.get<{ ip: string }>('https://api.ipify.org?format=json'));
       const ip_address = ipResponse.ip;
@@ -134,13 +141,10 @@ export class AuthService {
         )
       );
 
-      this.isGuest = true;
       this.currentUserSubject.next(response.user);
-      this.router.navigate(['/']);
     } catch (error) {
-      console.error('Guest login failed:', error);
-      // Optionally show an error to the user
-      throw new Error('Guest login failed');
+      console.error('Guest registration failed:', error);
+      throw new Error('Guest registration failed');
     }
   }
 

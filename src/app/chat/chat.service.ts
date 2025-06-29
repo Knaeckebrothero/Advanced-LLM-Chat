@@ -208,6 +208,15 @@ export class ChatService {
 
   // Send a message
   public async sendMessage(content: string, roleName: string = 'user') {
+    if (this.authService.isGuest && this.authService.getCurrentUser()?.id === -1) {
+      try {
+        await this.authService.registerGuest();
+      } catch (error) {
+        console.error("Could not register guest, message not sent.");
+        return;
+      }
+    }
+
     if (this.isNewConversationSubject.getValue()) {
       // First message in a new chat. Create the conversation.
       const title = content.length > 30 ? content.substring(0, 27) + '...' : content;

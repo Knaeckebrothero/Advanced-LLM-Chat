@@ -66,12 +66,7 @@ export class LoginComponent implements OnInit {
   async skipLogin() {
     this.loading = true;
     this.error = '';
-    try {
-      await this.authService.skipLogin();
-    } catch (error: any) {
-      this.error = error.error?.detail || 'An error occurred';
-    } finally {
-      this.loading = false;
-    }
+    await this.authService.skipLogin();
+    this.loading = false;
   }
 }
