@@ -34,6 +34,8 @@ export class AuthService {
 
   private guestLimitReachedSubject = new BehaviorSubject<boolean>(false);
   public guestLimitReached$ = this.guestLimitReachedSubject.asObservable();
+  private guestLimitResetTimeSubject = new BehaviorSubject<string | null>(null);
+  public guestLimitResetTime$ = this.guestLimitResetTimeSubject.asObservable();
 
   // Promise to track initialization
   private authInitialized: Promise<void>;
@@ -54,8 +56,9 @@ export class AuthService {
     return this.authInitialized;
   }
 
-  setGuestLimitReached(isReached: boolean) {
+  setGuestLimitReached(isReached: boolean, resetTime: string | null = null) {
     this.guestLimitReachedSubject.next(isReached);
+    this.guestLimitResetTimeSubject.next(resetTime);
   }
 
   async checkAuthStatus(): Promise<void> {

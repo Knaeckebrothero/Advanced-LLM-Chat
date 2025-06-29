@@ -3,7 +3,7 @@
         <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
     </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
-    <p>You have reached your limit for answer generation as a guest. Please <a routerLink="/login">login</a> to have more access.</p>
+    <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>
   </div>
     <div class="input-container">
         <div class="textfield-container">
