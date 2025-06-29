@@ -7,7 +7,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { FilePreview } from '../../data/objects/file-preview';
+import {FilePreview, FilePreviewUtil} from '../../data/objects/file-preview';
 import { DeviceCapabilitiesService } from '../services/device-capabilities.service';
 import { VoiceRecordingService } from './voice-recording.service';
 import { FileHandlingService } from '../services/file-handling.service';
@@ -81,6 +81,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // ViewChild to access the textarea element directly
   @ViewChild('messageTextarea') private messageTextarea!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
+  @ViewChild('cameraInput') private cameraInput!: ElementRef<HTMLInputElement>;
   @ViewChild('waveformCanvas') private waveformCanvas!: ElementRef<HTMLCanvasElement>;
 
   // The message text bound to the textarea
@@ -231,8 +232,16 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Handle direct camera button click
   handleCameraClick(): void {
-    this.cameraRequested.emit();
-    console.log('Camera requested');
+    console.log('Camera button clicked');
+
+    // On mobile, use the hidden camera input
+    if (this.isMobileDevice()) {
+      // Use the cameraInput reference instead of creating a new element
+      this.cameraInput.nativeElement.click();
+    } else {
+      // On desktop, show a simple camera preview
+      this.showDesktopCamera();
+    }
   }
 
   // Handle location sharing
@@ -292,6 +301,102 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Utility function to detect mobile devices - now handled by DeviceCapabilitiesService
   isMobileDevice(): boolean {
     return this.isMobile;
+  }
+
+  private async showDesktopCamera(): Promise<void> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      // Create simple UI
+      const container = document.createElement('div');
+      container.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    `;
+
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.style.cssText = `
+      max-width: 80%;
+      max-height: 60%;
+      border-radius: 8px;
+    `;
+
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.cssText = `
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+    `;
+
+      const captureBtn = this.createButton('Capture Photo', '#4CAF50');
+      const cancelBtn = this.createButton('Cancel', '#f44336');
+
+      buttonContainer.appendChild(captureBtn);
+      buttonContainer.appendChild(cancelBtn);
+      container.appendChild(video);
+      container.appendChild(buttonContainer);
+      document.body.appendChild(container);
+
+      // Wait for video to load
+      await new Promise(resolve => video.onloadedmetadata = resolve);
+
+      captureBtn.onclick = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d')!.drawImage(video, 0, 0);
+
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            const filePreview = await FilePreviewUtil.createFromFile(file);
+            this.filePreviews = [...this.filePreviews, filePreview];
+            this.filesSelected.emit(this.filePreviews);
+          }
+          cleanup();
+        }, 'image/jpeg', 0.9);
+      };
+
+      const cleanup = () => {
+        stream.getTracks().forEach(track => track.stop());
+        document.body.removeChild(container);
+      };
+
+      cancelBtn.onclick = cleanup;
+      container.onclick = (e) => {
+        if (e.target === container) cleanup();
+      };
+
+    } catch (error) {
+      console.error('Camera error:', error);
+      alert('Could not access camera. Please check permissions.');
+    }
+  }
+
+  private createButton(text: string, color: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.textContent = text;
+    btn.style.cssText = `
+    padding: 10px 20px;
+    font-size: 16px;
+    border: none;
+    border-radius: 4px;
+    background: ${color};
+    color: white;
+    cursor: pointer;
+  `;
+    return btn;
   }
 
   // Start recording

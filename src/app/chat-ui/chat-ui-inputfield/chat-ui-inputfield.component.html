@@ -172,4 +172,13 @@
     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
     style="display: none;">
 
+  <!-- Hidden camera input (for mobile camera capture) -->
+  <input
+    #cameraInput
+    type="file"
+    accept="image/*"
+    capture="environment"
+    (change)="handleFileSelection($event)"
+    style="display: none;">
+
 </div>
