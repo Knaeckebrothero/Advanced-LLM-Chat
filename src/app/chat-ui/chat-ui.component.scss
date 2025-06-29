@@ -33,6 +33,21 @@
   }
 }
 
+.guest-limit-warning {
+  background-color: #ffcdd2; // Light red
+  color: #c62828; // Dark red
+  padding: 10px;
+  text-align: center;
+  border-top: 1px solid #ef9a9a;
+  border-bottom: 1px solid #ef9a9a;
+
+  a {
+    color: #c62828;
+    text-decoration: underline;
+    font-weight: bold;
+  }
+}
+
 .input-container {
   width: 100%;
   min-height: fit-content;

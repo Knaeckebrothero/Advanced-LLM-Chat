@@ -32,6 +32,9 @@ export class AuthService {
   public currentUser$ = this.currentUserSubject.asObservable();
   public isGuest = false;
 
+  private guestLimitReachedSubject = new BehaviorSubject<boolean>(false);
+  public guestLimitReached$ = this.guestLimitReachedSubject.asObservable();
+
   // Promise to track initialization
   private authInitialized: Promise<void>;
 
@@ -49,6 +52,10 @@ export class AuthService {
   // Make this return a Promise so APP_INITIALIZER can wait for it
   initializeAuth(): Promise<void> {
     return this.authInitialized;
+  }
+
+  setGuestLimitReached(isReached: boolean) {
+    this.guestLimitReachedSubject.next(isReached);
   }
 
   async checkAuthStatus(): Promise<void> {
