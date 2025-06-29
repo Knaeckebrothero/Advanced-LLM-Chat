@@ -6,6 +6,7 @@ import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { SettingsService } from '../settings/settings.service';
 import { DisplayService } from '../sidebar/service/display.service';
+import {AuthService} from "../auth/auth.service";
 
 
 @Injectable({
@@ -38,7 +39,8 @@ export class ChatService {
     private dbService: DBService,
     private apiService: ApiService,
     private settingsService: SettingsService,
-    private displayService: DisplayService
+    private displayService: DisplayService,
+    private authService: AuthService
   ) {
     this.initializeService();
   }
@@ -65,6 +67,9 @@ export class ChatService {
   }
 
   private async syncInBackground() {
+    if (this.authService.isGuest) {
+      return;
+    }
     // Prevent multiple simultaneous syncs
     if (this.syncPromise) {
       return this.syncPromise;
@@ -77,6 +82,8 @@ export class ChatService {
       this.syncPromise = null;
     }
   }
+
+
 
   private async performSync() {
     this.isSyncingSubject.next(true);

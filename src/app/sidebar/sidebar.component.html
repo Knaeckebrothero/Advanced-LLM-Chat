@@ -34,7 +34,7 @@
   </div>
 
   <!-- Neuer Settings-Button unten -->
-  <div class="user-with-settings">
+  <div class="user-with-settings" *ngIf="!isGuest">
     <div class="user">
       <div class="avatar">MM</div>
       <div class="username">Max Mustermann</div>

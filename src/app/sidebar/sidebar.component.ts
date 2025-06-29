@@ -11,7 +11,7 @@ import { SettingsService } from "../settings/settings.service";
 import { MatDialog } from "@angular/material/dialog";
 import { MatDialogModule } from '@angular/material/dialog';
 import { Settings } from '../settings/settings.service';
-
+import { AuthService } from '../auth/auth.service';
 
 @Component({
   selector: 'app-sidebar',
@@ -29,13 +29,15 @@ import { Settings } from '../settings/settings.service';
 export class SidebarComponent implements OnInit {
 
   groupedConversations: { [key: string]: Conversation[] } = {};
+  isGuest = false;
 
   constructor(
     public chatService: ChatService,
     public router: Router,
     public displayService: DisplayService,
     private dialog: MatDialog,
-    private settingsService: SettingsService
+    private settingsService: SettingsService,
+    private authService: AuthService
   ) {}
 
 
@@ -62,6 +64,7 @@ export class SidebarComponent implements OnInit {
    * It groups existing conversations by date and stores them accordingly.
    */
   ngOnInit(): void {
+    this.isGuest = this.authService.isGuest;
     // Subscribe to conversations
     this.chatService.getConversations().subscribe(conversations => {
       this.groupedConversations = this.groupConversationsByDate(conversations);
