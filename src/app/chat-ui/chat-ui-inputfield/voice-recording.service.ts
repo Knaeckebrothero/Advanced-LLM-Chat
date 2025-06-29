@@ -1,15 +1,21 @@
 import { Injectable, NgZone } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { RecordingConfig, RecordingResult } from '../models/recording-config.interface';
-import { VoiceAudioProcessor } from '../audio-processing/voice-audio-processor';
-import { TimeBasedBarVisualizer } from '../visualizers/time-based-bar-visualizer';
+import { RecordingConfig, RecordingResult, RecordingState } from '../../data/objects/recording';
+import { VoiceAudioProcessor } from './audio-processing/voice-audio-processor';
+import { TimeBasedBarVisualizer } from './visualizers/time-based-bar-visualizer';
 
-export interface RecordingState {
-  isRecording: boolean;
-  duration: number;
-  audioLevel: number;
-}
 
+/**
+ * A service to handle voice recording functionality. This includes starting, stopping, and cancelling recordings,
+ * as well as providing real-time audio levels and recording duration updates. The service also supports
+ * audio visualization using a canvas element.
+ *
+ * Features include:
+ * - Managing microphone access and recording using the browser's MediaRecorder API.
+ * - Streaming audio visualization support with customizable parameters.
+ * - Real-time audio level tracking and recording duration updates.
+ * - Configurable audio constraints and MIME types.
+ */
 @Injectable({
   providedIn: 'root'
 })
@@ -146,7 +152,7 @@ export class VoiceRecordingService {
       source.connect(this.analyser);
 
       // Create audio processor
-      this.audioProcessor = new VoiceAudioProcessor(this.audioContext, this.analyser);
+      this.audioProcessor = new VoiceAudioProcessor(this.analyser);
     } catch (error) {
       console.error('Error setting up audio processing:', error);
     }

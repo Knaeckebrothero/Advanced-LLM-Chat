@@ -7,14 +7,53 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { FilePreview, FileType, UploadStatus } from '../../data/objects/file-preview';
-import { DeviceCapabilitiesService } from './services/device-capabilities.service';
-import { VoiceRecordingService, RecordingState } from './services/voice-recording.service';
-import { FileHandlingService } from './services/file-handling.service';
-import { RecordingConfig } from './models/recording-config.interface';
-import { DeviceCapabilities } from './models/input-field-state.interface';
+import { FilePreview } from '../../data/objects/file-preview';
+import { DeviceCapabilitiesService } from '../services/device-capabilities.service';
+import { VoiceRecordingService } from './voice-recording.service';
+import { FileHandlingService } from '../services/file-handling.service';
+import { RecordingConfig } from '../../data/objects/recording';
 
 
+/**
+ * ChatUiInputfieldComponent is a UI component that provides a versatile input field
+ * for chat applications. It supports text input, file attachments, voice recording,
+ * and additional actions like capturing location and photos.
+ *
+ * It integrates with external services for handling device capabilities, file management,
+ * and voice recording. The component emits various events to allow the parent component
+ * to handle different actions initiated by the user.
+ *
+ * The component dynamically adjusts its UI features such as responsive textarea height,
+ * canvas resizing for visual elements, and action button switching based on user input
+ * or available device capabilities.
+ *
+ * Lifecycle hooks:
+ * - `ngOnInit()`: Initializes device capabilities and subscribes to voice recording state.
+ * - `ngAfterViewInit()`: Performs post-render setup such as adjusting textarea and canvas dimensions.
+ * - `ngOnDestroy()`: Cleans up subscriptions and resources.
+ *
+ * Features:
+ * - Responsive text input area with adjustable height.
+ * - File upload support with size validation and previews.
+ * - Voice recording with a visual waveform displayed.
+ * - Detecting and reflecting device-specific capabilities (camera, geolocation, etc.).
+ * - Event emitters for sending messages, selecting files, requesting audio/camera/location.
+ *
+ * Events emitted:
+ * - `messageSent`: Emits a string containing the entered message text.
+ * - `audioRequested`: Emits when the user opts to start an audio recording.
+ * - `filesSelected`: Emits the list of selected file previews.
+ * - `cameraRequested`: Emits when the user initiates a camera action.
+ * - `locationRequested`: Emits when the user requests to share their location.
+ *
+ * Inputs:
+ * - `externalFiles`: Accepts an array of `FilePreview` objects passed from the parent to combine with existing files.
+ * - `isMobile`: Flag to denote if the current device is mobile (used for rendering logic).
+ *
+ * Usage:
+ * Intended to be used as an input field within a chat or messaging interface, with the ability to handle rich user interaction.
+ * It facilitates communication between the user and the application through its modular, event-driven design.
+ */
 @Component({
   selector: 'app-chat-ui-inputfield',
   standalone: true,
@@ -73,10 +112,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Voice recording properties
   isRecording: boolean = false;
-  recordingStartTime: number = 0;
   recordingTime: Date = new Date(0);
-  recordingTimer: any;
-  waveformWidth: number = 200;
   canvasWidth: number = 800;
   canvasHeight: number = 80; // Taller to fill the input field
   isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
@@ -167,6 +203,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     }
   }
 
+  // TODO: Check if this one is still needed
   // Handle action button click (send or microphone)
   handleActionClick(): void {
     if (this.hasContent) {
@@ -257,8 +294,6 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     return this.isMobile;
   }
 
-  // Voice Recording Methods
-
   // Start recording
   startRecording(): void {
     if (!this.isHoldToRecord) {
@@ -284,7 +319,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Create recording config
       const config: RecordingConfig = {
         isHoldToRecord: this.isHoldToRecord,
-        maxDuration: 300, // 5 minutes max
+        maxDuration: 300, // 5 minutes maximum
         audioConstraints: {
           echoCancellation: true,
           noiseSuppression: true,

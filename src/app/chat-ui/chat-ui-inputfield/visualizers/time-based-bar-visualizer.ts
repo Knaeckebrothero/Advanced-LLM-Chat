@@ -1,8 +1,14 @@
-import { AudioVisualizer, VisualizationBar } from './audio-visualizer.interface';
-import { OptimizedCanvasRenderer } from './optimized-canvas-renderer';
+import { VisualizationBar } from '../../../data/objects/recording'
+import { CanvasRenderer } from './canvas-renderer';
 import { AUDIO_VISUALIZATION_CONFIG } from '../audio-processing/audio-constants';
 
-export class TimeBasedBarVisualizer implements AudioVisualizer {
+
+/**
+ * Represents a time-based bar visualizer for audio visualizations.
+ * This class animates a sliding bar visualization on a canvas element
+ * based on audio data fetched from a provided callback function.
+ */
+export class TimeBasedBarVisualizer {
   private bars: VisualizationBar[] = [];
   private lastBarTime = 0;
   private readonly BAR_INTERVAL = AUDIO_VISUALIZATION_CONFIG.BAR_INTERVAL;
@@ -13,17 +19,16 @@ export class TimeBasedBarVisualizer implements AudioVisualizer {
 
   private animationId: number | null = null;
   private lastAnimationTime = 0;
-  private renderer: OptimizedCanvasRenderer;
+  private renderer: CanvasRenderer;
 
   constructor(
     private canvas: HTMLCanvasElement,
     private audioLevelCallback: () => number
   ) {
-    this.renderer = new OptimizedCanvasRenderer(
+    this.renderer = new CanvasRenderer(
       canvas,
       this.BAR_WIDTH,
-      this.BAR_GAP,
-      this.TOTAL_BAR_SPACE
+      this.BAR_GAP
     );
   }
 
@@ -39,11 +44,6 @@ export class TimeBasedBarVisualizer implements AudioVisualizer {
       this.animationId = null;
     }
     this.bars = [];
-  }
-
-  updateDimensions(width: number, height: number): void {
-    // This method is part of the AudioVisualizer interface
-    // The canvas dimensions are automatically updated when the canvas element is resized
   }
 
   private animate = (currentTime: number): void => {

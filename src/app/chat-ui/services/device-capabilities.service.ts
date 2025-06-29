@@ -1,7 +1,17 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { DeviceCapabilities } from '../models/input-field-state.interface';
+import { DeviceCapabilities } from '../../data/objects/device-capabilities';
 
+
+/**
+ * Service to detect and manage the capabilities of the device running the application.
+ *
+ * This service identifies various features supported by the device, including the presence
+ * of a camera, multiple cameras, geolocation support, audio input capability, and whether
+ * the device is mobile.
+ *
+ * It exposes an observable to get real-time updates of the detected capabilities.
+ */
 @Injectable({
   providedIn: 'root'
 })

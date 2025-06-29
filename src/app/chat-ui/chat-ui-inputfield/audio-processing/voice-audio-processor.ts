@@ -1,12 +1,19 @@
 import { AudioLevelSmoother } from './audio-level-smoother';
 import { AUDIO_VISUALIZATION_CONFIG } from './audio-constants';
 
+
+/**
+ * The VoiceAudioProcessor class processes audio data from an AnalyserNode
+ * and calculates normalized voice levels based on decibel thresholds.
+ * It includes functionality for smoothing audio levels and normalizing
+ * them according to predefined configuration thresholds for audio visualization.
+ */
 export class VoiceAudioProcessor {
   private analyser: AnalyserNode;
-  private timeDomainData: Uint8Array;
+  private readonly timeDomainData: Uint8Array;
   private smoother: AudioLevelSmoother;
 
-  constructor(audioContext: AudioContext, analyserNode: AnalyserNode) {
+  constructor(analyserNode: AnalyserNode) {
     this.analyser = analyserNode;
     this.analyser.fftSize = AUDIO_VISUALIZATION_CONFIG.FFT_SIZE;
     this.analyser.smoothingTimeConstant = AUDIO_VISUALIZATION_CONFIG.SMOOTHING_TIME_CONSTANT;

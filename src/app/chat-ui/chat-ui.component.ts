@@ -50,9 +50,9 @@ export class ChatUiComponent implements AfterViewChecked {
   isMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
-  // TODO: Do we want to move this to the app.component?
+  // TODO: Do we want to move this to the app.component or combine it with device capabilities service!?
 
-  // TODO: Deprecated
+  // TODO: Deprecated check if this is still needed
   // Function to handle Enter key in textarea
   handleEnterKeyPress(event: KeyboardEvent) {
     if (event.key === 'Enter') {

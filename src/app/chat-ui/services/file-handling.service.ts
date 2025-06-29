@@ -1,7 +1,12 @@
 import { Injectable } from '@angular/core';
-import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../../data/objects/file-preview';
-import { RecordingResult } from '../models/recording-config.interface';
+import { FilePreview, FilePreviewUtil, FileType, UploadStatus } from '../../data/objects/file-preview';
+import { RecordingResult } from '../../data/objects/recording';
 
+
+/**
+ * Service for handling file-related operations such as validation, preview generation,
+ * and utility functions for file type icons and extensions.
+ */
 @Injectable({
   providedIn: 'root'
 })

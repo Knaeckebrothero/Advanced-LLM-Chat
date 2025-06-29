@@ -1,9 +1,16 @@
-import { VisualizationBar } from './audio-visualizer.interface';
+import { VisualizationBar } from '../../../data/objects/recording'
 
-export class OptimizedCanvasRenderer {
+
+/**
+ * The CanvasRenderer class is responsible for rendering visual elements
+ * on an HTML canvas. It is designed to render bars for visualizations,
+ * incorporating features such as gradients, rounded corners, and shadows
+ * for each bar. The rendering is optimized for performance and visual
+ * aesthetics.
+ */
+export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private readonly BAR_WIDTH: number;
-  private readonly BAR_GAP: number;
   private readonly TOTAL_BAR_SPACE: number;
 
   // Gradient for bars
@@ -12,7 +19,6 @@ export class OptimizedCanvasRenderer {
   constructor(
     private canvas: HTMLCanvasElement,
     barWidth: number,
-    barGap: number,
     totalBarSpace: number
   ) {
     this.ctx = canvas.getContext('2d', {
@@ -21,7 +27,6 @@ export class OptimizedCanvasRenderer {
     })!;
 
     this.BAR_WIDTH = barWidth;
-    this.BAR_GAP = barGap;
     this.TOTAL_BAR_SPACE = totalBarSpace;
 
     // Create gradient for bars

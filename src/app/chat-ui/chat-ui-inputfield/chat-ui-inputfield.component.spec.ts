@@ -7,9 +7,9 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { ChatUiInputfieldComponent } from './chat-ui-inputfield.component';
 import { FilePreview, FileType, UploadStatus } from '../../data/objects/file-preview';
-import { DeviceCapabilitiesService } from './services/device-capabilities.service';
-import { VoiceRecordingService } from './services/voice-recording.service';
-import { FileHandlingService } from './services/file-handling.service';
+import { DeviceCapabilitiesService } from '../services/device-capabilities.service';
+import { VoiceRecordingService } from './voice-recording.service';
+import { FileHandlingService } from '../services/file-handling.service';
 import { of } from 'rxjs';
 
 
