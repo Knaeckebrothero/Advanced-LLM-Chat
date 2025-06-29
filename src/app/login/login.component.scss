@@ -52,13 +52,6 @@ $error-color: #ef4444;
 $error-background: #fef2f2;
 
 :host {
-  // Apply the custom theme to Material components within this component
-  @include mat.button-theme($login-theme);
-  @include mat.form-field-theme($login-theme);
-  @include mat.input-theme($login-theme);
-  @include mat.card-theme($login-theme);
-  @include mat.all-component-themes($login-theme);
-
   // Override Material Design CSS custom properties for modern white-blue theming
   --mdc-theme-primary: #{$primary-blue};
   --mdc-theme-secondary: #{$accent-blue};
@@ -69,6 +62,13 @@ $error-background: #fef2f2;
   // Custom button color variables
   --mdc-protected-button-container-color: #{$primary-blue};
   --mdc-protected-button-label-text-color: #{$text-on-primary};
+
+  // Apply the custom theme to Material components within this component
+  @include mat.button-theme($login-theme);
+  @include mat.form-field-theme($login-theme);
+  @include mat.input-theme($login-theme);
+  @include mat.card-theme($login-theme);
+  @include mat.all-component-themes($login-theme);
 }
 input{
 

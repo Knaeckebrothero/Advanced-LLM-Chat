@@ -86,6 +86,16 @@
 .message-body {
   // Font size for message text content
   font-size: 1em;
+
+  // Preserve line breaks and spaces in messages
+  white-space: pre-wrap;
+
+  // Ensure text wraps properly at container edges
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+
+  // Prevent text from overflowing the message bubble
+  max-width: 100%;
 }
 
 // Message footer

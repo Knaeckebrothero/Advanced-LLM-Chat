@@ -9,6 +9,7 @@ import { DisplayService } from '../sidebar/service/display.service';
 import { AuthService } from "../auth/auth.service";
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../environments/environment';
+import { FilePreview, UploadStatus } from '../data/objects/file-preview';
 
 
 @Injectable({
@@ -105,13 +106,17 @@ export class ChatService {
     }
   }
 
-
-
+  // TODO: Move sync logic to a separate sync service!
   private async performSync() {
     this.isSyncingSubject.next(true);
 
     try {
-      const serverConversations = await this.apiService.getConversations();
+      const serverConversationsData = await this.apiService.getConversations();
+
+      // Convert plain objects to Conversation instances
+      const serverConversations = serverConversationsData.map(data =>
+        Conversation.fromApiResponse(data)
+      );
 
       if (serverConversations.length === 0) {
         console.log('No conversations on server');
@@ -137,7 +142,7 @@ export class ChatService {
     }
   }
 
-  private async mergeServerConversations(serverConversations: any[]) {
+  private async mergeServerConversations(serverConversations: Conversation[]) {
     // Get local conversations
     const localConversations = await this.dbService.getAllConversations();
     const localConvMap = new Map(localConversations.map(c => [c.id, c]));
@@ -166,7 +171,13 @@ export class ChatService {
   }
 
   private async syncConversationIfNeeded(serverConv: any) {
+    // TODO: Why is the received conversation object not converted to conversation already?
+    //const test123 = Conversation.fromApiResponse(this.conversation)
+    //console.log("Conversation hash: ", test123.computeHash(this.dbService))
+    //console.log(this.conversation)
+    //console.log("Conversation: ", this.conversation)
     const localHash = await this.conversation.computeHash(this.dbService);
+    // TODO: The issue is that this.conversation is null by default
 
     if (localHash !== serverConv.hashsum) {
       console.log('Syncing messages for conversation:', serverConv.id);
@@ -229,7 +240,7 @@ export class ChatService {
   }
 
   // Send a message
-  public async sendMessage(content: string, roleName: string = 'user') {
+  public async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
     if (this.isNewConversationSubject.getValue()) {
       // Check if backend is available before creating conversation
       const backendAvailable = await this.isBackendAvailable();
@@ -321,6 +332,18 @@ export class ChatService {
 
     // This will trigger re-grouping in sidebar
     await this.loadAllConversations();
+
+    // Trigger a sync after sending the message (especially important for new conversations)
+    this.syncInBackground();
+  }
+
+  // Send a file inside a message
+  public async sendMessageWithFiles(
+    content: string,
+    files: FilePreview[],
+    roleName: string = 'user'
+  ): Promise<void> {
+    // TODO: Implementation for sending messages with attachments
   }
 
   // Generate a message
