@@ -46,7 +46,7 @@ class MockLoginRequest(BaseModel):
   # In real implementation, this might include IDP tokens, SAML response, etc.
 
 class GuestLoginRequest(BaseModel):
-    ip_address: str
+  ip_address: str
 
 
 class LoginResponse(BaseModel):
@@ -223,11 +223,13 @@ def validate_session(session_key: str) -> Optional[dict]:
 
   with get_db() as conn:
     cur = conn.cursor()
+    # Join sessions with users to get the user's name
     cur.execute(
       """
-      SELECT user_id, email, expires_at, last_activity, is_guest
-      FROM sessions
-      WHERE session_key = ?
+      SELECT s.user_id, s.email, s.expires_at, s.last_activity, s.is_guest, u.name
+      FROM sessions s
+      LEFT JOIN users u ON s.user_id = u.id
+      WHERE s.session_key = ?
       """, (session_key,))
     result = cur.fetchone()
 
@@ -250,9 +252,13 @@ def validate_session(session_key: str) -> Optional[dict]:
                 """, (current_time.isoformat(), session_key))
     conn.commit()
 
+    # If it's a guest, the name should be 'Guest', otherwise use the name from the users table
+    user_name = "Guest" if result["is_guest"] else result["name"]
+
     return {
       "user_id": result["user_id"],
       "email": result["email"],
+      "name": user_name,
       "is_guest": result["is_guest"]
     }
 
@@ -331,19 +337,22 @@ def init_db():
                                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 ''')
+    # Add a default guest user if it doesn't exist, for the LEFT JOIN to work correctly
+    cur.execute("INSERT OR IGNORE INTO users (id, email, name) VALUES (0, 'guest@system.local', 'Guest')")
+
 
     # Create conversations table
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
-                    id INTEGER PRIMARY KEY,
-                    userId INTEGER NOT NULL,
-                    name TEXT NOT NULL,
-                    participants TEXT,
-                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY(userId) REFERENCES users(id)
+                                                           id INTEGER PRIMARY KEY,
+                                                           userId INTEGER NOT NULL,
+                                                           name TEXT NOT NULL,
+                                                           participants TEXT,
+                                                           createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                           updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                           FOREIGN KEY(userId) REFERENCES users(id)
                 )
-            ''')
+                ''')
 
     # Create messages table to store chat messages
     cur.execute('''
@@ -371,14 +380,21 @@ def init_db():
                 )
                 ''')
 
+    # Check if is_guest column exists, if not add it (for existing databases)
+    cur.execute("PRAGMA table_info(sessions)")
+    columns = [column[1] for column in cur.fetchall()]
+    if 'is_guest' not in columns:
+      print("Adding is_guest column to sessions table...")
+      cur.execute('ALTER TABLE sessions ADD COLUMN is_guest BOOLEAN DEFAULT FALSE')
+
     # Create guest_usage table
     cur.execute('''
-        CREATE TABLE IF NOT EXISTS guest_usage (
-            ip_address TEXT PRIMARY KEY,
-            request_count INTEGER NOT NULL,
-            last_request_at TIMESTAMP NOT NULL
-        )
-    ''')
+                CREATE TABLE IF NOT EXISTS guest_usage (
+                                                         ip_address TEXT PRIMARY KEY,
+                                                         request_count INTEGER NOT NULL,
+                                                         last_request_at TIMESTAMP NOT NULL
+                )
+                ''')
 
     # Create index for faster querying by conversationId and time
     cur.execute('''
@@ -389,7 +405,7 @@ def init_db():
     # Create index for faster querying by userId on conversations
     cur.execute('''
                 CREATE INDEX IF NOT EXISTS idx_conversations_user
-                ON conversations(userId)
+                  ON conversations(userId)
                 ''')
 
     conn.commit()
@@ -397,16 +413,18 @@ def init_db():
 
     # Create Table for user-based settings
     cur.execute('''
-      CREATE TABLE IF NOT EXISTS user_settings (
-        user_id INTEGER PRIMARY KEY,
-        model TEXT NOT NULL,
-        temperature REAL NOT NULL,
-        top_p REAL NOT NULL,
-        systemPrompt TEXT NOT NULL,
-        darkMode INTEGER NOT NULL,
-        languageIsEnglish INTEGER NOT NULL
-      )
-    ''')
+                CREATE TABLE IF NOT EXISTS user_settings (
+                                                           user_id INTEGER PRIMARY KEY,
+                                                           model TEXT NOT NULL,
+                                                           temperature REAL NOT NULL,
+                                                           top_p REAL NOT NULL,
+                                                           systemPrompt TEXT NOT NULL,
+                                                           theme TEXT NOT NULL,
+                                                           languageIsEnglish INTEGER NOT NULL
+                )
+                ''')
+
+    conn.commit()
 
 
 
@@ -469,13 +487,13 @@ async def generate_llm_response(prompt: str, temperature: float, top_p: float, s
       }
     )
     print("\n".join([
-        f"LLM Input:",
-        f"  model = {model}",
-        f"  temp = {temperature}",
-        f"  top_p = {top_p}",
-        f"  system_prompt = {system_prompt}",
-        "  prompt:",
-        prompt
+      f"LLM Input:",
+      f"  model = {model}",
+      f"  temp = {temperature}",
+      f"  top_p = {top_p}",
+      f"  system_prompt = {system_prompt}",
+      "  prompt:",
+      prompt
     ]))
 
 
@@ -499,7 +517,7 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
         FROM messages
         WHERE conversationId = ?
         ORDER BY time DESC
-          LIMIT ?
+        LIMIT ?
         """,
         (conversation_id, limit)
       )
@@ -516,11 +534,15 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
     return ""
 
 
-def verify_conversation_ownership(conversation_id: int, user_id: int) -> bool:
+def verify_conversation_ownership(conversation_id: int, user_id: int, is_guest: bool = False) -> bool:
   """
   Verifies that a user owns a specific conversation.
-  Returns True if the user owns the conversation, False otherwise.
+  Returns True if the user owns the conversation or if it's a guest user.
   """
+  # Guest users can access any conversation (for offline mode)
+  if is_guest:
+    return True
+
   with get_db() as conn:
     cur = conn.cursor()
     cur.execute(
@@ -535,38 +557,38 @@ def verify_conversation_ownership(conversation_id: int, user_id: int) -> bool:
     return result['userId'] == user_id
 
 async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
-    if current_user and not current_user.get("is_guest"):
-        return  # Not a guest, no rate limit
+  if current_user and not current_user.get("is_guest"):
+    return  # Not a guest, no rate limit
 
-    ip_address = request.client.host
-    with get_db() as db:
-        cur = db.cursor()
-        cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
-        usage = cur.fetchone()
+  ip_address = request.client.host
+  with get_db() as db:
+    cur = db.cursor()
+    cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
+    usage = cur.fetchone()
 
-        now = datetime.now(UTC)
-        limit_duration = timedelta(hours=3)
-        max_requests = 5
+    now = datetime.now(UTC)
+    limit_duration = timedelta(hours=3)
+    max_requests = 5
 
-        if usage:
-            last_request_at = datetime.fromisoformat(usage["last_request_at"])
-            if now - last_request_at > limit_duration:
-                # Reset counter
-                cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
-            elif usage["request_count"] >= max_requests:
-                reset_time = last_request_at + limit_duration
-                retry_after_seconds = (reset_time - now).total_seconds()
-                headers = {"Retry-After": str(int(retry_after_seconds))}
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Too many requests. Please try again after {reset_time.isoformat()}",
-                    headers=headers
-                )
-            else:
-                cur.execute("UPDATE guest_usage SET request_count = request_count + 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
-        else:
-            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
-        db.commit()
+    if usage:
+      last_request_at = datetime.fromisoformat(usage["last_request_at"])
+      if now - last_request_at > limit_duration:
+        # Reset counter
+        cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+      elif usage["request_count"] >= max_requests:
+        reset_time = last_request_at + limit_duration
+        retry_after_seconds = (reset_time - now).total_seconds()
+        headers = {"Retry-After": str(int(retry_after_seconds))}
+        raise HTTPException(
+          status_code=429,
+          detail=f"Too many requests. Please try again after {reset_time.isoformat()}",
+          headers=headers
+        )
+      else:
+        cur.execute("UPDATE guest_usage SET request_count = request_count + 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+    else:
+      cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
+    db.commit()
 
 
 # Load environment variables from .env file
@@ -597,10 +619,10 @@ init_db()
 
 @app.get("/api/llms", response_model=List[str], tags=["LLM"])
 async def get_llms():
-    """
-    Get the list of available LLMs.
-    """
-    return AVAILABLE_LLMS
+  """
+  Get the list of available LLMs.
+  """
+  return AVAILABLE_LLMS
 
 
 @app.get(app.openapi_url, include_in_schema=False)
@@ -630,48 +652,53 @@ async def custom_swagger_ui_html(req: Request):
 
 @app.post("/api/auth/guest-login", response_model=LoginResponse)
 async def guest_login(request: GuestLoginRequest, response: Response):
-    ip_address = request.ip_address
-    with get_db() as db:
-        cur = db.cursor()
-        cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
-        usage = cur.fetchone()
+  ip_address = request.ip_address
 
-        now = datetime.now(UTC)
-        limit_duration = timedelta(hours=3)
-        max_requests = 5
+  # If IP address is 'unknown', use a fallback
+  if ip_address == 'unknown':
+    ip_address = f"guest_{secrets.token_hex(4)}"
 
-        if usage:
-            last_request_at = datetime.fromisoformat(usage["last_request_at"])
-            if now - last_request_at > limit_duration:
-                cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
-            elif usage["request_count"] >= max_requests:
-                reset_time = last_request_at + limit_duration
-                raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
-        else:
-            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
+  with get_db() as db:
+    cur = db.cursor()
+    cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
+    usage = cur.fetchone()
 
-        db.commit()
+    now = datetime.now(UTC)
+    limit_duration = timedelta(hours=3)
+    max_requests = 5
 
-    guest_email = f"guest_{secrets.token_hex(4)}@guest.com"
-    guest_user = {"id": 0, "email": guest_email, "name": "Guest"}
+    if usage:
+      last_request_at = datetime.fromisoformat(usage["last_request_at"])
+      if now - last_request_at > limit_duration:
+        cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+      elif usage["request_count"] >= max_requests:
+        reset_time = last_request_at + limit_duration
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
+    else:
+      cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
 
-    session_key = create_session(0, guest_email, is_guest=True)
+    db.commit()
 
-    response.set_cookie(
-        key="session",
-        value=session_key,
-        max_age=86400,  # 24 hours
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        path="/"
-    )
+  guest_email = f"guest_{secrets.token_hex(4)}@guest.com"
+  guest_user = {"id": 0, "email": guest_email, "name": "Guest"}
 
-    return LoginResponse(
-        user=guest_user,
-        message="Guest login successful",
-        token=session_key
-    )
+  session_key = create_session(0, guest_email, is_guest=True)
+
+  response.set_cookie(
+    key="session",
+    value=session_key,
+    max_age=86400,  # 24 hours
+    httponly=True,
+    secure=True,
+    samesite="lax",
+    path="/"
+  )
+
+  return LoginResponse(
+    user=guest_user,
+    message="Guest login successful",
+    token=session_key
+  )
 
 @app.post("/api/auth/mock-login", response_model=LoginResponse)
 async def mock_login(request: MockLoginRequest, response: Response):
@@ -686,17 +713,17 @@ async def mock_login(request: MockLoginRequest, response: Response):
     user = cur.fetchone()
 
     if not user:
-        # User doesn't exist, create a new one
-        user_name = request.email.split('@')[0].title()
-        cur.execute("INSERT INTO users (email, name) VALUES (?, ?)", (request.email, user_name))
-        user_id = cur.lastrowid
-        db.commit()
+      # User doesn't exist, create a new one
+      user_name = request.email.split('@')[0].title()
+      cur.execute("INSERT INTO users (email, name) VALUES (?, ?)", (request.email, user_name))
+      user_id = cur.lastrowid
+      db.commit()
     else:
-        user_id = user['id']
-        user_name = user['name']
+      user_id = user['id']
+      user_name = user['name']
 
-  # Create session
-  session_key = create_session(user_id, request.email)
+  # Create session with is_guest=False for regular users
+  session_key = create_session(user_id, request.email, is_guest=False)
 
   # Set session cookie
   response.set_cookie(
@@ -756,6 +783,11 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
   print("Get conversations for user called")
   user_id = current_user['user_id']
 
+  # Guest users don't have server-side conversations
+  if current_user.get("is_guest"):
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return []
+
   try:
     with get_db() as conn:
       cur = conn.cursor()
@@ -792,25 +824,26 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
 
 @app.get("/api/settings", response_model=AppSettings)
 async def get_settings(current_user: dict = Depends(get_current_user)):
-    user_id = current_user["user_id"]
-    if current_user.get("is_guest"):
-      return AppSettings(
-        model="openai/gpt-4o",
-        temperature=0.5,
-        top_p=0.5,
-        systemPrompt="You are a helpful assistant!",
-        theme='os',
-        languageIsEnglish=1
-      )
+  user_id = current_user["user_id"]
 
-    with get_db() as db:
-        cur = db.cursor()
-        cur.execute("""
-            SELECT model, temperature, top_p, systemPrompt, theme, languageIsEnglish
-            FROM user_settings
-            WHERE user_id = ?
-        """, (user_id,))
-        row = cur.fetchone()
+  if current_user.get("is_guest"):
+    return AppSettings(
+      model="openai/gpt-4o",
+      temperature=0.5,
+      top_p=0.5,
+      systemPrompt="You are a helpful assistant!",
+      theme='os',
+      languageIsEnglish=1
+    )
+
+  with get_db() as db:
+    cur = db.cursor()
+    cur.execute("""
+                SELECT model, temperature, top_p, systemPrompt, theme, languageIsEnglish
+                FROM user_settings
+                WHERE user_id = ?
+                """, (user_id,))
+    row = cur.fetchone()
 
     if row:
       return AppSettings(**dict(row))
@@ -828,34 +861,33 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
 
 @app.put("/api/settings")
 async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
-    user_id = current_user["user_id"]
+  user_id = current_user["user_id"]
+  if current_user.get("is_guest"):
+    raise HTTPException(status_code=403, detail="Guests cannot save settings.")
 
-    if current_user.get("is_guest"):
-      raise HTTPException(status_code=403, detail="Guests cannot save settings.")
-
-    with get_db() as db:
-        cur = db.cursor()
-        cur.execute("""
-            INSERT INTO user_settings (user_id, model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              model = excluded.model,
-              temperature = excluded.temperature,
-              top_p = excluded.top_p,
-              systemPrompt = excluded.systemPrompt,
-                                                  theme = excluded.theme,
-              languageIsEnglish = excluded.languageIsEnglish
-        """, (
-            user_id,
-            new_settings.model,
-            new_settings.temperature,
-            new_settings.top_p,
-            new_settings.systemPrompt,
-            new_settings.theme,
-            new_settings.languageIsEnglish
-        ))
-        db.commit()
-    return {"message": "Settings saved"}
+  with get_db() as db:
+    cur = db.cursor()
+    cur.execute("""
+                INSERT INTO user_settings (user_id, model, temperature, top_p, systemPrompt, theme, languageIsEnglish)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                                                 model = excluded.model,
+                                                 temperature = excluded.temperature,
+                                                 top_p = excluded.top_p,
+                                                 systemPrompt = excluded.systemPrompt,
+                                                 theme = excluded.theme,
+                                                 languageIsEnglish = excluded.languageIsEnglish
+                """, (
+                  user_id,
+                  new_settings.model,
+                  new_settings.temperature,
+                  new_settings.top_p,
+                  new_settings.systemPrompt,
+                  new_settings.theme,
+                  new_settings.languageIsEnglish
+                ))
+    db.commit()
+  return {"message": "Settings saved"}
 
 
 @app.post("/api/conversation/create", response_model=Conversation, status_code=status.HTTP_201_CREATED,
@@ -875,8 +907,7 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     new_id = cur.lastrowid
     conn.commit()
 
-    cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?",
-                (new_id,))
+    cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?", (new_id,))
     new_conv_row = cur.fetchone()
 
     return Conversation(**dict(new_conv_row))
@@ -910,8 +941,8 @@ async def get_conversation_messages(
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Conversation ID and latest timestamp are required")
 
-    # Verify ownership
-    if not current_user.get("is_guest") and not verify_conversation_ownership(conversation_id, current_user['user_id']):
+    # Verify ownership (guests can access any conversation)
+    if not verify_conversation_ownership(conversation_id, current_user['user_id'], current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -969,7 +1000,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       return ErrorResponse(error="Message content cannot be empty")
 
     # Verify ownership
-    if not current_user.get("is_guest") and not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -1014,7 +1045,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
 
   try:
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -1027,10 +1058,10 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
     with get_db() as db:
       cur = db.cursor()
       cur.execute("""
-              SELECT model, temperature, top_p, systemPrompt, theme, languageIsEnglish
-              FROM user_settings
-              WHERE user_id = ?
-          """, (user_id,))
+                  SELECT model, temperature, top_p, systemPrompt, theme, languageIsEnglish
+                  FROM user_settings
+                  WHERE user_id = ?
+                  """, (user_id,))
       row = cur.fetchone()
 
       if row:
@@ -1122,7 +1153,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
       return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Message ID missing")
 
     # Verify ownership
-    if not current_user.get("is_guest") and not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -1173,7 +1204,7 @@ async def delete_message(conversation_id: int, message_id: int, response: Respon
                       content="Conversation ID or Message ID missing")
 
     # Verify ownership
-    if not current_user.get("is_guest") and not verify_conversation_ownership(conversation_id, current_user['user_id']):
+    if not verify_conversation_ownership(conversation_id, current_user['user_id'], current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 

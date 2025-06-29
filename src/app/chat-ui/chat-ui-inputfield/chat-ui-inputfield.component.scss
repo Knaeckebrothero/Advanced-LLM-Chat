@@ -1,3 +1,5 @@
+@use 'src/styles/variables' as vars;
+
 // Main container for the entire input field component
 .input-field-container {
   display: flex;
@@ -7,7 +9,8 @@
   padding: 12px;
   margin: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
+  position: relative; // Important for absolute positioning of canvas
 
   // Use theme border color for the default state
   border: 1px solid var(--border-color);
@@ -22,12 +25,158 @@
     border-color: var(--primary-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); // Keep a subtle shadow
   }
+
+  // Recording mode styles
+  &.recording-mode {
+    background-color: #FFFFFF; // White background when recording
+    border-color: var(--primary-color);
+    animation: recording-pulse 2s ease-in-out infinite;
+  }
+}
+
+@keyframes recording-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.2);
+  }
+  50% {
+    box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.4);
+  }
+}
+
+// File preview area
+.file-preview-area {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  max-height: 120px;
+  overflow-y: auto;
+  background: transparent; // Let the canvas show through
+
+  // Custom scrollbar
+  &::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 2px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+  }
+}
+
+.file-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  max-width: 200px;
+  position: relative;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    .remove-file-button {
+      opacity: 1;
+    }
+  }
+}
+
+.file-thumbnail {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.file-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--primary-rgb), 0.1);
+  border-radius: 4px;
+  flex-shrink: 0;
+
+  .mat-icon {
+    font-size: 20px;
+    color: var(--primary-color);
+  }
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; // Allow text truncation
+  flex: 1;
+
+  .file-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-size {
+    font-size: 10px;
+    color: var(--text-muted-color);
+  }
+}
+
+.remove-file-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  flex-shrink: 0;
+
+  .mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted-color);
+  }
+
+  &:hover {
+    background-color: rgba(var(--danger-rgb), 0.1);
+
+    .mat-icon {
+      color: var(--danger-color);
+    }
+  }
 }
 
 // Area containing the textarea
 .input-content-area {
+  position: relative;
+  z-index: 1;
   width: 100%;
   padding: 8px 12px;
+  background: transparent; // Let the canvas show through
 }
 
 // The actual textarea element
@@ -73,25 +222,128 @@
   }
 }
 
+// Voice recording info area (replaces voice-recording-area)
+.voice-recording-info {
+  position: relative; // Above the canvas
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  min-height: 60px;
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cancel-recording-button {
+  &.mat-mdc-icon-button {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    .mat-icon {
+      color: var(--danger-color);
+    }
+
+    &:hover {
+      background-color: rgba(var(--danger-rgb), 0.1);
+    }
+  }
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-color);
+  background-color: rgba(255, 255, 255, 0.9); // Semi-transparent white background
+  padding: 6px 12px;
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--danger-color);
+  border-radius: 50%;
+  animation: recording-blink 1.5s ease-in-out infinite;
+}
+
+@keyframes recording-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.recording-time {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.send-voice-button {
+  &.mat-mdc-icon-button {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    .mat-icon {
+      color: var(--primary-color);
+    }
+
+    &:hover {
+      background-color: rgba(var(--primary-rgb), 0.9);
+
+      .mat-icon {
+        color: white;
+      }
+    }
+  }
+}
+
 // Container for action buttons
 .action-buttons-bar {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 8px;
   min-height: 40px;
+  background-color: transparent; // Remove any background
 }
 
 // Left side button group
 .left-actions {
   display: flex;
   gap: 4px;
+  align-items: center;
 }
 
 // Right side button group
 .right-actions {
   display: flex;
   gap: 4px;
+  align-items: center;
 }
 
 // Base styling for all action buttons
@@ -105,7 +357,7 @@
       font-size: 22px;
       width: 22px;
       height: 22px;
-      color: var(--text-muted-color); // Default icon color
+      color: var(--icon-color); // Use the theme's icon color
       transition: color 0.2s ease;
     }
 
@@ -114,7 +366,7 @@
       background-color: var(--btn-hover-bg);
 
       .mat-icon {
-        color: var(--primary-color);
+        color: var(--icon-color-hover); // Use the theme's hover icon color
       }
     }
   }
@@ -132,11 +384,58 @@
 
   // Special styling for mic button (using accent color if available)
   &.mic-button {
+    transition: all 0.2s ease;
+
     &:hover {
       background-color: var(--accent-color-hover, var(--btn-hover-bg));
 
       .mat-icon {
         color: var(--accent-color, var(--primary-color));
+      }
+    }
+
+    // Active state for hold-to-record
+    &:active {
+      background-color: rgba(var(--accent-rgb), 0.2);
+      transform: scale(1.1);
+    }
+  }
+
+  // Camera button styling
+  &.camera-button {
+    .mat-icon {
+      color: var(--icon-color);
+    }
+
+    &:hover {
+      background-color: rgba(var(--primary-rgb), 0.1);
+
+      .mat-icon {
+        color: var(--primary-color);
+      }
+    }
+  }
+
+  // Attachment button styling
+  &.attachment-button {
+    .mat-icon {
+      color: var(--icon-color);
+    }
+
+    &:hover {
+      background-color: rgba(var(--primary-rgb), 0.1);
+
+      .mat-icon {
+        color: var(--primary-color);
+      }
+    }
+
+    // When menu is open
+    &[aria-expanded="true"] {
+      background-color: rgba(var(--primary-rgb), 0.15);
+
+      .mat-icon {
+        color: var(--primary-color);
       }
     }
   }
@@ -148,6 +447,10 @@
     margin: 8px;
     padding: 10px;
     border-radius: 20px;
+
+    &.recording-mode {
+      margin: 8px 4px; // Slightly less margin in recording mode
+    }
   }
 
   .input-content-area {
@@ -164,5 +467,65 @@
       height: 40px;
       padding: 8px;
     }
+  }
+
+  .voice-recording-area {
+    padding: 6px 8px;
+  }
+
+  .waveform-canvas {
+    height: 50px;
+  }
+}
+
+// Attachment menu styling (applied globally since mat-menu renders outside component)
+::ng-deep .attachment-menu {
+  .mat-mdc-menu-panel {
+    min-width: 200px;
+    margin-top: 8px;
+  }
+
+  .mat-mdc-menu-item {
+    height: 48px;
+
+    .mat-icon {
+      margin-right: 16px;
+      color: var(--primary-color);
+    }
+
+    &:hover {
+      background-color: rgba(var(--primary-rgb), 0.08);
+    }
+
+    &:active {
+      background-color: rgba(var(--primary-rgb), 0.12);
+    }
+  }
+}
+
+// Tooltip styling
+::ng-deep .mat-mdc-tooltip {
+  font-size: 12px;
+  padding: 4px 8px;
+  margin: 8px;
+}
+
+// Background waveform canvas that fills the entire container
+.background-waveform-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0; // Behind all other content
+  pointer-events: none; // Allow clicks to pass through
+  border-radius: 24px; // Match container border radius
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+
+  // Hide the canvas when not recording but keep it in the DOM
+  &.hidden {
+    opacity: 0;
+    visibility: hidden;
   }
 }

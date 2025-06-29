@@ -45,4 +45,11 @@ body.light {
 
   /* ── APP.SCSS ─ */
   --burger-line: #144d96;
+  // In your light-theme.scss
+
+    // ... other light theme variables
+  --icon-color: #2C8BCC; // Your blue color
+  --icon-color-hover: #1e6a9e; // A darker blue for hover
+
+
 }

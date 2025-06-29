@@ -48,7 +48,7 @@ export class AuthService {
     private router: Router
   ) {
     // Store the promise but don't await it in constructor
-    this.authInitialized = this.checkAuthStatus();
+    this.authInitialized = this.initializeAuthFlow();
   }
 
   // Make this return a Promise so APP_INITIALIZER can wait for it
@@ -56,12 +56,64 @@ export class AuthService {
     return this.authInitialized;
   }
 
+  private async initializeAuthFlow(): Promise<void> {
+    console.log('AuthService: Initializing auth flow...');
+
+    try {
+      // First try to check if user has existing session
+      const hasSession = await this.checkAuthStatus();
+
+      if (!hasSession) {
+        // If no existing session, automatically create a guest session
+        console.log('AuthService: No existing session, creating guest session...');
+        await this.autoGuestLogin();
+      }
+    } catch (error) {
+      console.error('AuthService: Error during initialization, attempting guest login:', error);
+      // Even if check fails (e.g., backend down), try guest login
+      await this.autoGuestLogin();
+    }
+  }
+
+  private async autoGuestLogin(): Promise<void> {
+    try {
+      // Try to get IP address and create guest session
+      const ipResponse = await lastValueFrom(
+        this.http.get<{ ip: string }>('https://api.ipify.org?format=json')
+      ).catch(() => ({ ip: 'unknown' }));
+
+      const ip_address = ipResponse.ip;
+
+      const response = await lastValueFrom(
+        this.http.post<{ user: User, message: string, token: string }>(
+          `${this.baseUrl}/api/auth/guest-login`,
+          { ip_address },
+          { withCredentials: true }
+        )
+      );
+
+      this.isGuest = true;
+      this.currentUserSubject.next(response.user);
+      console.log('AuthService: Guest session created successfully');
+    } catch (error) {
+      console.error('AuthService: Guest login failed, creating offline guest:', error);
+      // If backend is not available, create a local guest user
+      const offlineGuest: User = {
+        id: 0,
+        email: 'guest@offline',
+        name: 'Guest (Offline)'
+      };
+      this.isGuest = true;
+      this.currentUserSubject.next(offlineGuest);
+    }
+  }
+
   setGuestLimitReached(isReached: boolean, resetTime: string | null = null) {
     this.guestLimitReachedSubject.next(isReached);
     this.guestLimitResetTimeSubject.next(resetTime);
   }
 
-  async checkAuthStatus(): Promise<void> {
+  async checkAuthStatus(): Promise<boolean> {
     console.log('AuthService: checkAuthStatus() called.');
     try {
       const response = await lastValueFrom(
@@ -73,14 +125,18 @@ export class AuthService {
       console.log('AuthService: /api/auth/me response received:', response);
       if (response && response.user) {
         this.currentUserSubject.next(response.user);
+        this.isGuest = response.user.email.includes('guest');
         console.log('AuthService: currentUserSubject updated with user:', response.user);
+        return true;
       } else {
         console.log('AuthService: /api/auth/me response did not contain a valid user object.');
         this.currentUserSubject.next(null);
+        return false;
       }
     } catch (error) {
       console.error('AuthService: Error during checkAuthStatus:', error);
       this.currentUserSubject.next(null);
+      return false;
     }
   }
 
@@ -121,29 +177,7 @@ export class AuthService {
     }
   }
 
-  async skipLogin(): Promise<void> {
-    try {
-      const ipResponse = await lastValueFrom(this.http.get<{ ip: string }>('https://api.ipify.org?format=json'));
-      const ip_address = ipResponse.ip;
-
-      const response = await lastValueFrom(
-        this.http.post<{ user: User, message: string, token: string }>(
-          `${this.baseUrl}/api/auth/guest-login`,
-          { ip_address },
-          { withCredentials: true }
-        )
-      );
-
-      this.isGuest = true;
-      this.currentUserSubject.next(response.user);
-      this.router.navigate(['/']);
-    } catch (error) {
-      console.error('Guest login failed:', error);
-      // Optionally show an error to the user
-      throw new Error('Guest login failed');
-    }
-  }
-
+  // Removed skipLogin method as it's now handled automatically
 
   // Placeholder for OAuth redirect (implement when adding IDP)
   private redirectToOAuthProvider(): void {
@@ -182,14 +216,10 @@ export class AuthService {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      this.currentUserSubject.next(null);
-      this.isGuest = false;
-      // For IDP logout, you might need to redirect to IDP logout URL
-      if (this.loginProvider.type === 'oauth' && !this.isGuest) {
-        // window.location.href = `${idpLogoutUrl}`;
-      } else {
-        this.router.navigate(['/login']);
-      }
+      // After logout, automatically create a new guest session
+      await this.autoGuestLogin();
+      // Don't navigate away from current page after logout
+      // this.router.navigate(['/']);
     }
   }
 

@@ -4,6 +4,7 @@ import { Message } from './objects/message';
 import { MainAppDB } from './db-schema';
 import { Conversation } from './objects/conversation';
 import { User } from './objects/user';
+import { FilePreview } from './objects/file-preview';
 
 
 @Injectable({
@@ -199,4 +200,15 @@ export class DBService {
   async getAllUsers() {
     return await this.db.getAll('user');
   }
+
+  /*
+  CRUD operations for documents
+  */
+  // TODO: Implement all methods for storing file data
+
+  // Methods for storing file metadata
+  async storeFileMetadata(messageId: number, files: FilePreview[]): Promise<void> {
+    // TODO: Implement store file info in IndexedDB
+  }
+
 }

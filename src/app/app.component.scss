@@ -11,15 +11,35 @@
 $burger-area-height: 60px;
 $burger-area-width: 60px;
 
-.app-container   { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+.app-container {
+  display: flex;
+  /* Fallback for browsers that don't support CSS variables */
+  height: 100vh;
+  /* Use CSS variable set by JavaScript */
+  height: calc(var(--vh, 1vh) * 100);
+  /* Modern browsers with dvh support */
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+}
 
-/* Burger-Button oben links */
+/* Progressive enhancement for modern browsers */
+@supports (height: 100dvh) {
+  .app-container {
+    height: 100dvh;
+  }
+}
+
 .burger-container {
   position: fixed;
-  top: 0; left: 0;
-  width: $burger-area-width; height: $burger-area-height;
-  background: transparent;
-  display: flex; align-items: center; justify-content: center;
+  top: 0;
+  left: 0;
+  width: $burger-area-width;
+  height: $burger-area-height;
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 1002;
 }
 
@@ -38,8 +58,13 @@ $burger-area-width: 60px;
 
 /* Ausfahrbare Sidebar (mobil) */
 .sidebar-element {
-  width: 260px; height: 100vh;
-  position: fixed; left: 0; top: 0;
+  width: 260px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
+  height: 100dvh;
   transform: translateX(-100%);
   transition: transform .3s;
   z-index: 1000;
@@ -54,6 +79,8 @@ $burger-area-width: 60px;
 .content-wrapper {
   flex-grow: 1;
   height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
+  height: 100dvh;
   overflow-y: auto;
   background: var(--bg-color);
   transition: margin-left .3s;
@@ -61,7 +88,15 @@ $burger-area-width: 60px;
   &.sidebar-open { margin-left: 260px; }
 }
 
-/* Mobile / Tablet Breakpoints */
+/* Rest of the styles remain the same... */
+@media (min-width: 769px) {
+  .content-wrapper {
+    &.sidebar-open {
+      margin-left: 260px;
+    }
+  }
+}
+
 @media (max-width: 768px) {
   .sidebar-element { width: 85%; &.open { box-shadow: 3px 0 15px rgba(0,0,0,.2); } }
   .content-wrapper.sidebar-open { margin-left: 0; }

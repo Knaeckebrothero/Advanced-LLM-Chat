@@ -1,12 +1,15 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
+import { BehaviorSubject, firstValueFrom, lastValueFrom, Observable } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../api/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { SettingsService } from '../settings/settings.service';
 import { DisplayService } from '../sidebar/service/display.service';
-import {AuthService} from "../auth/auth.service";
+import { AuthService } from "../auth/auth.service";
+import { HttpClient } from '@angular/common/http';
+import { environment } from '../environments/environment';
+import { FilePreview } from '../data/objects/file-preview';
 
 
 @Injectable({
@@ -40,7 +43,8 @@ export class ChatService {
     private apiService: ApiService,
     private settingsService: SettingsService,
     private displayService: DisplayService,
-    private authService: AuthService
+    private authService: AuthService,
+    private http: HttpClient
   ) {
     this.initializeService();
   }
@@ -66,7 +70,26 @@ export class ChatService {
     this.syncInBackground();
   }
 
+  private async isBackendAvailable(): Promise<boolean> {
+    try {
+      const response = await lastValueFrom(
+        this.http.get(`${environment.apiUrl}/api/llms`, { withCredentials: true })
+      );
+      return true;
+    } catch (error) {
+      console.warn('Backend not available:', error);
+      return false;
+    }
+  }
+
   private async syncInBackground() {
+    // Check if backend is available first
+    const backendAvailable = await this.isBackendAvailable();
+    if (!backendAvailable) {
+      console.log('Backend not available, skipping sync');
+      return;
+    }
+
     if (this.authService.isGuest) {
       return;
     }
@@ -83,13 +106,17 @@ export class ChatService {
     }
   }
 
-
-
+  // TODO: Move sync logic to a separate sync service!
   private async performSync() {
     this.isSyncingSubject.next(true);
 
     try {
-      const serverConversations = await this.apiService.getConversations();
+      const serverConversationsData = await this.apiService.getConversations();
+
+      // Convert plain objects to Conversation instances
+      const serverConversations = serverConversationsData.map(data =>
+        Conversation.fromApiResponse(data)
+      );
 
       if (serverConversations.length === 0) {
         console.log('No conversations on server');
@@ -115,7 +142,7 @@ export class ChatService {
     }
   }
 
-  private async mergeServerConversations(serverConversations: any[]) {
+  private async mergeServerConversations(serverConversations: Conversation[]) {
     // Get local conversations
     const localConversations = await this.dbService.getAllConversations();
     const localConvMap = new Map(localConversations.map(c => [c.id, c]));
@@ -144,7 +171,13 @@ export class ChatService {
   }
 
   private async syncConversationIfNeeded(serverConv: any) {
+    // TODO: Why is the received conversation object not converted to conversation already?
+    //const test123 = Conversation.fromApiResponse(this.conversation)
+    //console.log("Conversation hash: ", test123.computeHash(this.dbService))
+    //console.log(this.conversation)
+    //console.log("Conversation: ", this.conversation)
     const localHash = await this.conversation.computeHash(this.dbService);
+    // TODO: The issue is that this.conversation is null by default
 
     if (localHash !== serverConv.hashsum) {
       console.log('Syncing messages for conversation:', serverConv.id);
@@ -207,28 +240,56 @@ export class ChatService {
   }
 
   // Send a message
-  public async sendMessage(content: string, roleName: string = 'user') {
+  public async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
     if (this.isNewConversationSubject.getValue()) {
-      // First message in a new chat. Create the conversation.
-      const title = content.length > 30 ? content.substring(0, 27) + '...' : content;
-      const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
+      // Check if backend is available before creating conversation
+      const backendAvailable = await this.isBackendAvailable();
 
-      try {
-        const createdConv = await this.apiService.createConversation(newConvData);
-        this.conversation = createdConv;
+      if (!backendAvailable) {
+        // Create local-only conversation
+        const localConv = new Conversation(
+          Math.floor(Date.now() / 1000), // Use timestamp as temporary ID
+          0, // Guest user ID
+          content.length > 30 ? content.substring(0, 27) + '...' : content,
+          ['user', 'Assistant']
+        );
+        this.conversation = localConv;
         await this.dbService.addConversation(this.conversation);
         this.isNewConversationSubject.next(false);
         await this.loadAllConversations();
         this.displayService.setActiveConversation(this.conversation.id);
-      } catch (error) {
-        console.error('Failed to create conversation:', error);
-        // Optionally show an error to the user
-        return;
+      } else {
+        // Original code for online mode
+        const title = content.length > 30 ? content.substring(0, 27) + '...' : content;
+        const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
+
+        try {
+          const createdConv = await this.apiService.createConversation(newConvData);
+          this.conversation = createdConv;
+          await this.dbService.addConversation(this.conversation);
+          this.isNewConversationSubject.next(false);
+          await this.loadAllConversations();
+          this.displayService.setActiveConversation(this.conversation.id);
+        } catch (error) {
+          console.error('Failed to create conversation:', error);
+          // Create local conversation as fallback
+          const localConv = new Conversation(
+            Math.floor(Date.now() / 1000),
+            0,
+            title,
+            ['user', 'Assistant']
+          );
+          this.conversation = localConv;
+          await this.dbService.addConversation(this.conversation);
+          this.isNewConversationSubject.next(false);
+          await this.loadAllConversations();
+          this.displayService.setActiveConversation(this.conversation.id);
+        }
       }
     }
 
     const message = new Message({
-      id: Math.floor(new Date().getTime() / 1000) ,
+      id: Math.floor(new Date().getTime() / 1000),
       conversationId: this.conversation.id,
       roleName: roleName,
       content: content,
@@ -238,26 +299,31 @@ export class ChatService {
     // Add the message to the conversation
     this.addMessage(message);
 
-    // Send the message to the backend
-    try {
-      const response = await this.apiService.sendMessage(message);
-      if(message.id !== response.id){
-        console.log('Message ID mismatch, updating local state:', message.id, response.id);
-        await this.dbService.addMessage(response);
-        await this.dbService.deleteMessage(message.id);
+    // Try to send the message to the backend if available
+    const backendAvailable = await this.isBackendAvailable();
+    if (backendAvailable) {
+      try {
+        const response = await this.apiService.sendMessage(message);
+        if(message.id !== response.id){
+          console.log('Message ID mismatch, updating local state:', message.id, response.id);
+          await this.dbService.addMessage(response);
+          await this.dbService.deleteMessage(message.id);
 
-        const messages = this.messagesSubject.getValue();
-        const index = messages.findIndex(m => m.id === message.id);
-        if(index !== -1) {
-          messages[index] = response;
-          this.messagesSubject.next([...messages]);
+          const messages = this.messagesSubject.getValue();
+          const index = messages.findIndex(m => m.id === message.id);
+          if(index !== -1) {
+            messages[index] = response;
+            this.messagesSubject.next([...messages]);
+          }
+        } else {
+          console.log('Message sent and ID matched:', response);
         }
-      } else {
-        console.log('Message sent and ID matched:', response);
+      } catch(error) {
+        console.error('Error sending message:', error);
+        // Message is already saved locally, so we can continue
       }
-    } catch(error) {
-      console.error('Error sending message:', error);
-      // Handle error, e.g., mark the message as failed to send
+    } else {
+      console.log('Backend not available, message saved locally only');
     }
 
     // Update conversation timestamp
@@ -266,10 +332,38 @@ export class ChatService {
 
     // This will trigger re-grouping in sidebar
     await this.loadAllConversations();
+
+    // Trigger a sync after sending the message (especially important for new conversations)
+    this.syncInBackground();
+  }
+
+  // Send a file inside a message
+  public async sendMessageWithFiles(
+    content: string,
+    files: FilePreview[],
+    roleName: string = 'user'
+  ): Promise<void> {
+    // TODO: Implementation for sending messages with attachments
   }
 
   // Generate a message
   public async generateMessage(participant: string) {
+    // Check if backend is available first
+    const backendAvailable = await this.isBackendAvailable();
+    if (!backendAvailable) {
+      // Add a placeholder message when offline
+      const offlineMessage = new Message({
+        id: Math.floor(new Date().getTime() / 1000),
+        conversationId: this.conversation.id,
+        roleName: participant,
+        content: 'Sorry, I cannot generate responses while offline. Please check your connection.',
+        time: new Date()
+      });
+      this.addMessage(offlineMessage);
+      return;
+    }
+
+    // Original code continues...
     const currentMessages = this.messagesSubject.getValue();
     // Convert the last message to a Message instance if it's not already one
     const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message
@@ -301,6 +395,15 @@ export class ChatService {
         this.authService.setGuestLimitReached(true, resetTimeMessage);
       } else {
         console.error('Error generating message:', error);
+        // Add error message to chat
+        const errorMessage = new Message({
+          id: Math.floor(new Date().getTime() / 1000),
+          conversationId: this.conversation.id,
+          roleName: participant,
+          content: 'Sorry, I encountered an error while generating a response. Please try again.',
+          time: new Date()
+        });
+        this.addMessage(errorMessage);
       }
       throw error;
     }

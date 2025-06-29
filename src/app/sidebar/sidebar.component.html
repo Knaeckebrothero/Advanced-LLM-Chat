@@ -39,12 +39,12 @@
     </button>
   </div>
 
-  <!-- Neuer Settings-Button unten -->
-  <div class="user-with-settings" *ngIf="!isGuest">
-    <div class="user">
-      <div class="avatar">MM</div>
-      <div class="username">Max Mustermann</div>
-    </div>
+  <!-- User profile section - now clickable for login/logout -->
+  <div class="user-with-settings">
+    <button class="user-button" (click)="handleUserClick()">
+      <div class="avatar">{{ getUserInitials() }}</div>
+      <div class="username">{{ getUserName() }}</div>
+    </button>
     <button class="settings-icon-button" mat-icon-button (click)="openSettings()">
       <mat-icon>settings</mat-icon>
     </button>
