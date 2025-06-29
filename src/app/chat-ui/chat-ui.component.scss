@@ -34,15 +34,15 @@
 }
 
 .guest-limit-warning {
-  background-color: #ffcdd2; // Light red
-  color: #c62828; // Dark red
+  background-color: #eaf6ff; // Light blue background
+  color: #144d96; // Dark blue text from Farbwelt 2 (2 c2a)
   padding: 10px;
   text-align: center;
-  border-top: 1px solid #ef9a9a;
-  border-bottom: 1px solid #ef9a9a;
+  border-top: 1px solid #3a72ba; // Medium blue border from Farbwelt 2 (2 c)
+  border-bottom: 1px solid #3a72ba; // Medium blue border from Farbwelt 2 (2 c)
 
   a {
-    color: #c62828;
+    color: #144d96; // Dark blue link from Farbwelt 2 (2 c2a)
     text-decoration: underline;
     font-weight: bold;
   }

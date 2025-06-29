@@ -27,7 +27,9 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   // Messages are managed by the ChatService and are passed to this component via observable.
   messages = this.chatService.messages;
   showGuestLimitWarning = false;
+  guestLimitWarningMessage: string | null = null;
   private guestLimitSubscription!: Subscription;
+  private guestLimitResetTimeSubscription!: Subscription;
 
   // Constructor
   constructor(private chatService: ChatService, private authService: AuthService) {}
@@ -36,11 +38,17 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
     this.guestLimitSubscription = this.authService.guestLimitReached$.subscribe(isReached => {
       this.showGuestLimitWarning = isReached;
     });
+    this.guestLimitResetTimeSubscription = this.authService.guestLimitResetTime$.subscribe(message => {
+      this.guestLimitWarningMessage = message;
+    });
   }
 
   ngOnDestroy() {
     if (this.guestLimitSubscription) {
       this.guestLimitSubscription.unsubscribe();
+    }
+    if (this.guestLimitResetTimeSubscription) {
+      this.guestLimitResetTimeSubscription.unsubscribe();
     }
   }
 
@@ -80,7 +88,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   inputUserMessage() {
     // The inputField property is checked to ensure that it is not empty.
     if (this.inputField !== '') {
-      this.authService.setGuestLimitReached(false); // Reset on new user message
+      this.authService.setGuestLimitReached(false, null); // Reset on new user message
       // The ChatService is used to add a new usermessage to the history.
       this.chatService.sendMessage(this.inputField);
       console.log('User added message:');
