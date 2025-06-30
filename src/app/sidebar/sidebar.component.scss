@@ -16,6 +16,7 @@
 }
 
 // Branding section from 'theme' branch
+// Branding section from 'theme' branch
 .branding-box {
   display: flex;
   align-items: center;
@@ -26,6 +27,19 @@
   box-shadow: 0 4px 8px rgba(0,0,0,.15);
   margin-bottom: 1.5rem;
   gap: .75rem;
+}
+
+.logo-icon {
+  width: 40px;
+  height: auto;
+}
+
+/* Corrected CSS: Added text-align: center */
+.branding-label {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center; /* This centers the text lines */
 }
 
 .logo-icon {
