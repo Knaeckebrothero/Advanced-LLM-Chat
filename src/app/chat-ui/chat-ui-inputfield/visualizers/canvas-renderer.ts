@@ -13,6 +13,13 @@ export class CanvasRenderer {
   private readonly BAR_WIDTH: number;
   private readonly TOTAL_BAR_SPACE: number;
 
+  // Theme colors
+  private bgColor: string;
+  private barColorTop: string;
+  private barColorMiddle: string;
+  private barColorBottom: string;
+  private fallbackBarColor: string;
+
   // Gradient for bars
   private barGradient: CanvasGradient | null = null;
 
@@ -29,6 +36,15 @@ export class CanvasRenderer {
     this.BAR_WIDTH = barWidth;
     this.TOTAL_BAR_SPACE = totalBarSpace;
 
+    // Get theme colors from computed styles
+    const computedStyle = getComputedStyle(this.canvas);
+    this.bgColor = computedStyle.getPropertyValue('--recording-bg').trim() || '#FFFFFF';
+    this.barColorTop = computedStyle.getPropertyValue('--recording-bar-color-top').trim() || '#66B3FF';
+    this.barColorMiddle = computedStyle.getPropertyValue('--recording-bar-color-middle').trim() || '#4CA5DC';
+    this.barColorBottom = computedStyle.getPropertyValue('--recording-bar-color-bottom').trim() || '#3399D6';
+    this.fallbackBarColor = computedStyle.getPropertyValue('--primary-color').trim() || '#4CA5DC';
+
+
     // Create gradient for bars
     this.createBarGradient();
   }
@@ -36,14 +52,14 @@ export class CanvasRenderer {
   private createBarGradient(): void {
     // Create a vertical gradient for more visual appeal
     this.barGradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-    this.barGradient.addColorStop(0, '#66B3FF'); // Lighter blue at top
-    this.barGradient.addColorStop(0.5, '#4CA5DC'); // Medium blue in middle
-    this.barGradient.addColorStop(1, '#3399D6'); // Darker blue at bottom
+    this.barGradient.addColorStop(0, this.barColorTop);
+    this.barGradient.addColorStop(0.5, this.barColorMiddle);
+    this.barGradient.addColorStop(1, this.barColorBottom);
   }
 
   renderFrame(bars: VisualizationBar[]): void {
-    // Clear with white background
-    this.ctx.fillStyle = '#FFFFFF';
+    // Clear with theme background color
+    this.ctx.fillStyle = this.bgColor;
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Only render visible bars
@@ -55,7 +71,7 @@ export class CanvasRenderer {
     if (this.barGradient) {
       this.ctx.fillStyle = this.barGradient;
     } else {
-      this.ctx.fillStyle = '#4CA5DC'; // Fallback color
+      this.ctx.fillStyle = this.fallbackBarColor; // Fallback color
     }
 
     visibleBars.forEach(bar => {
