@@ -2,13 +2,13 @@ import { Component, Input } from '@angular/core';
 import { Message } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ChatUiComponent } from '../chat-ui.component';
-
+import { Clipboard } from '@angular/cdk/clipboard';
 
 @Component({
-    selector: 'app-chat-ui-message',
-    templateUrl: './chat-ui-message.component.html',
-    styleUrls: ['./chat-ui-message.component.scss'],
-    standalone: false
+  selector: 'app-chat-ui-message',
+  templateUrl: './chat-ui-message.component.html',
+  styleUrls: ['./chat-ui-message.component.scss'],
+  standalone: false
 })
 export class ChatUiMessageComponent {
   // Pass the message object from the parent component
@@ -18,7 +18,28 @@ export class ChatUiMessageComponent {
   editing: boolean = false;
   backupContent!: string;
 
-  constructor(private sanitizer: DomSanitizer, private chatUI: ChatUiComponent) { }
+  constructor(private sanitizer: DomSanitizer, private chatUI: ChatUiComponent, private clipboard: Clipboard) { }
+
+  // Function to copy the message content to the clipboard
+  copyMessage() {
+    this.clipboard.copy(this.message.content);
+  }
+
+  // Function to toggle the liked state of a message
+  toggleLike() {
+    this.message.liked = !this.message.liked;
+    if (this.message.liked) {
+      this.message.disliked = false;
+    }
+  }
+
+  // Function to toggle the disliked state of a message
+  toggleDislike() {
+    this.message.disliked = !this.message.disliked;
+    if (this.message.disliked) {
+      this.message.liked = false;
+    }
+  }
 
 
   // Function to replace prompt relevant elements to format the message
