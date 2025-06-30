@@ -3,6 +3,7 @@
   color: var(--text-color);
   font-family: 'Segoe UI', Roboto, sans-serif;
   --icon-color-accent: var(--link-color);
+  --icon-color-success: #28a745;
 }
 
 /* Container for the message list */
@@ -101,7 +102,12 @@
     }
     &.liked, &.disliked {
       mat-icon {
-        color: var(--icon-color-accent);
+        color: var(--icon-color);
+      }
+    }
+    &[aria-label="Copy message"] {
+      mat-icon {
+        color: var(--icon-color);
       }
     }
   }

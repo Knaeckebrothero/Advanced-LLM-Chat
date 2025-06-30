@@ -17,12 +17,17 @@ export class ChatUiMessageComponent {
   // Variables
   editing: boolean = false;
   backupContent!: string;
+  copied: boolean = false;
 
   constructor(private sanitizer: DomSanitizer, private chatUI: ChatUiComponent, private clipboard: Clipboard) { }
 
   // Function to copy the message content to the clipboard
   copyMessage() {
     this.clipboard.copy(this.message.content);
+    this.copied = true;
+    setTimeout(() => {
+      this.copied = false;
+    }, 1500);
   }
 
   // Function to toggle the liked state of a message
