@@ -28,7 +28,7 @@
 
   // Recording mode styles
   &.recording-mode {
-    background-color: #FFFFFF; // White background when recording
+    background-color: var(--recording-bg); // White background when recording
     border-color: var(--primary-color);
     animation: recording-pulse 2s ease-in-out infinite;
   }
@@ -51,7 +51,7 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--divider-color);
   max-height: 120px;
   overflow-y: auto;
   background: transparent; // Let the canvas show through
@@ -78,15 +78,15 @@
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--file-preview-bg);
+  border: 1px solid var(--file-preview-border);
   border-radius: 16px;
   max-width: 200px;
   position: relative;
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.8);
+    background: var(--file-preview-hover-bg);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
     .remove-file-button {
@@ -248,7 +248,7 @@
     width: 40px;
     height: 40px;
     flex-shrink: 0;
-    background-color: rgba(255, 255, 255, 0.95) !important;
+    background-color: var(--overlay-bg) !important;
     backdrop-filter: blur(10px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
@@ -268,7 +268,7 @@
   gap: 8px;
   font-size: 14px;
   color: var(--text-color);
-  background-color: rgba(255, 255, 255, 0.9); // Semi-transparent white background
+  background-color: var(--overlay-bg); // Semi-transparent white background
   padding: 6px 12px;
   border-radius: 20px;
   backdrop-filter: blur(10px);
@@ -302,7 +302,7 @@
     width: 40px;
     height: 40px;
     flex-shrink: 0;
-    background-color: rgba(255, 255, 255, 0.95) !important;
+    background-color: var(--overlay-bg) !important;
     backdrop-filter: blur(10px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 

@@ -18,7 +18,7 @@ body.light {
 
   --divider-color: #ccc;
   --label-muted: #6c757d;
-  --user-avatar: #144d96;
+  --user-avatar: #144d99;
 
   /* ── MESSAGE BUBBLE ─ */
   --msg-user-bg: #e6f0fc;
@@ -29,6 +29,14 @@ body.light {
   --input-border: #cccccc;
   --input-text: #144d96;
   --input-placeholder: #888;
+  --recording-bg: #ffffff;
+  --file-preview-bg: rgba(240, 240, 240, 0.8);
+  --file-preview-border: #e0e0e0;
+  --file-preview-hover-bg: rgba(230, 230, 230, 0.9);
+  --overlay-bg: rgba(255, 255, 255, 0.95);
+  --primary-rgb: 44, 139, 204;
+  --danger-color: #dc3545;
+  --danger-rgb: 220, 53, 69;
 
   /* ── CONVERSATION ─ */
   --conversation-bg: #ffffff;
@@ -47,7 +55,7 @@ body.light {
   --burger-line: #144d96;
   // In your light-theme.scss
 
-    // ... other light theme variables
+  // ... other light theme variables
   --icon-color: #2C8BCC; // Your blue color
   --icon-color-hover: #1e6a9e; // A darker blue for hover
 
