@@ -15,16 +15,14 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  // No longer needs position: relative
 }
 
-// FIXED: New header style block using Flexbox for robust alignment
 .settings-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px 24px;
-  flex-shrink: 0; // Prevent the header from shrinking
+  flex-shrink: 0;
   border-bottom: 1px solid var(--divider-color);
 
   .settings-title {
@@ -35,7 +33,6 @@
   }
 }
 
-// FIXED: Close button is now a simple element, no absolute positioning
 .close-button {
   color: var(--text-color);
   opacity: 0.7;
@@ -50,6 +47,8 @@
   padding: 24px;
   overflow-y: auto;
   flex-grow: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-grid {
@@ -169,29 +168,47 @@
   }
 }
 
+.info-links {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 24px;
+  border-top: 1px solid var(--divider-color);
+}
 
+.info-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-decoration: none;
+  color: var(--link-color);
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 4px 0;
+  transition: opacity 0.2s ease;
+
+  &:hover {
+    opacity: 0.8;
+  }
+
+  span {
+    flex-grow: 1;
+  }
+
+  mat-icon {
+    color: var(--link-color);
+    font-size: 24px;
+    height: 24px;
+    width: 24px;
+  }
+}
 
 .settings-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--divider-color);
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   flex-shrink: 0;
-
-  .reset-button {
-    background: none;
-    border: 1px solid var(--input-border-color);
-    color: var(--text-color);
-    opacity: 0.8;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.8rem;
-
-    &:hover {
-      background-color: rgba(255, 255, 255, 0.1);
-      opacity: 1;
-    }
-  }
 }
