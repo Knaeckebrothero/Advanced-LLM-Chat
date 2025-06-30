@@ -76,7 +76,7 @@
 
   // Themed scrollbar styles
   &::-webkit-scrollbar {
-    width: 12px;
+    width: 9px;
   }
 
   &::-webkit-scrollbar-track {
@@ -85,6 +85,7 @@
 
   &::-webkit-scrollbar-thumb {
     background-color: var(--icon-color);
+    width: 16px;
     border-radius: 6px;
     // Create a "padding" effect around the thumb so it doesn't touch the edge
     border: 3px solid var(--background-color);
@@ -92,7 +93,7 @@
   }
 
   &::-webkit-scrollbar-thumb:hover {
-    background-color: var(--primary-color-dark);
+    background-color: var(--icon-color);
   }
 }
 
