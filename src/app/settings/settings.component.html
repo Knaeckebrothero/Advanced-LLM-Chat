@@ -12,13 +12,13 @@
 
       <label class="grid-label">Farbschema</label>
       <div class="segmented-control">
-        <input type="radio" id="theme-light" name="theme" value="light" [(ngModel)]="settings.theme" (ngModelChange)="onThemeChange()">
+        <input type="radio" id="theme-light" name="theme" value="light" [(ngModel)]="settings.theme" (ngModelChange)="onSettingsChange()">
         <label for="theme-light"><mat-icon>light_mode</mat-icon></label>
 
-        <input type="radio" id="theme-dark" name="theme" value="dark" [(ngModel)]="settings.theme" (ngModelChange)="onThemeChange()">
+        <input type="radio" id="theme-dark" name="theme" value="dark" [(ngModel)]="settings.theme" (ngModelChange)="onSettingsChange()">
         <label for="theme-dark"><mat-icon>dark_mode</mat-icon></label>
 
-        <input type="radio" id="theme-os" name="theme" value="os" [(ngModel)]="settings.theme" (ngModelChange)="onThemeChange()">
+        <input type="radio" id="theme-os" name="theme" value="os" [(ngModel)]="settings.theme" (ngModelChange)="onSettingsChange()">
         <label for="theme-os"><mat-icon>brightness_auto</mat-icon></label>
       </div>
 
@@ -35,9 +35,5 @@
       </a>
     </div>
 
-  </div>
-
-  <div class="settings-footer">
-    <button mat-flat-button color="primary" (click)="closeAndSave()">Save</button>
   </div>
 </div>

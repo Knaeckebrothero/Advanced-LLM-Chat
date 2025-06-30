@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialogRef } from '@angular/material/dialog';
+import { debounceTime, Subject } from 'rxjs';
 
 import { SettingsService, Settings } from './settings.service';
 import { StatusBarService } from '../status-bar/status-bar.service';
@@ -22,7 +23,6 @@ import { ThemeService } from '../../styles/themes/theme.service';
   styleUrls: ['./settings.component.scss']
 })
 export class SettingsComponent implements OnInit {
-  // The main object holding the component's state. This is the single source of truth.
   settings: Settings = {
     model: 'openai/gpt-4o',
     temperature: 0.5,
@@ -33,6 +33,7 @@ export class SettingsComponent implements OnInit {
   };
 
   private readonly defaultSettings: Settings = { ...this.settings };
+  private settingsChanged = new Subject<void>();
 
   constructor(
     private settingsService: SettingsService,
@@ -40,7 +41,11 @@ export class SettingsComponent implements OnInit {
     private themeService: ThemeService,
     private dialogRef: MatDialogRef<SettingsComponent>
   ) {
-    // Constructor is now cleaner. Initialization happens in ngOnInit/loadSettings.
+    this.settingsChanged.pipe(
+      debounceTime(500) // Debounce to avoid rapid saving
+    ).subscribe(() => {
+      this.saveSettings();
+    });
   }
 
   ngOnInit(): void {
@@ -64,26 +69,25 @@ export class SettingsComponent implements OnInit {
         }
       },
       complete: () => {
-        this.onThemeChange();
+        this.themeService.setTheme(this.settings.theme);
       }
     });
   }
 
-  onThemeChange(): void {
+  onSettingsChange(): void {
     this.themeService.setTheme(this.settings.theme);
+    this.settingsChanged.next();
   }
 
-  closeAndSave(): void {
+  private saveSettings(): void {
     this.settingsService.saveSettings(this.settings).subscribe({
       next: () => {
         this.settingsService.saveLocal(this.settings);
         this.statusBar.showMessage('Settings saved successfully.', 'success');
-        this.dialogRef.close(this.settings);
       },
       error: () => {
         this.settingsService.saveLocal(this.settings);
         this.statusBar.showMessage('Failed to save to server. Saved locally.', 'error');
-        this.dialogRef.close(this.settings);
       },
     });
   }
