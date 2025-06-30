@@ -29,6 +29,10 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   private guestLimitSubscription!: Subscription;
   private guestLimitResetTimeSubscription!: Subscription;
 
+  // Properties for dropdowns
+  selectedRole: 'student' | 'teacher' = 'student';
+  selectedLanguage: 'DE' | 'EN' = 'DE';
+
   constructor(
     private chatService: ChatService,
     private themeService: ThemeService,
@@ -121,5 +125,14 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   patchMessage(message: Message) {
     this.chatService.patchMessage(message.id!, "New message content");
+  }
+
+  // Methods for dropdowns
+  setRole(role: 'student' | 'teacher'): void {
+    this.selectedRole = role;
+  }
+
+  setLanguage(language: 'DE' | 'EN'): void {
+    this.selectedLanguage = language;
   }
 }

@@ -24,6 +24,7 @@ import {MatListModule} from '@angular/material/list';
 import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
 import {MatCardModule} from '@angular/material/card';
 import { MatDialogModule } from '@angular/material/dialog';
+import { MatMenuModule } from '@angular/material/menu';
 
 // Default
 import {inject, isDevMode, NgModule, provideAppInitializer} from '@angular/core';
@@ -71,6 +72,7 @@ const routes: Routes = [
     MatProgressSpinnerModule,
     MatCardModule,
     MatDialogModule,
+    MatMenuModule,
     CommonModule,
     ChatUiInputfieldComponent,
     RouterModule.forRoot(routes),

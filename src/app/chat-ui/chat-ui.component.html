@@ -8,6 +8,40 @@
     <div *ngIf="isDarkMode" class="headbar-logo white-logo"></div>
   </div>
 
+  <div class="selection-bar">
+    <div class="selection-dropdowns">
+      <button mat-button class="dropdown-button" [matMenuTriggerFor]="roleMenu">
+        <mat-icon>school</mat-icon>
+        <span>{{ selectedRole === 'student' ? 'Student*in' : 'Lehrender' }}</span>
+        <mat-icon>expand_more</mat-icon>
+      </button>
+      <mat-menu #roleMenu="matMenu" class="custom-menu">
+        <button mat-menu-item (click)="setRole('student')">
+          <mat-icon>school</mat-icon>
+          <span>Student*in</span>
+        </button>
+        <button mat-menu-item (click)="setRole('teacher')">
+          <mat-icon>business_center</mat-icon>
+          <span>Teacher</span>
+        </button>
+      </mat-menu>
+
+      <button mat-button class="dropdown-button" [matMenuTriggerFor]="languageMenu">
+        <mat-icon>language</mat-icon>
+        <span>{{ selectedLanguage }}</span>
+        <mat-icon>expand_more</mat-icon>
+      </button>
+      <mat-menu #languageMenu="matMenu" class="custom-menu">
+        <button mat-menu-item (click)="setLanguage('DE')">
+          <span>German</span>
+        </button>
+        <button mat-menu-item (click)="setLanguage('EN')">
+          <span>English</span>
+        </button>
+      </mat-menu>
+    </div>
+  </div>
+
   <div class="message-container" #messageContainer>
     <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
   </div>
