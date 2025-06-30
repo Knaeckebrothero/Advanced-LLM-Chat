@@ -39,8 +39,8 @@
 
 // Common styles for the logo sizing
 .headbar-logo {
-  height: 120px;
-  width: 450px;
+  height: 80px;
+  width: 300px;
 }
 
 // Applies a white color mask to the logo, for use in dark mode
@@ -117,9 +117,9 @@
 // Styles for the host element of the input field component
 app-chat-ui-inputfield {
   display: block; // Ensures the component is treated as a block-level element
-  padding: 1rem;
-  background-color: var(--input-area-bg, transparent);
-  border-top: 1px solid var(--divider-color);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+
+
+
+
   flex-shrink: 0; // Prevents the input area from shrinking
 }
