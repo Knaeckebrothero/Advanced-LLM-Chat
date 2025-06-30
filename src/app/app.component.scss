@@ -1,9 +1,31 @@
+/* src/app/app.component.scss */
+
 /* -------------------------------------------------------------
    Globale Container-Layout-Klassen
 --------------------------------------------------------------*/
-.app-layout        { display: flex; min-height: 100vh; width: 100%; }
-.sidebar-container { margin: 1rem; width: 280px; flex-shrink: 0; }
-.main-content      { flex: 1; padding: 1rem; }
+.app-layout {
+  display: flex;
+  height: 100vh; /* Use fixed viewport height */
+  width: 100%;
+  overflow: hidden; /* Prevent the entire layout from scrolling */
+}
+
+.sidebar-container {
+  margin: 1rem;
+  width: 280px;
+  flex-shrink: 0;
+  display: flex; /* Allow app-sidebar to fill height */
+}
+
+.main-content {
+  flex: 1; /* Allow content to fill remaining space */
+  padding: 1rem;
+  display: flex; /* Use flexbox for child alignment */
+  flex-direction: column; /* Stack children vertically */
+  overflow: hidden; /* Hide any overflow */
+  min-width: 0; /* Prevents flex items from overflowing their container */
+}
+
 
 /* -------------------------------------------------------------
    Mobile Burger-Sidebar (falls du sie weiter nutzt)

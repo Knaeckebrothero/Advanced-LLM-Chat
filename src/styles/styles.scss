@@ -1,14 +1,23 @@
-/* ===================================================================
-   1)  VARIABLEN & THEMES (CSS-Custom-Properties)
-=================================================================== */
+/* src/styles/styles.scss */
 @use 'src/styles/themes/light-theme' as *;
 @use 'src/styles/themes/dark-theme'  as *;
+
+@use '@angular/material' as mat;
+@use 'variables' as vars;
+/* ===================================================================
+   1)  IMPORTS (Google Fonts)
+=================================================================== */
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=Inter:wght@100..900&display=swap');
+
+/* ===================================================================
+   THEME SETUP
+=================================================================== */
+
 
 /* ===================================================================
    2)  ANGULAR-MATERIAL THEME (Palette + Mixins)
 =================================================================== */
-@use '@angular/material' as mat;
-@use 'variables' as vars;
+
 
 $custom-primary : mat.m2-define-palette(vars.$custom-primary-palette ,500);
 $custom-accent  : mat.m2-define-palette(vars.$custom-secondary-palette,500);
@@ -74,6 +83,21 @@ html, body {
 /* ===================================================================
    4)  LAYOUT-HILFEN
 =================================================================== */
-.app-layout        { display: flex; min-height: 100vh; width: 100%; }
-.sidebar-container { margin: 1rem 0 1rem 1rem; width: 280px; flex-shrink: 0; }
-.main-content      { flex: 1; padding: 1rem; }
+.app-layout {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+}
+.sidebar-container {
+  margin: 1rem 0 1rem 1rem;
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+}
+.main-content {
+  flex: 1;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
