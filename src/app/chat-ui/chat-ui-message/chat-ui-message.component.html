@@ -28,13 +28,13 @@
           <mat-icon *ngIf="copied">check</mat-icon>
         </button>
         <button mat-icon-button (click)="toggleLike()" [class.liked]="message.liked" aria-label="Like message">
-          <mat-icon>thumb_up</mat-icon>
+          <mat-icon>thumb_up_off_alt</mat-icon>
         </button>
         <button mat-icon-button (click)="toggleDislike()" [class.disliked]="message.disliked" aria-label="Dislike message">
-          <mat-icon>thumb_down</mat-icon>
+          <mat-icon>thumb_down_off_alt</mat-icon>
         </button>
         <button mat-icon-button (click)="deleteMessage()" aria-label="Delete message">
-          <mat-icon>delete</mat-icon>
+          <mat-icon>delete_outline</mat-icon>
         </button>
       </div>
       <div *ngIf="editing" class="message-actions">

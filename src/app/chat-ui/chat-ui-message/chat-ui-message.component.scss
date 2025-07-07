@@ -94,12 +94,24 @@
 
   button {
     color: var(--label-muted);
+    background-color: transparent; /* Base state */
+    border: none;
+    outline: none;
+    padding: 0;
     mat-icon { font-size: 16px; height: 16px; width: 16px; }
     &:not(:last-child) { margin-right: 3px; }
-    &:hover {
-      background-color: rgba(0,0,0,0.1);
-      border-radius: 50%;
+
+    /* Remove background on hover, focus, and active states */
+    &:hover, &:focus, &:active {
+      background-color: transparent !important;
+      box-shadow: none !important;
     }
+
+    /* Optional: change icon color on hover for feedback */
+    &:hover {
+      color: var(--icon-color-accent);
+    }
+
     &.liked, &.disliked {
       mat-icon {
         color: var(--icon-color);
