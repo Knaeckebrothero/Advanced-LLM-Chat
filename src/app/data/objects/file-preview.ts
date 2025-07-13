@@ -1,5 +1,3 @@
-// src/app/data/objects/file-preview.ts
-
 export interface FilePreview {
   id: string;                    // Unique identifier for the preview
   file: File;                    // The actual File object
@@ -17,7 +15,7 @@ export interface FilePreview {
 export enum FileType {
   IMAGE = 'image',
   VIDEO = 'video',
-  AUDIO = 'audio',
+  AUDIO = 'audio',  // TODO: Remove this one
   DOCUMENT = 'document',
   OTHER = 'other'
 }
