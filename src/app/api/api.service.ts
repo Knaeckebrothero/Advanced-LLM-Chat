@@ -226,9 +226,9 @@ export class ApiService {
     });
 
     try {
-      // This would upload files and return their server IDs
+      // Upload files and return their server IDs
       const response = await lastValueFrom(
-        this.http.post<{ fileIds: string[] }>(endpoint, formData, {
+        this.http.post<string[]>(endpoint, formData, {
           ...this.getHttpOptions(),
           headers: new HttpHeaders({
             // Don't set Content-Type - let the browser set it with boundary for multipart
@@ -238,12 +238,10 @@ export class ApiService {
         })
       );
 
-      return response.fileIds;
+      return response;
     } catch (error) {
       console.error('Error uploading files:', error);
-      // For now, return mock IDs
-      console.log('File upload not yet implemented, returning mock IDs');
-      return files.map(() => `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+      throw error;
     }
   }
 

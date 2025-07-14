@@ -41,7 +41,9 @@
         <div class="upload-status" *ngIf="preview.uploadStatus && preview.uploadStatus !== 'uploading'">
           <mat-icon *ngIf="preview.uploadStatus === 'completed'" class="status-completed">check_circle</mat-icon>
           <mat-icon *ngIf="preview.uploadStatus === 'failed'" class="status-failed">error</mat-icon>
+          <mat-icon *ngIf="preview.uploadStatus === 'pending'" class="status-pending">schedule</mat-icon>
           <span *ngIf="preview.uploadStatus === 'failed' && preview.error" class="error-message">{{ preview.error }}</span>
+          <span *ngIf="preview.uploadStatus === 'pending'" class="pending-message">Uploading...</span>
         </div>
       </div>
 

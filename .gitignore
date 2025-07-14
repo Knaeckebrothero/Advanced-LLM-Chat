@@ -1,5 +1,9 @@
 # Projecspecific contents go here
+files
 
+# Claude
+.claude/
+CLAUDE.local.md
 
 # Local environment
 .env

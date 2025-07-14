@@ -12,6 +12,9 @@ import { DeviceCapabilitiesService } from '../services/device-capabilities.servi
 import { VoiceRecordingService } from './voice-recording.service';
 import { FileHandlingService } from '../services/file-handling.service';
 import { RecordingConfig } from '../../data/objects/recording';
+import { ApiService } from '../../api/api.service';
+import { UploadStatus } from '../../data/objects/file-preview';
+import { environment } from '../../environments/environment';
 
 
 /**
@@ -75,7 +78,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     private ngZone: NgZone,
     private deviceCapabilitiesService: DeviceCapabilitiesService,
     private voiceRecordingService: VoiceRecordingService,
-    private fileHandlingService: FileHandlingService
+    private fileHandlingService: FileHandlingService,
+    private apiService: ApiService
   ) {}
 
   // ViewChild to access the textarea element directly
@@ -268,13 +272,16 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Create file previews for valid files
       const newPreviews = await this.fileHandlingService.createFilePreviews(fileArray, 10);
 
-      // Add to existing previews
+      // Add to existing previews with pending status
       this.filePreviews = [...this.filePreviews, ...newPreviews];
+
+      // Start upload immediately for each file
+      await this.uploadFilesImmediately(newPreviews);
 
       // Emit the file previews
       this.filesSelected.emit(this.filePreviews);
 
-      console.log('Files selected:', this.filePreviews);
+      console.log('Files selected and uploaded:', this.filePreviews);
 
       // Reset the input so the same file can be selected again
       input.value = '';
@@ -530,6 +537,59 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   onMicMouseLeave(event: MouseEvent): void {
     if (this.isHoldToRecord && this.isRecording && !this.isMobileDevice()) {
       this.stopRecording();
+    }
+  }
+
+  // Upload files immediately when selected
+  private async uploadFilesImmediately(filePreviews: FilePreview[]): Promise<void> {
+    // Check if backend is available
+    const backendAvailable = await this.isBackendAvailable();
+    
+    if (!backendAvailable) {
+      // Mark files as pending for offline upload
+      filePreviews.forEach(fp => {
+        fp.uploadStatus = UploadStatus.PENDING;
+        fp.error = 'Waiting for connection';
+      });
+      console.log('Backend not available, files marked as pending');
+      return;
+    }
+
+    // Upload files immediately
+    for (const filePreview of filePreviews) {
+      try {
+        filePreview.uploadStatus = UploadStatus.UPLOADING;
+        
+        // Upload single file
+        const uploadedFileIds = await this.apiService.uploadFiles([filePreview]);
+        
+        // Update file with server-assigned ID
+        filePreview.uploadStatus = UploadStatus.COMPLETED;
+        filePreview.id = uploadedFileIds[0] || filePreview.id;
+        filePreview.error = undefined;
+        
+        console.log('File uploaded successfully:', filePreview.name, filePreview.id);
+      } catch (error) {
+        console.error('Error uploading file:', filePreview.name, error);
+        filePreview.uploadStatus = UploadStatus.FAILED;
+        filePreview.error = 'Upload failed';
+      }
+    }
+  }
+
+  // Helper method to check if backend is available
+  private async isBackendAvailable(): Promise<boolean> {
+    try {
+      // Simple check to see if backend is reachable
+      // We'll use a lightweight endpoint check
+      const response = await fetch(`${environment.apiUrl}/api/llms`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      return response.ok;
+    } catch (error) {
+      console.warn('Backend not available:', error);
+      return false;
     }
   }
 
