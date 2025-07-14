@@ -12,12 +12,12 @@ import replicate
 import secrets
 import asyncio
 import json
-from fastapi import FastAPI, Response, status, Request, HTTPException, Depends
+from fastapi import FastAPI, Response, status, Request, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union, Literal
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 from contextlib import contextmanager, asynccontextmanager
@@ -73,13 +73,45 @@ class ApiConversationsCheck(BaseModel):
   conversations: List[ConversationState]
 
 
+# New content type models
+class FileReference(BaseModel):
+  """
+  Reference to an uploaded file
+  """
+  id: str
+  name: str
+  size: int
+  mimeType: str
+
+
+class TextContent(BaseModel):
+  """
+  Text message content with optional attachments
+  """
+  content: str
+  attachments: Optional[List[FileReference]] = []
+
+
+class VoiceContent(BaseModel):
+  """
+  Voice message content
+  """
+  audioData: str  # Base64 encoded audio
+  duration: float
+  mimeType: str
+  transcript: Optional[str] = None
+  waveform: Optional[List[float]] = None
+
+
 class ApiMessageSend(BaseModel):
   """
   Represents a message sent within a specific conversation.
+  Supports multiple content types through a discriminated union.
   """
   conversationId: int
   roleName: str
-  content: str
+  type: Literal["text", "voice"]
+  content: Union[str, TextContent, VoiceContent]  # Backwards compatible - str for legacy, objects for new types
   time: int
 
 
@@ -113,6 +145,7 @@ class MessageResponse(BaseModel):
   roleName: str
   content: str
   time: int
+  type: Optional[str] = "text"  # Default to "text" for backwards compatibility
 
 
 class ConversationResponse(BaseModel):
@@ -348,6 +381,7 @@ def init_db():
                                                       roleName TEXT NOT NULL,
                                                       content TEXT NOT NULL,
                                                       time INTEGER NOT NULL,
+                                                      type TEXT DEFAULT 'text',
                                                       FOREIGN KEY(conversationId) REFERENCES conversations(id)
                 )
                 ''')
@@ -372,6 +406,13 @@ def init_db():
     if 'is_guest' not in columns:
       print("Adding is_guest column to sessions table...")
       cur.execute('ALTER TABLE sessions ADD COLUMN is_guest BOOLEAN DEFAULT FALSE')
+    
+    # Check if type column exists in messages table, if not add it
+    cur.execute("PRAGMA table_info(messages)")
+    columns = [column[1] for column in cur.fetchall()]
+    if 'type' not in columns:
+      print("Adding type column to messages table...")
+      cur.execute("ALTER TABLE messages ADD COLUMN type TEXT DEFAULT 'text'")
 
     # Create guest_usage table
     cur.execute('''
@@ -935,7 +976,7 @@ async def get_conversation_messages(
       cur = conn.cursor()
       cur.execute(
         """
-        SELECT id, conversationId, roleName, content, time
+        SELECT id, conversationId, roleName, content, time, type
         FROM messages
         WHERE conversationId = ? AND time < ?
         ORDER BY time DESC LIMIT ?
@@ -990,16 +1031,42 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       return ErrorResponse(error="Access denied to this conversation")
 
     message_id = int(time.time() * 1000)
+    
+    # Extract content based on message type
+    content_str = ""
+    message_type = getattr(request_body, 'type', 'text')  # Default to 'text' for backwards compatibility
+    
+    if message_type == 'text':
+      if isinstance(request_body.content, str):
+        # Legacy format - just a string
+        content_str = request_body.content
+      elif isinstance(request_body.content, dict):
+        # New format - TextContent object
+        content_str = request_body.content.get('content', '')
+        # Store attachments as JSON in content for now
+        attachments = request_body.content.get('attachments', [])
+        if attachments:
+          content_obj = {
+            'content': content_str,
+            'attachments': attachments
+          }
+          content_str = json.dumps(content_obj)
+    elif message_type == 'voice':
+      # Voice messages store the entire content object as JSON
+      if isinstance(request_body.content, dict):
+        content_str = json.dumps(request_body.content)
+      else:
+        content_str = str(request_body.content)
 
     with get_db() as conn:
       cur = conn.cursor()
       cur.execute(
         """
-        INSERT INTO messages (id, conversationId, roleName, content, time)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO messages (id, conversationId, roleName, content, time, type)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (message_id, request_body.conversationId, request_body.roleName,
-         request_body.content, request_body.time)
+         content_str, request_body.time, message_type)
       )
       conn.commit()
 
@@ -1096,11 +1163,11 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
       cur = conn.cursor()
       cur.execute(
         """
-        INSERT INTO messages (id, conversationId, roleName, content, time)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO messages (id, conversationId, roleName, content, time, type)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (message_id, request_body.conversationId, request_body.roleName,
-         message_doc_data['content'], current_time)
+         message_doc_data['content'], current_time, 'text')
       )
       conn.commit()
 
@@ -1207,6 +1274,58 @@ async def delete_message(conversation_id: int, message_id: int, response: Respon
     print(f"Error: {str(e)}")
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     return ErrorResponse(error=str(e))
+
+
+@app.post("/api/files/upload",
+          response_model=List[str],
+          status_code=status.HTTP_201_CREATED,
+          responses={
+            status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "No files provided"},
+            status.HTTP_413_PAYLOAD_TOO_LARGE: {"model": ErrorResponse, "description": "File too large"},
+            status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
+          },
+          tags=["Files"])
+async def upload_files(
+  files: List[UploadFile] = File(...),
+  current_user: dict = Depends(get_current_user)
+):
+  """
+  Upload multiple files and return their IDs.
+  For now, this is a mock implementation that returns generated IDs.
+  In a real implementation, files would be stored in object storage (S3, etc.)
+  """
+  print(f"File upload called with {len(files)} files")
+  
+  try:
+    if not files:
+      raise HTTPException(status_code=400, detail="No files provided")
+    
+    file_ids = []
+    max_file_size = 10 * 1024 * 1024  # 10MB limit per file
+    
+    for file in files:
+      # Read file to check size (in real implementation, would stream to storage)
+      contents = await file.read()
+      if len(contents) > max_file_size:
+        raise HTTPException(status_code=413, detail=f"File {file.filename} exceeds maximum size of 10MB")
+      
+      # Generate a unique file ID
+      # In real implementation, this would be the ID from object storage
+      file_id = f"file_{int(time.time() * 1000)}_{secrets.token_hex(8)}"
+      file_ids.append(file_id)
+      
+      print(f"Mock uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes)")
+      
+      # Reset file position
+      await file.seek(0)
+    
+    return file_ids
+    
+  except HTTPException:
+    raise
+  except Exception as e:
+    print(f"Error uploading files: {str(e)}")
+    raise HTTPException(status_code=500, detail="Error uploading files")
 
 
 # CORS configuration
