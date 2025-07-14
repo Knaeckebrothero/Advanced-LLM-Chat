@@ -44,8 +44,15 @@ export class ChatUiMessageComponent {
           `;
         }
 
-        // TODO: Add audio player controls when backend supports audio streaming
-        // voiceHtml += `<audio controls src="data:${message.content.mimeType};base64,${message.content.audioData}"></audio>`;
+        // Add audio player controls
+        voiceHtml += `
+          <div class="voice-player">
+            <audio controls class="voice-audio-player">
+              <source src="data:${message.content.mimeType};base64,${message.content.audioData}" type="${message.content.mimeType}">
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        `;
 
         voiceHtml += '</div>';
 
@@ -143,7 +150,7 @@ export class ChatUiMessageComponent {
 
     // Trigger a request to update the message with the new content
     if (this.message.isText() && this.backupContent !== undefined) {
-      this.chatUI.chatService.patchMessage(this.message.id!, this.backupContent);
+      this.chatUI.patchMessage(this.message.id!, this.backupContent);
     }
   }
 

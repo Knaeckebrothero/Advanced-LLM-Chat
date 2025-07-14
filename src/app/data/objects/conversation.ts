@@ -51,7 +51,7 @@ export class Conversation {
 
         let hashValue = 0;
         for (const message of messages) {
-            const content = message.content || '';
+            const content = message.getDisplayContent();
             if (!content) {
                 hashValue += 0;
                 continue;

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, firstValueFrom, lastValueFrom, Observable } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { DBService } from '../data/db.service';
@@ -15,7 +15,7 @@ import { FilePreview, UploadStatus } from '../data/objects/file-preview';
 @Injectable({
   providedIn: 'root'
 })
-export class ChatService {
+export class ChatService implements OnDestroy {
   // The conversation this service is managing
   private conversation!: Conversation;
   // TODO: Start with conversation null, only create new conversation once the first message is sent!
@@ -36,6 +36,10 @@ export class ChatService {
   public isSyncing$ = this.isSyncingSubject.asObservable();
 
   private syncPromise: Promise<void> | null = null;
+
+  // Connection monitoring
+  private connectionCheckInterval: any;
+  private lastConnectionState: boolean = true;
 
   // Constructor
   constructor(
@@ -68,6 +72,9 @@ export class ChatService {
 
     // Sync with server in background (don't await)
     this.syncInBackground();
+    
+    // Set up connection monitoring for pending file uploads
+    this.setupConnectionMonitoring();
   }
 
   private async isBackendAvailable(): Promise<boolean> {
@@ -380,6 +387,17 @@ export class ChatService {
           f.error = 'Upload failed';
         });
       }
+    } else if (!backendAvailable && files.length > 0) {
+      // Offline mode: Mark files as pending upload
+      console.log('Backend not available, marking files for offline storage');
+      files.forEach(f => {
+        f.uploadStatus = UploadStatus.PENDING;
+        f.id = `offline-${Date.now()}-${Math.random()}`;
+        f.error = 'Waiting for connection';
+      });
+      
+      // Store file data in IndexedDB for later upload
+      await this.storeOfflineFiles(files);
     }
 
     // Create message with file attachments
@@ -783,6 +801,102 @@ export class ChatService {
         this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
         this.displayService.setActiveConversation(0);
       }
+    }
+  }
+
+  // Store files in IndexedDB for offline upload later
+  private async storeOfflineFiles(files: FilePreview[]): Promise<void> {
+    // Store file data in a special offline files store
+    // This would be implemented in DbService
+    console.log('Storing offline files for later upload:', files);
+    // TODO: Implement actual offline file storage in DbService
+  }
+
+  // Check and upload any pending offline files when connection is restored
+  public async uploadPendingFiles(): Promise<void> {
+    const backendAvailable = await this.isBackendAvailable();
+    if (!backendAvailable) {
+      console.log('Backend still not available, skipping pending file uploads');
+      return;
+    }
+
+    // Get all messages with pending file uploads
+    const allMessages = await this.dbService.getAllMessages();
+    const messagesWithPendingFiles = allMessages.filter(msg => 
+      msg.isText() && 
+      msg.attachments?.some(f => f.uploadStatus === UploadStatus.PENDING)
+    );
+
+    console.log(`Found ${messagesWithPendingFiles.length} messages with pending file uploads`);
+
+    for (const message of messagesWithPendingFiles) {
+      if (!message.attachments) continue;
+      
+      const pendingFiles = message.attachments.filter(f => f.uploadStatus === UploadStatus.PENDING);
+      if (pendingFiles.length === 0) continue;
+
+      try {
+        // Try to upload the pending files
+        const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
+        
+        // Update the message with new file IDs and status
+        pendingFiles.forEach((f, index) => {
+          f.uploadStatus = UploadStatus.COMPLETED;
+          f.id = uploadedFileIds[index] || f.id;
+          f.error = undefined;
+        });
+
+        // Update the message in the database
+        await this.dbService.updateMessage(message);
+        
+        // Update UI if this message is currently displayed
+        const currentMessages = this.messagesSubject.getValue();
+        const messageIndex = currentMessages.findIndex(m => m.id === message.id);
+        if (messageIndex !== -1) {
+          currentMessages[messageIndex] = message;
+          this.messagesSubject.next([...currentMessages]);
+        }
+
+        console.log(`Successfully uploaded files for message ${message.id}`);
+      } catch (error) {
+        console.error(`Failed to upload files for message ${message.id}:`, error);
+        // Mark files as failed
+        pendingFiles.forEach(f => {
+          f.uploadStatus = UploadStatus.FAILED;
+          f.error = 'Upload failed after retry';
+        });
+        await this.dbService.updateMessage(message);
+      }
+    }
+  }
+
+  // Set up connection monitoring for automatic file uploads
+  private setupConnectionMonitoring(): void {
+    // Check connection every 30 seconds
+    this.connectionCheckInterval = setInterval(async () => {
+      const isConnected = await this.isBackendAvailable();
+      
+      // If connection was restored
+      if (!this.lastConnectionState && isConnected) {
+        console.log('Connection restored, checking for pending file uploads');
+        await this.uploadPendingFiles();
+        // Also trigger a sync
+        this.syncInBackground();
+      }
+      
+      this.lastConnectionState = isConnected;
+    }, 30000);
+    
+    // Also check immediately
+    this.isBackendAvailable().then(isConnected => {
+      this.lastConnectionState = isConnected;
+    });
+  }
+
+  // Clean up on service destroy
+  ngOnDestroy(): void {
+    if (this.connectionCheckInterval) {
+      clearInterval(this.connectionCheckInterval);
     }
   }
 }

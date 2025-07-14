@@ -132,6 +132,11 @@ export class DBService {
     }
   }
 
+  async getAllMessages(): Promise<Message[]> {
+    await this.status;
+    return await this.db.getAll('chatMessages');
+  }
+
   /*
   CRUD operations for conversations
   */
