@@ -366,34 +366,41 @@ export class ChatService implements OnDestroy {
       await this.createNewConversation(title);
     }
 
-    // Upload files first if backend is available
+    // Files should already be uploaded by the input component when selected
+    // Just verify that uploaded files have proper status
     const backendAvailable = await this.isBackendAvailable();
     if (backendAvailable && files.length > 0) {
-      try {
-        // TODO: Implement actual file upload, perhaps we should handle the upload when the user selects a file in
-        //  the ui (claude does this, if you drop the file it's uploaded, when you hit send it's used).
-        const uploadedFileIds = await this.apiService.uploadFiles(files);
-
-        // Update file IDs with server-assigned IDs
-        files.forEach((f, index) => {
-          f.uploadStatus = UploadStatus.COMPLETED;
-          f.id = uploadedFileIds[index] || `file-${Date.now()}-${Math.random()}`;
-        });
-      } catch (error) {
-        console.error('Error uploading files:', error);
-        // Continue anyway - files will be marked as failed
-        files.forEach(f => {
-          f.uploadStatus = UploadStatus.FAILED;
-          f.error = 'Upload failed';
-        });
+      // Check if any files still need to be uploaded (fallback)
+      const pendingFiles = files.filter(f => f.uploadStatus === UploadStatus.PENDING);
+      
+      if (pendingFiles.length > 0) {
+        console.log('Some files still pending upload, uploading now as fallback');
+        try {
+          const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
+          
+          // Update file IDs with server-assigned IDs
+          pendingFiles.forEach((f, index) => {
+            f.uploadStatus = UploadStatus.COMPLETED;
+            f.id = uploadedFileIds[index] || `file-${Date.now()}-${Math.random()}`;
+          });
+        } catch (error) {
+          console.error('Error uploading pending files:', error);
+          // Continue anyway - files will be marked as failed
+          pendingFiles.forEach(f => {
+            f.uploadStatus = UploadStatus.FAILED;
+            f.error = 'Upload failed';
+          });
+        }
       }
     } else if (!backendAvailable && files.length > 0) {
-      // Offline mode: Mark files as pending upload
-      console.log('Backend not available, marking files for offline storage');
+      // Offline mode: Mark files as pending upload if not already done
+      console.log('Backend not available, ensuring files are marked for offline storage');
       files.forEach(f => {
-        f.uploadStatus = UploadStatus.PENDING;
-        f.id = `offline-${Date.now()}-${Math.random()}`;
-        f.error = 'Waiting for connection';
+        if (f.uploadStatus !== UploadStatus.PENDING) {
+          f.uploadStatus = UploadStatus.PENDING;
+          f.id = f.id || `offline-${Date.now()}-${Math.random()}`;
+          f.error = 'Waiting for connection';
+        }
       });
       
       // Store file data in IndexedDB for later upload
@@ -418,7 +425,6 @@ export class ChatService implements OnDestroy {
     // Send to backend if available
     if (backendAvailable) {
       try {
-        // TODO: Fix redundancy issue!
         const response = await this.apiService.sendMessage(message);
 
         // Handle ID mismatch same as regular messages

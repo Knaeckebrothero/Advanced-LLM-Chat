@@ -1292,9 +1292,8 @@ async def upload_files(
   current_user: dict = Depends(get_current_user)
 ):
   """
-  Upload multiple files and return their IDs.
-  For now, this is a mock implementation that returns generated IDs.
-  In a real implementation, files would be stored in object storage (S3, etc.)
+  Upload multiple files and save them to the ./files directory.
+  Returns their IDs for later reference.
   """
   print(f"File upload called with {len(files)} files")
 
@@ -1304,21 +1303,38 @@ async def upload_files(
 
     file_ids = []
     max_file_size = 10 * 1024 * 1024  # 10MB limit per file
+    files_dir = Path("./files")
+    
+    # Ensure files directory exists
+    files_dir.mkdir(exist_ok=True)
 
     for file in files:
-      # Read file to check size (in real implementation, would stream to storage)
+      # Read file to check size and content
       contents = await file.read()
       if len(contents) > max_file_size:
         raise HTTPException(status_code=413, detail=f"File {file.filename} exceeds maximum size of 10MB")
 
-      # Generate a unique file ID
-      # In real implementation, this would be the ID from object storage
-      file_id = f"file_{int(time.time() * 1000)}_{secrets.token_hex(8)}"
+      # Generate a unique file ID and preserve original extension
+      timestamp = int(time.time() * 1000)
+      random_suffix = secrets.token_hex(8)
+      file_id = f"file_{timestamp}_{random_suffix}"
+      
+      # Preserve file extension if present
+      if file.filename and "." in file.filename:
+        original_ext = Path(file.filename).suffix
+        stored_filename = f"{file_id}{original_ext}"
+      else:
+        stored_filename = file_id
+      
+      # Save file to disk
+      file_path = files_dir / stored_filename
+      with open(file_path, "wb") as f:
+        f.write(contents)
+      
       file_ids.append(file_id)
+      print(f"Uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes) saved to {file_path}")
 
-      print(f"Mock uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes)")
-
-      # Reset file position
+      # Reset file position (not needed after saving, but good practice)
       await file.seek(0)
 
     return file_ids
@@ -1354,7 +1370,7 @@ if os.getenv("USE_DEV_CERTS") == "True":
   cert_file, key_file = setup_development_certificates()
 
   print(f"""
-    🔐 Development HTTPS certificates generated!
+    [SSL] Development HTTPS certificates generated!
 
     To trust these certificates in development:
     1. Certificate Authority (CA) file: devcerts/ca.pem (import this into your browser/system)
@@ -1362,7 +1378,7 @@ if os.getenv("USE_DEV_CERTS") == "True":
     3. You might need to add an exception in your browser for localhost.
     4. For Angular development, you might need to set NODE_TLS_REJECT_UNAUTHORIZED='0' in your environment.
 
-    ⚠️  These are self-signed certificates for development only! Do not use in production.
+    [WARNING] These are self-signed certificates for development only! Do not use in production.
     """)
 
   ssl_config = {
@@ -1380,13 +1396,13 @@ if __name__ == "__main__":
   run_args = {"host": host, "port": port, "reload": True}
   if ssl_config:
     run_args.update(ssl_config)
-    print(f"🚀 Starting server at https://{host}:{port}")
-    print(f"📄 OpenAPI schema available at: https://{host}:{port}{app.openapi_url}")
-    print(f"📚 Swagger UI available at: https://{host}:{port}/api/docs")
+    print(f"[SERVER] Starting server at https://{host}:{port}")
+    print(f"[API] OpenAPI schema available at: https://{host}:{port}{app.openapi_url}")
+    print(f"[DOCS] Swagger UI available at: https://{host}:{port}/api/docs")
   else:
-    print(f"🚀 Starting server at http://{host}:{port}")
-    print(f"📄 OpenAPI schema available at: http://{host}:{port}{app.openapi_url}")
-    print(f"📚 Swagger UI available at: http://{host}:{port}/api/docs")
+    print(f"[SERVER] Starting server at http://{host}:{port}")
+    print(f"[API] OpenAPI schema available at: http://{host}:{port}{app.openapi_url}")
+    print(f"[DOCS] Swagger UI available at: http://{host}:{port}/api/docs")
 
   current_script_name = Path(__file__).stem
   uvicorn.run(f"{current_script_name}:app", **run_args)
