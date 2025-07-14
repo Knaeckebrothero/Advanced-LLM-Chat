@@ -1,146 +1,327 @@
-import { FilePreview } from './file-preview';
-
+import { FilePreview, UploadStatus, FilePreviewUtil } from './file-preview';
 
 /**
- * Represents the structure of a message within a conversation.
+ * Message Type System
  *
- * This interface defines the essential properties that a message object must have
- * in order to be identified and associated within a conversation context.
- * It includes metadata such as sender role, timestamp, and conversation association.
+ * This file uses a hybrid approach with TypeScript discriminated unions
+ * to support multiple message types (text, voice, etc.) while maintaining
+ * type safety and backwards compatibility.
  *
- * Properties:
- * - `id`: A unique identifier for the message.
- * - `conversationId`: An identifier for the conversation that the message belongs to.
- * - `roleName`: Specifies the role of the sender (e.g., user or system).
- * - `content`: The textual content of the message.
- * - `time`: The timestamp indicating when the message was sent.
+ * File Handling:
+ * - We use the existing FilePreview system for file attachments
+ * - FilePreview contains the actual File object and tracks upload progress
+ * - When sending to the API, we only send file references (FileAttachment)
+ * - When receiving from the API, we reconstruct FilePreview objects
  */
-interface MessageInterface {
-  id: number;  // Id of the message
+
+/**
+ * Represents the metadata structure of a message within a conversation.
+ *
+ * This interface defines the essential properties that all message types share,
+ * providing identification and association within a conversation context.
+ */
+interface MessageMetadata {
+  id: number;  // Unique identifier for the message
   conversationId: number;  // Id of the conversation the message belongs to
   roleName: string;  // Role name of the participant who sent the message
   time: Date;  // Time the message was sent (in Date format)
 }
 
+/**
+ * Minimal file attachment info for API communication
+ * This is what we send to the server after files are uploaded
+ */
+interface FileAttachment {
+  fileId: string;      // Server-assigned ID
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+}
 
-export class Message {
-  private metadata: MessageInterface;
-  private _content: string;  // Text content of the message
-  private _attachments?: FilePreview[];  // List of ids for the uploaded documents
+/**
+ * Text message content with optional attachments
+ *
+ * Note on file handling:
+ * - attachments: FilePreview[] - Used locally, contains File objects and upload status
+ * - When sending to API, we extract just the file references (FileAttachment)
+ * - When receiving from API, we reconstruct FilePreview objects
+ */
+interface TextContent {
+  type: 'text';
+  content: string;
+  attachments?: FilePreview[];      // Full FilePreview objects for local state
+}
 
-  constructor(metadata: MessageInterface, content: string, attachments?: FilePreview[]) {
-    this.metadata = metadata;
-    this._content = content;
-    this._attachments = attachments;
-  }
+/**
+ * Voice message content
+ */
+interface VoiceContent {
+  type: 'voice';
+  audioData: string;  // base64 encoded audio
+  duration: number;  // in seconds
+  mimeType: string;
+  transcript?: string;  // Optional transcript for accessibility
+  waveform?: number[];  // Optional waveform data for visualization
+}
 
-  // Getter methods
+// Union type for all possible message content types
+type MessageContent = TextContent | VoiceContent;
+
+/**
+ * Main Message class that handles all message types
+ * Uses generics to provide type safety for specific content types
+ */
+export class Message<T extends MessageContent = MessageContent> {
+  constructor(
+    private metadata: MessageMetadata,
+    public content: T
+  ) {}
+
+  // Getters for metadata
   get id() { return this.metadata.id; }
   get conversationId() { return this.metadata.conversationId; }
   get roleName() { return this.metadata.roleName; }
   get time() { return this.metadata.time; }
-  get content() { return this._content; }
-  get attachments() { return this._attachments; }
+  get type() { return this.content.type; }
 
-  // Setter methods
+  // Setters for metadata (maintaining compatibility with existing code)
   set id(newId: number) { this.metadata.id = newId; }
   set conversationId(newConversationId: number) { this.metadata.conversationId = newConversationId; }
   set roleName(newRoleName: string) { this.metadata.roleName = newRoleName; }
   set time(newTime: Date) { this.metadata.time = newTime; }
-  set content(newContent: string) { this._content = newContent; }
-  set attachments(newAttachments: FilePreview[]) { this._attachments = newAttachments; }
 
-  // Factory method to create from API response
-  static fromApiFormat(data: {
-    id: number,
-    conversationId: number,
-    roleName: string,
+  // Factory method for creating text messages
+  static createText(
+    metadata: MessageMetadata,
     content: string,
-    time: number
-  }): Message {
-    return new Message({
+    attachments?: FilePreview[]
+  ): Message<TextContent> {
+    return new Message(metadata, {
+      type: 'text',
+      content,
+      attachments
+    });
+  }
+
+  // Factory method for creating voice messages
+  static createVoice(
+    metadata: MessageMetadata,
+    audioData: string,
+    duration: number,
+    mimeType: string,
+    transcript?: string,
+    waveform?: number[]
+  ): Message<VoiceContent> {
+    return new Message(metadata, {
+      type: 'voice',
+      audioData,
+      duration,
+      mimeType,
+      transcript,
+      waveform
+    });
+  }
+
+  // Factory method to create from API response (backwards compatibility)
+  static fromApiResponse(data: any): Message {
+    const metadata: MessageMetadata = {
       id: data.id,
       conversationId: data.conversationId,
       roleName: data.roleName,
       time: new Date(data.time * 1000)
-    }, data.content);
-  }
-
-  // Convert to API format
-  toApiFormat() {
-    return {
-      id: this.id,
-      conversationId: this.conversationId,
-      roleName: this.roleName,
-      content: this.content,
-      time: Math.floor(this.time.getTime() / 1000)
     };
+
+    // Determine message type based on data
+    if (data.type === 'voice' && data.audioData) {
+      return Message.createVoice(
+        metadata,
+        data.audioData,
+        data.duration,
+        data.mimeType,
+        data.transcript,
+        data.waveform
+      );
+    } else {
+      // Convert attachment references from API to FilePreview objects
+      let attachments: FilePreview[] | undefined;
+      if (data.attachments && Array.isArray(data.attachments)) {
+        attachments = data.attachments.map((ref: any) => ({
+          id: ref.fileId || ref.id,
+          file: new File([], ref.fileName || ref.name || 'unknown'), // Placeholder
+          name: ref.fileName || ref.name || 'unknown',
+          size: ref.fileSize || ref.size || 0,
+          sizeFormatted: FilePreviewUtil.formatFileSize(ref.fileSize || ref.size || 0),
+          type: FilePreviewUtil.getFileType(ref.mimeType || 'application/octet-stream'),
+          mimeType: ref.mimeType || 'application/octet-stream',
+          uploadStatus: UploadStatus.COMPLETED
+        }));
+      }
+
+      // Default to text message for backwards compatibility
+      return Message.createText(
+        metadata,
+        data.content || '',
+        attachments
+      );
+    }
   }
 
   // Convert to API send format
   toApiSend() {
-    if(this.attachments){
-      return {
-        conversationId: this.conversationId,
-        roleName: this.roleName,
-        content: this.content,
-        time: Math.floor(this.time.getTime() / 1000),
-        attachments: this.attachments // TODO: How do we handle the attachments???
-      };
-    }
-
-    return {
+    const base = {
       conversationId: this.conversationId,
       roleName: this.roleName,
-      content: this.content,
-      time: Math.floor(this.time.getTime() / 1000)
+      time: Math.floor(this.time.getTime() / 1000),
+      type: this.content.type
+    };
+
+    switch (this.content.type) {
+      case 'text':
+        // For API, we only send the attachment references, not the full FilePreview objects
+        // Only include files that have completed uploading
+        const attachmentRefs = this.content.attachments
+          ?.filter(a => a.uploadStatus === UploadStatus.COMPLETED)
+          .map(a => ({
+            fileId: a.id,
+            fileName: a.name,
+            fileSize: a.size,
+            mimeType: a.mimeType
+          }));
+
+        return {
+          ...base,
+          content: this.content.content,
+          ...(attachmentRefs && attachmentRefs.length > 0 && { attachments: attachmentRefs })
+        };
+
+      case 'voice':
+        return {
+          ...base,
+          audioData: this.content.audioData,
+          duration: this.content.duration,
+          mimeType: this.content.mimeType,
+          ...(this.content.transcript && { transcript: this.content.transcript }),
+          ...(this.content.waveform && { waveform: this.content.waveform })
+        };
+
+      default:
+        // Type guard - this should never happen
+        const _exhaustive: never = this.content;
+        throw new Error(`Unknown message type: ${(_exhaustive as any).type}`);
+    }
+  }
+
+  // Convert to API generate format
+  toApiGenerate(participant: string) {
+    return {
+      conversationId: this.conversationId,
+      roleName: participant,
+      time: Math.floor(this.time.getTime() / 1000),
+      type: this.content.type
     };
   }
 
-  // Convert to API patch format
+  // Convert to API patch format (only for text messages)
   toApiPatch() {
-      if (!this.id) {
-          throw new Error('Cannot patch message without ID');
-      } else if (!this.conversationId) {
-          throw new Error('Cannot patch message without conversation ID');
-      } else if (!this.content) {
-          throw new Error('Cannot patch message without content');
-      }
-      return {
-          id: this.id,
-          conversationId: this.conversationId,
-          content: this.content
-      };
-  }
-
-  // Convert to API action format used to perform an action (e.g. regenerating or deleting the message)
-  toApiAction() {
-    if (!this.metadata.id) {
-      throw new Error('Cannot delete message without ID');
-    } else if (!this.metadata.conversationId) {
-      throw new Error('Cannot delete message without conversation ID');
+    if (!this.id) {
+      throw new Error('Cannot patch message without ID');
     }
+    if (!this.conversationId) {
+      throw new Error('Cannot patch message without conversation ID');
+    }
+
+    // Only text messages can be patched
+    if (this.content.type !== 'text') {
+      throw new Error(`Cannot patch ${this.content.type} messages`);
+    }
+
     return {
       id: this.id,
       conversationId: this.conversationId,
+      content: this.content.content
     };
   }
 
-  // TODO: Do we still need this?
-  // Compute hash value for this message
+  // Convert to API delete format
+  toApiDelete() {
+    if (!this.id) {
+      throw new Error('Cannot delete message without ID');
+    }
+    if (!this.conversationId) {
+      throw new Error('Cannot delete message without conversation ID');
+    }
+
+    return {
+      id: this.id,
+      conversationId: this.conversationId
+    };
+  }
+
+  // Type guards for type-safe content access
+  isText(): this is Message<TextContent> {
+    return this.content.type === 'text';
+  }
+
+  isVoice(): this is Message<VoiceContent> {
+    return this.content.type === 'voice';
+  }
+
+  // Get text content (for backwards compatibility)
+  get textContent(): string | undefined {
+    if (this.isText()) {
+      return this.content.content;
+    }
+    return undefined;
+  }
+
+  // Check if message has attachments
+  hasAttachments(): boolean {
+    if (this.isText() && this.content.attachments) {
+      return this.content.attachments.length > 0;
+    }
+    return false;
+  }
+
+  // Get attachments (for backwards compatibility)
+  get attachments(): FilePreview[] | undefined {
+    if (this.isText()) {
+      return this.content.attachments;
+    }
+    return undefined;
+  }
+
+  // Utility method to get display content
+  getDisplayContent(): string {
+    switch (this.content.type) {
+      case 'text':
+        return this.content.content;
+      case 'voice':
+        return `🎤 Voice message (${this.formatDuration(this.content.duration)})`;
+      default:
+        return 'Unknown message type';
+    }
+  }
+
+  // Helper to format duration
+  private formatDuration(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Compute hash value for this message (kept for compatibility)
   computeHash(): number {
-      if (!this.content) return 0;
+    const contentString = this.getDisplayContent();
+    if (!contentString) return 0;
 
-      let hashValue = 0;
-      hashValue += this.content.charCodeAt(0);
-      hashValue += this.content.charCodeAt(this.content.length - 1);
-      hashValue += this.content.length;
+    let hashValue = 0;
+    hashValue += contentString.charCodeAt(0);
+    hashValue += contentString.charCodeAt(contentString.length - 1);
+    hashValue += contentString.length;
 
-      return hashValue % (2**32);
+    return hashValue % (2**32);
   }
 }
 
-
-export class VoiceMessage {
-  // TODO: How do we implement this one?
-}
+// For backwards compatibility - export a type for the old Message structure
+export type LegacyMessage = Message<TextContent>;

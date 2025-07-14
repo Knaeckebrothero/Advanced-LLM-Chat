@@ -72,6 +72,45 @@
       }
     }
   }
+
+  // Voice message styling
+  &.message-voice {
+    .voice-message {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      .voice-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .voice-icon {
+          font-size: 1.2em;
+        }
+
+        .voice-duration {
+          font-weight: 500;
+          color: vars.$color-font-dark;
+        }
+      }
+
+      .voice-transcript {
+        padding: 8px;
+        background-color: rgba(0, 0, 0, 0.05);
+        border-radius: 8px;
+        font-style: italic;
+        color: vars.$color-font-dark;
+        opacity: 0.9;
+      }
+
+      audio {
+        width: 100%;
+        margin-top: 8px;
+        border-radius: 4px;
+      }
+    }
+  }
 }
 
 // Message username
@@ -96,6 +135,38 @@
 
   // Prevent text from overflowing the message bubble
   max-width: 100%;
+
+  // Attachments styling
+  .message-attachments {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+
+    .attachment-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 0;
+
+      .attachment-icon {
+        font-size: 1em;
+      }
+
+      .attachment-name {
+        font-weight: 500;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .attachment-size {
+        font-size: 0.85em;
+        opacity: 0.7;
+        white-space: nowrap;
+      }
+    }
+  }
 }
 
 // Message footer
@@ -138,6 +209,20 @@
 // Display parts of the message in italic if wrapped in <em> tags
 em {
   font-style: italic;
+}
+
+// Editable message styling
+.editable-message {
+  outline: none;
+  border: 1px dashed rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  border-radius: 4px;
+  min-height: 1.5em;
+
+  &:focus {
+    border-color: vars.$color-primary;
+    background-color: rgba(255, 255, 255, 0.5);
+  }
 }
 
 // Responsive adjustment, allowing the message to take more space on smaller screens

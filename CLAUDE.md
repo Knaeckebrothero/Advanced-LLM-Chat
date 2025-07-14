@@ -11,8 +11,10 @@ This is an Angular 19.2.2 application with a FastAPI backend for an advanced LLM
 ### Frontend Development
 ```bash
 npm start          # Start development server with SSL (https://localhost:4200)
-npm run build      # Production build
+npm run build      # Production build (outputs to dist/advanced-llm-chat/browser/)
 npm test           # Run unit tests with Karma/Jasmine
+npm run watch      # Build with watch mode for development
+ng test --include='**/specific.spec.ts'  # Run specific test file
 ```
 
 ### Backend Development
@@ -59,8 +61,8 @@ The FastAPI backend (`backend_mockup.py`) provides:
 ### Key Patterns
 - **Offline-First**: All data stored in IndexedDB, synced with backend when available
 - **Observable Pattern**: Heavy use of RxJS for async operations and state management
-- **Guard Pattern**: Route protection via AuthGuard
-- **Interceptor Pattern**: Automatic auth header injection
+- **Guard Pattern**: Route protection via AuthGuard (currently allows guest access)
+- **Interceptor Pattern**: Automatic auth header injection via `AuthInterceptor`
 
 ## Git Workflow
 
@@ -90,6 +92,8 @@ The project follows Git Flow:
 4. **Authentication**: All API calls require session authentication via `AuthInterceptor`
 5. **Environment Variables**: Use Angular environments for configuration, not process.env
 6. **SSL Required**: Both frontend and backend require HTTPS - certificates auto-generated in development
+7. **Build Output**: Production builds output to `dist/advanced-llm-chat/browser/` (Angular 17+ pattern)
+8. **No Linting**: Project relies on TypeScript strict mode only - no ESLint/TSLint configured
 
 ## Testing Approach
 
@@ -97,3 +101,12 @@ The project follows Git Flow:
 - Test files are co-located with components (`.spec.ts`)
 - Run specific tests: `ng test --include='**/specific-component.spec.ts'`
 - Backend tests would use pytest (not currently implemented)
+
+## API Endpoints
+
+The backend provides these main endpoints (all require session authentication):
+- **Auth**: `/api/auth/mock-login`, `/api/auth/guest-login`, `/api/auth/logout`, `/api/auth/me`
+- **Conversations**: `/api/conversations`, `/api/conversation/create`, `/api/conversation/messages/{id}/{timestamp}/{count}`
+- **Messages**: `/api/message/send`, `/api/message/generate`, `/api/message/patch`, `/api/message/delete/{conversation_id}/{message_id}`
+- **Settings**: `/api/settings` (GET/PUT)
+- **LLMs**: `/api/llms` (list available models)

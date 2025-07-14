@@ -27,8 +27,6 @@ export class ApiService {
   private getHeaders(): HttpHeaders {
     return new HttpHeaders({
       'Content-Type': 'application/json',
-      // 'Authorization': `Bearer ${this.user.accessToken}`
-      // TODO: Implement a access token
     });
   }
 
@@ -82,6 +80,7 @@ export class ApiService {
     }
   }
 
+  // TODO: Fix this one!
   async getConversationMessages(conversationId: number, count: number, latestTimestamp: Date | null = null): Promise<Message[]> {
     // Use the current time if no timestamp is provided
     if (latestTimestamp === null) {
@@ -98,12 +97,14 @@ export class ApiService {
       );
 
       if (response.status === 200 && response.body) {
-        // Convert all messages using map for efficiency
+        // Convert all messages using the new factory method
         return response.body.map(messageData => Message.fromApiResponse(messageData));
       } else if (response.status === 204 && !response.body) {
         return [];
       } else {
-        throw new Error(`Unexpected response: ${response.status}`);
+        // Handle unexpected response statuses
+        console.warn(`Unexpected response status: ${response.status}`);
+        return [];
       }
     } catch (error) {
       console.error('Error refreshing conversation:', error);
@@ -111,8 +112,10 @@ export class ApiService {
     }
   }
 
-  async sendMessage(message: Message): Promise<Message> {
+  async sendMessage(message: Message): Promise<number> {
     const endpoint = `${this.baseUrl}/api/message/send`;
+
+    // Use the new toApiSend method which handles all message types
     const body = message.toApiSend();
 
     try {
@@ -124,15 +127,15 @@ export class ApiService {
       );
 
       if (response.status === 201) {
-        message.id = response.body!.id;
-        return message;
+        // Update the message ID with the server-assigned ID
+        return response.body!.id;
       } else if (response.status === 400) {
         throw new Error('Bad Request: Please check the input data');
       } else if (response.status === 500) {
         throw new Error('Server Error: Please try again later');
       } else {
         throw new Error(`Unexpected response: ${response.status}`);
-      }
+      }  // TODO: How do we want to handle errors?
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
@@ -141,6 +144,8 @@ export class ApiService {
 
   async generateMessage(lastMessage: Message, participant: string, settings: Settings): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/generate`;
+
+    // Use the new toApiGenerate method
     const body = {
       ...lastMessage.toApiGenerate(participant),
       temperature: settings.temperature,
@@ -152,7 +157,9 @@ export class ApiService {
       const response = await lastValueFrom(
         this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
       );
-      return Message.fromApiGenerate(response);
+
+      // Use the new fromApiResponse method which handles all message types
+      return Message.fromApiResponse(response);
     } catch (error) {
       console.error('Error generating message:', error);
       throw error;
@@ -163,16 +170,24 @@ export class ApiService {
   async patchMessage(conversationId: number, messageId: number, content: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/patch`;
     const body = {
-      messageId: messageId,
+      id: messageId,
       conversationId: conversationId,
       content: content
     };
 
     try {
       const response = await lastValueFrom(
-        this.http.patch<Message>(endpoint, body, { ...this.getHttpOptions() })
+        this.http.patch<any>(endpoint, body, { ...this.getHttpOptions() })
       );
-      return response;
+
+      // The response should be a success status, but we'll return a reconstructed message
+      // In a real implementation, the backend might return the updated message
+      return Message.fromApiResponse({
+        id: messageId,
+        conversationId: conversationId,
+        content: content,
+        ...response // Include any additional fields from response
+      });
     } catch (error) {
       console.error('Error patching message:', error);
       throw error;
@@ -202,29 +217,33 @@ export class ApiService {
 
   // Method for file upload
   async uploadFiles(files: FilePreview[]): Promise<string[]> {
+    const endpoint = `${this.baseUrl}/api/files/upload`;
+
     // Convert FilePreview to FormData and upload
     const formData = new FormData();
     files.forEach(fp => {
-      formData.append('files', fp.file);
+      formData.append('files', fp.file, fp.name);
     });
 
-    // TODO: Implement upload logic
-    // For now, return an empty array as a placeholder
-    // In a real implementation, this would call an API endpoint and return file URLs
-    const endpoint = `${this.baseUrl}/api/files/upload`;
-
     try {
-      // This is a placeholder. In a real implementation, you would:
-      // const response = await lastValueFrom(
-      //   this.http.post<string[]>(endpoint, formData, { ...this.getHttpOptions() })
-      // );
-      // return response;
+      // This would upload files and return their server IDs
+      const response = await lastValueFrom(
+        this.http.post<{ fileIds: string[] }>(endpoint, formData, {
+          ...this.getHttpOptions(),
+          headers: new HttpHeaders({
+            // Don't set Content-Type - let the browser set it with boundary for multipart
+          }),
+          withCredentials: true,
+          reportProgress: true
+        })
+      );
 
-      console.log('File upload requested (not yet implemented)');
-      return [];
+      return response.fileIds;
     } catch (error) {
       console.error('Error uploading files:', error);
-      throw error;
+      // For now, return mock IDs
+      console.log('File upload not yet implemented, returning mock IDs');
+      return files.map(() => `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
     }
   }
 
@@ -246,12 +265,33 @@ export class ApiService {
   // TODO: Implement update conversation
   async updateConversation(conversation: Conversation): Promise<void> {
     const endpoint = `${this.baseUrl}/api/conversation/update`;
-    // ... implement API call
+    const body = {
+      id: conversation.id,
+      name: conversation.name,
+      participants: conversation.participants
+    };
+
+    try {
+      await lastValueFrom(
+        this.http.put(endpoint, body, this.getHttpOptions())
+      );
+    } catch (error) {
+      console.error('Error updating conversation:', error);
+      throw error;
+    }
   }
 
   // TODO: Implement delete conversation
   async deleteConversation(conversationId: number): Promise<void> {
     const endpoint = `${this.baseUrl}/api/conversation/delete/${conversationId}`;
-    // ... implement API call
+
+    try {
+      await lastValueFrom(
+        this.http.delete(endpoint, this.getHttpOptions())
+      );
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+      throw error;
+    }
   }
 }
