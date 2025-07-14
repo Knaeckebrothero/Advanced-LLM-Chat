@@ -288,13 +288,16 @@ export class ChatService {
       }
     }
 
-    const message = new Message({
-      id: Math.floor(new Date().getTime() / 1000),
-      conversationId: this.conversation.id,
-      roleName: roleName,
-      content: content,
-      time: new Date()
-    });
+    // Use the new factory method to create a text message
+    const message = Message.createText(
+      {
+        id: Math.floor(new Date().getTime() / 1000),
+        conversationId: this.conversation.id,
+        roleName: roleName,
+        time: new Date()
+      },
+      content
+    );
 
     // Add the message to the conversation
     this.addMessage(message);
@@ -304,15 +307,22 @@ export class ChatService {
     if (backendAvailable) {
       try {
         const response = await this.apiService.sendMessage(message);
-        if(message.id !== response.id){
-          console.log('Message ID mismatch, updating local state:', message.id, response.id);
-          await this.dbService.addMessage(response);
+        const responseMessage = Message.createText({
+          id: response,
+          conversationId: this.conversation.id,
+          roleName: roleName,
+          time: message.time
+        }, content);
+
+        if(message.id !== response){
+          console.log('Message ID mismatch, updating local state:', message.id, response);
+          await this.dbService.addMessage(responseMessage);
           await this.dbService.deleteMessage(message.id);
 
           const messages = this.messagesSubject.getValue();
           const index = messages.findIndex(m => m.id === message.id);
           if(index !== -1) {
-            messages[index] = response;
+            messages[index] = responseMessage;
             this.messagesSubject.next([...messages]);
           }
         } else {
@@ -343,7 +353,208 @@ export class ChatService {
     files: FilePreview[],
     roleName: string = 'user'
   ): Promise<void> {
-    // TODO: Implementation for sending messages with attachments
+    // Handle new conversation creation if needed
+    if (this.isNewConversationSubject.getValue()) {
+      const title = content.length > 30 ? content.substring(0, 27) + '...' : content || 'New conversation with files';
+      await this.createNewConversation(title);
+    }
+
+    // Upload files first if backend is available
+    const backendAvailable = await this.isBackendAvailable();
+    if (backendAvailable && files.length > 0) {
+      try {
+        // TODO: Implement actual file upload, perhaps we should handle the upload when the user selects a file in
+        //  the ui (claude does this, if you drop the file it's uploaded, when you hit send it's used).
+        const uploadedFileIds = await this.apiService.uploadFiles(files);
+
+        // Update file IDs with server-assigned IDs
+        files.forEach((f, index) => {
+          f.uploadStatus = UploadStatus.COMPLETED;
+          f.id = uploadedFileIds[index] || `file-${Date.now()}-${Math.random()}`;
+        });
+      } catch (error) {
+        console.error('Error uploading files:', error);
+        // Continue anyway - files will be marked as failed
+        files.forEach(f => {
+          f.uploadStatus = UploadStatus.FAILED;
+          f.error = 'Upload failed';
+        });
+      }
+    }
+
+    // Create message with file attachments
+    const message = Message.createText(
+      {
+        id: Math.floor(new Date().getTime() / 1000),
+        conversationId: this.conversation.id,
+        roleName: roleName,
+        time: new Date()
+      },
+      content,
+      files
+    );
+
+    // Add the message to the conversation
+    this.addMessage(message);
+
+    // Send to backend if available
+    if (backendAvailable) {
+      try {
+        // TODO: Fix redundancy issue!
+        const response = await this.apiService.sendMessage(message);
+
+        // Handle ID mismatch same as regular messages
+        if(message.id !== response){
+          // Create a new message object with the server-assigned ID
+          const responseMessage = Message.createText({
+            id: response,
+            conversationId: this.conversation.id,
+            roleName: message.roleName,
+            time: message.time
+          }, message.textContent ? message.textContent : "", message.attachments);
+
+          // Update the message in the database
+          await this.updateMessageId(message.id, responseMessage);
+        }
+      } catch(error) {
+        console.error('Error sending message with files:', error);
+      }
+    }
+
+    // Update conversation and trigger sync
+    this.conversation.updatedAt = new Date();
+    await this.dbService.updateConversation(this.conversation);
+    await this.loadAllConversations();
+    this.syncInBackground();
+  }
+
+  // Send a voice message
+  public async sendVoiceMessage(
+    audioBlob: Blob,
+    duration: number,
+    mimeType: string = 'audio/webm',
+    roleName: string = 'user'
+  ): Promise<void> {
+    // Handle new conversation creation if needed
+    if (this.isNewConversationSubject.getValue()) {
+      await this.createNewConversation('Voice conversation');
+    }
+
+    // Convert blob to base64
+    const base64Audio = await this.blobToBase64(audioBlob);
+
+    // Create voice message using factory method
+    const message = Message.createVoice(
+      {
+        id: Math.floor(new Date().getTime() / 1000),
+        conversationId: this.conversation.id,
+        roleName: roleName,
+        time: new Date()
+      },
+      base64Audio,
+      duration,
+      mimeType
+    );
+
+    // Add the message to the conversation
+    this.addMessage(message);
+
+    // Send to backend if available
+    const backendAvailable = await this.isBackendAvailable();
+    if (backendAvailable) {
+      try {
+        const response = await this.apiService.sendMessage(message);
+        if(message.id !== response){
+          // Create a new message object with the server-assigned ID
+          const responseMessage = Message.createText({
+            id: response,
+            conversationId: this.conversation.id,
+            roleName: message.roleName,
+            time: message.time
+          }, message.textContent ? message.textContent : "", message.attachments);
+
+          // Update the message in the database
+          await this.updateMessageId(message.id, responseMessage);
+        }
+      } catch(error) {
+        console.error('Error sending voice message:', error);
+      }
+    }
+
+    // Update conversation and trigger sync
+    this.conversation.updatedAt = new Date();
+    await this.dbService.updateConversation(this.conversation);
+    await this.loadAllConversations();
+    this.syncInBackground();
+  }
+
+  // Helper method to convert blob to base64
+  private blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        // Remove the data URL prefix (e.g., "data:audio/webm;base64,")
+        const base64Data = base64String.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Helper method to create a new conversation
+  private async createNewConversation(title: string): Promise<void> {
+    const backendAvailable = await this.isBackendAvailable();
+
+    if (!backendAvailable) {
+      // Create local-only conversation
+      const localConv = new Conversation(
+        Math.floor(Date.now() / 1000),
+        0,
+        title,
+        ['user', 'Assistant']
+      );
+      this.conversation = localConv;
+      await this.dbService.addConversation(this.conversation);
+    } else {
+      // Create on server
+      const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
+      try {
+        const createdConv = await this.apiService.createConversation(newConvData);
+        this.conversation = createdConv;
+        await this.dbService.addConversation(this.conversation);
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        // Fallback to local
+        const localConv = new Conversation(
+          Math.floor(Date.now() / 1000),
+          0,
+          title,
+          ['user', 'Assistant']
+        );
+        this.conversation = localConv;
+        await this.dbService.addConversation(this.conversation);
+      }
+    }
+
+    this.isNewConversationSubject.next(false);
+    await this.loadAllConversations();
+    this.displayService.setActiveConversation(this.conversation.id);
+  }
+
+  // Helper method to update message ID after server response
+  private async updateMessageId(oldId: number, newMessage: Message): Promise<void> {
+    console.log('Message ID mismatch, updating local state:', oldId, newMessage.id);
+    await this.dbService.addMessage(newMessage);
+    await this.dbService.deleteMessage(oldId);
+
+    const messages = this.messagesSubject.getValue();
+    const index = messages.findIndex(m => m.id === oldId);
+    if(index !== -1) {
+      messages[index] = newMessage;
+      this.messagesSubject.next([...messages]);
+    }
   }
 
   // Generate a message
@@ -352,23 +563,23 @@ export class ChatService {
     const backendAvailable = await this.isBackendAvailable();
     if (!backendAvailable) {
       // Add a placeholder message when offline
-      const offlineMessage = new Message({
-        id: Math.floor(new Date().getTime() / 1000),
-        conversationId: this.conversation.id,
-        roleName: participant,
-        content: 'Sorry, I cannot generate responses while offline. Please check your connection.',
-        time: new Date()
-      });
+      const offlineMessage = Message.createText(
+        {
+          id: Math.floor(new Date().getTime() / 1000),
+          conversationId: this.conversation.id,
+          roleName: participant,
+          time: new Date()
+        },
+        'Sorry, I cannot generate responses while offline. Please check your connection.'
+      );
       this.addMessage(offlineMessage);
       return;
     }
 
     // Original code continues...
     const currentMessages = this.messagesSubject.getValue();
-    // Convert the last message to a Message instance if it's not already one
-    const lastMessage = currentMessages[currentMessages.length - 1] instanceof Message
-      ? currentMessages[currentMessages.length - 1]
-      : new Message(currentMessages[currentMessages.length - 1]);
+    // Get the last message
+    const lastMessage = currentMessages[currentMessages.length - 1];
 
     console.log('Generating message:', lastMessage, participant);
 
@@ -396,13 +607,15 @@ export class ChatService {
       } else {
         console.error('Error generating message:', error);
         // Add error message to chat
-        const errorMessage = new Message({
-          id: Math.floor(new Date().getTime() / 1000),
-          conversationId: this.conversation.id,
-          roleName: participant,
-          content: 'Sorry, I encountered an error while generating a response. Please try again.',
-          time: new Date()
-        });
+        const errorMessage = Message.createText(
+          {
+            id: Math.floor(new Date().getTime() / 1000),
+            conversationId: this.conversation.id,
+            roleName: participant,
+            time: new Date()
+          },
+          'Sorry, I encountered an error while generating a response. Please try again.'
+        );
         this.addMessage(errorMessage);
       }
       throw error;
@@ -416,22 +629,34 @@ export class ChatService {
       const conversationId = this.conversation.id;
 
       // Call the API to patch the message
-      const updatedMessage = await this.apiService.patchMessage(conversationId, messageId, content);
+      await this.apiService.patchMessage(conversationId, messageId, content);
 
       // Update the message in the local state
       const currentMessages = this.messagesSubject.getValue();
       const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
 
       if (messageIndex !== -1) {
-        currentMessages[messageIndex] = new Message({
-          ...currentMessages[messageIndex],
-          ...updatedMessage,
-        });
-        // currentMessages[messageIndex] = { ...currentMessages[messageIndex], ...updatedMessage };
-        this.messagesSubject.next([...currentMessages]);
+        const originalMessage = currentMessages[messageIndex];
 
-        // Update in database
-        await this.dbService.updateMessage(currentMessages[messageIndex]);
+        // Only text messages can be patched
+        if (originalMessage.isText()) {
+          // Create a new message instance with updated content
+          const updatedTextMessage = Message.createText(
+            {
+              id: originalMessage.id,
+              conversationId: originalMessage.conversationId,
+              roleName: originalMessage.roleName,
+              time: originalMessage.time
+            },
+            content,
+            originalMessage.content.attachments
+          );
+          currentMessages[messageIndex] = updatedTextMessage;
+          this.messagesSubject.next([...currentMessages]);
+
+          // Update in database
+          await this.dbService.updateMessage(updatedTextMessage);
+        }
       }
     } catch (error) {
       console.error('Error patching message:', error);

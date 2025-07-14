@@ -3,7 +3,8 @@ import { ChatService } from '../chat/chat.service';
 import { Message } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
 import { Subscription } from 'rxjs';
-import { FilePreview } from '../data/objects/file-preview';
+import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
+import { RecordingResult } from '../data/objects/recording';
 
 
 @Component({
@@ -78,18 +79,20 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   async onMessageSent(message: string): Promise<void> {
     if (message.trim() || this.pendingFiles.length > 0) {
       try {
-        // Log files for demo purposes
+        // Check if we have files to send
         if (this.pendingFiles.length > 0) {
-          console.log('Message sent with files:', this.pendingFiles);
+          console.log('Sending message with files:', this.pendingFiles);
+          // Use the new sendMessageWithFiles method
+          await this.chatService.sendMessageWithFiles(message, this.pendingFiles);
+          // Clear pending files after sending
+          this.pendingFiles = [];
+        } else {
+          // Regular text message without files
+          await this.chatService.sendMessage(message);
         }
 
-        // Wait for the message to be sent (and conversation created if needed)
-        await this.chatService.sendMessage(message);
-        console.log('User added message:', message);
+        console.log('User message sent:', message);
         this.scrollToBottom();
-
-        // Clear pending files after sending
-        this.pendingFiles = [];
 
         // Generate AI response after message is confirmed sent
         await this.generateMessage();
@@ -114,13 +117,50 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   onAudioRequested(): void {
     console.log('Audio recording requested');
     // The voice recording is now handled internally by the input field component
+    // The component will emit the audio through filesSelected when recording is complete
   }
 
-  // Handle file attachment request
-  onFileRequested(filePreviews: FilePreview[]): void {
+  // Handle file attachment request (including voice messages)
+  async onFileRequested(filePreviews: FilePreview[]): Promise<void> {
     console.log('Files selected:', filePreviews);
-    // Store files temporarily until message is sent
-    this.pendingFiles = filePreviews;
+
+    // Check if this is a voice message (audio file with specific naming pattern)
+    if (filePreviews.length === 1 &&
+      filePreviews[0].mimeType.startsWith('audio/') &&
+      filePreviews[0].name.includes('Voice message')) {
+
+      // This is a voice message, send it immediately
+      const voiceFile = filePreviews[0];
+
+      try {
+        // Extract duration from the name (format: "Voice message (MM:SS)")
+        const durationMatch = voiceFile.name.match(/\((\d+):(\d+)\)/);
+        let duration = 0;
+        if (durationMatch) {
+          const minutes = parseInt(durationMatch[1]);
+          const seconds = parseInt(durationMatch[2]);
+          duration = minutes * 60 + seconds;
+        }
+
+        // Send as voice message
+        await this.chatService.sendVoiceMessage(
+          voiceFile.file,
+          duration,
+          voiceFile.mimeType
+        );
+
+        console.log('Voice message sent');
+        this.scrollToBottom();
+
+        // Generate AI response
+        await this.generateMessage();
+      } catch (error) {
+        console.error('Error sending voice message:', error);
+      }
+    } else {
+      // Regular file attachments - store temporarily until message is sent
+      this.pendingFiles = [...this.pendingFiles, ...filePreviews];
+    }
   }
 
   // SIMPLIFIED: Camera is now handled by the input component directly
@@ -133,6 +173,10 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   onLocationRequested(): void {
     console.log('Location sharing requested');
     // TODO: Get and display current location
+    // When implemented, this could:
+    // 1. Get user's current location
+    // 2. Create a location message type
+    // 3. Send it using chatService
   }
 
   // Method to delete a message
@@ -143,7 +187,10 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   // Method to change a message
   patchMessage(message: Message) {
-    // Call the ChatService to alter the message
-    this.chatService.patchMessage(message.id!, "New message content");
+    // Only allow patching text messages
+    if (message.isText() && message.textContent) {
+      // Call the ChatService to alter the message
+      this.chatService.patchMessage(message.id!, "New message content");
+    }
   }
 }

@@ -1,38 +1,64 @@
 <!-- Message to be used within the Chat UI component -->
 <div class="message-display-container">
-    <div class="message" [class.message-user]="message.roleName === 'user'" [class.message-not-user]="message.roleName !== 'user'" [class.message-system]="message.roleName === 'system'">
-        <span class="message-user-name">{{ message.roleName }}</span>
+  <div class="message"
+       [class.message-user]="message.roleName === 'user'"
+       [class.message-not-user]="message.roleName !== 'user'"
+       [class.message-system]="message.roleName === 'system'"
+       [class.message-voice]="message.isVoice()">
 
-        <div class="message-body">
-            <div *ngIf="!editing" [innerHTML]="formatMessage(message.content)"></div>
-            <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
-                [innerText]="message.content!"
-                (blur)="updateContent(editableDiv.innerText)">
-            </div>
-        </div>
+    <span class="message-user-name">{{ message.roleName }}</span>
 
-        <div class="message-footer">
-            <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
-            <div *ngIf="!editing" class="message-actions">
-                <button mat-icon-button (click)="editMessage()" aria-label="Edit message">
-                    <mat-icon>edit</mat-icon>
-                </button>
-                <button mat-icon-button (click)="insertMessageAbove()" aria-label="Insert message">
-                    <mat-icon>add</mat-icon>
-                </button>
-                <button mat-icon-button (click)="deleteMessage()" aria-label="Regenerate message">
-                    <mat-icon>delete</mat-icon>
-                </button>
-            </div>
-            <div *ngIf="editing" class="message-actions">
-                <button mat-icon-button (click)="doneEditing()" aria-label="Done editing">
-                    <mat-icon>done</mat-icon>
-                </button>
-                <button mat-icon-button (click)="abortEditing()" aria-label="Abort editing">
-                    <mat-icon>clear</mat-icon>
-                </button>
-            </div>
-            <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
-        </div>
+    <div class="message-body">
+      <!-- Display formatted message when not editing -->
+      <div *ngIf="!editing" [innerHTML]="formatMessage(message)"></div>
+
+      <!-- Edit mode - only for text messages -->
+      <div *ngIf="editing && message.isText()"
+           contenteditable="true"
+           class="editable-message"
+           #editableDiv
+           [innerText]="message.textContent"
+           (blur)="updateContent(editableDiv.innerText)">
+      </div>
     </div>
+
+    <div class="message-footer">
+      <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
+      <div *ngIf="!editing" class="message-actions">
+        <!-- Only show edit button for text messages -->
+        <button *ngIf="isEditable"
+                mat-icon-button
+                (click)="editMessage()"
+                aria-label="Edit message">
+          <mat-icon>edit</mat-icon>
+        </button>
+        <button mat-icon-button
+                (click)="insertMessageAbove()"
+                aria-label="Insert message">
+          <mat-icon>add</mat-icon>
+        </button>
+        <button mat-icon-button
+                (click)="deleteMessage()"
+                aria-label="Delete message">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </div>
+
+      <!-- Edit mode actions -->
+      <div *ngIf="editing" class="message-actions">
+        <button mat-icon-button
+                (click)="doneEditing()"
+                aria-label="Done editing">
+          <mat-icon>done</mat-icon>
+        </button>
+        <button mat-icon-button
+                (click)="abortEditing()"
+                aria-label="Abort editing">
+          <mat-icon>clear</mat-icon>
+        </button>
+      </div>
+
+      <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
+    </div>
+  </div>
 </div>
