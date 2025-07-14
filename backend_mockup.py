@@ -406,7 +406,7 @@ def init_db():
     if 'is_guest' not in columns:
       print("Adding is_guest column to sessions table...")
       cur.execute('ALTER TABLE sessions ADD COLUMN is_guest BOOLEAN DEFAULT FALSE')
-    
+
     # Check if type column exists in messages table, if not add it
     cur.execute("PRAGMA table_info(messages)")
     columns = [column[1] for column in cur.fetchall()]
@@ -1031,11 +1031,11 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       return ErrorResponse(error="Access denied to this conversation")
 
     message_id = int(time.time() * 1000)
-    
+
     # Extract content based on message type
     content_str = ""
     message_type = getattr(request_body, 'type', 'text')  # Default to 'text' for backwards compatibility
-    
+
     if message_type == 'text':
       if isinstance(request_body.content, str):
         # Legacy format - just a string
@@ -1281,7 +1281,9 @@ async def delete_message(conversation_id: int, message_id: int, response: Respon
           status_code=status.HTTP_201_CREATED,
           responses={
             status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "No files provided"},
-            status.HTTP_413_PAYLOAD_TOO_LARGE: {"model": ErrorResponse, "description": "File too large"},
+            # status.HTTP_413_PAYLOAD_TOO_LARGE: {"model": ErrorResponse, "description": "File too large"},
+            # Does not work with the current version of starlette, use ENTITY_TOO_LARGE instead
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"model": ErrorResponse, "description": "File too large"},
             status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
           },
           tags=["Files"])
@@ -1295,32 +1297,32 @@ async def upload_files(
   In a real implementation, files would be stored in object storage (S3, etc.)
   """
   print(f"File upload called with {len(files)} files")
-  
+
   try:
     if not files:
       raise HTTPException(status_code=400, detail="No files provided")
-    
+
     file_ids = []
     max_file_size = 10 * 1024 * 1024  # 10MB limit per file
-    
+
     for file in files:
       # Read file to check size (in real implementation, would stream to storage)
       contents = await file.read()
       if len(contents) > max_file_size:
         raise HTTPException(status_code=413, detail=f"File {file.filename} exceeds maximum size of 10MB")
-      
+
       # Generate a unique file ID
       # In real implementation, this would be the ID from object storage
       file_id = f"file_{int(time.time() * 1000)}_{secrets.token_hex(8)}"
       file_ids.append(file_id)
-      
+
       print(f"Mock uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes)")
-      
+
       # Reset file position
       await file.seek(0)
-    
+
     return file_ids
-    
+
   except HTTPException:
     raise
   except Exception as e:

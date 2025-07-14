@@ -186,11 +186,8 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   }
 
   // Method to change a message
-  patchMessage(message: Message) {
-    // Only allow patching text messages
-    if (message.isText() && message.textContent) {
-      // Call the ChatService to alter the message
-      this.chatService.patchMessage(message.id!, "New message content");
-    }
+  patchMessage(messageId: number, content: string) {
+    // Call the ChatService to alter the message
+    this.chatService.patchMessage(messageId, content);
   }
 }

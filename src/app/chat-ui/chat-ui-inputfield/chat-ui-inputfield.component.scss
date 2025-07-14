@@ -146,6 +146,55 @@
     font-size: 10px;
     color: rgba(vars.$color-font-dark, 0.6);
   }
+
+  // Upload progress styles
+  .upload-progress {
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    mat-progress-bar {
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+    }
+
+    .progress-text {
+      font-size: 10px;
+      color: vars.$color-primary;
+      font-weight: 500;
+      min-width: 30px;
+      text-align: right;
+    }
+  }
+
+  // Upload status styles  
+  .upload-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+
+    .mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+
+      &.status-completed {
+        color: vars.$color-accent-success;
+      }
+
+      &.status-failed {
+        color: vars.$color-accent-danger;
+      }
+    }
+
+    .error-message {
+      font-size: 10px;
+      color: vars.$color-accent-danger;
+    }
+  }
 }
 
 .remove-file-button {
