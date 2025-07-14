@@ -10,11 +10,14 @@ This is an Angular 19.2.2 application with a FastAPI backend for an advanced LLM
 
 ### Frontend Development
 ```bash
-npm start          # Start development server with SSL (https://localhost:4200)
+npm start          # Start development server (http://localhost:4200)
 npm run build      # Production build (outputs to dist/advanced-llm-chat/browser/)
 npm test           # Run unit tests with Karma/Jasmine
 npm run watch      # Build with watch mode for development
 ng test --include='**/specific.spec.ts'  # Run specific test file
+
+# TypeScript compilation (no ESLint/TSLint configured)
+npx tsc --noEmit   # Type-check without building
 ```
 
 ### Backend Development
@@ -22,14 +25,25 @@ ng test --include='**/specific.spec.ts'  # Run specific test file
 # First run generates SSL certificates
 python backend_mockup.py
 
-# Start backend server
+# Start backend server with SSL
 uvicorn backend_mockup:app --reload --host localhost --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
+
+# Required environment variables (.env file):
+# USE_DEV_CERTS=True
+# REPLICATE_API_TOKEN=your_token_here
+# DB_DIR=./data
 ```
 
 ### Docker Development
 ```bash
+# Using docker-compose (recommended)
+cd docker
 docker-compose up -d --build              # Build and run locally
 docker-compose -f docker-compose.prod.yml up -d  # Use pre-built images from ghcr.io
+
+# Manual Docker commands
+docker build -f docker/Dockerfile -t advanced-llm-chat:latest .
+docker run -d -p 8080:80 -p 8443:443 advanced-llm-chat:latest
 ```
 
 ## Architecture Overview
@@ -63,6 +77,7 @@ The FastAPI backend (`backend_mockup.py`) provides:
 - **Observable Pattern**: Heavy use of RxJS for async operations and state management
 - **Guard Pattern**: Route protection via AuthGuard (currently allows guest access)
 - **Interceptor Pattern**: Automatic auth header injection via `AuthInterceptor`
+- **Message System**: Discriminated union types for different message formats (text, voice, files)
 
 ## Git Workflow
 
@@ -86,7 +101,7 @@ The project follows Git Flow:
 
 ## Important Considerations
 
-1. **TypeScript Strict Mode**: All code must pass strict TypeScript checks
+1. **TypeScript Strict Mode**: All code must pass strict TypeScript checks (`"strict": true` in tsconfig.json)
 2. **Angular Material**: Use existing Material components for UI consistency
 3. **IndexedDB Schema**: Database operations go through `DbService` - never access IndexedDB directly
 4. **Authentication**: All API calls require session authentication via `AuthInterceptor`
@@ -94,6 +109,8 @@ The project follows Git Flow:
 6. **SSL Required**: Both frontend and backend require HTTPS - certificates auto-generated in development
 7. **Build Output**: Production builds output to `dist/advanced-llm-chat/browser/` (Angular 17+ pattern)
 8. **No Linting**: Project relies on TypeScript strict mode only - no ESLint/TSLint configured
+9. **Message Type Safety**: Use Message factory methods (createText, createVoice) for type-safe message creation
+10. **Offline Support**: ChatService handles offline scenarios with local-only conversations and pending file uploads
 
 ## Testing Approach
 
@@ -110,3 +127,33 @@ The backend provides these main endpoints (all require session authentication):
 - **Messages**: `/api/message/send`, `/api/message/generate`, `/api/message/patch`, `/api/message/delete/{conversation_id}/{message_id}`
 - **Settings**: `/api/settings` (GET/PUT)
 - **LLMs**: `/api/llms` (list available models)
+- **Files**: `/api/files/upload` (file upload endpoint - mock implementation)
+
+## Database Schema
+
+### Frontend (IndexedDB)
+- **chatMessages**: Messages with indexes for conversationId and time
+- **conversations**: Conversation metadata with userId index
+- **user**: User information store
+
+### Backend (SQLite)
+- **users**: User accounts with email and name
+- **conversations**: Chat conversations with participants
+- **messages**: Chat messages with type field for discriminated content
+- **sessions**: Active user sessions with expiration
+- **guest_usage**: Rate limiting for guest users
+- **user_settings**: User preferences and LLM settings
+
+## Recent Architecture Changes
+
+### Message System Refactoring
+The message system now uses a discriminated union pattern:
+- **TextContent**: Regular text messages with optional file attachments
+- **VoiceContent**: Audio messages with base64 data, duration, and optional transcript
+- Messages are created using factory methods: `Message.createText()`, `Message.createVoice()`
+- Backend stores type field and handles content appropriately
+
+### Offline Support Enhancements
+- File uploads are queued when offline and automatically uploaded when connection is restored
+- Voice messages are stored as base64 in IndexedDB for offline access
+- Connection monitoring checks every 30 seconds for pending uploads
