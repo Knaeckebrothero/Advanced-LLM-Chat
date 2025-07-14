@@ -683,9 +683,33 @@ export class ChatService {
   }
 
   // Regenerate a message in the conversation
-  public regenerateMessage(message: Message) {
-    console.log('Regenerating message');
-    // TODO: Implement regenerate message method!
+  public async regenerateMessage(message: Message) {
+    console.log('Regenerating message:', message.id);
+    
+    // Find all messages in the conversation
+    const allMessages = this.messagesSubject.getValue();
+    const messageIndex = allMessages.findIndex(m => m.id === message.id);
+    
+    if (messageIndex === -1) {
+      console.error('Message not found for regeneration');
+      return;
+    }
+    
+    // Delete this message and all messages after it
+    const messagesToDelete = allMessages.slice(messageIndex);
+    
+    try {
+      // Delete from backend and local storage
+      for (const msg of messagesToDelete) {
+        await this.deleteMessage(msg.id);
+      }
+      
+      // Generate a new response (using the role from the message being regenerated)
+      await this.generateMessage(message.roleName);
+    } catch (error) {
+      console.error('Error regenerating message:', error);
+      throw error;
+    }
   }
 
   // Loads a specific conversation and its messages into memory.
