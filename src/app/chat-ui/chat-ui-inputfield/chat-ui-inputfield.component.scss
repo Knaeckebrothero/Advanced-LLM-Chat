@@ -6,42 +6,37 @@
 .input-field-container {
   display: flex;
   flex-direction: column;
-  background-color: vars.$color-secondary;
+  background-color: var(--theme-surface);
   border-radius: 24px;
   padding: 12px;
   margin: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
-  position: relative; // Important for absolute positioning of canvas
+  position: relative;
+  border: 1px solid var(--theme-border);
 
-  // Add a subtle border
-  border: 1px solid rgba(255, 255, 255, 0.3);
-
-  // Hover effect for the entire container
   &:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
-  // When focused, add a highlight
   &:focus-within {
-    border-color: vars.$color-primary;
-    box-shadow: 0 4px 12px rgba(vars.$color-primary, 0.2);
+    border-color: var(--theme-primary);
+    box-shadow: 0 4px 12px rgba(var(--theme-primary-contrast-rgb), 0.2);
   }
 
-  // Recording mode styles
   &.recording-mode {
-    background-color: #FFFFFF; // White background when recording
-    border-color: vars.$color-primary;
+    background-color: var(--theme-surface);
+    border-color: var(--theme-primary);
     animation: recording-pulse 2s ease-in-out infinite;
   }
 }
 
 @keyframes recording-pulse {
   0%, 100% {
-    box-shadow: 0 4px 12px rgba(vars.$color-primary, 0.2);
+    box-shadow: 0 4px 12px rgba(var(--theme-primary-contrast-rgb), 0.2);
   }
   50% {
-    box-shadow: 0 6px 20px rgba(vars.$color-primary, 0.4);
+    box-shadow: 0 6px 20px rgba(var(--theme-primary-contrast-rgb), 0.4);
   }
 }
 
@@ -53,25 +48,17 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--theme-border);
   max-height: 120px;
   overflow-y: auto;
-  background: transparent; // Let the canvas show through
-
-  // Custom scrollbar
-  &::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
+  background: transparent;
 
   &::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 2px;
+    background: rgba(var(--theme-primary-contrast-rgb), 0.05);
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 2px;
+    background: rgba(var(--theme-primary-contrast-rgb), 0.2);
   }
 }
 
@@ -80,15 +67,15 @@
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(var(--theme-primary-contrast-rgb), 0.1);
+  border: 1px solid var(--theme-border);
   border-radius: 16px;
   max-width: 200px;
   position: relative;
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(var(--theme-primary-contrast-rgb), 0.2);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
     .remove-file-button {
@@ -117,26 +104,26 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(vars.$color-primary, 0.1);
+  background: rgba(var(--theme-primary-contrast-rgb), 0.05);
   border-radius: 4px;
   flex-shrink: 0;
 
   .mat-icon {
     font-size: 20px;
-    color: vars.$color-primary;
+    color: var(--theme-primary);
   }
 }
 
 .file-info {
   display: flex;
   flex-direction: column;
-  min-width: 0; // Allow text truncation
+  min-width: 0;
   flex: 1;
 
   .file-name {
     font-size: 12px;
     font-weight: 500;
-    color: vars.$color-font-dark;
+    color: var(--theme-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -144,10 +131,10 @@
 
   .file-size {
     font-size: 10px;
-    color: rgba(vars.$color-font-dark, 0.6);
+    color: var(--theme-text);
+    opacity: 0.7;
   }
 
-  // Upload progress styles
   .upload-progress {
     margin-top: 4px;
     display: flex;
@@ -162,14 +149,13 @@
 
     .progress-text {
       font-size: 10px;
-      color: vars.$color-primary;
+      color: var(--theme-primary);
       font-weight: 500;
       min-width: 30px;
       text-align: right;
     }
   }
 
-  // Upload status styles  
   .upload-status {
     display: flex;
     align-items: center;
@@ -182,17 +168,17 @@
       height: 16px;
 
       &.status-completed {
-        color: vars.$color-accent-success;
+        color: #28a745; // Keeping explicit success color
       }
 
       &.status-failed {
-        color: vars.$color-accent-danger;
+        color: #dc3545; // Keeping explicit danger color
       }
     }
 
     .error-message {
       font-size: 10px;
-      color: vars.$color-accent-danger;
+      color: #dc3545;
     }
   }
 }
@@ -209,28 +195,27 @@
     font-size: 16px;
     width: 16px;
     height: 16px;
-    color: rgba(vars.$color-font-dark, 0.6);
+    color: var(--theme-text);
+    opacity: 0.6;
   }
 
   &:hover {
-    background-color: rgba(vars.$color-accent-danger, 0.1);
+    background-color: rgba(220, 53, 69, 0.1);
 
     .mat-icon {
-      color: vars.$color-accent-danger;
+      color: #dc3545;
     }
   }
 }
 
-// Area containing the textarea
 .input-content-area {
   position: relative;
   z-index: 1;
   width: 100%;
   padding: 8px 12px;
-  background: transparent; // Let the canvas show through
+  background: transparent;
 }
 
-// The actual textarea element
 .message-textarea {
   width: 100%;
   border: none;
@@ -240,43 +225,23 @@
   font-family: vars.$font-family-base;
   font-size: 16px;
   line-height: 1.5;
-  color: vars.$color-font-dark;
-
-  // Minimum and maximum height constraints
+  color: var(--theme-text);
   min-height: 24px;
-  max-height: 150px; // Approximately 5-6 lines
-
-  // Smooth transition when height changes
+  max-height: 150px;
   transition: height 0.2s ease;
 
-  // Custom scrollbar styling
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 2px;
-  }
-
   &::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 2px;
-
-    &:hover {
-      background: rgba(0, 0, 0, 0.3);
-    }
+    background: rgba(var(--theme-primary-contrast-rgb), 0.2);
   }
 
-  // Placeholder styling
   &::placeholder {
-    color: rgba(vars.$color-font-dark, 0.5);
+    color: var(--theme-text);
+    opacity: 0.5;
   }
 }
 
-// Voice recording info area (replaces voice-recording-area)
 .voice-recording-info {
-  position: relative; // Above the canvas
+  position: relative;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -287,12 +252,8 @@
 }
 
 @keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .cancel-recording-button {
@@ -300,16 +261,16 @@
     width: 40px;
     height: 40px;
     flex-shrink: 0;
-    background-color: rgba(255, 255, 255, 0.95) !important;
+    background-color: var(--theme-surface) !important;
     backdrop-filter: blur(10px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
     .mat-icon {
-      color: vars.$color-accent-danger;
+      color: #dc3545;
     }
 
     &:hover {
-      background-color: rgba(vars.$color-accent-danger, 0.1);
+      background-color: rgba(220, 53, 69, 0.1);
     }
   }
 }
@@ -319,8 +280,8 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: vars.$color-font-dark;
-  background-color: rgba(255, 255, 255, 0.9); // Semi-transparent white background
+  color: var(--theme-text);
+  background-color: var(--theme-input-bg);
   padding: 6px 12px;
   border-radius: 20px;
   backdrop-filter: blur(10px);
@@ -330,18 +291,14 @@
 .recording-dot {
   width: 8px;
   height: 8px;
-  background-color: vars.$color-accent-danger;
+  background-color: #dc3545;
   border-radius: 50%;
   animation: recording-blink 1.5s ease-in-out infinite;
 }
 
 @keyframes recording-blink {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .recording-time {
@@ -354,25 +311,24 @@
     width: 40px;
     height: 40px;
     flex-shrink: 0;
-    background-color: rgba(255, 255, 255, 0.95) !important;
+    background-color: var(--theme-surface) !important;
     backdrop-filter: blur(10px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
     .mat-icon {
-      color: vars.$color-primary;
+      color: var(--theme-primary);
     }
 
     &:hover {
-      background-color: rgba(vars.$color-primary, 0.9);
+      background-color: var(--theme-primary);
 
       .mat-icon {
-        color: white;
+        color: var(--theme-primary-contrast);
       }
     }
   }
 }
 
-// Container for action buttons
 .action-buttons-bar {
   position: relative;
   z-index: 1;
@@ -381,26 +337,16 @@
   align-items: center;
   padding: 0 8px;
   min-height: 40px;
-  background-color: transparent; // Remove any background
+  background-color: transparent;
 }
 
-// Left side button group
-.left-actions {
+.left-actions, .right-actions {
   display: flex;
   gap: 4px;
   align-items: center;
 }
 
-// Right side button group
-.right-actions {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-// Base styling for all action buttons
 .action-button {
-  // Override some Material button defaults for a cleaner look
   &.mat-mdc-icon-button {
     width: 36px;
     height: 36px;
@@ -410,173 +356,82 @@
       font-size: 22px;
       width: 22px;
       height: 22px;
-      color: vars.$color-font-dark;
-      transition: color 0.2s ease;
+      color: var(--theme-text);
+      opacity: 0.8;
+      transition: color 0.2s ease, opacity 0.2s;
     }
 
-    // Hover state
     &:hover {
-      background-color: rgba(0, 0, 0, 0.05);
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
 
       .mat-icon {
-        color: vars.$color-primary;
+        color: var(--theme-primary);
+        opacity: 1;
       }
     }
   }
 
-  // Special styling for send button
   &.send-button {
     .mat-icon {
-      color: vars.$color-primary;
+      color: var(--theme-primary);
+      opacity: 1;
     }
 
     &:hover {
-      background-color: rgba(vars.$color-primary, 0.1);
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
     }
   }
 
-  // Special styling for mic button
   &.mic-button {
-    transition: all 0.2s ease;
-
     &:hover {
-      background-color: rgba(vars.$color-accent, 0.1);
-
-      .mat-icon {
-        color: vars.$color-accent;
-      }
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+      .mat-icon { color: var(--theme-secondary); }
     }
-
-    // Active state for hold-to-record
     &:active {
-      background-color: rgba(vars.$color-accent, 0.2);
-      transform: scale(1.1);
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.2);
     }
   }
 
-  // Camera button styling
-  &.camera-button {
-    .mat-icon {
-      color: vars.$color-font-dark;
-    }
-
+  &.camera-button, &.attachment-button {
     &:hover {
-      background-color: rgba(vars.$color-primary, 0.1);
-
-      .mat-icon {
-        color: vars.$color-primary;
-      }
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+      .mat-icon { color: var(--theme-primary); }
     }
-  }
-
-  // Attachment button styling
-  &.attachment-button {
-    .mat-icon {
-      color: vars.$color-font-dark;
-    }
-
-    &:hover {
-      background-color: rgba(vars.$color-primary, 0.1);
-
-      .mat-icon {
-        color: vars.$color-primary;
-      }
-    }
-
-    // When menu is open
     &[aria-expanded="true"] {
-      background-color: rgba(vars.$color-primary, 0.15);
-
-      .mat-icon {
-        color: vars.$color-primary;
-      }
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.15);
+      .mat-icon { color: var(--theme-primary); }
     }
   }
 }
 
-// Responsive adjustments for mobile devices
-@media (max-width: 768px) {
-  .input-field-container {
-    margin: 8px;
-    padding: 10px;
-    border-radius: 20px;
-
-    &.recording-mode {
-      margin: 8px 4px; // Slightly less margin in recording mode
-    }
-  }
-
-  .input-content-area {
-    padding: 6px 10px;
-  }
-
-  .message-textarea {
-    font-size: 16px; // Prevents zoom on iOS
-  }
-
-  .action-button {
-    &.mat-mdc-icon-button {
-      width: 40px;
-      height: 40px;
-      padding: 8px;
-    }
-  }
-
-  .voice-recording-area {
-    padding: 6px 8px;
-  }
-
-  .waveform-canvas {
-    height: 50px;
-  }
-}
-
-// Attachment menu styling (applied globally since mat-menu renders outside component)
 ::ng-deep .attachment-menu {
   .mat-mdc-menu-panel {
-    min-width: 200px;
-    margin-top: 8px;
+    background-color: var(--theme-surface);
+    border: 1px solid var(--theme-border);
   }
 
   .mat-mdc-menu-item {
-    height: 48px;
-
+    color: var(--theme-text);
     .mat-icon {
-      margin-right: 16px;
-      color: vars.$color-primary;
+      color: var(--theme-primary);
     }
-
     &:hover {
-      background-color: rgba(vars.$color-primary, 0.08);
-    }
-
-    &:active {
-      background-color: rgba(vars.$color-primary, 0.12);
+      background-color: var(--theme-input-bg);
     }
   }
 }
 
-// Tooltip styling
-::ng-deep .mat-mdc-tooltip {
-  font-size: 12px;
-  padding: 4px 8px;
-  margin: 8px;
-}
-
-// Background waveform canvas that fills the entire container
 .background-waveform-canvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 0; // Behind all other content
-  pointer-events: none; // Allow clicks to pass through
-  border-radius: 24px; // Match container border radius
-  image-rendering: optimizeSpeed;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 24px;
   image-rendering: -webkit-optimize-contrast;
 
-  // Hide the canvas when not recording but keep it in the DOM
   &.hidden {
     opacity: 0;
     visibility: hidden;
