@@ -1,23 +1,25 @@
+@use "sass:color";
+
 // Light Theme Colors
-$light-bg: #e6f0fc;
-$light-text: #144d96;
-$light-surface: #ffffff;      // for cards, sidebars
-$light-primary: #144d96;      // for branding, primary actions
-$light-secondary: #2C8BCC;     // for icons
+$light-bg: #f3f9fd; // Changed to match original SCSS for a subtle blue tint
+$light-text: #1a1a1a;
+$light-surface: #ffffff;
+$light-primary: #1976d2; // Changed to match original SCSS
+$light-secondary: #2C8BCC;
 $light-border: #ccc;
 $light-link: #007bff;
 $light-msg-user-bg: #e6f0fc;
 $light-msg-assistant-bg: #d8ebff;
 
 // Dark Theme Colors
-$dark-bg: #481457;
-$dark-text: #ffffff;
-$dark-surface: #353535;       // for cards, sidebars
-$dark-primary: #5C287E;       // for branding, primary actions
-$dark-secondary: #A088D2;      // for icons
-$dark-border: #6b6b6b;
-$dark-link: #A088D2;          // Brighter purple for links
-$dark-msg-bg: #353535;        // Same for user and assistant
+$dark-bg: #212529; // A slightly more neutral dark background
+$dark-text: #e9ecef;
+$dark-surface: #343a40;
+$dark-primary: #5C287E;
+$dark-secondary: #A088D2;
+$dark-border: #495057;
+$dark-link: #A088D2;
+$dark-msg-bg: #343a40;
 
 // ----------------------------------------
 // Theme Maps
@@ -31,7 +33,8 @@ $light-theme: (
   border: $light-border,
   link: $light-link,
   'msg-user-bg': $light-msg-user-bg,
-  'msg-assistant-bg': $light-msg-assistant-bg
+  'msg-assistant-bg': $light-msg-assistant-bg,
+  'input-bg': $light-bg // The main page background for a recessed look
 );
 
 $dark-theme: (
@@ -43,7 +46,8 @@ $dark-theme: (
   border: $dark-border,
   link: $dark-link,
   'msg-user-bg': $dark-msg-bg,
-  'msg-assistant-bg': $dark-msg-bg
+  'msg-assistant-bg': $dark-msg-bg,
+  'input-bg': color.adjust($dark-surface, $lightness: 5%) // A slightly lighter gray
 );
 
 // Central map of all themes

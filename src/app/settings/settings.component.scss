@@ -1,20 +1,19 @@
 :host {
   display: block;
   padding: 24px;
-  background-color: #f3f9fd;
-  color: #1a1a1a;
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   max-width: 100%;
   min-width: 320px;
   overflow: hidden;
 }
 
-/* Überschrift */
 h2 {
   font-size: 1.6rem;
   margin-bottom: 1.2rem;
-  color: #2C8BCC;
+  color: var(--theme-primary);
 }
 
 .toggles-row {
@@ -22,6 +21,13 @@ h2 {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
+
+  .toggle-switch, .language-switch {
+    .slider {
+      // Use the new input background for the inactive state for consistency
+      background-color: var(--theme-input-bg);
+    }
+  }
 
   .dark-mode-toggle {
     .toggle-switch {
@@ -42,7 +48,8 @@ h2 {
         left: 0;
         right: 0;
         bottom: 0;
-        background-color: #ccc;
+        // Use theme variable
+        background-color: var(--theme-border);
         border-radius: 32px;
         cursor: pointer;
         transition: background-color 0.3s;
@@ -56,39 +63,42 @@ h2 {
           width: 28px;
           height: 28px;
           border-radius: 50%;
-          background-color: white;
+          // Use theme variables
+          background-color: var(--theme-surface);
+          color: var(--theme-text);
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 18px;
-          color: black;
           transition: transform 0.3s ease;
         }
       }
 
       input:checked + .slider {
-        background-color: #2C8BCC;
+        // Use theme variable
+        background-color: var(--theme-primary);
 
         mat-icon.icon {
           transform: translateX(28px);
-          color: white;
-          background-color: #1A6DA8;
+          // Use theme variables
+          color: var(--theme-surface);
+          background-color: var(--theme-secondary);
         }
       }
     }
   }
-
-
 
   .language-toggle {
     display: flex;
     align-items: center;
   }
 
+  // This `.switch` class seems to be a duplicate or old version of the toggle style.
+  // I will apply theme variables here as well to be safe.
   .switch {
     width: 60px;
     height: 32px;
-    background-color: #ccc;
+    background-color: var(--theme-border);
     border-radius: 32px;
     position: relative;
     cursor: pointer;
@@ -97,7 +107,7 @@ h2 {
     .slider {
       width: 28px;
       height: 28px;
-      background-color: white;
+      background-color: var(--theme-surface);
       border-radius: 50%;
       position: absolute;
       top: 2px;
@@ -110,12 +120,10 @@ h2 {
 
       .icon {
         font-size: 16px;
-        &.light {
-          color: black;
-        }
-        &.dark {
-          color: white;
-        }
+        // The specific .light and .dark classes are no longer needed
+        // as the color will be inherited from the parent color property.
+        // We will set a default here.
+        color: var(--theme-text);
       }
     }
 
@@ -124,14 +132,14 @@ h2 {
     }
 
     input:checked + .switch {
-      background-color: #2c8bcc;
+      background-color: var(--theme-primary);
 
       .slider {
         transform: translateX(28px);
-        background-color: #1a6da8;
+        background-color: var(--theme-secondary);
 
         .icon {
-          color: white;
+          color: var(--theme-surface);
         }
       }
     }
@@ -144,7 +152,7 @@ h2 {
     height: 32px;
 
     .slider {
-      background-color: #ccc;
+      background-color: var(--theme-border);
       border-radius: 32px;
       position: absolute;
       cursor: pointer;
@@ -160,24 +168,20 @@ h2 {
         justify-content: center;
         font-size: 14px;
         font-weight: 600;
-        color: #333;
+        color: var(--theme-text);
         height: 100%;
       }
     }
 
     input[type='checkbox']:checked + .slider {
-      background-color: #2c8bcc;
+      background-color: var(--theme-primary);
 
       .lang-label {
-        color: white;
+        color: var(--theme-surface);
       }
     }
   }
 }
-
-
-
-
 
 /* Dropdown und Input allgemein */
 mat-form-field {
@@ -185,15 +189,15 @@ mat-form-field {
   margin-bottom: 1.5rem;
 
   ::ng-deep .mat-form-field-flex {
-    background-color: white !important;
+    background-color: var(--theme-surface) !important;
     border-radius: 6px;
   }
 
   ::ng-deep .mat-select-trigger,
   ::ng-deep .mat-select-value,
   ::ng-deep textarea.mat-input-element {
-    background-color: white !important;
-    color: #1a1a1a !important;
+    background-color: var(--theme-surface) !important;
+    color: var(--theme-text) !important;
   }
 
   ::ng-deep .mat-form-field-wrapper {
@@ -206,7 +210,7 @@ mat-form-field {
   display: block;
   font-weight: 500;
   margin: 8px 0 4px;
-  color: #2C8BCC;
+  color: var(--theme-primary);
 }
 
 /* Slider für Temperature & Top_p */
@@ -218,7 +222,7 @@ mat-form-field {
 
   label {
     min-width: 110px;
-    color: #2C8BCC;
+    color: var(--theme-primary);
     font-weight: 500;
   }
 
@@ -226,15 +230,16 @@ mat-form-field {
     flex: 1;
 
     ::ng-deep .mat-slider-thumb {
-      background-color: #2C8BCC;
+      background-color: var(--theme-primary);
     }
 
     ::ng-deep .mat-slider-track-fill {
-      background-color: #2C8BCC;
+      background-color: var(--theme-primary);
     }
 
     ::ng-deep .mat-slider-track-background {
-      background-color: #d3eaf8;
+      // Use the theme's border color for the track background
+      background-color: var(--theme-border);
     }
   }
 }
@@ -243,7 +248,7 @@ mat-form-field {
 .link-button {
   background: none;
   border: none;
-  color: #2C8BCC;
+  color: var(--theme-primary);
   cursor: pointer;
   font-size: 0.9rem;
   text-decoration: underline;
@@ -259,23 +264,26 @@ mat-form-field {
 .custom-input {
   width: 100%;
   padding: 10px;
-  border: 2px solid #1976d2; // blau
+  border: 2px solid var(--theme-primary);
   border-radius: 4px;
-  background-color: white;
-  color: black;
+  // **CHANGED:** Apply the new background color to inputs
+  background-color: var(--theme-input-bg);
+  color: var(--theme-text);
   font-size: 14px;
   box-sizing: border-box;
   margin-bottom: 16px;
+  // Add a subtle inner shadow for depth
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .custom-input:focus {
   outline: none;
-  border-color: #1565c0; // dunkleres blau beim Fokus
+  border-color: var(--theme-secondary);
 }
 
 label {
   display: block;
   margin: 8px 0 4px;
   font-weight: 600;
-  color: #1976d2;
+  color: var(--theme-primary);
 }
