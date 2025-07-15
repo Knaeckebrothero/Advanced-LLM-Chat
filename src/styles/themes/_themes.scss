@@ -44,6 +44,7 @@
   & {
     // Define CSS custom properties for the current theme
     --theme-background: #{map.get($theme-map, background)};
+    --theme-background-image: #{map.get($theme-map, 'background-image')};
     --theme-text: #{map.get($theme-map, text)};
     --theme-surface: #{map.get($theme-map, surface)};
     --theme-border: #{map.get($theme-map, border)};
