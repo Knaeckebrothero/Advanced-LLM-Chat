@@ -4,63 +4,54 @@
 
 // Theming mixin for the entire application.
 @mixin apply-app-theme($theme-name, $typography) {
+  // ... (previous palette generation code remains the same) ...
   $theme-map: map.get(config.$themes, $theme-name);
   $is-dark: $theme-name == 'dark';
-
-  // **FIX:** Create a full palette map that includes all required hues.
   $primary-color: map.get($theme-map, primary);
   $primary-palette: mat.m2-define-palette((
-    100: $primary-color,
-    500: $primary-color,
-    700: $primary-color,
+    100: $primary-color, 500: $primary-color, 700: $primary-color,
     contrast: (
       100: if($is-dark, white, rgba(black, 0.87)),
       500: if($is-dark, white, rgba(black, 0.87)),
       700: if($is-dark, white, rgba(black, 0.87)),
     )
   ));
-
   $accent-color: map.get($theme-map, secondary);
   $accent-palette: mat.m2-define-palette((
-    100: $accent-color,
-    500: $accent-color,
-    700: $accent-color,
+    100: $accent-color, 500: $accent-color, 700: $accent-color,
     contrast: (
       100: if($is-dark, white, rgba(black, 0.87)),
       500: if($is-dark, white, rgba(black, 0.87)),
       700: if($is-dark, white, rgba(black, 0.87)),
     )
   ));
-
-  // Define the Material theme
-  $material-theme: if(
-      $is-dark,
-      mat.m2-define-dark-theme((
-        color: ( primary: $primary-palette, accent: $accent-palette ),
-        typography: $typography,
-        density: 0,
-      )),
-      mat.m2-define-light-theme((
-        color: ( primary: $primary-palette, accent: $accent-palette ),
-        typography: $typography,
-        density: 0,
-      ))
+  $material-theme: if($is-dark,
+    mat.m2-define-dark-theme((
+      color: ( primary: $primary-palette, accent: $accent-palette ),
+      typography: $typography, density: 0,
+    )),
+    mat.m2-define-light-theme((
+      color: ( primary: $primary-palette, accent: $accent-palette ),
+      typography: $typography, density: 0,
+    ))
   );
 
-  // Apply base styles and component themes
   & {
-    background-color: map.get($theme-map, background);
-    color: map.get($theme-map, text);
+    --theme-background: #{map.get($theme-map, background)};
+    --theme-text: #{map.get($theme-map, text)};
+    --theme-surface: #{map.get($theme-map, surface)};
+    --theme-border: #{map.get($theme-map, border)};
+    --theme-link: #{map.get($theme-map, link)};
+    --theme-primary: #{map.get($theme-map, primary)};
+    --theme-secondary: #{map.get($theme-map, secondary)};
+    --theme-msg-user-bg: #{map.get($theme-map, 'msg-user-bg')};
+    --theme-msg-assistant-bg: #{map.get($theme-map, 'msg-assistant-bg')};
+    // **NEW:** Expose the input background color as a CSS variable
+    --theme-input-bg: #{map.get($theme-map, 'input-bg')};
+
+    background-color: var(--theme-background);
+    color: var(--theme-text);
   }
 
   @include mat.all-component-themes($material-theme);
-
-  // Apply custom component themes
-  a { color: map.get($theme-map, link); }
-  .sidebar-container, .settings-container {
-    background-color: map.get($theme-map, surface);
-    border-color: map.get($theme-map, border);
-  }
-  .message-bubble.user { background-color: map.get($theme-map, 'msg-user-bg'); }
-  .message-bubble.assistant { background-color: map.get($theme-map, 'msg-assistant-bg'); }
 }

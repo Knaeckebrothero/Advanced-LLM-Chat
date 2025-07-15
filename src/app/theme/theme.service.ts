@@ -1,68 +1,83 @@
-import { Injectable, inject } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { Injectable, Inject, Renderer2, RendererFactory2 } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
-
-export type Theme = 'light' | 'dark' | 'auto';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ThemeService {
-  private document = inject(DOCUMENT);
-  private readonly STORAGE_KEY = 'theme-preference';
+  private renderer: Renderer2;
+  private currentTheme: string;
 
-  private themeSubject = new BehaviorSubject<Theme>('auto');
-  public theme$: Observable<Theme> = this.themeSubject.asObservable();
-
-  private mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-  constructor() {
-    this.initializeTheme();
-    this.setupSystemThemeListener();
+  constructor(
+    @Inject(DOCUMENT) private document: Document,
+    private rendererFactory: RendererFactory2
+  ) {
+    // We need the renderer to safely manipulate the DOM
+    this.renderer = rendererFactory.createRenderer(null, null);
+    this.currentTheme = this.getStoredTheme() || 'light'; // Default to light theme
   }
 
-  private initializeTheme(): void {
-    const storedTheme = localStorage.getItem(this.STORAGE_KEY) as Theme;
-    const initialTheme = storedTheme || 'auto';
-    this.setTheme(initialTheme);
-  }
-
-  private setupSystemThemeListener(): void {
-    this.mediaQuery.addEventListener('change', (e) => {
-      if (this.themeSubject.value === 'auto') {
-        this.applyThemeToDOM(e.matches ? 'dark' : 'light');
-      }
-    });
-  }
-
-  public setTheme(theme: Theme): void {
-    this.themeSubject.next(theme);
-    localStorage.setItem(this.STORAGE_KEY, theme);
-
-    const effectiveTheme = this.getEffectiveTheme(theme);
-    this.applyThemeToDOM(effectiveTheme);
-  }
-
-  public getEffectiveTheme(theme?: Theme): 'light' | 'dark' {
-    const currentTheme = theme || this.themeSubject.value;
-
-    if (currentTheme === 'auto') {
-      return this.mediaQuery.matches ? 'dark' : 'light';
+  /**
+   * Initializes the theme on application startup.
+   * It checks for a saved theme in localStorage or respects the user's system preferences.
+   */
+  initializeTheme(): void {
+    const storedTheme = this.getStoredTheme();
+    if (storedTheme) {
+      this.setTheme(storedTheme);
+    } else {
+      // If no theme is stored, check the user's system preference
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      this.setTheme(prefersDark ? 'dark' : 'light');
     }
-
-    return currentTheme;
   }
 
-  private applyThemeToDOM(theme: 'light' | 'dark'): void {
-    const body = this.document.body;
-    body.classList.remove('theme-light', 'theme-dark');
-    body.classList.add(`theme-${theme}`);
+  /**
+   * Sets the application's theme by adding a class to the body element.
+   * @param themeName The name of the theme to apply ('light' or 'dark').
+   */
+  setTheme(themeName: string): void {
+    // Remove previous theme classes
+    this.renderer.removeClass(this.document.body, 'theme-light');
+    this.renderer.removeClass(this.document.body, 'theme-dark');
+
+    // Add the new theme class
+    this.renderer.addClass(this.document.body, `theme-${themeName}`);
+    this.currentTheme = themeName;
+
+    // Save the user's preference
+    this.storeTheme(themeName);
   }
 
-  public toggleTheme(): void {
-    const themes: Theme[] = ['light', 'dark', 'auto'];
-    const currentIndex = themes.indexOf(this.themeSubject.value);
-    const nextTheme = themes[(currentIndex + 1) % themes.length];
-    this.setTheme(nextTheme);
+  /**
+   * Returns the currently active theme.
+   * @returns The current theme name as a string.
+   */
+  getCurrentTheme(): string {
+    return this.currentTheme;
+  }
+
+  /**
+   * Toggles between the 'light' and 'dark' themes.
+   */
+  toggleTheme(): void {
+    const newTheme = this.currentTheme === 'light' ? 'dark' : 'light';
+    this.setTheme(newTheme);
+  }
+
+  /**
+   * Stores the selected theme in localStorage.
+   * @param themeName The theme to store.
+   */
+  private storeTheme(themeName: string): void {
+    localStorage.setItem('app-theme', themeName);
+  }
+
+  /**
+   * Retrieves the stored theme from localStorage.
+   * @returns The stored theme name or null if not found.
+   */
+  private getStoredTheme(): string | null {
+    return localStorage.getItem('app-theme');
   }
 }

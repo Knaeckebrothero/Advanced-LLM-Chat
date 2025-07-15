@@ -1,11 +1,10 @@
-import {Component, OnDestroy, OnInit, HostListener} from '@angular/core';
-import {DisplayService} from "./sidebar/service/display.service";
-import {NavigationEnd, Router} from '@angular/router';
-import {Subscription, interval} from 'rxjs';
-import {filter} from 'rxjs/operators';
-import {ChatService} from './chat/chat.service';
-import {ThemeService} from "./theme/theme.service";
-
+import { Component, OnDestroy, OnInit, HostListener } from '@angular/core';
+import { DisplayService } from "./sidebar/service/display.service";
+import { NavigationEnd, Router } from '@angular/router';
+import { Subscription, interval } from 'rxjs';
+import { filter } from 'rxjs/operators';
+import { ChatService } from './chat/chat.service';
+import { ThemeService } from './theme/theme.service'; // Corrected path
 
 @Component({
   selector: 'app-root',
@@ -18,13 +17,13 @@ export class AppComponent implements OnInit, OnDestroy {
   showMenuIcon: boolean = true;
   private routerSubscription: Subscription | undefined;
   private syncSubscription: Subscription | undefined;
-  private readonly visibilityChangeHandler: () => void; // Store the handler reference
+  private readonly visibilityChangeHandler: () => void;
 
   constructor(
     public displayService: DisplayService,
     private router: Router,
-    private chatService: ChatService, // Use proper type instead of 'any'
-    private themeService: ThemeService
+    private chatService: ChatService,
+    private themeService: ThemeService // Injected the service
   ) {
     // Bind the handler so we can remove it later
     this.visibilityChangeHandler = () => {
@@ -35,7 +34,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    // Set the CSS variable for viewport height (existing functionality)
+    // **Initialize the theme when the app starts**
+    this.themeService.initializeTheme();
+
     this.setViewportHeight();
 
     // Initialize sidebar state CSS variable
