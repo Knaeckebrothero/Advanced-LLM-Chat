@@ -25,9 +25,7 @@ $dark-msg-bg: #343a40;
 $dark-primary-contrast: #ffffff;
 $dark-primary-contrast-rgb: 255, 255, 255;
 
-// ----------------------------------------
-// Theme Maps
-// ----------------------------------------
+// --- Theme Maps ---
 $light-theme: (
   primary: $light-primary,
   secondary: $light-secondary,
@@ -41,7 +39,8 @@ $light-theme: (
   'input-bg': $light-bg,
   'text-accent': $light-primary,
   'primary-contrast': $light-primary-contrast,
-  'primary-contrast-rgb': $light-primary-contrast-rgb
+  'primary-contrast-rgb': $light-primary-contrast-rgb,
+  'background-image': url('/assets/background/light-mode-bg.svg')
 );
 
 $dark-theme: (
@@ -57,7 +56,8 @@ $dark-theme: (
   'input-bg': color.adjust($dark-surface, $lightness: 5%),
   'text-accent': $dark-secondary,
   'primary-contrast': $dark-primary-contrast,
-  'primary-contrast-rgb': $dark-primary-contrast-rgb
+  'primary-contrast-rgb': $dark-primary-contrast-rgb,
+  'background-image': url('/assets/background/dark-mode-bg.svg')
 );
 
 // Central map of all themes

@@ -3,37 +3,20 @@
 $burger-area-height: 60px;
 $burger-area-width: 60px;
 
-// CSS custom properties for sidebar state and responsive values
 :host {
   --sidebar-width: 260px;
-  --sidebar-state: 0; /* 0 = closed, 1 = open */
+  --sidebar-state: 0;
   --animation-duration: 0.3s;
   --animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .app-container {
   display: flex;
-  // Fix 1: Use 100% instead of 100vw to exclude scrollbar width
   width: 100%;
-  // Fallback for browsers that don't support CSS variables
-  height: 100vh;
-  // Use CSS variable set by JavaScript
-  height: calc(var(--vh, 1vh) * 100);
-  // Modern browsers with dvh support
   height: 100dvh;
-  // Fix 2: Prevent horizontal overflow with clip (better performance than hidden)
   overflow: clip;
-  // Fix 3: Ensure border-box sizing
   box-sizing: border-box;
-  // Fix 4: Relative positioning for absolute children
   position: relative;
-}
-
-/* Progressive enhancement for modern browsers */
-@supports (height: 100dvh) {
-  .app-container {
-    height: 100dvh;
-  }
 }
 
 .burger-container {
@@ -42,12 +25,10 @@ $burger-area-width: 60px;
   left: 0;
   width: $burger-area-width;
   height: $burger-area-height;
-  background-color: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1002;
-  // Fix 5: Ensure it doesn't cause overflow
   box-sizing: border-box;
 }
 
@@ -61,15 +42,12 @@ $burger-area-width: 60px;
   border: none;
   cursor: pointer;
   padding: 0;
-  box-sizing: border-box;
 
   .burger-line {
     width: 100%;
     height: 3px;
-    // Use the theme's primary contrast color to be visible on the sidebar
     background-color: var(--theme-primary-contrast);
     border-radius: 2px;
-    transition: background-color 0.3s;
   }
 }
 
@@ -78,54 +56,56 @@ $burger-area-width: 60px;
   position: fixed;
   left: 0;
   top: 0;
-  height: 100vh;
-  height: calc(var(--vh, 1vh) * 100);
   height: 100dvh;
-  // Fix 6: Use CSS custom property for transform state
   transform: translateX(calc((var(--sidebar-state) - 1) * 100%));
   transition: transform var(--animation-duration) var(--animation-easing);
-  // Fix 7: Add will-change for animation optimization
   will-change: transform;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  // Use the theme's primary color for the sidebar background
   background-color: var(--theme-primary);
   padding-top: $burger-area-height;
   box-sizing: border-box;
-  // Fix 8: Prevent sidebar content from overflowing
   overflow-y: auto;
   overflow-x: clip;
-  // Fix 9: Add CSS containment for performance
-  contain: layout paint style;
 
   &.open {
-    // Update CSS variable instead of direct transform
     --sidebar-state: 1;
   }
 }
 
 .content-wrapper {
   flex-grow: 1;
-  // Fix 10: Critical - allow flex item to shrink below content size
   min-width: 0;
-  height: 100vh;
-  height: calc(var(--vh, 1vh) * 100);
   height: 100dvh;
-  overflow-y: auto;
-  // Fix 11: Prevent horizontal overflow in content
-  overflow-x: hidden;
-  // Use the theme's main background color
-  background-color: var(--theme-background);
-  transition: margin-left var(--animation-duration) var(--animation-easing), background-color 0.3s;
   position: relative;
-  // Fix 12: Ensure proper box model
-  box-sizing: border-box;
-  // Fix 13: Add containment for performance
-  contain: layout style;
+  isolation: isolate;
+  background-color: var(--theme-background);
+  transition: margin-left var(--animation-duration) var(--animation-easing);
+
+  // Apply the background image using a pseudo-element
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+
+    background-image: var(--theme-background-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.35;
+    transition: opacity 0.3s;
+
+    // **FIX:** Pin the background to the viewport
+    background-attachment: fixed;
+  }
 }
 
-// Desktop and larger screens
+// Media queries and other styles remain the same
 @media (min-width: 769px) {
   .content-wrapper {
     &.sidebar-open {
@@ -134,48 +114,15 @@ $burger-area-width: 60px;
   }
 }
 
-// Mobile/Tablet screens
 @media (max-width: 768px) {
   :host {
-    // Fix 14: Use vw with max constraint to prevent edge overflow
     --sidebar-width: min(85vw, calc(100vw - 60px));
   }
-
-  .sidebar-element {
-    // Fix 15: Ensure sidebar doesn't exceed viewport
-    max-width: calc(100% - 60px);
-
-    &.open {
-      box-shadow: 3px 0px 15px rgba(0,0,0,0.2);
-    }
-  }
-
-  .content-wrapper {
-    &.sidebar-open {
-      margin-left: 0;
-    }
+  .sidebar-element.open {
+    box-shadow: 3px 0px 15px rgba(0,0,0,0.2);
   }
 }
 
-// Fix 16: PWA safe area support
-@supports (padding: env(safe-area-inset-left)) {
-  .app-container {
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
-  }
-
-  .sidebar-element {
-    padding-left: env(safe-area-inset-left);
-  }
-
-  .content-wrapper {
-    padding-right: env(safe-area-inset-right);
-  }
-}
-
-// Fix 17: Global box-sizing reset (move to global styles if not already there)
-*,
-*::before,
-*::after {
+*, *::before, *::after {
   box-sizing: border-box;
 }
