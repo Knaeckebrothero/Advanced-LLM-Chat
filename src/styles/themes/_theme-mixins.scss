@@ -1,0 +1,35 @@
+@import 'theme-config';
+
+// General mixin to apply theme colors to components
+@mixin component-theme($theme-map) {
+  background-color: map-get($theme-map, background);
+  color: map-get($theme-map, text);
+
+  // Example for a generic button
+  .button {
+    background-color: map-get($theme-map, primary);
+    color: map-get($theme-map, text);
+    &:hover {
+      background-color: map-get($theme-map, button-hover);
+    }
+  }
+
+  // Example for a card or sidebar
+  .surface-element {
+    background-color: map-get($theme-map, surface);
+    border: 1px solid map-get($theme-map, border);
+  }
+
+  a {
+    color: map-get($theme-map, link);
+  }
+}
+
+// Apply the themes to global classes
+.theme-light {
+  @include component-theme($light-theme);
+}
+
+.theme-dark {
+  @include component-theme($dark-theme);
+}
