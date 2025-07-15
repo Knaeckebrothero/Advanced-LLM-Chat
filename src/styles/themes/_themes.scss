@@ -4,9 +4,10 @@
 
 // Theming mixin for the entire application.
 @mixin apply-app-theme($theme-name, $typography) {
-  // ... (previous palette generation code remains the same) ...
   $theme-map: map.get(config.$themes, $theme-name);
   $is-dark: $theme-name == 'dark';
+
+  // Create a full palette map that includes all required hues.
   $primary-color: map.get($theme-map, primary);
   $primary-palette: mat.m2-define-palette((
     100: $primary-color, 500: $primary-color, 700: $primary-color,
@@ -25,18 +26,23 @@
       700: if($is-dark, white, rgba(black, 0.87)),
     )
   ));
-  $material-theme: if($is-dark,
-    mat.m2-define-dark-theme((
-      color: ( primary: $primary-palette, accent: $accent-palette ),
-      typography: $typography, density: 0,
-    )),
-    mat.m2-define-light-theme((
-      color: ( primary: $primary-palette, accent: $accent-palette ),
-      typography: $typography, density: 0,
-    ))
+
+  // Define the Material theme
+  $material-theme: if(
+      $is-dark,
+      mat.m2-define-dark-theme((
+        color: ( primary: $primary-palette, accent: $accent-palette ),
+        typography: $typography, density: 0,
+      )),
+      mat.m2-define-light-theme((
+        color: ( primary: $primary-palette, accent: $accent-palette ),
+        typography: $typography, density: 0,
+      ))
   );
 
+  // Apply base styles and component themes
   & {
+    // Define CSS custom properties for the current theme
     --theme-background: #{map.get($theme-map, background)};
     --theme-text: #{map.get($theme-map, text)};
     --theme-surface: #{map.get($theme-map, surface)};
@@ -46,9 +52,12 @@
     --theme-secondary: #{map.get($theme-map, secondary)};
     --theme-msg-user-bg: #{map.get($theme-map, 'msg-user-bg')};
     --theme-msg-assistant-bg: #{map.get($theme-map, 'msg-assistant-bg')};
-    // **NEW:** Expose the input background color as a CSS variable
     --theme-input-bg: #{map.get($theme-map, 'input-bg')};
+    --theme-text-accent: #{map.get($theme-map, 'text-accent')};
+    --theme-primary-contrast: #{map.get($theme-map, 'primary-contrast')};
+    --theme-primary-contrast-rgb: #{map.get($theme-map, 'primary-contrast-rgb')};
 
+    // Apply base background and text color to the body
     background-color: var(--theme-background);
     color: var(--theme-text);
   }

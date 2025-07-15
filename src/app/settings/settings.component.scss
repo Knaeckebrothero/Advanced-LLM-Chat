@@ -13,7 +13,7 @@
 h2 {
   font-size: 1.6rem;
   margin-bottom: 1.2rem;
-  color: var(--theme-primary);
+  color: var(--theme-text-accent);
 }
 
 .toggles-row {
@@ -264,7 +264,7 @@ mat-form-field {
 .custom-input {
   width: 100%;
   padding: 10px;
-  border: 2px solid var(--theme-primary);
+  border: 2px solid var(--theme-text-accent);;
   border-radius: 4px;
   // **CHANGED:** Apply the new background color to inputs
   background-color: var(--theme-input-bg);
@@ -285,5 +285,5 @@ label {
   display: block;
   margin: 8px 0 4px;
   font-weight: 600;
-  color: var(--theme-primary);
+  color: var(--theme-text-accent);
 }
