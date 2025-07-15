@@ -1,0 +1,53 @@
+// Light Theme Colors
+$light-bg: #e6f0fc;
+$light-text: #144d96;
+$light-surface: #ffffff;      // for cards, sidebars
+$light-primary: #144d96;      // for branding, primary actions
+$light-secondary: #2C8BCC;     // for icons
+$light-border: #ccc;
+$light-link: #007bff;
+$light-msg-user-bg: #e6f0fc;
+$light-msg-assistant-bg: #d8ebff;
+
+// Dark Theme Colors
+$dark-bg: #481457;
+$dark-text: #ffffff;
+$dark-surface: #353535;       // for cards, sidebars
+$dark-primary: #5C287E;       // for branding, primary actions
+$dark-secondary: #A088D2;      // for icons
+$dark-border: #6b6b6b;
+$dark-link: #A088D2;          // Brighter purple for links
+$dark-msg-bg: #353535;        // Same for user and assistant
+
+// ----------------------------------------
+// Theme Maps
+// ----------------------------------------
+$light-theme: (
+  primary: $light-primary,
+  secondary: $light-secondary,
+  background: $light-bg,
+  surface: $light-surface,
+  text: $light-text,
+  border: $light-border,
+  link: $light-link,
+  'msg-user-bg': $light-msg-user-bg,
+  'msg-assistant-bg': $light-msg-assistant-bg
+);
+
+$dark-theme: (
+  primary: $dark-primary,
+  secondary: $dark-secondary,
+  background: $dark-bg,
+  surface: $dark-surface,
+  text: $dark-text,
+  border: $dark-border,
+  link: $dark-link,
+  'msg-user-bg': $dark-msg-bg,
+  'msg-assistant-bg': $dark-msg-bg
+);
+
+// Central map of all themes
+$themes: (
+  light: $light-theme,
+  dark: $dark-theme
+);
