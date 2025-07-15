@@ -4,6 +4,7 @@ import {NavigationEnd, Router} from '@angular/router';
 import {Subscription, interval} from 'rxjs';
 import {filter} from 'rxjs/operators';
 import {ChatService} from './chat/chat.service';
+import {ThemeService} from "./theme/theme.service";
 
 
 @Component({
@@ -22,7 +23,8 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(
     public displayService: DisplayService,
     private router: Router,
-    private chatService: ChatService // Use proper type instead of 'any'
+    private chatService: ChatService, // Use proper type instead of 'any'
+    private themeService: ThemeService
   ) {
     // Bind the handler so we can remove it later
     this.visibilityChangeHandler = () => {

@@ -1,66 +1,44 @@
-// Angular Material Theming
 @use '@angular/material' as mat;
 
-// Variables
-@use 'variables' as vars;
+// Import the shared typography configuration.
+@use 'themes/typography' as typography;
 
-// Set the default Material Design color palette
-$custom-primary: mat.m2-define-palette(vars.$custom-primary-palette, 500);
-$custom-accent: mat.m2-define-palette(vars.$custom-secondary-palette, 500);
-$custom-warn: mat.m2-define-palette(vars.$custom-warn-palette, 500);
+// Import the theme mixin.
+@use 'themes/themes' as theme;
 
-// Create a theme using the custom palettes
-$custom-theme: mat.m2-define-dark-theme((
-  color: (
-    primary: $custom-primary,
-    accent: $custom-accent,
-    warn: $custom-warn,
-  )
-));
+// --- STEP 1: Include Core & Typography Styles Once ---
+@include mat.core();
+@include mat.typography-hierarchy(typography.$custom-typography);
 
-// Global box-sizing reset - Critical for preventing overflow issues
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+// --- STEP 2: Include Elevation Styles Once ---
+@include mat.elevation-classes();
+
+// --- STEP 3: Generate Theme Classes ---
+// This is where the light and dark themes are actually created.
+.theme-light {
+  @include theme.apply-app-theme('light', typography.$custom-typography);
 }
 
-// Global Styles
+.theme-dark {
+  @include theme.apply-app-theme('dark', typography.$custom-typography);
+}
+
+// --- Global Styles ---
 html, body {
   height: 100vh;
-  // Fix: Use 100% instead of 100vw to exclude scrollbar width
   width: 100%;
   margin: 0;
   padding: 0;
-  // Fix: Use clip for better performance than hidden
   overflow: clip;
-  font-family: vars.$font-family-base;
-  background-color: vars.$color-background;
+  // Use the font family defined in the Material typography config.
+  font-family: mat.m2-font-family(typography.$custom-typography);
 }
 
-// Prevent horizontal overflow on the root
 html {
   overflow-x: hidden;
-  // Ensure smooth scrolling on iOS
   -webkit-overflow-scrolling: touch;
 }
 
-// Apply the theme to Angular Material components
-@include mat.all-component-themes($custom-theme);
-@include mat.elevation-classes();
-@include mat.app-background();
-
-// Fix for flex items with text content
-.flex-text-container {
-  min-width: 0;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  word-break: break-word;
-  hyphens: auto;
+*, *::before, *::after {
+  box-sizing: border-box;
 }
-
-// Responsive and Accessibility Styles
-// Add here if needed
-
-// Component-Level Styles
-// Import or include additional styles for specific components
