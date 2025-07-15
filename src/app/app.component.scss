@@ -46,7 +46,8 @@ $burger-area-width: 60px;
   .burger-line {
     width: 100%;
     height: 3px;
-    background-color: var(--theme-primary-contrast);
+    // Use the standard text color for visibility against the surface color
+    background-color: var(--theme-text);
     border-radius: 2px;
   }
 }
@@ -63,7 +64,8 @@ $burger-area-width: 60px;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  background-color: var(--theme-primary);
+  // Use the theme's surface color to match the new design
+  background-color: var(--theme-surface);
   padding-top: $burger-area-height;
   box-sizing: border-box;
   overflow-y: auto;
@@ -99,8 +101,6 @@ $burger-area-width: 60px;
     background-repeat: no-repeat;
     opacity: 0.35;
     transition: opacity 0.3s;
-
-    // **FIX:** Pin the background to the viewport
     background-attachment: fixed;
   }
 }

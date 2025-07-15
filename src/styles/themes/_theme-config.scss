@@ -5,6 +5,7 @@ $light-bg: #f3f9fd;
 $light-text: #1a1a1a;
 $light-surface: #ffffff;
 $light-primary: #1976d2;
+$light-primary-rgb: 25, 118, 210; // RGB for transparency
 $light-secondary: #2C8BCC;
 $light-border: #ccc;
 $light-link: #007bff;
@@ -18,6 +19,7 @@ $dark-bg: #212529;
 $dark-text: #e9ecef;
 $dark-surface: #343a40;
 $dark-primary: #5C287E;
+$dark-primary-rgb: 92, 40, 126; // RGB for transparency
 $dark-secondary: #A088D2;
 $dark-border: #495057;
 $dark-link: #A088D2;
@@ -28,6 +30,7 @@ $dark-primary-contrast-rgb: 255, 255, 255;
 // --- Theme Maps ---
 $light-theme: (
   primary: $light-primary,
+  primary-rgb: $light-primary-rgb,
   secondary: $light-secondary,
   background: $light-bg,
   surface: $light-surface,
@@ -45,6 +48,7 @@ $light-theme: (
 
 $dark-theme: (
   primary: $dark-primary,
+  primary-rgb: $dark-primary-rgb,
   secondary: $dark-secondary,
   background: $dark-bg,
   surface: $dark-surface,

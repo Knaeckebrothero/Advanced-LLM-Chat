@@ -50,6 +50,7 @@
     --theme-border: #{map.get($theme-map, border)};
     --theme-link: #{map.get($theme-map, link)};
     --theme-primary: #{map.get($theme-map, primary)};
+    --theme-primary-rgb: #{map.get($theme-map, 'primary-rgb')};
     --theme-secondary: #{map.get($theme-map, secondary)};
     --theme-msg-user-bg: #{map.get($theme-map, 'msg-user-bg')};
     --theme-msg-assistant-bg: #{map.get($theme-map, 'msg-assistant-bg')};
