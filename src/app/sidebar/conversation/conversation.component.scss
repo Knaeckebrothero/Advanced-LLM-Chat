@@ -1,27 +1,35 @@
 .conversation-container {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px; // Reduced margin for a tighter list
   position: relative;
 }
 
 button.conversation-button {
   flex: 1;
   text-align: left;
-  background-color: #2C8BCC;
-  border: 1px solid rgba(255, 255, 255, 0.5); /* Modified for 50% opacity */
-  color: white;
+  // Use a transparent background by default
+  background-color: transparent;
+  // Use theme's text color
+  color: var(--theme-text);
+  border: none; // Remove border
   padding: 12px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.2s ease-in-out;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
   &:hover {
-    background-color: #1A6DA8;
+    // Use the theme's input background for hover
+    background-color: var(--theme-input-bg);
   }
 
   &.active {
-    background-color: #154D96;
+    // Use the primary theme color when active/highlighted
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
   }
 
   div {
@@ -30,9 +38,12 @@ button.conversation-button {
 }
 
 button.delete-button {
-  background-color: #e74c3c;
+  // Make the button transparent by default
+  background-color: transparent;
   border: none;
-  color: white;
+  // Use the standard text color, with some opacity to make it less prominent
+  color: var(--theme-text);
+  opacity: 0.6;
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -41,10 +52,13 @@ button.delete-button {
   justify-content: center;
   cursor: pointer;
   margin-left: 8px;
-  transition: background-color 0.2s ease-in-out;
+  transition: all 0.2s ease-in-out;
 
   &:hover {
-    background-color: #c0392b;
+    // On hover, use a subtle background and a stronger color for the icon
+    background-color: rgba(220, 53, 69, 0.1); // Using a fixed danger color for universal recognition
+    color: #dc3545;
+    opacity: 1;
   }
 
   .delete-icon {
