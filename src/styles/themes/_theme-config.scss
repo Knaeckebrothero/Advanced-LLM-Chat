@@ -1,18 +1,20 @@
 @use "sass:color";
 
 // Light Theme Colors
-$light-bg: #f3f9fd; // Changed to match original SCSS for a subtle blue tint
+$light-bg: #f3f9fd;
 $light-text: #1a1a1a;
 $light-surface: #ffffff;
-$light-primary: #1976d2; // Changed to match original SCSS
+$light-primary: #1976d2;
 $light-secondary: #2C8BCC;
 $light-border: #ccc;
 $light-link: #007bff;
 $light-msg-user-bg: #e6f0fc;
 $light-msg-assistant-bg: #d8ebff;
+$light-primary-contrast: #ffffff;
+$light-primary-contrast-rgb: 255, 255, 255;
 
 // Dark Theme Colors
-$dark-bg: #212529; // A slightly more neutral dark background
+$dark-bg: #212529;
 $dark-text: #e9ecef;
 $dark-surface: #343a40;
 $dark-primary: #5C287E;
@@ -20,6 +22,8 @@ $dark-secondary: #A088D2;
 $dark-border: #495057;
 $dark-link: #A088D2;
 $dark-msg-bg: #343a40;
+$dark-primary-contrast: #ffffff;
+$dark-primary-contrast-rgb: 255, 255, 255;
 
 // ----------------------------------------
 // Theme Maps
@@ -34,7 +38,10 @@ $light-theme: (
   link: $light-link,
   'msg-user-bg': $light-msg-user-bg,
   'msg-assistant-bg': $light-msg-assistant-bg,
-  'input-bg': $light-bg // The main page background for a recessed look
+  'input-bg': $light-bg,
+  'text-accent': $light-primary,
+  'primary-contrast': $light-primary-contrast,
+  'primary-contrast-rgb': $light-primary-contrast-rgb
 );
 
 $dark-theme: (
@@ -47,7 +54,10 @@ $dark-theme: (
   link: $dark-link,
   'msg-user-bg': $dark-msg-bg,
   'msg-assistant-bg': $dark-msg-bg,
-  'input-bg': color.adjust($dark-surface, $lightness: 5%) // A slightly lighter gray
+  'input-bg': color.adjust($dark-surface, $lightness: 5%),
+  'text-accent': $dark-secondary,
+  'primary-contrast': $dark-primary-contrast,
+  'primary-contrast-rgb': $dark-primary-contrast-rgb
 );
 
 // Central map of all themes
