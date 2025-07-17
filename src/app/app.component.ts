@@ -34,8 +34,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    // **Initialize the theme when the app starts**
-    this.themeService.initializeTheme();
+    // Theme is automatically initialized in the ThemeService constructor
 
     this.setViewportHeight();
 

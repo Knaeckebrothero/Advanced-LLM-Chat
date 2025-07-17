@@ -8,7 +8,7 @@
       <label class="toggle-switch">
         <input type="checkbox" [(ngModel)]="settings.darkMode" (change)="toggleTheme()" />
         <span class="slider">
-          <mat-icon class="icon">{{ settings.darkMode ? 'dark_mode' : 'light_mode' }}</mat-icon>
+          <mat-icon class="icon">{{ getThemeIcon() }}</mat-icon>
         </span>
       </label>
     </div>
