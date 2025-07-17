@@ -70,8 +70,8 @@ export class SettingsComponent implements OnInit {
       next: (settings) => {
         this.settings = { ...settings };
         this.initialSettings = { ...settings };
-        // Set the theme using the service based on loaded settings
-        this.themeService.setTheme(this.settings.darkMode ? 'dark' : 'light');
+        // Don't override the theme service's stored preference
+        // The theme service handles its own persistence
         this.statusBar.showMessage('Settings loaded from server.', 'success');
       },
       error: () => {
@@ -79,12 +79,10 @@ export class SettingsComponent implements OnInit {
         if (local) {
           this.settings = { ...local };
           this.initialSettings = { ...local };
-          this.themeService.setTheme(this.settings.darkMode ? 'dark' : 'light');
           this.statusBar.showMessage('Loaded local settings.', 'info');
         } else {
           this.initialSettings = { ...this.defaultSettings };
           this.settings = { ...this.defaultSettings };
-          this.themeService.setTheme(this.settings.darkMode ? 'dark' : 'light');
           this.statusBar.showMessage('No settings found. Using defaults.', 'warning');
         }
       },
@@ -98,7 +96,21 @@ export class SettingsComponent implements OnInit {
   toggleTheme(): void {
     this.themeService.toggleTheme();
     // Update the settings object to reflect the change for saving
-    this.settings.darkMode = this.themeService.getCurrentTheme() === 'dark' ? 1 : 0;
+    const currentTheme = this.themeService.getCurrentTheme();
+    // For auto mode, we'll use the effective theme for backward compatibility
+    this.settings.darkMode = (currentTheme === 'dark' || 
+      (currentTheme === 'auto' && this.themeService.getCurrentEffectiveTheme() === 'dark')) ? 1 : 0;
+  }
+  
+  /**
+   * Get the current theme display icon
+   */
+  getThemeIcon(): string {
+    const theme = this.themeService.getCurrentTheme();
+    if (theme === 'auto') {
+      return 'brightness_auto';
+    }
+    return theme === 'dark' ? 'dark_mode' : 'light_mode';
   }
 
   toggleLanguage(): void {

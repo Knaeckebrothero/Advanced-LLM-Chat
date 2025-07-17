@@ -34,6 +34,11 @@ html, body {
   font-family: mat.m2-font-family(typography.$custom-typography);
 }
 
+body {
+  // Smooth transition for theme changes
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
 html {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -41,4 +46,36 @@ html {
 
 *, *::before, *::after {
   box-sizing: border-box;
+}
+
+// Selective transitions for theme-aware elements
+body.theme-initialized {
+  // Main containers and surfaces
+  .sidebar, .content-wrapper, .chat-ui, .settings-container,
+  .input-field-container, .message, .surface-element,
+  .nav-button, .new-conversation-button, mat-card {
+    transition: background-color 0.3s ease, 
+                color 0.3s ease, 
+                border-color 0.3s ease,
+                box-shadow 0.3s ease;
+  }
+  
+  // Background pseudo-element transition
+  .content-wrapper::before {
+    transition: opacity 0.3s ease;
+  }
+  
+  // Form elements
+  input, textarea, select, .custom-input {
+    transition: background-color 0.3s ease, 
+                color 0.3s ease, 
+                border-color 0.3s ease;
+  }
+  
+  // Buttons and interactive elements
+  button, .toggle-switch, .slider {
+    transition: background-color 0.3s ease, 
+                color 0.3s ease, 
+                border-color 0.3s ease;
+  }
 }
