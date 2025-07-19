@@ -7,7 +7,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
 // Import the new ThemeService
-import { ThemeService } from '../theme/theme.service';
+import { ThemeService } from '../theme.service';
 import { SettingsService, Settings } from './settings.service';
 import { StatusBarService } from '../status-bar/status-bar.service';
 
@@ -98,10 +98,10 @@ export class SettingsComponent implements OnInit {
     // Update the settings object to reflect the change for saving
     const currentTheme = this.themeService.getCurrentTheme();
     // For auto mode, we'll use the effective theme for backward compatibility
-    this.settings.darkMode = (currentTheme === 'dark' || 
+    this.settings.darkMode = (currentTheme === 'dark' ||
       (currentTheme === 'auto' && this.themeService.getCurrentEffectiveTheme() === 'dark')) ? 1 : 0;
   }
-  
+
   /**
    * Get the current theme display icon
    */

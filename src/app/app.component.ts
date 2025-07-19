@@ -3,8 +3,8 @@ import { DisplayService } from "./sidebar/service/display.service";
 import { NavigationEnd, Router } from '@angular/router';
 import { Subscription, interval } from 'rxjs';
 import { filter } from 'rxjs/operators';
-import { ChatService } from './chat/chat.service';
-import { ThemeService } from './theme/theme.service'; // Corrected path
+import { ChatService } from './chat.service';
+import { ThemeService } from './theme.service'; // Corrected path
 
 @Component({
   selector: 'app-root',
