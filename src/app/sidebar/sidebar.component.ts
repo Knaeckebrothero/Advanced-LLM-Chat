@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
 import { Conversation } from '../data/objects/conversation';
-import { ChatService } from '../chat/chat.service';
+import { ChatService } from '../chat.service';
 import { ConversationComponent } from './conversation/conversation.component';
 import { DisplayService } from "./service/display.service";
 import { MatIcon } from "@angular/material/icon";

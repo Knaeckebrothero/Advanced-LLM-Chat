@@ -12,7 +12,7 @@ import { DeviceCapabilitiesService } from '../services/device-capabilities.servi
 import { VoiceRecordingService } from './voice-recording.service';
 import { FileHandlingService } from '../services/file-handling.service';
 import { RecordingConfig } from '../../data/objects/recording';
-import { ApiService } from '../../api/api.service';
+import { ApiService } from '../../api.service';
 import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
 
@@ -544,7 +544,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   private async uploadFilesImmediately(filePreviews: FilePreview[]): Promise<void> {
     // Check if backend is available
     const backendAvailable = await this.isBackendAvailable();
-    
+
     if (!backendAvailable) {
       // Mark files as pending for offline upload
       filePreviews.forEach(fp => {
@@ -559,15 +559,15 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     for (const filePreview of filePreviews) {
       try {
         filePreview.uploadStatus = UploadStatus.UPLOADING;
-        
+
         // Upload single file
         const uploadedFileIds = await this.apiService.uploadFiles([filePreview]);
-        
+
         // Update file with server-assigned ID
         filePreview.uploadStatus = UploadStatus.COMPLETED;
         filePreview.id = uploadedFileIds[0] || filePreview.id;
         filePreview.error = undefined;
-        
+
         console.log('File uploaded successfully:', filePreview.name, filePreview.id);
       } catch (error) {
         console.error('Error uploading file:', filePreview.name, error);

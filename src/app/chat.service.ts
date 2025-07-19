@@ -1,15 +1,16 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, firstValueFrom, lastValueFrom, Observable } from 'rxjs';
-import { Message } from '../data/objects/message';
-import { DBService } from '../data/db.service';
-import { ApiService } from '../api/api.service';
-import { Conversation } from '../data/objects/conversation';
-import { SettingsService } from '../settings/settings.service';
-import { DisplayService } from '../sidebar/service/display.service';
-import { AuthService } from "../auth/auth.service";
+import { Message } from './data/objects/message';
+import { DBService } from './data/db.service';
+import { ApiService } from './api.service';
+import { Conversation } from './data/objects/conversation';
+import { SettingsService } from './settings/settings.service';
+import { DisplayService } from './sidebar/service/display.service';
+import { AuthService } from "./auth/auth.service";
 import { HttpClient } from '@angular/common/http';
-import { environment } from '../environments/environment';
-import { FilePreview, UploadStatus } from '../data/objects/file-preview';
+import { environment } from './environments/environment';
+import { FilePreview, UploadStatus } from './data/objects/file-preview';
+import { SyncService } from './services/sync.service';
 
 
 @Injectable({
@@ -31,16 +32,6 @@ export class ChatService implements OnDestroy {
   private isNewConversationSubject = new BehaviorSubject<boolean>(false);
   public isNewConversation$ = this.isNewConversationSubject.asObservable();
 
-  // Add loading state for sync operations
-  private isSyncingSubject = new BehaviorSubject<boolean>(false);
-  public isSyncing$ = this.isSyncingSubject.asObservable();
-
-  private syncPromise: Promise<void> | null = null;
-
-  // Connection monitoring
-  private connectionCheckInterval: any;
-  private lastConnectionState: boolean = true;
-
   // Constructor
   constructor(
     private dbService: DBService,
@@ -48,7 +39,8 @@ export class ChatService implements OnDestroy {
     private settingsService: SettingsService,
     private displayService: DisplayService,
     private authService: AuthService,
-    private http: HttpClient
+    private http: HttpClient,
+    private syncService: SyncService
   ) {
     this.initializeService();
   }
@@ -71,12 +63,27 @@ export class ChatService implements OnDestroy {
     }
 
     // Sync with server in background (don't await)
-    this.syncInBackground();
-    
-    // Set up connection monitoring for pending file uploads
-    this.setupConnectionMonitoring();
+    this.syncService.syncInBackground();
   }
 
+  // Public method for manual sync
+  public async syncCurrentConversation() {
+    if (this.conversation?.id && this.conversation.id !== 0) {
+      const syncedMessages = await this.syncService.syncCurrentConversation();
+      if (syncedMessages.length > 0) {
+        // Update UI with synced messages
+        this.messagesSubject.next(syncedMessages);
+        await this.loadAllConversations();
+      }
+    }
+  }
+
+  // Add getter to expose sync status from SyncService
+  public get isSyncing$(): Observable<boolean> {
+    return this.syncService.isSyncing$;
+  }
+
+  // Helper method to check backend availability
   private async isBackendAvailable(): Promise<boolean> {
     try {
       const response = await lastValueFrom(
@@ -86,138 +93,6 @@ export class ChatService implements OnDestroy {
     } catch (error) {
       console.warn('Backend not available:', error);
       return false;
-    }
-  }
-
-  private async syncInBackground() {
-    // Check if backend is available first
-    const backendAvailable = await this.isBackendAvailable();
-    if (!backendAvailable) {
-      console.log('Backend not available, skipping sync');
-      return;
-    }
-
-    if (this.authService.isGuest) {
-      return;
-    }
-    // Prevent multiple simultaneous syncs
-    if (this.syncPromise) {
-      return this.syncPromise;
-    }
-
-    this.syncPromise = this.performSync();
-    try {
-      await this.syncPromise;
-    } finally {
-      this.syncPromise = null;
-    }
-  }
-
-  // TODO: Move sync logic to a separate sync service!
-  private async performSync() {
-    this.isSyncingSubject.next(true);
-
-    try {
-      const serverConversationsData = await this.apiService.getConversations();
-
-      // Convert plain objects to Conversation instances
-      const serverConversations = serverConversationsData.map(data =>
-        Conversation.fromApiResponse(data)
-      );
-
-      if (serverConversations.length === 0) {
-        console.log('No conversations on server');
-        return;
-      }
-
-      // Update conversation list if different
-      await this.mergeServerConversations(serverConversations);
-
-      // Only sync current conversation's messages
-      const currentConvId = this.conversation?.id;
-      if (currentConvId && currentConvId !== 0) {
-        const serverConv = serverConversations.find(c => c.id === currentConvId);
-        if (serverConv) {
-          await this.syncConversationIfNeeded(serverConv);
-        }
-      }
-    } catch (error) {
-      console.error('Background sync failed:', error);
-      // Don't throw - we have local data
-    } finally {
-      this.isSyncingSubject.next(false);
-    }
-  }
-
-  private async mergeServerConversations(serverConversations: Conversation[]) {
-    // Get local conversations
-    const localConversations = await this.dbService.getAllConversations();
-    const localConvMap = new Map(localConversations.map(c => [c.id, c]));
-
-    let hasChanges = false;
-
-    // Check for new conversations from server
-    for (const serverConv of serverConversations) {
-      if (!localConvMap.has(serverConv.id)) {
-        // This is a new conversation from server - we need to fetch its details
-        // For now, we'll create a placeholder. In a real app, you'd fetch full details
-        const newConv = new Conversation(
-          serverConv.id,
-          this.displayService.activeConversationId$.value || 1, // Use current user ID
-          `Conversation ${serverConv.id}`,
-          ['user', 'Assistant']
-        );
-        await this.dbService.addConversation(newConv);
-        hasChanges = true;
-      }
-    }
-
-    if (hasChanges) {
-      await this.loadAllConversations();
-    }
-  }
-
-  private async syncConversationIfNeeded(serverConv: any) {
-    // TODO: Why is the received conversation object not converted to conversation already?
-    //const test123 = Conversation.fromApiResponse(this.conversation)
-    //console.log("Conversation hash: ", test123.computeHash(this.dbService))
-    //console.log(this.conversation)
-    //console.log("Conversation: ", this.conversation)
-    const localHash = await this.conversation.computeHash(this.dbService);
-    // TODO: The issue is that this.conversation is null by default
-
-    if (localHash !== serverConv.hashsum) {
-      console.log('Syncing messages for conversation:', serverConv.id);
-
-      // Get server messages
-      const serverMessages = await this.apiService.getConversationMessages(
-        serverConv.id,
-        50 // Get more messages during sync
-      );
-
-      // Update local database
-      await this.dbService.deleteMessagesByConversationId(serverConv.id);
-      for (const msg of serverMessages) {
-        await this.dbService.addMessage(msg);
-      }
-
-      // Only update UI if still viewing this conversation
-      if (this.conversation.id === serverConv.id) {
-        serverMessages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
-        this.messagesSubject.next(serverMessages);
-      }
-    }
-  }
-
-  // Refresh the conversation - now just calls sync
-  private async refreshConversation() {
-    await this.syncInBackground();
-  }
-
-  // Public method for manual sync
-  public async syncCurrentConversation() {
-    if (this.conversation?.id && this.conversation.id !== 0) {
-      await this.syncInBackground();
     }
   }
 
@@ -351,7 +226,7 @@ export class ChatService implements OnDestroy {
     await this.loadAllConversations();
 
     // Trigger a sync after sending the message (especially important for new conversations)
-    this.syncInBackground();
+    this.syncService.syncInBackground();
   }
 
   // Send a file inside a message
@@ -372,12 +247,12 @@ export class ChatService implements OnDestroy {
     if (backendAvailable && files.length > 0) {
       // Check if any files still need to be uploaded (fallback)
       const pendingFiles = files.filter(f => f.uploadStatus === UploadStatus.PENDING);
-      
+
       if (pendingFiles.length > 0) {
         console.log('Some files still pending upload, uploading now as fallback');
         try {
           const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
-          
+
           // Update file IDs with server-assigned IDs
           pendingFiles.forEach((f, index) => {
             f.uploadStatus = UploadStatus.COMPLETED;
@@ -402,7 +277,7 @@ export class ChatService implements OnDestroy {
           f.error = 'Waiting for connection';
         }
       });
-      
+
       // Store file data in IndexedDB for later upload
       await this.storeOfflineFiles(files);
     }
@@ -449,7 +324,7 @@ export class ChatService implements OnDestroy {
     this.conversation.updatedAt = new Date();
     await this.dbService.updateConversation(this.conversation);
     await this.loadAllConversations();
-    this.syncInBackground();
+    this.syncService.syncInBackground();
   }
 
   // Send a voice message
@@ -509,7 +384,7 @@ export class ChatService implements OnDestroy {
     this.conversation.updatedAt = new Date();
     await this.dbService.updateConversation(this.conversation);
     await this.loadAllConversations();
-    this.syncInBackground();
+    this.syncService.syncInBackground();
   }
 
   // Helper method to convert blob to base64
@@ -709,25 +584,25 @@ export class ChatService implements OnDestroy {
   // Regenerate a message in the conversation
   public async regenerateMessage(message: Message) {
     console.log('Regenerating message:', message.id);
-    
+
     // Find all messages in the conversation
     const allMessages = this.messagesSubject.getValue();
     const messageIndex = allMessages.findIndex(m => m.id === message.id);
-    
+
     if (messageIndex === -1) {
       console.error('Message not found for regeneration');
       return;
     }
-    
+
     // Delete this message and all messages after it
     const messagesToDelete = allMessages.slice(messageIndex);
-    
+
     try {
       // Delete from backend and local storage
       for (const msg of messagesToDelete) {
         await this.deleteMessage(msg.id);
       }
-      
+
       // Generate a new response (using the role from the message being regenerated)
       await this.generateMessage(message.roleName);
     } catch (error) {
@@ -750,7 +625,7 @@ export class ChatService implements OnDestroy {
       this.messagesSubject.next(messages);
 
       // Trigger background sync for this conversation
-      this.syncInBackground();
+      this.syncService.syncInBackground();
     }
   }
 
@@ -818,91 +693,10 @@ export class ChatService implements OnDestroy {
     // TODO: Implement actual offline file storage in DbService
   }
 
-  // Check and upload any pending offline files when connection is restored
-  public async uploadPendingFiles(): Promise<void> {
-    const backendAvailable = await this.isBackendAvailable();
-    if (!backendAvailable) {
-      console.log('Backend still not available, skipping pending file uploads');
-      return;
-    }
-
-    // Get all messages with pending file uploads
-    const allMessages = await this.dbService.getAllMessages();
-    const messagesWithPendingFiles = allMessages.filter(msg => 
-      msg.isText() && 
-      msg.attachments?.some(f => f.uploadStatus === UploadStatus.PENDING)
-    );
-
-    console.log(`Found ${messagesWithPendingFiles.length} messages with pending file uploads`);
-
-    for (const message of messagesWithPendingFiles) {
-      if (!message.attachments) continue;
-      
-      const pendingFiles = message.attachments.filter(f => f.uploadStatus === UploadStatus.PENDING);
-      if (pendingFiles.length === 0) continue;
-
-      try {
-        // Try to upload the pending files
-        const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
-        
-        // Update the message with new file IDs and status
-        pendingFiles.forEach((f, index) => {
-          f.uploadStatus = UploadStatus.COMPLETED;
-          f.id = uploadedFileIds[index] || f.id;
-          f.error = undefined;
-        });
-
-        // Update the message in the database
-        await this.dbService.updateMessage(message);
-        
-        // Update UI if this message is currently displayed
-        const currentMessages = this.messagesSubject.getValue();
-        const messageIndex = currentMessages.findIndex(m => m.id === message.id);
-        if (messageIndex !== -1) {
-          currentMessages[messageIndex] = message;
-          this.messagesSubject.next([...currentMessages]);
-        }
-
-        console.log(`Successfully uploaded files for message ${message.id}`);
-      } catch (error) {
-        console.error(`Failed to upload files for message ${message.id}:`, error);
-        // Mark files as failed
-        pendingFiles.forEach(f => {
-          f.uploadStatus = UploadStatus.FAILED;
-          f.error = 'Upload failed after retry';
-        });
-        await this.dbService.updateMessage(message);
-      }
-    }
-  }
 
   // Set up connection monitoring for automatic file uploads
-  private setupConnectionMonitoring(): void {
-    // Check connection every 30 seconds
-    this.connectionCheckInterval = setInterval(async () => {
-      const isConnected = await this.isBackendAvailable();
-      
-      // If connection was restored
-      if (!this.lastConnectionState && isConnected) {
-        console.log('Connection restored, checking for pending file uploads');
-        await this.uploadPendingFiles();
-        // Also trigger a sync
-        this.syncInBackground();
-      }
-      
-      this.lastConnectionState = isConnected;
-    }, 30000);
-    
-    // Also check immediately
-    this.isBackendAvailable().then(isConnected => {
-      this.lastConnectionState = isConnected;
-    });
-  }
-
   // Clean up on service destroy
   ngOnDestroy(): void {
-    if (this.connectionCheckInterval) {
-      clearInterval(this.connectionCheckInterval);
-    }
+    this.syncService.destroy();
   }
 }

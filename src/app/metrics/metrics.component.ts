@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { ChatService } from '../chat/chat.service';
+import { ChatService } from '../chat.service';
 
 @Component({
     selector: 'app-metrics',

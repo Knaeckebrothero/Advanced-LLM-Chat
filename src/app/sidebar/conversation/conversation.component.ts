@@ -3,7 +3,7 @@ import { Conversation } from '../../data/objects/conversation';
 import { Message } from '../../data/objects/message';
 import { DBService } from '../../data/db.service';
 import { CommonModule } from '@angular/common';
-import {ChatService} from "../../chat/chat.service";
+import {ChatService} from "../../chat.service";
 import {FormsModule} from "@angular/forms";
 
 
