@@ -12,6 +12,7 @@ import replicate
 import secrets
 import asyncio
 import json
+import hashlib
 from fastapi import FastAPI, Response, status, Request, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -178,6 +179,24 @@ class AppSettings(BaseModel):
   systemPrompt: str
   darkMode: int
   languageIsEnglish: int
+
+
+class AppSettingsWithMetadata(AppSettings):
+  """
+  Settings with sync metadata for frontend sync architecture
+  """
+  id: Optional[str] = None
+  timestamp: Optional[datetime] = None
+  syncHash: Optional[str] = None
+
+
+class ConversationWithDetails(Conversation):
+  """
+  Conversation with additional metadata for sync
+  """
+  lastModified: Optional[datetime] = None
+  messageCount: Optional[int] = None
+  syncHash: Optional[str] = None
 
 
 @contextmanager
@@ -447,8 +466,50 @@ def init_db():
                                                            top_p REAL NOT NULL,
                                                            systemPrompt TEXT NOT NULL,
                                                            darkMode INTEGER NOT NULL,
-                                                           languageIsEnglish INTEGER NOT NULL
+                                                           languageIsEnglish INTEGER NOT NULL,
+                                                           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+                ''')
+
+    # Add updated_at column to messages table if it doesn't exist
+    cur.execute("PRAGMA table_info(messages)")
+    columns = [column[1] for column in cur.fetchall()]
+    if 'updated_at' not in columns:
+      print("Adding updated_at column to messages table...")
+      cur.execute("ALTER TABLE messages ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+    # Add updated_at column to user_settings table if it doesn't exist
+    cur.execute("PRAGMA table_info(user_settings)")
+    columns = [column[1] for column in cur.fetchall()]
+    if 'updated_at' not in columns:
+      print("Adding updated_at column to user_settings table...")
+      cur.execute("ALTER TABLE user_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+    # Create trigger to update conversations timestamp
+    cur.execute('''
+                CREATE TRIGGER IF NOT EXISTS update_conversations_timestamp 
+                AFTER UPDATE ON conversations 
+                BEGIN
+                  UPDATE conversations SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
+                END;
+                ''')
+
+    # Create trigger to update messages timestamp
+    cur.execute('''
+                CREATE TRIGGER IF NOT EXISTS update_messages_timestamp 
+                AFTER UPDATE ON messages 
+                BEGIN
+                  UPDATE messages SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+                END;
+                ''')
+
+    # Create trigger to update user_settings timestamp
+    cur.execute('''
+                CREATE TRIGGER IF NOT EXISTS update_user_settings_timestamp 
+                AFTER UPDATE ON user_settings 
+                BEGIN
+                  UPDATE user_settings SET updated_at = CURRENT_TIMESTAMP WHERE user_id = NEW.user_id;
+                END;
                 ''')
 
     conn.commit()
@@ -495,6 +556,13 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
   hash_value %= (2 ** 32)
   print(f"Generated hashsum: {hash_value} string rep: {hash_chars}")
   return hash_value
+
+
+def generate_sha256_hash(content: str) -> str:
+  """
+  Generate SHA-256 hash matching frontend implementation
+  """
+  return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 
 async def generate_llm_response(prompt: str, temperature: float, top_p: float, system_prompt: str, model: str) -> str:
@@ -849,12 +917,73 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
     return ErrorResponse(error=str(e))
 
 
-@app.get("/api/settings", response_model=AppSettings)
+@app.get("/api/conversation/{conversation_id}", 
+         response_model=ConversationWithDetails,
+         responses={
+           status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Conversation not found"},
+           status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"}
+         },
+         tags=["Conversation"])
+async def get_conversation(conversation_id: int, response: Response, current_user: dict = Depends(get_current_user)):
+  """
+  Get a single conversation with metadata for sync
+  """
+  user_id = current_user['user_id']
+  
+  try:
+    with get_db() as conn:
+      cur = conn.cursor()
+      
+      # Fetch conversation details
+      cur.execute("""
+        SELECT id, userId, name, participants, createdAt, updatedAt
+        FROM conversations 
+        WHERE id = ? AND userId = ?
+      """, (conversation_id, user_id))
+      
+      conv_row = cur.fetchone()
+      
+      if not conv_row:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return ErrorResponse(error="Conversation not found")
+      
+      # Get message count
+      cur.execute("SELECT COUNT(*) as count FROM messages WHERE conversationId = ?", (conversation_id,))
+      message_count = cur.fetchone()['count']
+      
+      # Get all messages to compute hash
+      cur.execute("SELECT content FROM messages WHERE conversationId = ? ORDER BY time", (conversation_id,))
+      messages = cur.fetchall()
+      
+      # Compute SHA-256 hash of conversation content
+      content_str = ''.join([msg['content'] for msg in messages if msg['content']])
+      sync_hash = generate_sha256_hash(content_str) if content_str else None
+      
+      # Return conversation with details
+      return ConversationWithDetails(
+        id=conv_row['id'],
+        userId=conv_row['userId'],
+        name=conv_row['name'],
+        participants=conv_row['participants'],
+        createdAt=conv_row['createdAt'],
+        lastModified=conv_row['updatedAt'],
+        messageCount=message_count,
+        syncHash=sync_hash
+      )
+      
+  except Exception as e:
+    print(f"Error fetching conversation: {str(e)}")
+    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    return ErrorResponse(error=str(e))
+
+
+@app.get("/api/settings", response_model=AppSettingsWithMetadata)
 async def get_settings(current_user: dict = Depends(get_current_user)):
   user_id = current_user["user_id"]
 
   if current_user.get("is_guest"):
-    return AppSettings(
+    # Generate consistent hash for guest settings
+    guest_settings = AppSettings(
       model="openai/gpt-4o",
       temperature=0.5,
       top_p=0.5,
@@ -862,21 +991,41 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
       darkMode=0,
       languageIsEnglish=0
     )
+    settings_str = f"{guest_settings.model}:{guest_settings.temperature}:{guest_settings.top_p}:{guest_settings.systemPrompt}:{guest_settings.darkMode}:{guest_settings.languageIsEnglish}"
+    return AppSettingsWithMetadata(
+      **guest_settings.dict(),
+      id=f"guest-{user_id}",
+      timestamp=datetime.now(UTC),
+      syncHash=generate_sha256_hash(settings_str)
+    )
 
   with get_db() as db:
     cur = db.cursor()
     cur.execute("""
-                SELECT model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish
+                SELECT model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish, updated_at
                 FROM user_settings
                 WHERE user_id = ?
                 """, (user_id,))
     row = cur.fetchone()
 
     if row:
-      return AppSettings(**dict(row))
+      settings_dict = dict(row)
+      # Extract timestamp
+      timestamp = settings_dict.pop('updated_at', None)
+      # Create settings object
+      settings = AppSettings(**settings_dict)
+      # Generate hash
+      settings_str = f"{settings.model}:{settings.temperature}:{settings.top_p}:{settings.systemPrompt}:{settings.darkMode}:{settings.languageIsEnglish}"
+      
+      return AppSettingsWithMetadata(
+        **settings.dict(),
+        id=f"user-{user_id}",
+        timestamp=timestamp,
+        syncHash=generate_sha256_hash(settings_str)
+      )
     else:
       # Fallback defaults if user has no settings yet
-      return AppSettings(
+      default_settings = AppSettings(
         model="openai/gpt-4o",
         temperature=0.5,
         top_p=0.5,
@@ -884,9 +1033,17 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         darkMode=0,
         languageIsEnglish=0
       )
+      settings_str = f"{default_settings.model}:{default_settings.temperature}:{default_settings.top_p}:{default_settings.systemPrompt}:{default_settings.darkMode}:{default_settings.languageIsEnglish}"
+      
+      return AppSettingsWithMetadata(
+        **default_settings.dict(),
+        id=f"user-{user_id}",
+        timestamp=datetime.now(UTC),
+        syncHash=generate_sha256_hash(settings_str)
+      )
 
 
-@app.put("/api/settings")
+@app.put("/api/settings", response_model=AppSettingsWithMetadata)
 async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
   user_id = current_user["user_id"]
   if current_user.get("is_guest"):
@@ -895,15 +1052,16 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
   with get_db() as db:
     cur = db.cursor()
     cur.execute("""
-                INSERT INTO user_settings (user_id, model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO user_settings (user_id, model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(user_id) DO UPDATE SET
                                                  model = excluded.model,
                                                  temperature = excluded.temperature,
                                                  top_p = excluded.top_p,
                                                  systemPrompt = excluded.systemPrompt,
                                                  darkMode = excluded.darkMode,
-                                                 languageIsEnglish = excluded.languageIsEnglish
+                                                 languageIsEnglish = excluded.languageIsEnglish,
+                                                 updated_at = CURRENT_TIMESTAMP
                 """, (
                   user_id,
                   new_settings.model,
@@ -914,7 +1072,25 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
                   new_settings.languageIsEnglish
                 ))
     db.commit()
-  return {"message": "Settings saved"}
+    
+    # Fetch the updated settings with timestamp
+    cur.execute("""
+                SELECT updated_at
+                FROM user_settings
+                WHERE user_id = ?
+                """, (user_id,))
+    row = cur.fetchone()
+    timestamp = row['updated_at'] if row else datetime.now(UTC)
+    
+  # Generate hash for the settings
+  settings_str = f"{new_settings.model}:{new_settings.temperature}:{new_settings.top_p}:{new_settings.systemPrompt}:{new_settings.darkMode}:{new_settings.languageIsEnglish}"
+  
+  return AppSettingsWithMetadata(
+    **new_settings.dict(),
+    id=f"user-{user_id}",
+    timestamp=timestamp,
+    syncHash=generate_sha256_hash(settings_str)
+  )
 
 
 @app.post("/api/conversation/create", response_model=Conversation, status_code=status.HTTP_201_CREATED, tags=["Conversation"])
