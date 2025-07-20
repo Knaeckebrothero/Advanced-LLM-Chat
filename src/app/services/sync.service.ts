@@ -3,7 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { Conversation } from '../data/objects/conversation';
 import { DBService } from '../data/db.service';
-import { ApiService } from '../api.service';
+import { ApiService } from './api.service';
 import { DisplayService } from '../sidebar/service/display.service';
 import { FilePreview, UploadStatus } from '../data/objects/file-preview';
 import { environment } from '../environments/environment';
@@ -160,7 +160,7 @@ export class SyncService {
     const currentConvId = this.displayService.activeConversationId$.value;
     if (currentConvId && currentConvId !== 0) {
       await this.syncInBackground();
-      
+
       // Return current messages after sync
       const messages = await this.dbService.getMessagesByConversationId(currentConvId);
       return messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
@@ -189,14 +189,14 @@ export class SyncService {
   private setupConnectionMonitoring() {
     this.connectionCheckInterval = setInterval(async () => {
       const isConnected = await this.isBackendAvailable();
-      
+
       if (isConnected && !this.lastConnectionState) {
         console.log('Connection restored, checking for pending file uploads and triggering sync');
         await this.uploadPendingFiles();
         // Also trigger a sync
         this.syncInBackground();
       }
-      
+
       this.lastConnectionState = isConnected;
     }, 30000);
   }

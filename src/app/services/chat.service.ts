@@ -1,16 +1,16 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, firstValueFrom, lastValueFrom, Observable } from 'rxjs';
-import { Message } from './data/objects/message';
-import { DBService } from './data/db.service';
+import { Message } from '../data/objects/message';
+import { DBService } from '../data/db.service';
 import { ApiService } from './api.service';
-import { Conversation } from './data/objects/conversation';
-import { SettingsService } from './settings/settings.service';
-import { DisplayService } from './sidebar/service/display.service';
-import { AuthService } from "./auth/auth.service";
+import { Conversation } from '../data/objects/conversation';
+import { SettingsService } from '../settings/settings.service';
+import { DisplayService } from '../sidebar/service/display.service';
+import { AuthService } from "../auth/auth.service";
 import { HttpClient } from '@angular/common/http';
-import { environment } from './environments/environment';
-import { FilePreview, UploadStatus } from './data/objects/file-preview';
-import { SyncService } from './services/sync.service';
+import { environment } from '../environments/environment';
+import { FilePreview, UploadStatus } from '../data/objects/file-preview';
+import { SyncService } from './sync.service';
 
 
 @Injectable({

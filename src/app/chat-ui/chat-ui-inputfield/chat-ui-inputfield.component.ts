@@ -12,7 +12,7 @@ import { DeviceCapabilitiesService } from '../services/device-capabilities.servi
 import { VoiceRecordingService } from './voice-recording.service';
 import { FileHandlingService } from '../services/file-handling.service';
 import { RecordingConfig } from '../../data/objects/recording';
-import { ApiService } from '../../api.service';
+import { ApiService } from '../../services/api.service';
 import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
 
