@@ -25,19 +25,28 @@ export class DBService {
     console.log("Starting database...");
 
     // Open the database
-    this.db = await openDB<MainAppDB>('main', 1, {
-      upgrade(db) {
-        // Create a store for the user
-        db.createObjectStore('user', { keyPath: 'id' });
+    this.db = await openDB<MainAppDB>('main', 2, {
+      upgrade(db, oldVersion) {
+        // Upgrade from version 0 (new database) or version 1
+        if (oldVersion < 1) {
+          // Create a store for the user
+          db.createObjectStore('user', { keyPath: 'id' });
 
-        // Create a store for conversations with 'id' as the key path and an index
-        const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
-        conversationStore.createIndex('by-userId', 'userId');
+          // Create a store for conversations with 'id' as the key path and an index
+          const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
+          conversationStore.createIndex('by-userId', 'userId');
 
-        // Create a store for messages with indexes and conversationId + id as a composite key
-        const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
-        messageStore.createIndex('by-conversationId', 'conversationId');
-        messageStore.createIndex('by-conversationId-time', ['conversationId', 'time']);
+          // Create a store for messages with indexes and conversationId + id as a composite key
+          const messageStore = db.createObjectStore('chatMessages', { keyPath: 'id' });
+          messageStore.createIndex('by-conversationId', 'conversationId');
+          messageStore.createIndex('by-conversationId-time', ['conversationId', 'time']);
+        }
+
+        // Add settings store in version 2
+        if (oldVersion < 2) {
+          // Create a store for settings
+          db.createObjectStore('settings', { keyPath: 'id' });
+        }
       }
     });
     console.log("Database started!");
@@ -64,6 +73,12 @@ export class DBService {
   public getDatabaseReadyPromise() {
     console.log("Waiting for database to be ready...");
     return this.status
+  }
+
+  // Get the database instance (for repositories)
+  public async getDb(): Promise<IDBPDatabase<MainAppDB>> {
+    await this.status;
+    return this.db;
   }
 
   // Method to add an entry to the collection
