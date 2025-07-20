@@ -5,7 +5,7 @@ import { catchError, map } from 'rxjs/operators';
 import { BaseRepository, SyncResult } from './base.repository';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../services/api.service';
-import { Settings } from '../settings/settings.service';
+import { Settings } from '../models/settings.model';
 import { environment } from '../environments/environment';
 
 export interface SettingsWithMetadata extends Settings {

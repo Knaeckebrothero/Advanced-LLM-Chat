@@ -4,7 +4,7 @@ import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
-import { Settings } from '../settings/settings.service';
+import { Settings } from '../models/settings.model';
 import { FilePreview } from '../data/objects/file-preview';
 
 

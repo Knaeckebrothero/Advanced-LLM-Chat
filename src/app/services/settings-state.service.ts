@@ -3,8 +3,13 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { map, switchMap, shareReplay } from 'rxjs/operators';
 import { SettingsRepository, SettingsWithMetadata } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
+import { Settings } from '../models/settings.model';
 
-export interface AppSettings extends SettingsWithMetadata {
+export interface AppSettings extends Settings {
+  // From SettingsWithMetadata
+  id?: string;
+  timestamp?: Date;
+  syncHash?: string;
   // Computed properties
   isEnglish?: boolean;
   isDarkMode?: boolean;

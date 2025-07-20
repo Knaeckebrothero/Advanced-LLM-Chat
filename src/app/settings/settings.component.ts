@@ -1,16 +1,24 @@
-import { Component, OnInit } from '@angular/core';
-import { CommonModule, DecimalPipe } from '@angular/common';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject, takeUntil } from 'rxjs';
 
 // Angular Material Modules
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
-// Import the new ThemeService
-import { ThemeService } from '../services/theme.service';
-import { SettingsService, Settings } from './settings.service';
+// New architecture services
+import { SettingsStateService, AppSettings } from '../services/settings-state.service';
+import { SyncEngineService } from '../repositories/sync-engine.service';
 import { StatusBarService } from '../status-bar/status-bar.service';
+import { Settings } from '../models/settings.model';
 
+/**
+ * Settings component using the new unified data architecture.
+ * This demonstrates how components interact with the state services
+ * rather than directly with repositories or API services.
+ */
 @Component({
   selector: 'app-settings',
   standalone: true,
@@ -18,12 +26,14 @@ import { StatusBarService } from '../status-bar/status-bar.service';
     CommonModule,
     FormsModule,
     MatButtonModule,
-    MatIconModule
+    MatIconModule,
+    MatProgressSpinnerModule
   ],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss']
 })
-export class SettingsComponent implements OnInit {
+export class SettingsComponent implements OnInit, OnDestroy {
+  // Local form model
   settings: Settings = {
     model: 'openai/gpt-4o',
     temperature: 0.5,
@@ -33,110 +43,144 @@ export class SettingsComponent implements OnInit {
     languageIsEnglish: 1
   };
 
+  // UI state
   models: string[] = [];
   temperatures: number[] = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
   topPValues: number[] = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+  
+  // Loading states from the state service
+  isLoading$ = this.settingsState.isLoading$;
+  isSyncing$ = this.settingsState.isSyncing$;
+  lastError$ = this.settingsState.lastError$;
+  
+  // Sync status from sync engine
+  syncStatus$ = this.syncEngine.status$;
 
+  private destroy$ = new Subject<void>();
   private initialSettings!: Settings;
-  private readonly defaultSettings: Settings = { ...this.settings };
 
   constructor(
-    private settingsService: SettingsService,
-    private statusBar: StatusBarService,
-    private themeService: ThemeService // Inject the ThemeService
+    private settingsState: SettingsStateService,
+    private syncEngine: SyncEngineService,
+    private statusBar: StatusBarService
   ) {}
 
   ngOnInit(): void {
+    // Load settings through the state service
     this.loadSettings();
-    this.loadLLMs();
-  }
-
-  private loadLLMs(): void {
-    this.settingsService.getLLMs()
-      .then(llms => {
-        this.models = llms;
-        if (llms.length > 0 && !llms.includes(this.settings.model)) {
-          this.settings.model = llms[0];
+    this.loadAvailableModels();
+    
+    // Subscribe to settings changes
+    this.settingsState.settings
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(settings => {
+        if (settings) {
+          this.settings = {
+            model: settings.model,
+            temperature: settings.temperature,
+            top_p: settings.top_p,
+            systemPrompt: settings.systemPrompt,
+            darkMode: settings.darkMode,
+            languageIsEnglish: settings.languageIsEnglish
+          };
+          this.initialSettings = { ...this.settings };
         }
-      })
-      .catch(err => {
-        this.statusBar.showMessage('Failed to load available models.', 'error');
-        console.error(err);
+      });
+    
+    // Subscribe to sync errors
+    this.settingsState.lastError$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(error => {
+        if (error) {
+          this.statusBar.showMessage(error, 'error');
+        }
       });
   }
 
-  private loadSettings(): void {
-    this.settingsService.getSettings().subscribe({
-      next: (settings) => {
-        this.settings = { ...settings };
-        this.initialSettings = { ...settings };
-        // Don't override the theme service's stored preference
-        // The theme service handles its own persistence
-        this.statusBar.showMessage('Settings loaded from server.', 'success');
-      },
-      error: () => {
-        const local = this.settingsService.loadLocal();
-        if (local) {
-          this.settings = { ...local };
-          this.initialSettings = { ...local };
-          this.statusBar.showMessage('Loaded local settings.', 'info');
-        } else {
-          this.initialSettings = { ...this.defaultSettings };
-          this.settings = { ...this.defaultSettings };
-          this.statusBar.showMessage('No settings found. Using defaults.', 'warning');
-        }
-      },
-    });
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  private async loadSettings(): Promise<void> {
+    try {
+      await this.settingsState.loadSettings();
+      this.statusBar.showMessage('Settings loaded successfully', 'success');
+    } catch (error) {
+      this.statusBar.showMessage('Failed to load settings', 'error');
+    }
+  }
+
+  private async loadAvailableModels(): Promise<void> {
+    try {
+      this.models = await this.settingsState.getAvailableModels();
+      if (this.models.length > 0 && !this.models.includes(this.settings.model)) {
+        this.settings.model = this.models[0];
+      }
+    } catch (error) {
+      this.statusBar.showMessage('Failed to load available models', 'error');
+      console.error(error);
+    }
   }
 
   /**
-   * Called when the theme toggle is changed.
-   * Uses the ThemeService to toggle the theme and updates the settings model.
+   * Save settings using the new architecture
+   */
+  async saveSettings(): Promise<void> {
+    try {
+      await this.settingsState.saveSettings(this.settings);
+      this.initialSettings = { ...this.settings };
+      this.statusBar.showMessage('Settings saved successfully', 'success');
+    } catch (error) {
+      this.statusBar.showMessage('Failed to save settings', 'error');
+    }
+  }
+
+  /**
+   * Force sync with backend
+   */
+  async syncNow(): Promise<void> {
+    try {
+      await this.syncEngine.syncNow();
+      this.statusBar.showMessage('Sync completed', 'success');
+    } catch (error) {
+      this.statusBar.showMessage('Sync failed', 'error');
+    }
+  }
+
+  /**
+   * Reset to default settings
+   */
+  resetToDefaults(): void {
+    this.settings = {
+      model: 'openai/gpt-4o',
+      temperature: 0.5,
+      top_p: 0.5,
+      systemPrompt: '',
+      darkMode: 0,
+      languageIsEnglish: 1
+    };
+    this.statusBar.showMessage('Reset to default settings', 'info');
+  }
+
+  /**
+   * Check if settings have been modified
+   */
+  get isDirty(): boolean {
+    return JSON.stringify(this.settings) !== JSON.stringify(this.initialSettings);
+  }
+
+  /**
+   * Toggle theme
    */
   toggleTheme(): void {
-    this.themeService.toggleTheme();
-    // Update the settings object to reflect the change for saving
-    const currentTheme = this.themeService.getCurrentTheme();
-    // For auto mode, we'll use the effective theme for backward compatibility
-    this.settings.darkMode = (currentTheme === 'dark' ||
-      (currentTheme === 'auto' && this.themeService.getCurrentEffectiveTheme() === 'dark')) ? 1 : 0;
+    this.settings.darkMode = this.settings.darkMode === 1 ? 0 : 1;
   }
 
   /**
-   * Get the current theme display icon
+   * Toggle language
    */
-  getThemeIcon(): string {
-    const theme = this.themeService.getCurrentTheme();
-    if (theme === 'auto') {
-      return 'brightness_auto';
-    }
-    return theme === 'dark' ? 'dark_mode' : 'light_mode';
-  }
-
   toggleLanguage(): void {
-    const lang = this.settings.languageIsEnglish ? 'en' : 'de';
-    console.log('Language switched to:', lang);
-  }
-
-  resetSettings(): void {
-    this.settings.temperature = this.defaultSettings.temperature;
-    this.settings.top_p = this.defaultSettings.top_p;
-    this.settings.systemPrompt = this.defaultSettings.systemPrompt;
-    this.statusBar.showMessage('Model settings have been reset to default.', 'info');
-  }
-
-  closeAndSave(): void {
-    this.settingsService.saveSettings(this.settings).subscribe({
-      next: () => {
-        this.settingsService.saveLocal(this.settings);
-        this.statusBar.showMessage('Settings saved successfully.', 'success');
-        this.statusBar.toggleSidenav();
-      },
-      error: () => {
-        this.settingsService.saveLocal(this.settings);
-        this.statusBar.showMessage('Failed to save to server. Saved locally.', 'error');
-        this.statusBar.toggleSidenav();
-      },
-    });
+    this.settings.languageIsEnglish = this.settings.languageIsEnglish === 1 ? 0 : 1;
   }
 }

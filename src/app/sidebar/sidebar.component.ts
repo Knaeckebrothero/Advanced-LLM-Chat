@@ -5,10 +5,8 @@ import { Conversation } from '../data/objects/conversation';
 import { ConversationComponent } from './conversation/conversation.component';
 import { MatIcon } from "@angular/material/icon";
 import { SettingsComponent } from "../settings/settings.component";
-import { SettingsService } from "../settings/settings.service";
 import { MatDialog } from "@angular/material/dialog";
 import { MatDialogModule } from '@angular/material/dialog';
-import { Settings } from '../settings/settings.service';
 import { AuthService } from '../auth/auth.service';
 import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
@@ -45,7 +43,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
     private uiState: UIStateService,
     public router: Router,
     private dialog: MatDialog,
-    private settingsService: SettingsService,
     private authService: AuthService
   ) {}
 
@@ -97,18 +94,16 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   /**
    * Öffnet die Einstellungen als modales Dialogfenster.
-   * Nutzt die bestehende SettingsComponent und zeigt sie über MatDialog an.
+   * Nutzt die neue SettingsNewComponent und zeigt sie über MatDialog an.
    */
   openSettings(): void {
     const dialogRef = this.dialog.open(SettingsComponent, {
       width: '400px'
     });
 
-    dialogRef.afterClosed().subscribe((result: Settings | undefined) => {
-      if (result) {
-        this.settingsService.saveSettings(result).subscribe();
-        this.settingsService.saveLocal(result);
-      }
+    // The new settings component handles saving internally
+    dialogRef.afterClosed().subscribe(() => {
+      // Settings are already saved by the component itself
     });
   }
 
