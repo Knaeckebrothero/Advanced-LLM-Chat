@@ -7,7 +7,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
 // Import the new ThemeService
-import { ThemeService } from '../theme.service';
+import { ThemeService } from '../services/theme.service';
 import { SettingsService, Settings } from './settings.service';
 import { StatusBarService } from '../status-bar/status-bar.service';
 

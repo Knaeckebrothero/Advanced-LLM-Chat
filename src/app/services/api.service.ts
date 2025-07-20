@@ -1,11 +1,11 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { lastValueFrom } from 'rxjs';
-import { Message } from './data/objects/message';
-import { environment } from './environments/environment';
-import { Conversation } from './data/objects/conversation';
-import { Settings } from './settings/settings.service';
-import { FilePreview } from './data/objects/file-preview';
+import { Message } from '../data/objects/message';
+import { environment } from '../environments/environment';
+import { Conversation } from '../data/objects/conversation';
+import { Settings } from '../settings/settings.service';
+import { FilePreview } from '../data/objects/file-preview';
 
 
 @Injectable({

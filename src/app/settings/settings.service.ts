@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ApiService } from '../api.service';
+import { ApiService } from '../services/api.service';
 
 // Interface that matches the backend structure
 export interface Settings {
