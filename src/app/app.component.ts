@@ -1,10 +1,10 @@
 import { Component, OnDestroy, OnInit, HostListener } from '@angular/core';
-import { DisplayService } from "./sidebar/service/display.service";
 import { NavigationEnd, Router } from '@angular/router';
 import { Subscription, interval } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ChatService } from './services/chat.service';
 import { ThemeService } from './services/theme.service'; // Corrected path
+import { UIStateService } from './services/ui-state.service';
 
 @Component({
   selector: 'app-root',
@@ -20,7 +20,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private readonly visibilityChangeHandler: () => void;
 
   constructor(
-    public displayService: DisplayService,
+    public uiState: UIStateService,
     private router: Router,
     private chatService: ChatService,
     private themeService: ThemeService // Injected the service
@@ -58,7 +58,7 @@ export class AppComponent implements OnInit, OnDestroy {
     document.addEventListener('visibilitychange', this.visibilityChangeHandler);
 
     // Subscribe to sidebar state changes and update CSS variable
-    this.displayService.isSidebarOpen$.subscribe(isOpen => {
+    this.uiState.sidebarOpen$.subscribe(isOpen => {
       this.updateSidebarState(isOpen);
     });
   }
@@ -94,7 +94,7 @@ export class AppComponent implements OnInit, OnDestroy {
    * Initialize sidebar state CSS variable
    */
   private initializeSidebarState() {
-    const currentState = this.displayService.getCurrentSidebarState();
+    const currentState = this.uiState.isSidebarOpen;
     document.documentElement.style.setProperty('--sidebar-state', currentState ? '1' : '0');
   }
 
