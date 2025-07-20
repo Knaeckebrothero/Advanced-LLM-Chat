@@ -3,6 +3,7 @@ import { BehaviorSubject, interval, merge, Observable } from 'rxjs';
 import { filter, switchMap } from 'rxjs/operators';
 import { SettingsRepository } from './settings.repository';
 import { ConversationRepository } from './conversation.repository';
+import { MessageRepository } from './message.repository';
 import { ApiService } from '../services/api.service';
 import { environment } from '../environments/environment';
 
@@ -44,6 +45,7 @@ export class SyncEngineService {
   constructor(
     private settingsRepository: SettingsRepository,
     private conversationRepository: ConversationRepository,
+    private messageRepository: MessageRepository,
     private apiService: ApiService
   ) {
     this.initialize();
@@ -142,6 +144,9 @@ export class SyncEngineService {
         
         if (isOnline && !status.isOnline) {
           console.log('Connection restored, triggering sync...');
+          // Upload any pending files first
+          await this.messageRepository.uploadPendingFiles();
+          // Then perform regular sync
           await this.performSync();
         }
       }

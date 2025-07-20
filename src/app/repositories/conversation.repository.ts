@@ -6,6 +6,7 @@ import { DBService } from '../data/db.service';
 import { ApiService } from '../services/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { Message } from '../data/objects/message';
+import { MessageRepository } from './message.repository';
 
 export interface ConversationSyncMetadata {
   id: number;
@@ -22,7 +23,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   
   constructor(
     dbService: DBService,
-    apiService: ApiService
+    apiService: ApiService,
+    private messageRepository: MessageRepository
   ) {
     super(dbService, apiService);
     this.loadConversations();
