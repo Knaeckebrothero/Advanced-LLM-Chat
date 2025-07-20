@@ -7,6 +7,7 @@ import { Subject, takeUntil } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatDialogRef } from '@angular/material/dialog';
 
 // New architecture services
 import { SettingsStateService, AppSettings } from '../services/settings-state.service';
@@ -62,7 +63,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   constructor(
     private settingsState: SettingsStateService,
     private syncEngine: SyncEngineService,
-    private statusBar: StatusBarService
+    private statusBar: StatusBarService,
+    private dialogRef: MatDialogRef<SettingsComponent>
   ) {}
 
   ngOnInit(): void {
@@ -182,5 +184,27 @@ export class SettingsComponent implements OnInit, OnDestroy {
    */
   toggleLanguage(): void {
     this.settings.languageIsEnglish = this.settings.languageIsEnglish === 1 ? 0 : 1;
+  }
+
+  /**
+   * Get theme icon based on current theme
+   */
+  getThemeIcon(): string {
+    return this.settings.darkMode === 1 ? 'dark_mode' : 'light_mode';
+  }
+
+  /**
+   * Reset settings (alias for resetToDefaults)
+   */
+  resetSettings(): void {
+    this.resetToDefaults();
+  }
+
+  /**
+   * Close and save settings
+   */
+  async closeAndSave(): Promise<void> {
+    await this.saveSettings();
+    this.dialogRef.close();
   }
 }
