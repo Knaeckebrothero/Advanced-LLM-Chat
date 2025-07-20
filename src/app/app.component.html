@@ -1,9 +1,9 @@
 <div class="app-container">
-  <div *ngIf="showMenuIcon" class="burger-container" [class.sidebar-closed]="!(displayService.isSidebarOpen$ | async)">
+  <div *ngIf="showMenuIcon" class="burger-container" [class.sidebar-closed]="!(uiState.sidebarOpen$ | async)">
     <button class="burger-menu-button"
-            (click)="displayService.toggleSidebar()"
+            (click)="uiState.toggleSidebar()"
             aria-label="Toggle sidebar menu"
-            [attr.aria-expanded]="displayService.isSidebarOpen$ | async">
+            [attr.aria-expanded]="uiState.sidebarOpen$ | async">
       <div class="burger-line line1"></div>
       <div class="burger-line line2"></div>
       <div class="burger-line line3"></div>
@@ -13,11 +13,11 @@
   <app-sidebar
     *ngIf="showMenuIcon"
     class="sidebar-element"
-    [class.open]="displayService.isSidebarOpen$ | async">
+    [class.open]="uiState.sidebarOpen$ | async">
   </app-sidebar>
 
   <div class="content-wrapper"
-       [class.sidebar-open]="(displayService.isSidebarOpen$ | async) && showMenuIcon"
+       [class.sidebar-open]="(uiState.sidebarOpen$ | async) && showMenuIcon"
        [class.no-sidebar]="!showMenuIcon">
     <router-outlet></router-outlet>
   </div>

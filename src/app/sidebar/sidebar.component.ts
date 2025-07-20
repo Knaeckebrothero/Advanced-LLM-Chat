@@ -1,10 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
 import { Conversation } from '../data/objects/conversation';
-import { ChatService } from '../services/chat.service';
 import { ConversationComponent } from './conversation/conversation.component';
-import { DisplayService } from "./service/display.service";
 import { MatIcon } from "@angular/material/icon";
 import { SettingsComponent } from "../settings/settings.component";
 import { SettingsService } from "../settings/settings.service";
@@ -12,6 +10,10 @@ import { MatDialog } from "@angular/material/dialog";
 import { MatDialogModule } from '@angular/material/dialog';
 import { Settings } from '../settings/settings.service';
 import { AuthService } from '../auth/auth.service';
+import { ChatStateService } from '../services/chat-state.service';
+import { UIStateService } from '../services/ui-state.service';
+import { Observable, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 
 @Component({
@@ -27,14 +29,21 @@ import { AuthService } from '../auth/auth.service';
     MatDialogModule,
   ]
 })
-export class SidebarComponent implements OnInit {
+export class SidebarComponent implements OnInit, OnDestroy {
 
   groupedConversations: { [key: string]: Conversation[] } = {};
+  
+  // Observable streams from state services
+  conversations$: Observable<Conversation[]> = this.chatState.conversations$;
+  activeConversationId$: Observable<number | null> = this.uiState.activeConversationId$;
+  isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
+  
+  private destroy$ = new Subject<void>();
 
   constructor(
-    public chatService: ChatService,
+    private chatState: ChatStateService,
+    private uiState: UIStateService,
     public router: Router,
-    public displayService: DisplayService,
     private dialog: MatDialog,
     private settingsService: SettingsService,
     private authService: AuthService
@@ -77,7 +86,7 @@ export class SidebarComponent implements OnInit {
     if (this.authService.isGuest) {
       // Navigate to login page
       this.router.navigate(['/login']);
-      this.displayService.closeSidebarOnMobile();
+      this.uiState.closeSidebarOnMobile();
     } else {
       // Show logout confirmation
       if (confirm('Are you sure you want to logout?')) {
@@ -105,17 +114,16 @@ export class SidebarComponent implements OnInit {
 
   /**
    * Angular lifecycle hook that initializes the component's state.
-   * It subscribes to a list of conversations from the chat service.
+   * It subscribes to a list of conversations from the chat state service.
    * It groups existing conversations by date and stores them accordingly.
    */
   ngOnInit(): void {
-    // Subscribe to conversations
-    this.chatService.getConversations().subscribe(conversations => {
-      this.groupedConversations = this.groupConversationsByDate(conversations);
-    });
-
-    // Initial load of all conversations
-    this.chatService.loadAllConversations();
+    // Subscribe to conversations from ChatStateService
+    this.conversations$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(conversations => {
+        this.groupedConversations = this.groupConversationsByDate(conversations);
+      });
   }
 
   /**
@@ -167,29 +175,20 @@ export class SidebarComponent implements OnInit {
 
   /**
    * Called when a conversation is selected (clicked).
-   * Passes the selected conversation to the ChatService and updates highlighting.
+   * Passes the selected conversation to the ChatStateService and updates highlighting.
    */
   onSelectConversation(conversation: Conversation): void {
-    this.chatService.loadConversation(conversation);
-    this.displayService.setActiveConversation(conversation.id);
+    this.chatState.loadConversation(conversation.id);
     this.router.navigate(['/']); // Navigate to the main chat view
-    this.displayService.closeSidebarOnMobile(); // Close sidebar on mobile if open
+    this.uiState.closeSidebarOnMobile(); // Close sidebar on mobile if open
   }
 
   /**
    * Creates a new placeholder conversation.
    */
   createNewConversation(): void {
-    const tempConversation = new Conversation(
-      0, // Temporary ID for a new, unsaved chat
-      1, // Placeholder user ID
-      'New Chat', // Default name
-      ['user', 'Assistant'] // Default participants
-    );
-
-    this.chatService.loadConversation(tempConversation);
-    this.displayService.setActiveConversation(0); // Highlight "New Chat" button
-    this.displayService.closeSidebarOnMobile();
+    this.chatState.createNewConversation();
+    this.uiState.closeSidebarOnMobile();
   }
 
   /**
@@ -197,6 +196,11 @@ export class SidebarComponent implements OnInit {
    */
   navigateTo(route: string): void {
     this.router.navigate([route]);
-    this.displayService.closeSidebarOnMobile();
+    this.uiState.closeSidebarOnMobile();
+  }
+  
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 }

@@ -1,10 +1,10 @@
 import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { Conversation } from '../../data/objects/conversation';
 import { Message } from '../../data/objects/message';
-import { DBService } from '../../data/db.service';
 import { CommonModule } from '@angular/common';
-import {ChatService} from "../../services/chat.service";
-import {FormsModule} from "@angular/forms";
+import { ChatStateService } from "../../services/chat-state.service";
+import { FormsModule } from "@angular/forms";
+import { firstValueFrom } from 'rxjs';
 
 
 @Component({
@@ -24,7 +24,7 @@ export class ConversationComponent implements OnInit {
   editing = false;
   newName = '';
 
-  constructor(private chatService: ChatService, private db: DBService) {}
+  constructor(private chatState: ChatStateService) {}
 
   onSelect(): void {
     this.selected.emit(this.conversation);
@@ -36,13 +36,10 @@ export class ConversationComponent implements OnInit {
   }
 
   // Lifecycle hook: called once after the component is initialized.
-  // Loads messages related to this conversation from the local database.
-  // (This could be used later for message previews or synchronization.)
+  // Loads messages related to this conversation for preview purposes.
   async ngOnInit() {
-    if (this.conversation?.id) {
-      this.messages = await this.db.getMessagesByConversationId(this.conversation.id);
-      this.messages.sort((a, b) => a.time!.getTime() - b.time!.getTime());
-    }
+    // Messages are now managed by repositories and state services
+    // No need to load directly from DB
   }
 
   // Emits the selected conversation to the parent component when the user clicks on this conversation.
@@ -70,7 +67,7 @@ export class ConversationComponent implements OnInit {
   async finishEditing(): Promise<void> {
     if (this.newName && this.newName !== this.conversation.name) {
       this.conversation.name = this.newName;
-      await this.chatService.updateConversation(this.conversation);
+      await this.chatState.updateConversation(this.conversation);
     }
     this.editing = false;
   }
@@ -83,13 +80,13 @@ export class ConversationComponent implements OnInit {
   /**
    * Deletes the current conversation after user confirmation.
    * Prompts the user with a confirmation dialog before proceeding with the deletion.
-   * If the user confirms, the conversation is deleted using the chat service.
+   * If the user confirms, the conversation is deleted using the chat state service.
    *
    * @return {Promise<void>} A promise that resolves when the conversation is successfully deleted or is rejected if an error occurs.
    */
   async deleteConversation(): Promise<void> {
     if (confirm('Delete this conversation?')) {
-      await this.chatService.deleteConversation(this.conversation.id);
+      await this.chatState.deleteConversation(this.conversation.id);
     }
   }
 }

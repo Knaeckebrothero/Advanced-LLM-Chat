@@ -1,10 +1,12 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked, OnInit, OnDestroy } from '@angular/core';
-import { ChatService } from '../services/chat.service';
 import { Message } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
-import { Subscription } from 'rxjs';
+import { Subscription, Observable, combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
 import { RecordingResult } from '../data/objects/recording';
+import { ChatStateService } from '../services/chat-state.service';
+import { UIStateService } from '../services/ui-state.service';
 
 
 @Component({
@@ -21,22 +23,32 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   // Variables
   userName: string = 'user';
   aiName: string = 'Assistant';
-  conversationId: number = 1;
   pendingFiles: FilePreview[] = [];
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
 
-  // Messages are managed by the ChatService and are passed to this component via observable.
-  messages = this.chatService.messages;
+  // Observable state from ChatStateService
+  messages$: Observable<Message[]> = this.chatState.messages$;
+  isLoading$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.isLoading));
+  error$: Observable<string | null> = this.chatState.state$.pipe(map(state => state.error));
+  
+  // For template compatibility - expose messages as non-observable
+  messages = this.chatState.messages$;
+  
+  // Mobile state from UIStateService
+  isMobile$ = this.uiState.isMobile$;
+  
   showGuestLimitWarning = false;
   guestLimitWarningMessage: string | null = null;
   private guestLimitSubscription!: Subscription;
   private guestLimitResetTimeSubscription!: Subscription;
+  private destroy$ = new Subscription();
 
-  // Constructor - REMOVED MatDialog dependency
+  // Constructor - now using state services
   constructor(
-    private chatService: ChatService,
+    private chatState: ChatStateService,
+    private uiState: UIStateService,
     private authService: AuthService
   ) {}
 
@@ -50,6 +62,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.destroy$.unsubscribe();
     if (this.guestLimitSubscription) {
       this.guestLimitSubscription.unsubscribe();
     }
@@ -70,9 +83,9 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
     this.scrollToBottom();
   }
 
-  // Utility function to detect mobile devices
+  // Utility function to detect mobile devices - now uses UIStateService
   isMobileDevice(): boolean {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return this.uiState.isMobile;
   }
 
   // Handle message sent from the input component
@@ -82,13 +95,13 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         // Check if we have files to send
         if (this.pendingFiles.length > 0) {
           console.log('Sending message with files:', this.pendingFiles);
-          // Use the new sendMessageWithFiles method
-          await this.chatService.sendMessageWithFiles(message, this.pendingFiles);
+          // Use ChatStateService for sending messages with files
+          await this.chatState.sendMessageWithFiles(message, this.pendingFiles);
           // Clear pending files after sending
           this.pendingFiles = [];
         } else {
           // Regular text message without files
-          await this.chatService.sendMessage(message);
+          await this.chatState.sendMessage(message);
         }
 
         console.log('User message sent:', message);
@@ -98,7 +111,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         await this.generateMessage();
       } catch (error) {
         console.error('Error sending message:', error);
-        // TODO: Optionally show an error to the user
+        // Error is now available through error$ observable
       }
     }
   }
@@ -106,10 +119,10 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   // Generate a new message
   async generateMessage(): Promise<void> {
     try {
-      await this.chatService.generateMessage(this.aiName);
+      await this.chatState.generateMessage(this.aiName);
     } catch (error) {
       console.error('Error generating AI response:', error);
-      // Optionally show an error to the user
+      // Error is now available through error$ observable
     }
   }
 
@@ -143,7 +156,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         }
 
         // Send as voice message
-        await this.chatService.sendVoiceMessage(
+        await this.chatState.sendVoiceMessage(
           voiceFile.file,
           duration,
           voiceFile.mimeType
@@ -181,13 +194,13 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   // Method to delete a message
   deleteMessage(messageId: number) {
-    // Call the ChatService to delete the message
-    this.chatService.deleteMessage(messageId);
+    // Call the ChatStateService to delete the message
+    this.chatState.deleteMessage(messageId);
   }
 
   // Method to change a message
   patchMessage(messageId: number, content: string) {
-    // Call the ChatService to alter the message
-    this.chatService.patchMessage(messageId, content);
+    // Call the ChatStateService to alter the message
+    this.chatState.patchMessage(messageId, content);
   }
 }

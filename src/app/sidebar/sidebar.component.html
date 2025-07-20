@@ -4,7 +4,7 @@
   </div>
 
   <button class="new-conversation-button"
-          [class.highlighted]="(displayService.activeConversationId$ | async) === 0"
+          [class.highlighted]="(activeConversationId$ | async) === 0"
           (click)="createNewConversation()">
     <mat-icon>add</mat-icon>
     New Chat
@@ -17,7 +17,7 @@
         <app-conversation
           *ngFor="let conv of groupedConversations[label]"
           [conversation]="conv"
-          [highlighted]="(displayService.activeConversationId$ | async) === conv.id"
+          [highlighted]="(activeConversationId$ | async) === conv.id"
           (selected)="onSelectConversation($event)">
         </app-conversation>
       </ng-container>

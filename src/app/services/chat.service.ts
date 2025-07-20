@@ -1,232 +1,48 @@
 import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, firstValueFrom, lastValueFrom, Observable } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { Message } from '../data/objects/message';
-import { DBService } from '../data/db.service';
-import { ApiService } from './api.service';
 import { Conversation } from '../data/objects/conversation';
-import { SettingsService } from '../settings/settings.service';
-import { DisplayService } from '../sidebar/service/display.service';
-import { AuthService } from "../auth/auth.service";
-import { HttpClient } from '@angular/common/http';
-import { environment } from '../environments/environment';
-import { FilePreview, UploadStatus } from '../data/objects/file-preview';
-import { SyncService } from './sync.service';
+import { FilePreview } from '../data/objects/file-preview';
+import { ChatStateService } from './chat-state.service';
+import { UIStateService } from './ui-state.service';
 
 
 @Injectable({
   providedIn: 'root'
 })
 export class ChatService implements OnDestroy {
-  // The conversation this service is managing
-  private conversation!: Conversation;
-  // TODO: Start with conversation null, only create new conversation once the first message is sent!
-  //  (e.g. we don't wanna have empty conversations with no messages)
-
-  // The ChatService is responsible for managing and exposing the messages.
-  private messagesSubject: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
-  public messages: Observable<Message[]> = this.messagesSubject.asObservable();
-
-  private conversationsSubject = new BehaviorSubject<Conversation[]>([]);
-  public conversations$: Observable<Conversation[]> = this.conversationsSubject.asObservable();
-
-  private isNewConversationSubject = new BehaviorSubject<boolean>(false);
-  public isNewConversation$ = this.isNewConversationSubject.asObservable();
+  // Delegate to ChatStateService
+  public messages: Observable<Message[]> = this.chatState.messages$;
+  public conversations$: Observable<Conversation[]> = this.chatState.conversations$;
+  public isNewConversation$ = this.chatState.state$.pipe(
+    map(state => state.isNewConversation)
+  );
 
   // Constructor
   constructor(
-    private dbService: DBService,
-    private apiService: ApiService,
-    private settingsService: SettingsService,
-    private displayService: DisplayService,
-    private authService: AuthService,
-    private http: HttpClient,
-    private syncService: SyncService
+    private chatState: ChatStateService,
+    private uiState: UIStateService
   ) {
-    this.initializeService();
+    // ChatStateService handles initialization
   }
 
-  private async initializeService() {
-    await this.dbService.getDatabaseReadyPromise();
-
-    // Load local data first (fast)
-    await this.loadAllConversations();
-    const localConversations = this.conversationsSubject.getValue();
-
-    // Display local data immediately
-    if (localConversations.length > 0) {
-      const latest = localConversations[0]; // Already sorted by loadAllConversations
-      await this.loadConversation(latest);
-      this.displayService.setActiveConversation(latest.id);
-    } else {
-      this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
-      this.displayService.setActiveConversation(0);
-    }
-
-    // Sync with server in background (don't await)
-    this.syncService.syncInBackground();
-  }
 
   // Public method for manual sync
   public async syncCurrentConversation() {
-    if (this.conversation?.id && this.conversation.id !== 0) {
-      const syncedMessages = await this.syncService.syncCurrentConversation();
-      if (syncedMessages.length > 0) {
-        // Update UI with synced messages
-        this.messagesSubject.next(syncedMessages);
-        await this.loadAllConversations();
-      }
-    }
+    await this.chatState.syncNow();
   }
 
-  // Add getter to expose sync status from SyncService
+  // Add getter to expose sync status
   public get isSyncing$(): Observable<boolean> {
-    return this.syncService.isSyncing$;
+    return this.chatState.isSyncing$;
   }
 
-  // Helper method to check backend availability
-  private async isBackendAvailable(): Promise<boolean> {
-    try {
-      const response = await lastValueFrom(
-        this.http.get(`${environment.apiUrl}/api/llms`, { withCredentials: true })
-      );
-      return true;
-    } catch (error) {
-      console.warn('Backend not available:', error);
-      return false;
-    }
-  }
 
-  // TODO: Implement a way to call the refreshConversation method at regular intervals (e.g. every minute and when the app is opened)
-
-  // Add one or more messages to the conversation
-  private addMessage(message: Message | Message[]) {
-    // Check if the message is an array
-    if (Array.isArray(message)) {
-      // Sort the messages by time
-      message.sort((a, b) => a.time!.getTime()! - b.time!.getTime())
-
-      // Add each message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), ...message]);
-
-      // Add the messages to the database
-      message.forEach((message) => {
-        this.dbService.addMessage(message);
-      });
-    } else {
-      // Add the message to the database
-      this.dbService.addMessage(message);
-
-      // Add the message to the messages array
-      this.messagesSubject.next([...this.messagesSubject.getValue(), message]);
-    }
-  }
 
   // Send a message
   public async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
-    if (this.isNewConversationSubject.getValue()) {
-      // Check if backend is available before creating conversation
-      const backendAvailable = await this.isBackendAvailable();
-
-      if (!backendAvailable) {
-        // Create local-only conversation
-        const localConv = new Conversation(
-          Math.floor(Date.now() / 1000), // Use timestamp as temporary ID
-          0, // Guest user ID
-          content.length > 30 ? content.substring(0, 27) + '...' : content,
-          ['user', 'Assistant']
-        );
-        this.conversation = localConv;
-        await this.dbService.addConversation(this.conversation);
-        this.isNewConversationSubject.next(false);
-        await this.loadAllConversations();
-        this.displayService.setActiveConversation(this.conversation.id);
-      } else {
-        // Original code for online mode
-        const title = content.length > 30 ? content.substring(0, 27) + '...' : content;
-        const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
-
-        try {
-          const createdConv = await this.apiService.createConversation(newConvData);
-          this.conversation = createdConv;
-          await this.dbService.addConversation(this.conversation);
-          this.isNewConversationSubject.next(false);
-          await this.loadAllConversations();
-          this.displayService.setActiveConversation(this.conversation.id);
-        } catch (error) {
-          console.error('Failed to create conversation:', error);
-          // Create local conversation as fallback
-          const localConv = new Conversation(
-            Math.floor(Date.now() / 1000),
-            0,
-            title,
-            ['user', 'Assistant']
-          );
-          this.conversation = localConv;
-          await this.dbService.addConversation(this.conversation);
-          this.isNewConversationSubject.next(false);
-          await this.loadAllConversations();
-          this.displayService.setActiveConversation(this.conversation.id);
-        }
-      }
-    }
-
-    // Use the new factory method to create a text message
-    const message = Message.createText(
-      {
-        id: Math.floor(new Date().getTime() / 1000),
-        conversationId: this.conversation.id,
-        roleName: roleName,
-        time: new Date()
-      },
-      content
-    );
-
-    // Add the message to the conversation
-    this.addMessage(message);
-
-    // Try to send the message to the backend if available
-    const backendAvailable = await this.isBackendAvailable();
-    if (backendAvailable) {
-      try {
-        const response = await this.apiService.sendMessage(message);
-        const responseMessage = Message.createText({
-          id: response,
-          conversationId: this.conversation.id,
-          roleName: roleName,
-          time: message.time
-        }, content);
-
-        if(message.id !== response){
-          console.log('Message ID mismatch, updating local state:', message.id, response);
-          await this.dbService.addMessage(responseMessage);
-          await this.dbService.deleteMessage(message.id);
-
-          const messages = this.messagesSubject.getValue();
-          const index = messages.findIndex(m => m.id === message.id);
-          if(index !== -1) {
-            messages[index] = responseMessage;
-            this.messagesSubject.next([...messages]);
-          }
-        } else {
-          console.log('Message sent and ID matched:', response);
-        }
-      } catch(error) {
-        console.error('Error sending message:', error);
-        // Message is already saved locally, so we can continue
-      }
-    } else {
-      console.log('Backend not available, message saved locally only');
-    }
-
-    // Update conversation timestamp
-    this.conversation.updatedAt = new Date();
-    await this.dbService.updateConversation(this.conversation);
-
-    // This will trigger re-grouping in sidebar
-    await this.loadAllConversations();
-
-    // Trigger a sync after sending the message (especially important for new conversations)
-    this.syncService.syncInBackground();
+    await this.chatState.sendMessage(content, roleName);
   }
 
   // Send a file inside a message
@@ -235,96 +51,7 @@ export class ChatService implements OnDestroy {
     files: FilePreview[],
     roleName: string = 'user'
   ): Promise<void> {
-    // Handle new conversation creation if needed
-    if (this.isNewConversationSubject.getValue()) {
-      const title = content.length > 30 ? content.substring(0, 27) + '...' : content || 'New conversation with files';
-      await this.createNewConversation(title);
-    }
-
-    // Files should already be uploaded by the input component when selected
-    // Just verify that uploaded files have proper status
-    const backendAvailable = await this.isBackendAvailable();
-    if (backendAvailable && files.length > 0) {
-      // Check if any files still need to be uploaded (fallback)
-      const pendingFiles = files.filter(f => f.uploadStatus === UploadStatus.PENDING);
-
-      if (pendingFiles.length > 0) {
-        console.log('Some files still pending upload, uploading now as fallback');
-        try {
-          const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
-
-          // Update file IDs with server-assigned IDs
-          pendingFiles.forEach((f, index) => {
-            f.uploadStatus = UploadStatus.COMPLETED;
-            f.id = uploadedFileIds[index] || `file-${Date.now()}-${Math.random()}`;
-          });
-        } catch (error) {
-          console.error('Error uploading pending files:', error);
-          // Continue anyway - files will be marked as failed
-          pendingFiles.forEach(f => {
-            f.uploadStatus = UploadStatus.FAILED;
-            f.error = 'Upload failed';
-          });
-        }
-      }
-    } else if (!backendAvailable && files.length > 0) {
-      // Offline mode: Mark files as pending upload if not already done
-      console.log('Backend not available, ensuring files are marked for offline storage');
-      files.forEach(f => {
-        if (f.uploadStatus !== UploadStatus.PENDING) {
-          f.uploadStatus = UploadStatus.PENDING;
-          f.id = f.id || `offline-${Date.now()}-${Math.random()}`;
-          f.error = 'Waiting for connection';
-        }
-      });
-
-      // Store file data in IndexedDB for later upload
-      await this.storeOfflineFiles(files);
-    }
-
-    // Create message with file attachments
-    const message = Message.createText(
-      {
-        id: Math.floor(new Date().getTime() / 1000),
-        conversationId: this.conversation.id,
-        roleName: roleName,
-        time: new Date()
-      },
-      content,
-      files
-    );
-
-    // Add the message to the conversation
-    this.addMessage(message);
-
-    // Send to backend if available
-    if (backendAvailable) {
-      try {
-        const response = await this.apiService.sendMessage(message);
-
-        // Handle ID mismatch same as regular messages
-        if(message.id !== response){
-          // Create a new message object with the server-assigned ID
-          const responseMessage = Message.createText({
-            id: response,
-            conversationId: this.conversation.id,
-            roleName: message.roleName,
-            time: message.time
-          }, message.textContent ? message.textContent : "", message.attachments);
-
-          // Update the message in the database
-          await this.updateMessageId(message.id, responseMessage);
-        }
-      } catch(error) {
-        console.error('Error sending message with files:', error);
-      }
-    }
-
-    // Update conversation and trigger sync
-    this.conversation.updatedAt = new Date();
-    await this.dbService.updateConversation(this.conversation);
-    await this.loadAllConversations();
-    this.syncService.syncInBackground();
+    await this.chatState.sendMessageWithFiles(content, files, roleName);
   }
 
   // Send a voice message
@@ -334,369 +61,68 @@ export class ChatService implements OnDestroy {
     mimeType: string = 'audio/webm',
     roleName: string = 'user'
   ): Promise<void> {
-    // Handle new conversation creation if needed
-    if (this.isNewConversationSubject.getValue()) {
-      await this.createNewConversation('Voice conversation');
-    }
-
-    // Convert blob to base64
-    const base64Audio = await this.blobToBase64(audioBlob);
-
-    // Create voice message using factory method
-    const message = Message.createVoice(
-      {
-        id: Math.floor(new Date().getTime() / 1000),
-        conversationId: this.conversation.id,
-        roleName: roleName,
-        time: new Date()
-      },
-      base64Audio,
-      duration,
-      mimeType
-    );
-
-    // Add the message to the conversation
-    this.addMessage(message);
-
-    // Send to backend if available
-    const backendAvailable = await this.isBackendAvailable();
-    if (backendAvailable) {
-      try {
-        const response = await this.apiService.sendMessage(message);
-        if(message.id !== response){
-          // Create a new message object with the server-assigned ID
-          const responseMessage = Message.createText({
-            id: response,
-            conversationId: this.conversation.id,
-            roleName: message.roleName,
-            time: message.time
-          }, message.textContent ? message.textContent : "", message.attachments);
-
-          // Update the message in the database
-          await this.updateMessageId(message.id, responseMessage);
-        }
-      } catch(error) {
-        console.error('Error sending voice message:', error);
-      }
-    }
-
-    // Update conversation and trigger sync
-    this.conversation.updatedAt = new Date();
-    await this.dbService.updateConversation(this.conversation);
-    await this.loadAllConversations();
-    this.syncService.syncInBackground();
+    await this.chatState.sendVoiceMessage(audioBlob, duration, mimeType, roleName);
   }
 
-  // Helper method to convert blob to base64
-  private blobToBase64(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        // Remove the data URL prefix (e.g., "data:audio/webm;base64,")
-        const base64Data = base64String.split(',')[1];
-        resolve(base64Data);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
 
-  // Helper method to create a new conversation
-  private async createNewConversation(title: string): Promise<void> {
-    const backendAvailable = await this.isBackendAvailable();
 
-    if (!backendAvailable) {
-      // Create local-only conversation
-      const localConv = new Conversation(
-        Math.floor(Date.now() / 1000),
-        0,
-        title,
-        ['user', 'Assistant']
-      );
-      this.conversation = localConv;
-      await this.dbService.addConversation(this.conversation);
-    } else {
-      // Create on server
-      const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
-      try {
-        const createdConv = await this.apiService.createConversation(newConvData);
-        this.conversation = createdConv;
-        await this.dbService.addConversation(this.conversation);
-      } catch (error) {
-        console.error('Failed to create conversation:', error);
-        // Fallback to local
-        const localConv = new Conversation(
-          Math.floor(Date.now() / 1000),
-          0,
-          title,
-          ['user', 'Assistant']
-        );
-        this.conversation = localConv;
-        await this.dbService.addConversation(this.conversation);
-      }
-    }
-
-    this.isNewConversationSubject.next(false);
-    await this.loadAllConversations();
-    this.displayService.setActiveConversation(this.conversation.id);
-  }
-
-  // Helper method to update message ID after server response
-  private async updateMessageId(oldId: number, newMessage: Message): Promise<void> {
-    console.log('Message ID mismatch, updating local state:', oldId, newMessage.id);
-    await this.dbService.addMessage(newMessage);
-    await this.dbService.deleteMessage(oldId);
-
-    const messages = this.messagesSubject.getValue();
-    const index = messages.findIndex(m => m.id === oldId);
-    if(index !== -1) {
-      messages[index] = newMessage;
-      this.messagesSubject.next([...messages]);
-    }
-  }
 
   // Generate a message
   public async generateMessage(participant: string) {
-    // Check if backend is available first
-    const backendAvailable = await this.isBackendAvailable();
-    if (!backendAvailable) {
-      // Add a placeholder message when offline
-      const offlineMessage = Message.createText(
-        {
-          id: Math.floor(new Date().getTime() / 1000),
-          conversationId: this.conversation.id,
-          roleName: participant,
-          time: new Date()
-        },
-        'Sorry, I cannot generate responses while offline. Please check your connection.'
-      );
-      this.addMessage(offlineMessage);
-      return;
-    }
-
-    // Original code continues...
-    const currentMessages = this.messagesSubject.getValue();
-    // Get the last message
-    const lastMessage = currentMessages[currentMessages.length - 1];
-
-    console.log('Generating message:', lastMessage, participant);
-
-    try {
-      const settings = await firstValueFrom(this.settingsService.getSettings());
-      const generatedMessage = await this.apiService.generateMessage(lastMessage, participant, settings);
-
-      // Add to local state and database
-      this.addMessage(generatedMessage);
-      this.authService.setGuestLimitReached(false); // Reset on successful generation
-    } catch (error: any) {
-      if (error.status === 429) {
-        console.error('Guest limit reached:', error);
-        const detail = error.error?.detail;
-        let resetTimeMessage = 'Please try again later.';
-        if (detail && detail.includes('after')) {
-          const resetTimeISO = detail.split('after ')[1];
-          if (resetTimeISO) {
-            const resetDate = new Date(resetTimeISO);
-            const formattedTime = resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            resetTimeMessage = `You have reached your request limit. You can generate more answers after ${formattedTime}.`;
-          }
-        }
-        this.authService.setGuestLimitReached(true, resetTimeMessage);
-      } else {
-        console.error('Error generating message:', error);
-        // Add error message to chat
-        const errorMessage = Message.createText(
-          {
-            id: Math.floor(new Date().getTime() / 1000),
-            conversationId: this.conversation.id,
-            roleName: participant,
-            time: new Date()
-          },
-          'Sorry, I encountered an error while generating a response. Please try again.'
-        );
-        this.addMessage(errorMessage);
-      }
-      throw error;
-    }
+    await this.chatState.generateMessage(participant);
   }
 
   // Patch a message in the conversation
   public async patchMessage(messageId: number, content: string) {
-    try {
-      // Get the conversation ID
-      const conversationId = this.conversation.id;
-
-      // Call the API to patch the message
-      await this.apiService.patchMessage(conversationId, messageId, content);
-
-      // Update the message in the local state
-      const currentMessages = this.messagesSubject.getValue();
-      const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
-
-      if (messageIndex !== -1) {
-        const originalMessage = currentMessages[messageIndex];
-
-        // Only text messages can be patched
-        if (originalMessage.isText()) {
-          // Create a new message instance with updated content
-          const updatedTextMessage = Message.createText(
-            {
-              id: originalMessage.id,
-              conversationId: originalMessage.conversationId,
-              roleName: originalMessage.roleName,
-              time: originalMessage.time
-            },
-            content,
-            originalMessage.content.attachments
-          );
-          currentMessages[messageIndex] = updatedTextMessage;
-          this.messagesSubject.next([...currentMessages]);
-
-          // Update in database
-          await this.dbService.updateMessage(updatedTextMessage);
-        }
-      }
-    } catch (error) {
-      console.error('Error patching message:', error);
-      throw error;
-    }
+    await this.chatState.patchMessage(messageId, content);
   }
 
   // Delete a message from the conversation
   public async deleteMessage(messageId: number) {
-    try {
-      await this.apiService.deleteMessage(this.conversation.id, messageId);
-
-      // Remove from local state
-      const currentMessages = this.messagesSubject.getValue();
-      const updatedMessages = currentMessages.filter(msg => msg.id !== messageId);
-      this.messagesSubject.next(updatedMessages);
-
-      // Remove from database
-      await this.dbService.deleteMessage(messageId);
-    } catch (error) {
-      console.error('Error deleting message:', error);
-      throw error;
-    }
+    await this.chatState.deleteMessage(messageId);
   }
 
   // Regenerate a message in the conversation
   public async regenerateMessage(message: Message) {
-    console.log('Regenerating message:', message.id);
-
-    // Find all messages in the conversation
-    const allMessages = this.messagesSubject.getValue();
-    const messageIndex = allMessages.findIndex(m => m.id === message.id);
-
-    if (messageIndex === -1) {
-      console.error('Message not found for regeneration');
-      return;
-    }
-
-    // Delete this message and all messages after it
-    const messagesToDelete = allMessages.slice(messageIndex);
-
-    try {
-      // Delete from backend and local storage
-      for (const msg of messagesToDelete) {
-        await this.deleteMessage(msg.id);
-      }
-
-      // Generate a new response (using the role from the message being regenerated)
-      await this.generateMessage(message.roleName);
-    } catch (error) {
-      console.error('Error regenerating message:', error);
-      throw error;
-    }
+    await this.chatState.regenerateMessage(message);
   }
 
   // Loads a specific conversation and its messages into memory.
   public async loadConversation(conversation: Conversation) {
-    if (conversation.id === 0) {
-      this.isNewConversationSubject.next(true);
-      this.conversation = conversation;
-      this.messagesSubject.next([]);
-    } else {
-      this.isNewConversationSubject.next(false);
-      this.conversation = conversation;
-      const messages = await this.dbService.getMessagesByConversationId(conversation.id);
-      messages.sort((a, b) => a.time!.getTime()! - b.time!.getTime());
-      this.messagesSubject.next(messages);
-
-      // Trigger background sync for this conversation
-      this.syncService.syncInBackground();
-    }
+    await this.chatState.loadConversation(conversation.id);
   }
 
   // Create a new conversation
   public async createConversation(conversation: Conversation): Promise<Conversation> {
-    // Set timestamps
-    conversation.createdAt = new Date();
-    conversation.updatedAt = new Date();
-
-    // Save to database
-    await this.dbService.addConversation(conversation);
-
-    // Update the conversations list
-    await this.loadAllConversations();
-
+    await this.chatState.createNewConversation();
     return conversation;
   }
 
-  // Load all conversations from database (replace getDummyConversations)
+  // Load all conversations from database
   public async loadAllConversations(): Promise<Conversation[]> {
-    const conversations = await this.dbService.getAllConversations();
-    this.conversationsSubject.next(conversations);
-    return conversations;
+    // Just return the current conversations from state
+    return await firstValueFrom(this.conversations$) || [];
   }
 
   // Get conversations as observable
   public getConversations(): Observable<Conversation[]> {
-    return this.conversations$;
+    return this.chatState.conversations$;
   }
 
   // Update conversation (e.g., rename)
   public async updateConversation(conversation: Conversation): Promise<void> {
-    conversation.updatedAt = new Date();
-    await this.dbService.updateConversation(conversation);
-    await this.loadAllConversations();
+    await this.chatState.updateConversation(conversation);
   }
 
   // Delete conversation
   public async deleteConversation(conversationId: number): Promise<void> {
-    // Delete all messages first
-    await this.dbService.deleteMessagesByConversationId(conversationId);
-    // Delete the conversation
-    await this.dbService.deleteConversation(conversationId);
-    // Reload conversations
-    await this.loadAllConversations();
-
-    // If we deleted the current conversation, load a new one
-    if (this.conversation?.id === conversationId) {
-      const remaining = this.conversationsSubject.getValue();
-      if (remaining.length > 0) {
-        await this.loadConversation(remaining[0]);
-        this.displayService.setActiveConversation(remaining[0].id);
-      } else {
-        this.loadConversation(new Conversation(0, 0, 'New Chat', ['user']));
-        this.displayService.setActiveConversation(0);
-      }
-    }
-  }
-
-  // Store files in IndexedDB for offline upload later
-  private async storeOfflineFiles(files: FilePreview[]): Promise<void> {
-    // Store file data in a special offline files store
-    // This would be implemented in DbService
-    console.log('Storing offline files for later upload:', files);
-    // TODO: Implement actual offline file storage in DbService
+    await this.chatState.deleteConversation(conversationId);
   }
 
 
-  // Set up connection monitoring for automatic file uploads
+
   // Clean up on service destroy
   ngOnDestroy(): void {
-    this.syncService.destroy();
+    // ChatStateService handles its own cleanup
   }
 }
