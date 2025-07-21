@@ -81,7 +81,7 @@ export class ApiService {
   }
 
   // TODO: Fix this one!
-  async getConversationMessages(conversationId: number, count: number, latestTimestamp: Date | null = null): Promise<Message[]> {
+  async getConversationMessages(conversationId: string | number, count: number, latestTimestamp: Date | null = null): Promise<Message[]> {
     // Use the current time if no timestamp is provided
     if (latestTimestamp === null) {
       latestTimestamp = new Date();
@@ -209,7 +209,7 @@ export class ApiService {
   }
 
   // Patch an existing message
-  async patchMessage(conversationId: number, messageId: number, content: string): Promise<Message> {
+  async patchMessage(conversationId: string | number, messageId: number, content: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/patch`;
     const body = {
       id: messageId,
@@ -237,7 +237,7 @@ export class ApiService {
   }
 
   // Delete a message
-  async deleteMessage(conversationId: number, messageId: number): Promise<void> {
+  async deleteMessage(conversationId: string | number, messageId: number): Promise<void> {
     const endpoint = `${this.baseUrl}/api/message/delete/${conversationId}/${messageId}`;
 
     try {
@@ -322,7 +322,7 @@ export class ApiService {
   }
 
   // TODO: Implement delete conversation
-  async deleteConversation(conversationId: number): Promise<void> {
+  async deleteConversation(conversationId: string | number): Promise<void> {
     const endpoint = `${this.baseUrl}/api/conversation/delete/${conversationId}`;
 
     try {

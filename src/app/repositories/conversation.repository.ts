@@ -19,7 +19,7 @@ export interface ConversationSyncMetadata {
   providedIn: 'root'
 })
 export class ConversationRepository extends BaseRepository<Conversation> {
-  private syncMetadata = new Map<number, ConversationSyncMetadata>();
+  private syncMetadata = new Map<string | number, ConversationSyncMetadata>();
   
   constructor(
     dbService: DBService,
@@ -35,9 +35,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   }
 
   getById(id: string | number): Observable<Conversation | null> {
-    const numId = typeof id === 'string' ? parseInt(id, 10) : id;
     return this.cache$.pipe(
-      map(conversations => conversations.find(c => c.id === numId) || null)
+      map(conversations => conversations.find(c => c.id === id) || null)
     );
   }
 
@@ -63,16 +62,14 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   }
 
   async delete(id: string | number): Promise<void> {
-    const numId = typeof id === 'string' ? parseInt(id, 10) : id;
-    
     try {
-      await this.dbService.deleteConversation(numId);
+      await this.dbService.deleteConversation(id);
       
       const conversations = this.cache$.getValue();
-      const filtered = conversations.filter(c => c.id !== numId);
+      const filtered = conversations.filter(c => c.id !== id);
       this.updateCache(filtered);
       
-      this.syncMetadata.delete(numId);
+      this.syncMetadata.delete(id);
     } catch (error) {
       console.error('Failed to delete conversation:', error);
       throw error;
@@ -147,7 +144,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   /**
    * Sync a specific conversation if it's stale
    */
-  async syncConversation(conversationId: number): Promise<boolean> {
+  async syncConversation(conversationId: string | number): Promise<boolean> {
     const metadata = this.syncMetadata.get(conversationId);
     
     // Check if conversation needs sync (older than 24 hours)

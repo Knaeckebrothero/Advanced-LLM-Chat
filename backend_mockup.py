@@ -13,6 +13,7 @@ import secrets
 import asyncio
 import json
 import hashlib
+import uuid
 from fastapi import FastAPI, Response, status, Request, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -63,7 +64,7 @@ class ConversationState(BaseModel):
   """
   Represents the state of a conversation.
   """
-  id: int
+  id: str  # Now using UUID
   hashsum: int
 
 
@@ -109,7 +110,7 @@ class ApiMessageSend(BaseModel):
   Represents a message sent within a specific conversation.
   Supports multiple content types through a discriminated union.
   """
-  conversationId: int
+  conversationId: str  # Now using UUID
   roleName: str
   type: Literal["text", "voice"]
   content: Union[str, TextContent, VoiceContent]  # Backwards compatible - str for legacy, objects for new types
@@ -120,7 +121,7 @@ class ApiMessageGenerate(BaseModel):
   """
   Represents a model for generating API messages.
   """
-  conversationId: int
+  conversationId: str  # Now using UUID
   roleName: str
   time: int
   temperature: Optional[float] = None
@@ -132,7 +133,7 @@ class ApiMessageSendAndGenerate(BaseModel):
   Combined request for sending a message and generating AI response.
   """
   # Message to send
-  conversationId: int
+  conversationId: str  # Now using UUID
   roleName: str
   type: Literal["text", "voice"]
   content: Union[str, TextContent, VoiceContent]
@@ -151,7 +152,7 @@ class MessagePatch(BaseModel):
   Represents a model for updating message data within a conversation.
   """
   id: int
-  conversationId: int
+  conversationId: str  # Now using UUID
   content: str
 
 
@@ -160,7 +161,7 @@ class MessageResponse(BaseModel):
   Represents a response message within a conversation context.
   """
   id: int
-  conversationId: int
+  conversationId: str  # Now using UUID
   roleName: str
   content: str
   time: int
@@ -178,11 +179,11 @@ class ConversationResponse(BaseModel):
   """
   Encapsulates the response details of a conversation.
   """
-  id: int
+  id: str  # Now using UUID
   hashsum: int
 
 class Conversation(BaseModel):
-  id: int
+  id: str  # Now using UUID
   userId: int
   name: str
   participants: Optional[str] = None
@@ -264,6 +265,14 @@ def generate_session_key(length=32) -> str:
   Generate a secure, random session key.
   """
   return secrets.token_urlsafe(length)
+
+
+def generate_conversation_id() -> str:
+  """
+  Generate a unique conversation ID using UUID v4.
+  Returns a string representation of the UUID.
+  """
+  return str(uuid.uuid4())
 
 
 def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False) -> str:
@@ -387,6 +396,105 @@ async def cleanup_expired_sessions():
     await asyncio.sleep(3600)
 
 
+def migrate_to_uuid_conversations(conn):
+  """
+  Migrate existing conversations from integer IDs to UUID-based IDs.
+  """
+  cur = conn.cursor()
+  
+  # Check if we already have UUID-based conversations
+  cur.execute("PRAGMA table_info(conversations)")
+  columns = cur.fetchall()
+  id_column = next((col for col in columns if col[1] == 'id'), None)
+  
+  # If ID column is already TEXT, migration is done
+  if id_column and id_column[2] == 'TEXT':
+    return
+  
+  print("Migrating conversations to UUID-based IDs...")
+  
+  # Create new tables with UUID support
+  cur.execute('''
+    CREATE TABLE IF NOT EXISTS conversations_new (
+      id TEXT PRIMARY KEY,
+      userId INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      participants TEXT,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id)
+    )
+  ''')
+  
+  cur.execute('''
+    CREATE TABLE IF NOT EXISTS messages_new (
+      id INTEGER PRIMARY KEY,
+      conversationId TEXT NOT NULL,
+      roleName TEXT NOT NULL,
+      content TEXT NOT NULL,
+      time INTEGER NOT NULL,
+      type TEXT DEFAULT 'text',
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(conversationId) REFERENCES conversations_new(id)
+    )
+  ''')
+  
+  # Migrate existing conversations
+  cur.execute("SELECT * FROM conversations")
+  old_conversations = cur.fetchall()
+  
+  id_mapping = {}  # old_id -> new_uuid
+  
+  for conv in old_conversations:
+    new_id = generate_conversation_id()
+    id_mapping[conv['id']] = new_id
+    
+    cur.execute('''
+      INSERT INTO conversations_new (id, userId, name, participants, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?)
+    ''', (new_id, conv['userId'], conv['name'], conv['participants'], 
+          conv['createdAt'], conv['updatedAt']))
+  
+  # Migrate messages
+  cur.execute("SELECT * FROM messages")
+  old_messages = cur.fetchall()
+  
+  for msg in old_messages:
+    old_conv_id = msg['conversationId']
+    new_conv_id = id_mapping.get(old_conv_id)
+    
+    if new_conv_id:
+      # Handle sqlite3.Row objects which don't have .get() method
+      msg_type = msg['type'] if 'type' in msg.keys() else 'text'
+      updated_at = msg['updated_at'] if 'updated_at' in msg.keys() else None
+      
+      cur.execute('''
+        INSERT INTO messages_new (id, conversationId, roleName, content, time, type, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      ''', (msg['id'], new_conv_id, msg['roleName'], msg['content'], 
+            msg['time'], msg_type, updated_at))
+  
+  # Drop old tables and rename new ones
+  cur.execute("DROP TABLE IF EXISTS messages")
+  cur.execute("DROP TABLE IF EXISTS conversations")
+  cur.execute("ALTER TABLE conversations_new RENAME TO conversations")
+  cur.execute("ALTER TABLE messages_new RENAME TO messages")
+  
+  # Recreate indexes
+  cur.execute('''
+    CREATE INDEX IF NOT EXISTS idx_conversation_time
+    ON messages(conversationId, time)
+  ''')
+  
+  cur.execute('''
+    CREATE INDEX IF NOT EXISTS idx_conversations_user
+    ON conversations(userId)
+  ''')
+  
+  conn.commit()
+  print("Migration to UUID-based conversations completed!")
+
+
 def init_db():
   """
   Initializes the database and sets up the required tables if they are not already created.
@@ -404,10 +512,10 @@ def init_db():
                 )
                 ''')
 
-    # Create conversations table
+    # Create conversations table with UUID support
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
-                                                           id INTEGER PRIMARY KEY,
+                                                           id TEXT PRIMARY KEY,
                                                            userId INTEGER NOT NULL,
                                                            name TEXT NOT NULL,
                                                            participants TEXT,
@@ -421,7 +529,7 @@ def init_db():
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS messages (
                                                       id INTEGER PRIMARY KEY,
-                                                      conversationId INTEGER NOT NULL,
+                                                      conversationId TEXT NOT NULL,
                                                       roleName TEXT NOT NULL,
                                                       content TEXT NOT NULL,
                                                       time INTEGER NOT NULL,
@@ -538,6 +646,9 @@ def init_db():
                 ''')
 
     conn.commit()
+    
+    # Migrate existing data to UUID-based conversations
+    migrate_to_uuid_conversations(conn)
 
 
 
@@ -624,7 +735,7 @@ async def generate_llm_response(prompt: str, temperature: float, top_p: float, s
     return "I apologize, but I encountered an error generating a response."
 
 
-async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
+async def get_conversation_context(conversation_id: str, limit: int = 5) -> str:
   """
   Retrieves the recent message history for a specific conversation.
   """
@@ -654,7 +765,7 @@ async def get_conversation_context(conversation_id: int, limit: int = 5) -> str:
     return ""
 
 
-def verify_conversation_ownership(conversation_id: int, user_id: int, is_guest: bool = False) -> bool:
+def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: bool = False) -> bool:
   """
   Verifies that a user owns a specific conversation.
   Returns True if the user owns the conversation or if it's a guest user.
@@ -949,7 +1060,7 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
            status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"}
          },
          tags=["Conversation"])
-async def get_conversation(conversation_id: int, response: Response, current_user: dict = Depends(get_current_user)):
+async def get_conversation(conversation_id: str, response: Response, current_user: dict = Depends(get_current_user)):
   """
   Get a single conversation with metadata for sync
   """
@@ -1127,11 +1238,12 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
   with get_db() as conn:
     cur = conn.cursor()
     participants_json = json.dumps(req.participants)
+    new_id = generate_conversation_id()  # Generate UUID
+    
     cur.execute(
-      "INSERT INTO conversations (userId, name, participants) VALUES (?, ?, ?)",
-      (user_id, req.name, participants_json)
+      "INSERT INTO conversations (id, userId, name, participants) VALUES (?, ?, ?, ?)",
+      (new_id, user_id, req.name, participants_json)
     )
-    new_id = cur.lastrowid
     conn.commit()
 
     cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?", (new_id,))
@@ -1152,7 +1264,7 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
          },
          tags=["Conversation"])
 async def get_conversation_messages(
-  conversation_id: int,
+  conversation_id: str,
   timestamp: int,
   messages_count: int,
   response: Response,
@@ -1439,7 +1551,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
               status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
             },
             tags=["Message"])
-async def delete_message(conversation_id: int, message_id: int, response: Response,
+async def delete_message(conversation_id: str, message_id: int, response: Response,
                          current_user: dict = Depends(get_current_user)):
   """
   Endpoint to delete a specific message.

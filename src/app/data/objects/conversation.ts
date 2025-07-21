@@ -4,7 +4,7 @@ import { Message } from './message';
 
 
 export class Conversation {
-    id: number;  // Id of the conversation
+    id: string | number;  // Id of the conversation (UUID string from backend, number for local)
     userId: number;  // Id of the user the conversation belongs to
     name: string;  // Name or title of the conversation
     participants: string[];  // Characters or Agents participating in the conversation
@@ -13,7 +13,7 @@ export class Conversation {
     updatedAt: Date = new Date(); // Last update date of the conversation
 
     constructor(
-        id: number,
+        id: string | number,
         userId: number,
         name: string,
         participants: string[],
