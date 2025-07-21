@@ -87,4 +87,20 @@ export class Conversation {
     conv.updatedAt = new Date(data.updatedAt);
     return conv;
   }
+
+  // Create Conversation instance from plain object (IndexedDB)
+  static fromPlainObject(data: any): Conversation {
+    const conv = new Conversation(
+      data.id,
+      data.userId,
+      data.name,
+      data.participants || []
+    );
+    conv.createdAt = new Date(data.createdAt);
+    conv.updatedAt = new Date(data.updatedAt);
+    if (data.hashsum !== undefined) {
+      conv.hashsum = data.hashsum;
+    }
+    return conv;
+  }
 }

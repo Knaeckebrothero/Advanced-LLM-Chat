@@ -113,15 +113,21 @@ export class DBService {
   */
 
   async addMessage(message: Message) {
-    return await this.db.add('chatMessages', message);
+    // Serialize the message before storing
+    const serialized = message.toJSON();
+    return await this.db.add('chatMessages', serialized);
   }
 
   async getMessage(id: number) {
-    return await this.db.get('chatMessages', id);
+    const data = await this.db.get('chatMessages', id);
+    // Deserialize the message when retrieving
+    return data ? Message.fromJSON(data) : undefined;
   }
 
   async updateMessage(message: Message) {
-    return await this.db.put('chatMessages', message);
+    // Serialize the message before updating
+    const serialized = message.toJSON();
+    return await this.db.put('chatMessages', serialized);
   }
 
   async deleteMessage(id: number) {
@@ -140,16 +146,21 @@ export class DBService {
   }
 
   async getMessagesByConversationId(conversationId: any = null) {
+    let rawMessages;
     if(conversationId) {
-      return this.db.getAllFromIndex('chatMessages', 'by-conversationId', conversationId);
+      rawMessages = await this.db.getAllFromIndex('chatMessages', 'by-conversationId', conversationId);
     } else {
-      return await this.db.getAll('chatMessages');
+      rawMessages = await this.db.getAll('chatMessages');
     }
+    // Deserialize all messages
+    return rawMessages.map(data => Message.fromJSON(data));
   }
 
   async getAllMessages(): Promise<Message[]> {
     await this.status;
-    return await this.db.getAll('chatMessages');
+    const rawMessages = await this.db.getAll('chatMessages');
+    // Deserialize all messages
+    return rawMessages.map(data => Message.fromJSON(data));
   }
 
   /*
@@ -161,14 +172,18 @@ export class DBService {
   }
 
   async getConversation(id: number) {
-    return await this.db.get('conversations', id);
+    const data = await this.db.get('conversations', id);
+    return data ? Conversation.fromPlainObject(data) : undefined;
   }
 
   // Retrieves all conversations from the local IndexedDB, sorted by most recently updated first.
   public async getAllConversations(): Promise<Conversation[]> {
     const db = this.db;
     await this.status;
-    const conversations = await this.db.getAll('conversations');
+    const rawConversations = await this.db.getAll('conversations');
+    
+    // Convert to Conversation instances
+    const conversations = rawConversations.map(data => Conversation.fromPlainObject(data));
 
     // Sort by updatedAt descending (newest first)
     conversations.sort((a, b) => {
@@ -190,11 +205,14 @@ export class DBService {
   }
 
   async getConversationsByUserId(userId: any = null) {
+    let rawConversations;
     if(userId) {
-      return this.db.getAllFromIndex('conversations', 'by-userId', userId);
+      rawConversations = await this.db.getAllFromIndex('conversations', 'by-userId', userId);
     } else {
-      return await this.db.getAll('conversations');
+      rawConversations = await this.db.getAll('conversations');
     }
+    // Convert to Conversation instances
+    return rawConversations.map(data => Conversation.fromPlainObject(data));
   }
 
   /*

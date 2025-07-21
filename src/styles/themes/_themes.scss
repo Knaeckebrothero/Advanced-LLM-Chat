@@ -64,5 +64,5 @@
     color: var(--theme-text);
   }
 
-  @include mat.all-component-themes($material-theme);
+  @include mat.all-component-colors($material-theme);
 }

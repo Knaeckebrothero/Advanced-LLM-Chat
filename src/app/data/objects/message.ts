@@ -321,6 +321,51 @@ export class Message<T extends MessageContent = MessageContent> {
 
     return hashValue % (2**32);
   }
+
+  // Serialization method for IndexedDB storage
+  toJSON(): any {
+    return {
+      id: this.id,
+      conversationId: this.conversationId,
+      roleName: this.roleName,
+      time: this.time.toISOString(), // Store as ISO string for consistent serialization
+      content: this.content
+    };
+  }
+
+  // Deserialization method from IndexedDB
+  static fromJSON(data: any): Message {
+    const metadata: MessageMetadata = {
+      id: data.id,
+      conversationId: data.conversationId,
+      roleName: data.roleName,
+      time: new Date(data.time)
+    };
+
+    // Handle different content types
+    if (data.content) {
+      switch (data.content.type) {
+        case 'voice':
+          return new Message<VoiceContent>(metadata, data.content);
+        case 'text':
+        default:
+          // Ensure FilePreview objects are properly reconstructed
+          const content: TextContent = {
+            type: 'text',
+            content: data.content.content || '',
+            attachments: data.content.attachments
+          };
+          return new Message<TextContent>(metadata, content);
+      }
+    }
+
+    // Fallback for legacy data without type field
+    return new Message<TextContent>(metadata, {
+      type: 'text',
+      content: data.content || '',
+      attachments: undefined
+    });
+  }
 }
 
 // For backwards compatibility - export a type for the old Message structure

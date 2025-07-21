@@ -36,8 +36,16 @@ export class SettingsStateService {
   ) {
     // Apply theme when settings change
     this.settings$.subscribe(settings => {
-      if (settings?.darkMode !== undefined) {
-        this.themeService.setTheme(settings.darkMode === 1 ? 'dark' : 'light');
+      if (settings) {
+        // If darkMode is undefined, respect system preference
+        if (settings.darkMode === undefined) {
+          // Get effective theme from system preference
+          const effectiveTheme = this.themeService.getEffectiveTheme('auto');
+          this.themeService.setTheme('auto');
+        } else {
+          // Apply user's preference
+          this.themeService.setTheme(settings.darkMode === 1 ? 'dark' : 'light');
+        }
       }
     });
   }
@@ -172,10 +180,15 @@ export class SettingsStateService {
   private enrichSettings(settings: SettingsWithMetadata | null): AppSettings | null {
     if (!settings) return null;
 
+    // When darkMode is undefined, determine based on current theme
+    const darkModeValue = settings.darkMode ?? 
+      (this.themeService.getCurrentEffectiveTheme() === 'dark' ? 1 : 0);
+
     return {
       ...settings,
+      darkMode: darkModeValue,
       isEnglish: settings.languageIsEnglish === 1,
-      isDarkMode: settings.darkMode === 1
+      isDarkMode: darkModeValue === 1
     };
   }
 }
