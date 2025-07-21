@@ -107,8 +107,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         console.log('User message sent:', message);
         this.scrollToBottom();
 
-        // Generate AI response after message is confirmed sent
-        await this.generateMessage();
+        // AI response is now generated automatically by the backend
       } catch (error) {
         console.error('Error sending message:', error);
         // Error is now available through error$ observable
@@ -165,8 +164,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         console.log('Voice message sent');
         this.scrollToBottom();
 
-        // Generate AI response
-        await this.generateMessage();
+        // AI response is now generated automatically by the backend
       } catch (error) {
         console.error('Error sending voice message:', error);
       }

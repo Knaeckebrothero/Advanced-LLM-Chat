@@ -166,6 +166,48 @@ export class ApiService {
     }
   }
 
+  async sendAndGenerateMessage(
+    message: Message, 
+    generateResponse: boolean = true,
+    settings?: Settings
+  ): Promise<{ userMessageId: number; aiMessage?: Message }> {
+    const endpoint = `${this.baseUrl}/api/message/send-and-generate`;
+
+    // Build request body combining message and generation settings
+    const body: any = {
+      ...message.toApiSend(),
+      generateResponse: generateResponse,
+      aiParticipant: 'Assistant'
+    };
+
+    // Add generation settings if provided and generateResponse is true
+    if (generateResponse && settings) {
+      body.temperature = settings.temperature;
+      body.top_p = settings.top_p;
+      body.systemPrompt = settings.systemPrompt;
+    }
+
+    try {
+      const response = await lastValueFrom(
+        this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
+      );
+
+      // Response contains both user message ID and optional AI message
+      const result: { userMessageId: number; aiMessage?: Message } = {
+        userMessageId: response.userMessage.id
+      };
+
+      if (response.aiMessage) {
+        result.aiMessage = Message.fromApiResponse(response.aiMessage);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error in sendAndGenerateMessage:', error);
+      throw error;
+    }
+  }
+
   // Patch an existing message
   async patchMessage(conversationId: number, messageId: number, content: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/patch`;
