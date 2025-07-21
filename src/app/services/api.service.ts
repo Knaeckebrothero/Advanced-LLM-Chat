@@ -91,7 +91,7 @@ export class ApiService {
     try {
       const response = await lastValueFrom(
         this.http.get<any[]>(endpoint, {
-          headers: this.getHeaders(),
+          ...this.getHttpOptions(),
           observe: 'response'
         })
       );
