@@ -170,7 +170,7 @@ export class ChatStateService implements OnDestroy {
     
     const conversationId = this.activeConversationId$.getValue()!;
     
-    // Create and save message
+    // Create message
     const message = Message.createText(
       {
         id: Math.floor(Date.now() / 1000),
@@ -181,13 +181,26 @@ export class ChatStateService implements OnDestroy {
       content
     );
     
-    await this.messageRepository.save(message);
+    // Get settings for AI generation
+    const settings = await firstValueFrom(this.settingsState.settings);
+    
+    // Use the new combined send and generate method
+    const aiMessage = await this.messageRepository.sendAndGenerate(message, true, settings);
     
     // Update conversation timestamp
     const conversation = await firstValueFrom(this.activeConversation$);
     if (conversation && conversation.id !== 0) {
       conversation.updatedAt = new Date();
       await this.conversationRepository.save(conversation);
+    }
+    
+    // Handle guest limit if AI generation failed
+    if (!aiMessage && await this.isBackendAvailable()) {
+      // Check if it's a rate limit issue
+      const error = (message as any).syncError;
+      if (error && error.includes('429')) {
+        this.handleRateLimitError(error);
+      }
     }
   }
   
@@ -526,6 +539,26 @@ export class ChatStateService implements OnDestroy {
     }
   }
   
+  /**
+   * Handle rate limit errors
+   */
+  private handleRateLimitError(error: string): void {
+    let resetTimeMessage = 'Please try again later.';
+    if (error.includes('after')) {
+      const resetTimeMatch = error.match(/after\s+(\S+)/);
+      if (resetTimeMatch) {
+        try {
+          const resetDate = new Date(resetTimeMatch[1]);
+          const formattedTime = resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          resetTimeMessage = `You have reached your request limit. You can generate more answers after ${formattedTime}.`;
+        } catch (e) {
+          console.error('Error parsing reset time:', e);
+        }
+      }
+    }
+    this.authService.setGuestLimitReached(true, resetTimeMessage);
+  }
+
   /**
    * Helper: Convert blob to base64
    */

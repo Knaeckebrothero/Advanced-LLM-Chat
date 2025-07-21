@@ -307,17 +307,120 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   }
 
   /**
-   * Sync a single message with backend
+   * Sync a single message with backend (used for updates/patches)
    */
   private async syncMessage(message: MessageWithSyncStatus): Promise<void> {
     if (!message.conversationId) {
       throw new Error('Cannot sync message without conversation ID');
     }
     
-    // This would call the appropriate API method to send the message
-    // For now, we'll just mark it as synced
-    // In a real implementation, this would call apiService.sendMessage()
-    message.syncStatus = 'synced';
+    try {
+      // For now, just use the regular send message endpoint
+      // In the future, this could handle updates differently
+      const serverId = await this.apiService.sendMessage(message);
+      
+      // Update the message ID with the server-assigned ID if it's different
+      if (serverId && serverId !== message.id) {
+        const oldId = message.id;
+        message.id = serverId;
+        
+        // Update in IndexedDB with new ID
+        await this.dbService.deleteMessage(oldId);
+        await this.dbService.addMessage(message);
+        
+        // Update cache
+        const conversationId = message.conversationId;
+        if (this.conversationCaches.has(conversationId)) {
+          const cache = this.conversationCaches.get(conversationId)!;
+          const current = cache.getValue();
+          const index = current.findIndex(m => m.id === oldId);
+          if (index >= 0) {
+            current[index] = message;
+            cache.next([...current]);
+          }
+        }
+      }
+      
+      message.syncStatus = 'synced';
+    } catch (error) {
+      console.error('Failed to sync message with backend:', error);
+      message.syncStatus = 'failed';
+      message.syncError = error instanceof Error ? error.message : 'Unknown error';
+      throw error;
+    }
+  }
+
+  /**
+   * Send message and optionally generate AI response
+   */
+  async sendAndGenerate(
+    message: MessageWithSyncStatus, 
+    generateResponse: boolean = true,
+    settings?: any
+  ): Promise<MessageWithSyncStatus | null> {
+    try {
+      // Save to IndexedDB first
+      await this.dbService.addMessage(message);
+      
+      // Update cache
+      const conversationId = message.conversationId;
+      if (this.conversationCaches.has(conversationId)) {
+        const cache = this.conversationCaches.get(conversationId)!;
+        const current = cache.getValue();
+        cache.next([...current, message]);
+      }
+      
+      // Mark as pending sync
+      message.syncStatus = 'pending';
+      
+      // Attempt to sync with backend if online
+      if (await this.isOnline()) {
+        try {
+          const result = await this.apiService.sendAndGenerateMessage(message, generateResponse, settings);
+          
+          // Update user message ID if different
+          if (result.userMessageId && result.userMessageId !== message.id) {
+            const oldId = message.id;
+            message.id = result.userMessageId;
+            
+            // Update in IndexedDB
+            await this.dbService.deleteMessage(oldId);
+            await this.dbService.addMessage(message);
+            
+            // Update cache
+            if (this.conversationCaches.has(conversationId)) {
+              const cache = this.conversationCaches.get(conversationId)!;
+              const current = cache.getValue();
+              const index = current.findIndex(m => m.id === oldId);
+              if (index >= 0) {
+                current[index] = message;
+                cache.next([...current]);
+              }
+            }
+          }
+          
+          message.syncStatus = 'synced';
+          
+          // If AI message was generated, save it too
+          if (result.aiMessage) {
+            const aiMessage = result.aiMessage as MessageWithSyncStatus;
+            aiMessage.syncStatus = 'synced';
+            await this.save(aiMessage);
+            return aiMessage;
+          }
+        } catch (error) {
+          message.syncStatus = 'failed';
+          message.syncError = error instanceof Error ? error.message : 'Unknown error';
+          console.error('Failed to sync with backend:', error);
+          // Don't throw - message is saved locally
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Failed to save message:', error);
+      throw error;
+    }
   }
 
   /**
