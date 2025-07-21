@@ -29,7 +29,7 @@ export class ChatStateService implements OnDestroy {
   private destroy$ = new Subject<void>();
   
   // State management
-  private activeConversationId$ = new BehaviorSubject<number | null>(null);
+  private activeConversationId$ = new BehaviorSubject<string | number | null>(null);
   private isNewConversation$ = new BehaviorSubject<boolean>(false);
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
@@ -121,7 +121,7 @@ export class ChatStateService implements OnDestroy {
   /**
    * Load a specific conversation
    */
-  async loadConversation(conversationId: number): Promise<void> {
+  async loadConversation(conversationId: string | number): Promise<void> {
     this.isLoading$.next(true);
     this.error$.next(null);
     
@@ -454,7 +454,7 @@ export class ChatStateService implements OnDestroy {
   /**
    * Delete a conversation
    */
-  async deleteConversation(conversationId: number): Promise<void> {
+  async deleteConversation(conversationId: string | number): Promise<void> {
     await this.conversationRepository.delete(conversationId);
     
     // If we deleted the active conversation, load a new one

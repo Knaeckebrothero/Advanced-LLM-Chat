@@ -22,7 +22,7 @@ import { FilePreview, UploadStatus, FilePreviewUtil } from './file-preview';
  */
 interface MessageMetadata {
   id: number;  // Unique identifier for the message
-  conversationId: number;  // Id of the conversation the message belongs to
+  conversationId: string | number;  // Id of the conversation (UUID from backend, number for local)
   roleName: string;  // Role name of the participant who sent the message
   time: Date;  // Time the message was sent (in Date format)
 }
