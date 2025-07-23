@@ -33,7 +33,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
   
   // Observable streams from state services
   conversations$: Observable<Conversation[]> = this.chatState.conversations$;
-  activeConversationId$: Observable<number | null> = this.uiState.activeConversationId$;
+  activeConversationId$: Observable<string | null> = this.uiState.activeConversationId$;
   isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
   
   private destroy$ = new Subject<void>();

@@ -22,7 +22,7 @@ import { FilePreview, UploadStatus, FilePreviewUtil } from './file-preview';
  */
 interface MessageMetadata {
   id: number;  // Unique identifier for the message
-  conversationId: string | number;  // Id of the conversation (UUID from backend, number for local)
+  conversationId: string;  // Id of the conversation (UUID)
   roleName: string;  // Role name of the participant who sent the message
   time: Date;  // Time the message was sent (in Date format)
 }
@@ -86,7 +86,7 @@ export class Message<T extends MessageContent = MessageContent> {
 
   // Setters for metadata (maintaining compatibility with existing code)
   set id(newId: number) { this.metadata.id = newId; }
-  set conversationId(newConversationId: number) { this.metadata.conversationId = newConversationId; }
+  set conversationId(newConversationId: string) { this.metadata.conversationId = newConversationId; }
   set roleName(newRoleName: string) { this.metadata.roleName = newRoleName; }
   set time(newTime: Date) { this.metadata.time = newTime; }
 

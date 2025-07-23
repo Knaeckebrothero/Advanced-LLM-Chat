@@ -138,7 +138,7 @@ export class DBService {
     return await this.db.clear('chatMessages');
   }
 
-  async deleteMessagesByConversationId(conversationId: string | number) {
+  async deleteMessagesByConversationId(conversationId: string) {
     const messages = await this.getMessagesByConversationId(conversationId);
     messages.forEach(async (message: any) => {
       await this.deleteMessage(message.id);
@@ -171,7 +171,7 @@ export class DBService {
     return await this.db.add('conversations', conversation);
   }
 
-  async getConversation(id: string | number) {
+  async getConversation(id: string) {
     const data = await this.db.get('conversations', id);
     return data ? Conversation.fromPlainObject(data) : undefined;
   }
@@ -200,7 +200,7 @@ export class DBService {
     return await this.db.put('conversations', conversation);
   }
 
-  async deleteConversation(id: string | number) {
+  async deleteConversation(id: string) {
     return await this.db.delete('conversations', id);
   }
 

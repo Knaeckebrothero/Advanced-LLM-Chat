@@ -18,8 +18,8 @@ export interface MessageWithSyncStatus extends Message {
 })
 export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   // Separate cache for each conversation
-  private conversationCaches = new Map<number, BehaviorSubject<MessageWithSyncStatus[]>>();
-  private pendingUploads = new Map<number, FilePreview[]>();
+  private conversationCaches = new Map<string, BehaviorSubject<MessageWithSyncStatus[]>>();
+  private pendingUploads = new Map<string, FilePreview[]>();
   
   constructor(
     dbService: DBService,
@@ -50,7 +50,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   /**
    * Get messages for a specific conversation
    */
-  getByConversationId(conversationId: number): Observable<MessageWithSyncStatus[]> {
+  getByConversationId(conversationId: string): Observable<MessageWithSyncStatus[]> {
     // Create cache for conversation if it doesn't exist
     if (!this.conversationCaches.has(conversationId)) {
       const cache = new BehaviorSubject<MessageWithSyncStatus[]>([]);
@@ -251,7 +251,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   /**
    * Clear cache for a conversation
    */
-  clearConversationCache(conversationId: number): void {
+  clearConversationCache(conversationId: string): void {
     if (this.conversationCaches.has(conversationId)) {
       this.conversationCaches.get(conversationId)!.complete();
       this.conversationCaches.delete(conversationId);
@@ -261,7 +261,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   /**
    * Load messages for a conversation from IndexedDB
    */
-  private async loadConversationMessages(conversationId: number): Promise<void> {
+  private async loadConversationMessages(conversationId: string): Promise<void> {
     try {
       const messages = await this.dbService.getMessagesByConversationId(conversationId);
       const cache = this.conversationCaches.get(conversationId);
@@ -283,7 +283,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     if (pendingFiles.length === 0) return;
     
     // Store pending uploads for later retry
-    this.pendingUploads.set(message.id!, pendingFiles);
+    this.pendingUploads.set(message.conversationId, pendingFiles);
     
     // Try to upload if online
     if (await this.isOnline()) {
@@ -295,7 +295,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           f.id = uploadedFileIds[index] || f.id;
         });
         
-        this.pendingUploads.delete(message.id!);
+        this.pendingUploads.delete(message.conversationId);
       } catch (error) {
         console.error('Failed to upload files:', error);
         pendingFiles.forEach(f => {

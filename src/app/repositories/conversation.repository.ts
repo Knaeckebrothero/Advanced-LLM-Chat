@@ -9,7 +9,7 @@ import { Message } from '../data/objects/message';
 import { MessageRepository } from './message.repository';
 
 export interface ConversationSyncMetadata {
-  id: number;
+  id: string;
   lastSynced: Date;
   messageCount: number;
   hash: number;
@@ -19,7 +19,7 @@ export interface ConversationSyncMetadata {
   providedIn: 'root'
 })
 export class ConversationRepository extends BaseRepository<Conversation> {
-  private syncMetadata = new Map<string | number, ConversationSyncMetadata>();
+  private syncMetadata = new Map<string, ConversationSyncMetadata>();
   
   constructor(
     dbService: DBService,
@@ -34,7 +34,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     return this.cache$.asObservable();
   }
 
-  getById(id: string | number): Observable<Conversation | null> {
+  getById(id: string): Observable<Conversation | null> {
     return this.cache$.pipe(
       map(conversations => conversations.find(c => c.id === id) || null)
     );
@@ -61,7 +61,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     }
   }
 
-  async delete(id: string | number): Promise<void> {
+  async delete(id: string): Promise<void> {
     try {
       await this.dbService.deleteConversation(id);
       
@@ -81,9 +81,10 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       .map(c => ({
         id: c.id,
         name: c.name,
-        participants: c.participants
+        participants: c.participants,
+        updatedAt: c.updatedAt
       }))
-      .sort((a, b) => a.id - b.id);
+      .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
     
     return this.computeHashFromString(JSON.stringify(data));
   }
@@ -108,9 +109,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         };
       }
       
-      // Sort by ID descending (most recent first) and take top N
+      // Sort by updated date descending (most recent first) and take top N
       const recentConversations = serverConversations
-        .sort((a, b) => b.id - a.id)
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
         .slice(0, count);
       
       let itemsUpdated = 0;
@@ -144,7 +145,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   /**
    * Sync a specific conversation if it's stale
    */
-  async syncConversation(conversationId: string | number): Promise<boolean> {
+  async syncConversation(conversationId: string): Promise<boolean> {
     const metadata = this.syncMetadata.get(conversationId);
     
     // Check if conversation needs sync (older than 24 hours)

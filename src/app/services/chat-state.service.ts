@@ -29,7 +29,7 @@ export class ChatStateService implements OnDestroy {
   private destroy$ = new Subject<void>();
   
   // State management
-  private activeConversationId$ = new BehaviorSubject<string | number | null>(null);
+  private activeConversationId$ = new BehaviorSubject<string | null>(null);
   private isNewConversation$ = new BehaviorSubject<boolean>(false);
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
@@ -37,8 +37,8 @@ export class ChatStateService implements OnDestroy {
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
     switchMap(id => {
-      if (id === null || id === 0) {
-        return of(new Conversation(0, 0, 'New Chat', ['user', 'Assistant']));
+      if (id === null || id === '0') {
+        return of(new Conversation('0', 0, 'New Chat', ['user', 'Assistant']));
       }
       return this.conversationRepository.getById(id);
     }),
@@ -48,7 +48,7 @@ export class ChatStateService implements OnDestroy {
   // Messages for active conversation
   public messages$: Observable<Message[]> = this.activeConversationId$.pipe(
     switchMap(id => {
-      if (id === null || id === 0) {
+      if (id === null || id === '0') {
         return of([]);
       }
       return this.messageRepository.getByConversationId(id);
@@ -121,14 +121,14 @@ export class ChatStateService implements OnDestroy {
   /**
    * Load a specific conversation
    */
-  async loadConversation(conversationId: string | number): Promise<void> {
+  async loadConversation(conversationId: string): Promise<void> {
     this.isLoading$.next(true);
     this.error$.next(null);
     
     try {
-      if (conversationId === 0) {
+      if (conversationId === '0') {
         this.isNewConversation$.next(true);
-        this.activeConversationId$.next(0);
+        this.activeConversationId$.next('0');
       } else {
         this.isNewConversation$.next(false);
         this.activeConversationId$.next(conversationId);
@@ -153,8 +153,8 @@ export class ChatStateService implements OnDestroy {
    */
   async createNewConversation(): Promise<void> {
     this.isNewConversation$.next(true);
-    this.activeConversationId$.next(0);
-    this.uiState.setActiveConversation(0);
+    this.activeConversationId$.next('0');
+    this.uiState.setActiveConversation('0');
   }
   
   /**
@@ -189,7 +189,7 @@ export class ChatStateService implements OnDestroy {
     
     // Update conversation timestamp
     const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== 0) {
+    if (conversation && conversation.id !== '0') {
       conversation.updatedAt = new Date();
       await this.conversationRepository.save(conversation);
     }
@@ -269,7 +269,7 @@ export class ChatStateService implements OnDestroy {
     
     // Update conversation
     const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== 0) {
+    if (conversation && conversation.id !== '0') {
       conversation.updatedAt = new Date();
       await this.conversationRepository.save(conversation);
     }
@@ -311,7 +311,7 @@ export class ChatStateService implements OnDestroy {
     
     // Update conversation
     const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== 0) {
+    if (conversation && conversation.id !== '0') {
       conversation.updatedAt = new Date();
       await this.conversationRepository.save(conversation);
     }
@@ -454,7 +454,7 @@ export class ChatStateService implements OnDestroy {
   /**
    * Delete a conversation
    */
-  async deleteConversation(conversationId: string | number): Promise<void> {
+  async deleteConversation(conversationId: string): Promise<void> {
     await this.conversationRepository.delete(conversationId);
     
     // If we deleted the active conversation, load a new one
@@ -473,7 +473,7 @@ export class ChatStateService implements OnDestroy {
    */
   async syncNow(): Promise<void> {
     const conversationId = this.activeConversationId$.getValue();
-    if (conversationId && conversationId !== 0) {
+    if (conversationId && conversationId !== '0') {
       await this.syncEngine.syncConversation(conversationId);
     }
   }
@@ -494,23 +494,23 @@ export class ChatStateService implements OnDestroy {
     let conversation: Conversation;
     
     if (!backendAvailable) {
-      // Create local-only conversation
+      // Create local-only conversation with timestamp-based UUID
       conversation = new Conversation(
-        Math.floor(Date.now() / 1000),
+        `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         0,
         title,
         ['user', 'Assistant']
       );
     } else {
       // Try to create on server
-      const newConvData = new Conversation(0, 0, title, ['user', 'Assistant']);
+      const newConvData = new Conversation('', 0, title, ['user', 'Assistant']);
       try {
         conversation = await this.apiService.createConversation(newConvData);
       } catch (error) {
         console.error('Failed to create conversation on server:', error);
-        // Fallback to local
+        // Fallback to local with UUID
         conversation = new Conversation(
-          Math.floor(Date.now() / 1000),
+          `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           0,
           title,
           ['user', 'Assistant']

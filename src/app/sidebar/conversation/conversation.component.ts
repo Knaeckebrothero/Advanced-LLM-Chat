@@ -18,7 +18,7 @@ export class ConversationComponent implements OnInit {
   @Input() conversation!: Conversation;
   @Input() highlighted: boolean = false; // Added Input
   @Output() selected = new EventEmitter<Conversation>();
-  @Output() delete = new EventEmitter<number>();
+  @Output() delete = new EventEmitter<string>();
 
   messages: Message[] = [];
   editing = false;
