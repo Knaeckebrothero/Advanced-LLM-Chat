@@ -148,8 +148,12 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   async syncConversation(conversationId: string): Promise<boolean> {
     const metadata = this.syncMetadata.get(conversationId);
     
-    // Check if conversation needs sync (older than 24 hours)
-    if (metadata && !await this.isConversationStale(metadata)) {
+    // Check if conversation has any local messages
+    const localMessages = await this.dbService.getMessagesByConversationId(conversationId);
+    const hasNoMessages = localMessages.length === 0;
+    
+    // Always sync if no messages, otherwise check if stale
+    if (!hasNoMessages && metadata && !await this.isConversationStale(metadata)) {
       return false;
     }
     
@@ -166,9 +170,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       
       if (!serverConv) return false;
       
-      // Compare hashes
-      if (localHash !== serverConv.hashsum) {
-        console.log(`Syncing messages for conversation ${conversationId}`);
+      // Compare hashes or force sync if no messages
+      if (hasNoMessages || localHash !== serverConv.hashsum) {
+        console.log(`Syncing messages for conversation ${conversationId} (forced: ${hasNoMessages}, hash mismatch: ${localHash !== serverConv.hashsum})`);
         
         // Fetch messages from server
         const serverMessages = await this.apiService.getConversationMessages(
@@ -181,6 +185,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         for (const msg of serverMessages) {
           await this.dbService.addMessage(msg);
         }
+        
+        // Refresh the message repository cache to trigger UI update
+        await this.messageRepository.refreshConversationCache(conversationId);
         
         // Update sync metadata
         this.syncMetadata.set(conversationId, {
