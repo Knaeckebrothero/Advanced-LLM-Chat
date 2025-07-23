@@ -259,6 +259,18 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   }
 
   /**
+   * Refresh cache after external database updates (e.g., after sync)
+   */
+  async refreshConversationCache(conversationId: string): Promise<void> {
+    const cache = this.conversationCaches.get(conversationId);
+    if (cache) {
+      // Reload messages from database
+      const messages = await this.dbService.getMessagesByConversationId(conversationId);
+      cache.next(messages as MessageWithSyncStatus[]);
+    }
+  }
+
+  /**
    * Load messages for a conversation from IndexedDB
    */
   private async loadConversationMessages(conversationId: string): Promise<void> {
