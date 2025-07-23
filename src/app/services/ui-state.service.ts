@@ -10,7 +10,7 @@ export interface UIState {
   isDesktop: boolean;
   viewportWidth: number;
   viewportHeight: number;
-  activeConversationId: string | number | null;
+  activeConversationId: string | null;
 }
 
 export interface Breakpoints {
@@ -34,7 +34,7 @@ export class UIStateService implements OnDestroy {
   
   // State subjects
   private isSidebarOpen$ = new BehaviorSubject<boolean>(true);
-  public activeConversationId$ = new BehaviorSubject<string | number | null>(null);
+  public activeConversationId$ = new BehaviorSubject<string | null>(null);
   private viewportSize$ = new BehaviorSubject<{ width: number; height: number }>({
     width: window.innerWidth,
     height: window.innerHeight
@@ -171,7 +171,7 @@ export class UIStateService implements OnDestroy {
   /**
    * Set active conversation ID
    */
-  setActiveConversation(conversationId: string | number | null): void {
+  setActiveConversation(conversationId: string | null): void {
     this.activeConversationId$.next(conversationId);
   }
   

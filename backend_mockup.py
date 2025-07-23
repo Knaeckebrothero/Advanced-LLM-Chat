@@ -180,6 +180,11 @@ class ConversationResponse(BaseModel):
   Encapsulates the response details of a conversation.
   """
   id: str  # Now using UUID
+  userId: int
+  name: str
+  participants: List[str]
+  createdAt: datetime
+  updatedAt: datetime
   hashsum: int
 
 class Conversation(BaseModel):
@@ -1024,7 +1029,12 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
       cur = conn.cursor()
       # Fetch conversations for the current user
       cur.execute(
-        "SELECT id FROM conversations WHERE userId = ?",
+        """
+        SELECT id, userId, name, participants, createdAt, updatedAt 
+        FROM conversations 
+        WHERE userId = ?
+        ORDER BY updatedAt DESC
+        """,
         (user_id,)
       )
       conversation_rows = cur.fetchall()
@@ -1043,7 +1053,19 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
         )
         messages = cur.fetchall()
         hashsum = generate_hash(messages)
-        conversation_responses.append({'id': conversation_id, 'hashsum': hashsum})
+        
+        # Parse participants (stored as JSON string)
+        participants = json.loads(conv_row['participants']) if conv_row['participants'] else []
+        
+        conversation_responses.append(ConversationResponse(
+          id=conversation_id,
+          userId=conv_row['userId'],
+          name=conv_row['name'],
+          participants=participants,
+          createdAt=conv_row['createdAt'],
+          updatedAt=conv_row['updatedAt'],
+          hashsum=hashsum
+        ))
 
       return conversation_responses
 

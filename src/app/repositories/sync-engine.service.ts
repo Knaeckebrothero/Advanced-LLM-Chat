@@ -13,7 +13,7 @@ export interface SyncManifest {
     timestamp: Date;
   };
   conversations: Array<{
-    id: number;
+    id: string;
     hash: string;
     lastSynced: Date;
   }>;
@@ -79,7 +79,7 @@ export class SyncEngineService {
   /**
    * Sync specific conversation
    */
-  async syncConversation(conversationId: number): Promise<void> {
+  async syncConversation(conversationId: string): Promise<void> {
     const status = this.syncStatus$.getValue();
     if (!status.isOnline || status.isSyncing) {
       console.log('Skip conversation sync - offline or already syncing');

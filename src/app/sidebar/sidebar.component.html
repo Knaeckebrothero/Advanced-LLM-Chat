@@ -4,7 +4,7 @@
   </div>
 
   <button class="new-conversation-button"
-          [class.highlighted]="(activeConversationId$ | async) === 0"
+          [class.highlighted]="(activeConversationId$ | async) === '0'"
           (click)="createNewConversation()">
     <mat-icon>add</mat-icon>
     New Chat

@@ -11,16 +11,16 @@ export interface MainAppDB extends DBSchema {
     key: number;
     value: Message;
     indexes: {
-      'by-conversationId': 'conversationId';
-      'by-conversationId-time': ['conversationId', 'time'];
+      'by-conversationId': string;
+      'by-conversationId-time': [string, Date];
     };
   };
   // Conversations store
   conversations: {
-    key: number;
+    key: string;
     value: Conversation;
     indexes: {
-      'by-userId': 'userId';
+      'by-userId': number;
     };
   };
   // User store

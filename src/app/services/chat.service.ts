@@ -115,7 +115,7 @@ export class ChatService implements OnDestroy {
   }
 
   // Delete conversation
-  public async deleteConversation(conversationId: number): Promise<void> {
+  public async deleteConversation(conversationId: string): Promise<void> {
     await this.chatState.deleteConversation(conversationId);
   }
 
