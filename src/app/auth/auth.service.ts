@@ -5,6 +5,10 @@ import { BehaviorSubject } from 'rxjs';
 import { lastValueFrom } from 'rxjs';
 import { environment } from '../environments/environment';
 import {take} from "rxjs/operators";
+import { SyncEngineService } from '../repositories/sync-engine.service';
+import { DBService } from '../data/db.service';
+import { ConversationRepository } from '../repositories/conversation.repository';
+import { MessageRepository } from '../repositories/message.repository';
 
 
 interface User {
@@ -45,7 +49,11 @@ export class AuthService {
 
   constructor(
     private http: HttpClient,
-    private router: Router
+    private router: Router,
+    private syncEngine: SyncEngineService,
+    private dbService: DBService,
+    private conversationRepository: ConversationRepository,
+    private messageRepository: MessageRepository
   ) {
     // Store the promise but don't await it in constructor
     this.authInitialized = this.initializeAuthFlow();
@@ -171,6 +179,10 @@ export class AuthService {
       this.currentUserSubject.next(response.user);
       this.isGuest = false;
       this.router.navigate(['/']);
+      
+      // Trigger sync after successful login
+      console.log('Triggering sync after login...');
+      await this.syncEngine.syncNow();
     } catch (error) {
       console.error('Login failed:', error);
       throw new Error('Login failed');
@@ -216,6 +228,14 @@ export class AuthService {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      // Clear all user data from IndexedDB before switching to guest
+      console.log('Clearing user data on logout...');
+      await this.dbService.clearAllUserData();
+      
+      // Clear repository caches
+      this.conversationRepository.clearCache();
+      this.messageRepository.clearAllCaches();
+      
       // After logout, automatically create a new guest session
       await this.autoGuestLogin();
       // Don't navigate away from current page after logout

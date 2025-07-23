@@ -204,6 +204,25 @@ export class DBService {
     return await this.db.delete('conversations', id);
   }
 
+  /**
+   * Clear all user data from IndexedDB
+   * Used during logout to ensure clean state
+   */
+  async clearAllUserData() {
+    console.log('Clearing all user data from IndexedDB...');
+    
+    // Clear all messages
+    await this.db.clear('chatMessages');
+    
+    // Clear all conversations
+    await this.db.clear('conversations');
+    
+    // Clear user store (settings, etc.)
+    await this.db.clear('user');
+    
+    console.log('All user data cleared from IndexedDB');
+  }
+
   async getConversationsByUserId(userId: any = null) {
     let rawConversations;
     if(userId) {

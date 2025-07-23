@@ -449,4 +449,17 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       return false;
     }
   }
+
+  /**
+   * Clear all cached data
+   * Used during logout to ensure clean state
+   */
+  clearAllCaches(): void {
+    // Complete and clear all conversation caches
+    this.conversationCaches.forEach((cache, conversationId) => {
+      cache.complete();
+    });
+    this.conversationCaches.clear();
+    this.pendingUploads.clear();
+  }
 }

@@ -105,6 +105,7 @@ export class ChatStateService implements OnDestroy {
     private http: HttpClient
   ) {
     this.initializeService();
+    this.listenToAuthChanges();
   }
   
   private async initializeService(): Promise<void> {
@@ -116,6 +117,22 @@ export class ChatStateService implements OnDestroy {
     } else {
       await this.createNewConversation();
     }
+  }
+  
+  private listenToAuthChanges(): void {
+    // Listen for user changes (logout/login)
+    this.authService.currentUser$
+      .pipe(
+        takeUntil(this.destroy$),
+        filter(user => user !== null) // Only react to actual user changes
+      )
+      .subscribe(user => {
+        // When user changes (after logout/login), reset to new conversation
+        if (user.email.includes('guest')) {
+          console.log('Guest user detected, resetting chat state');
+          this.resetState();
+        }
+      });
   }
   
   /**
@@ -573,6 +590,21 @@ export class ChatStateService implements OnDestroy {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+  
+  /**
+   * Reset all state - used during logout
+   */
+  resetState(): void {
+    console.log('Resetting chat state...');
+    // Reset to new conversation state
+    this.activeConversationId$.next('0');
+    this.isNewConversation$.next(true);
+    this.isLoading$.next(false);
+    this.error$.next(null);
+    
+    // Clear any existing conversation/messages by triggering the observables
+    // The observables will automatically emit empty arrays for conversation '0'
   }
   
   ngOnDestroy(): void {

@@ -269,4 +269,13 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       console.error('Failed to load conversations:', error);
     }
   }
+
+  /**
+   * Clear all cached data
+   * Used during logout to ensure clean state
+   */
+  clearCache(): void {
+    this.updateCache([]);
+    this.syncMetadata.clear();
+  }
 }
