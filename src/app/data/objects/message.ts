@@ -124,8 +124,11 @@ export class Message<T extends MessageContent = MessageContent> {
 
   // Factory method to create from API response (backwards compatibility)
   static fromApiResponse(data: any): Message {
+    // Generate ID if not provided by server
+    const messageId = data.id || Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 1000);
+    
     const metadata: MessageMetadata = {
-      id: data.id,
+      id: messageId,
       conversationId: data.conversationId,
       roleName: data.roleName,
       time: new Date(data.time * 1000)

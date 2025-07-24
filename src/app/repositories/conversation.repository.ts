@@ -13,6 +13,8 @@ export interface ConversationSyncMetadata {
   lastSynced: Date;
   messageCount: number;
   hash: number;
+  lastMessageTimestamp?: Date;
+  expiresAt?: Date;
 }
 
 @Injectable({
@@ -42,7 +44,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
 
   async save(conversation: Conversation): Promise<Conversation> {
     try {
-      await this.dbService.addConversation(conversation);
+      // Use updateConversation instead of addConversation to handle existing conversations
+      await this.dbService.updateConversation(conversation);
       
       const conversations = this.cache$.getValue();
       const index = conversations.findIndex(c => c.id === conversation.id);
@@ -94,9 +97,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   }
 
   /**
-   * Sync the most recent N conversations
+   * Sync the most recent N conversations with message caching
    */
-  async syncRecent(count: number): Promise<SyncResult> {
+  async syncRecent(count: number, messageLimit: number = 20): Promise<SyncResult> {
     this.isSyncing$.next(true);
     
     try {
@@ -117,7 +120,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       let itemsUpdated = 0;
       
       for (const serverConv of recentConversations) {
-        const updated = await this.syncConversation(serverConv.id);
+        const updated = await this.syncConversation(serverConv.id, messageLimit);
         if (updated) itemsUpdated++;
       }
       
@@ -143,26 +146,41 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   }
 
   /**
-   * Sync a specific conversation if it's stale
+   * Sync a specific conversation with smart caching
+   * @param conversationId - The conversation to sync
+   * @param messageLimit - Number of recent messages to keep in cache (default: 20)
    */
-  async syncConversation(conversationId: string): Promise<boolean> {
+  async syncConversation(conversationId: string, messageLimit: number = 20): Promise<boolean> {
     const metadata = this.syncMetadata.get(conversationId);
     
-    // Check if conversation has any local messages
-    const localMessages = await this.dbService.getMessagesByConversationId(conversationId);
-    const hasNoMessages = localMessages.length === 0;
-    
-    // Always sync if no messages, otherwise check if stale
-    if (!hasNoMessages && metadata && !await this.isConversationStale(metadata)) {
-      return false;
-    }
-    
     try {
-      // Get local conversation to compute hash
-      const localConv = await this.dbService.getConversation(conversationId);
-      if (!localConv) return false;
+      // Get local conversation
+      let localConv = await this.dbService.getConversation(conversationId);
       
-      const localHash = await localConv.computeHash(this.dbService);
+      // If conversation doesn't exist locally, we need to fetch it from server first
+      if (!localConv) {
+        const serverConversations = await this.apiService.getConversations();
+        const serverConvData = serverConversations.find(c => c.id === conversationId);
+        
+        if (!serverConvData) {
+          console.error(`Conversation ${conversationId} not found on server`);
+          return false;
+        }
+        
+        // Create local conversation from server data
+        localConv = Conversation.fromApiResponse(serverConvData);
+        await this.dbService.addConversation(localConv);
+      }
+      
+      // Get all local messages for this conversation
+      const localMessages = await this.dbService.getMessagesByConversationId(conversationId);
+      
+      // Identify messages with pending sync status
+      const pendingMessages = localMessages.filter(msg => {
+        // Check if message has sync metadata (from MessageRepository)
+        const msgWithStatus = msg as any;
+        return msgWithStatus.syncStatus === 'pending' || msgWithStatus.syncStatus === 'failed';
+      });
       
       // Get server conversation data
       const serverConversations = await this.apiService.getConversations();
@@ -170,45 +188,54 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       
       if (!serverConv) return false;
       
-      // Compare hashes or force sync if no messages
-      if (hasNoMessages || localHash !== serverConv.hashsum) {
-        console.log(`Syncing messages for conversation ${conversationId} (forced: ${hasNoMessages}, hash mismatch: ${localHash !== serverConv.hashsum})`);
-        
-        // Fetch messages from server
-        const serverMessages = await this.apiService.getConversationMessages(
-          conversationId,
-          50 // Get last 50 messages
-        );
-        
-        // Update local database
-        await this.dbService.deleteMessagesByConversationId(conversationId);
-        for (const msg of serverMessages) {
-          await this.dbService.addMessage(msg);
-        }
-        
-        // Refresh the message repository cache to trigger UI update
-        await this.messageRepository.refreshConversationCache(conversationId);
-        
-        // Update sync metadata
-        this.syncMetadata.set(conversationId, {
-          id: conversationId,
-          lastSynced: new Date(),
-          messageCount: serverMessages.length,
-          hash: serverConv.hashsum || 0
-        });
-        
-        return true;
+      // Compute local hash for comparison
+      const localHash = await localConv.computeHash(this.dbService);
+      const hasNoMessages = localMessages.length === 0;
+      
+      // Determine if we need to sync
+      const needsSync = hasNoMessages || 
+                       localHash !== serverConv.hashsum ||
+                       (metadata && await this.isConversationStale(metadata));
+      
+      if (!needsSync) {
+        // Just update expiration date
+        await this.updateConversationExpiration(conversationId);
+        return false;
       }
       
-      // Update sync time even if no changes
+      console.log(`Syncing conversation ${conversationId} (no messages: ${hasNoMessages}, hash mismatch: ${localHash !== serverConv.hashsum})`);
+      
+      // Fetch recent messages from server (using the caching limit)
+      const serverMessages = await this.apiService.getConversationMessages(
+        conversationId,
+        messageLimit
+      );
+      
+      console.log(`Fetched ${serverMessages.length} messages from server for conversation ${conversationId}`);
+      
+      // Merge messages using server-first strategy but preserve pending
+      await this.mergeMessages(conversationId, localMessages, serverMessages, pendingMessages);
+      
+      // Update conversation expiration date (30 days from now)
+      await this.updateConversationExpiration(conversationId);
+      
+      // Refresh the message repository cache to trigger UI update
+      await this.messageRepository.refreshConversationCache(conversationId);
+      
+      // Update sync metadata with enhanced information
+      const lastServerMessage = serverMessages.length > 0 ? 
+        serverMessages[serverMessages.length - 1] : null;
+      
       this.syncMetadata.set(conversationId, {
         id: conversationId,
         lastSynced: new Date(),
-        messageCount: 0,
-        hash: localHash
+        messageCount: serverMessages.length,
+        hash: serverConv.hashsum || 0,
+        lastMessageTimestamp: lastServerMessage ? new Date(lastServerMessage.time) : undefined,
+        expiresAt: this.calculateExpirationDate()
       });
       
-      return false;
+      return true;
     } catch (error) {
       console.error(`Failed to sync conversation ${conversationId}:`, error);
       return false;
@@ -240,10 +267,24 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       if (!localConv) {
         // New conversation from server
         const newConv = Conversation.fromApiResponse(serverConv);
-        await this.dbService.addConversation(newConv);
-        merged.push(newConv);
+        try {
+          await this.dbService.addConversation(newConv);
+          merged.push(newConv);
+        } catch (error) {
+          // If it already exists (can happen during sync), try to get it
+          const existingConv = await this.dbService.getConversation(newConv.id);
+          if (existingConv) {
+            merged.push(existingConv);
+          } else {
+            console.error(`Failed to add conversation ${newConv.id}:`, error);
+          }
+        }
       } else {
-        // Existing conversation
+        // Existing conversation - update timestamp from server
+        if (serverConv.updatedAt && new Date(serverConv.updatedAt) > new Date(localConv.updatedAt)) {
+          localConv.updatedAt = new Date(serverConv.updatedAt);
+          await this.dbService.updateConversation(localConv);
+        }
         merged.push(localConv);
       }
     }
@@ -277,5 +318,203 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   clearCache(): void {
     this.updateCache([]);
     this.syncMetadata.clear();
+  }
+
+  /**
+   * Merge local and server messages with conflict resolution
+   * Server-first strategy but preserves pending messages
+   */
+  private async mergeMessages(
+    conversationId: string,
+    localMessages: Message[],
+    serverMessages: Message[],
+    pendingMessages: Message[]
+  ): Promise<void> {
+    // Create maps for efficient lookup
+    const serverMessageMap = new Map(serverMessages.map(msg => [msg.id, msg]));
+    const pendingMessageIds = new Set(pendingMessages.map(msg => msg.id));
+    
+    // Log only in debug mode or when there are issues
+    if (pendingMessages.length > 0 || localMessages.length > 100) {
+      console.log(`Merging messages for conversation ${conversationId}:`);
+      console.log(`- Local messages: ${localMessages.length}`);
+      console.log(`- Server messages: ${serverMessages.length}`);
+      console.log(`- Pending messages: ${pendingMessages.length}`);
+    }
+    
+    // Messages to keep
+    const mergedMessages: Message[] = [];
+    
+    // 1. Add all server messages (these are authoritative)
+    mergedMessages.push(...serverMessages);
+    
+    // 2. Add pending messages that aren't in server response
+    for (const pendingMsg of pendingMessages) {
+      if (!serverMessageMap.has(pendingMsg.id)) {
+        mergedMessages.push(pendingMsg);
+      }
+    }
+    
+    // 3. Keep older local messages that aren't in the server response
+    // (these might be messages beyond the messageLimit we fetched)
+    const oldestServerMessageTime = serverMessages.length > 0 
+      ? new Date(serverMessages[0].time).getTime()
+      : Number.MAX_SAFE_INTEGER;
+    
+    for (const localMsg of localMessages) {
+      const msgTime = new Date(localMsg.time).getTime();
+      // Check if it's older than server messages AND not already in server response AND not pending
+      if (msgTime < oldestServerMessageTime && 
+          !serverMessageMap.has(localMsg.id) && 
+          !pendingMessageIds.has(localMsg.id)) {
+        mergedMessages.push(localMsg);
+      }
+    }
+    
+    // Sort messages by time
+    mergedMessages.sort((a, b) => 
+      new Date(a.time).getTime() - new Date(b.time).getTime()
+    );
+    
+    // Check for duplicates
+    const messageIds = new Set<number>();
+    const duplicates: number[] = [];
+    for (const msg of mergedMessages) {
+      if (messageIds.has(msg.id)) {
+        duplicates.push(msg.id);
+      }
+      messageIds.add(msg.id);
+    }
+    if (duplicates.length > 0) {
+      console.error(`WARNING: Found duplicate message IDs in merge: ${duplicates.join(', ')}`);
+      // Remove duplicates, keeping the first occurrence
+      const uniqueMessages: Message[] = [];
+      const seenIds = new Set<number>();
+      for (const msg of mergedMessages) {
+        if (!seenIds.has(msg.id)) {
+          uniqueMessages.push(msg);
+          seenIds.add(msg.id);
+        }
+      }
+      mergedMessages.length = 0;
+      mergedMessages.push(...uniqueMessages);
+    }
+    
+    // Update database with merged messages using transaction for atomicity
+    try {
+      await this.dbService.replaceConversationMessages(conversationId, mergedMessages);
+    } catch (error) {
+      console.error('Failed to replace messages in database:', error);
+      console.error('Merged messages:', mergedMessages);
+      throw error;
+    }
+  }
+
+  /**
+   * Update conversation expiration date
+   */
+  private async updateConversationExpiration(conversationId: string): Promise<void> {
+    const conversation = await this.dbService.getConversation(conversationId);
+    if (conversation) {
+      // Update the updatedAt timestamp which serves as activity indicator
+      conversation.updatedAt = new Date();
+      await this.save(conversation);
+    }
+  }
+
+  /**
+   * Calculate expiration date (30 days from now)
+   */
+  private calculateExpirationDate(): Date {
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() + 30);
+    return expirationDate;
+  }
+
+  /**
+   * Clean up expired conversations
+   */
+  async cleanupExpiredConversations(): Promise<number> {
+    const now = new Date();
+    let deletedCount = 0;
+    
+    for (const [convId, metadata] of this.syncMetadata) {
+      if (metadata.expiresAt && metadata.expiresAt < now) {
+        await this.delete(convId);
+        deletedCount++;
+      }
+    }
+    
+    return deletedCount;
+  }
+
+  /**
+   * Load messages for a conversation with caching limit
+   * This method is used by UI to load only recent messages into memory
+   */
+  async loadConversationMessages(conversationId: string, limit: number = 20): Promise<Message[]> {
+    const conversation = await this.dbService.getConversation(conversationId);
+    if (!conversation) return [];
+    
+    // Get latest messages using the built-in method
+    return conversation.getLatestMessages(this.dbService, limit);
+  }
+
+  /**
+   * Load older messages for pagination (when user scrolls up)
+   * @param conversationId - The conversation ID
+   * @param beforeTimestamp - Load messages before this timestamp
+   * @param limit - Number of messages to load
+   */
+  async loadOlderMessages(
+    conversationId: string, 
+    beforeTimestamp: Date, 
+    limit: number = 20
+  ): Promise<Message[]> {
+    const allMessages = await this.dbService.getMessagesByConversationId(conversationId);
+    
+    // Filter messages before the timestamp
+    const olderMessages = allMessages
+      .filter(msg => new Date(msg.time) < beforeTimestamp)
+      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+      .slice(0, limit);
+    
+    // Return in chronological order
+    return olderMessages.reverse();
+  }
+
+  /**
+   * Check if conversation needs to sync older messages from server
+   * This happens when user scrolls to messages we don't have locally
+   */
+  async checkAndSyncOlderMessages(
+    conversationId: string,
+    oldestLocalTimestamp: Date
+  ): Promise<boolean> {
+    try {
+      // Fetch older messages from server
+      const olderServerMessages = await this.apiService.getConversationMessages(
+        conversationId,
+        20,
+        oldestLocalTimestamp
+      );
+      
+      if (olderServerMessages.length === 0) {
+        return false;
+      }
+      
+      // Add older messages to local database
+      for (const msg of olderServerMessages) {
+        await this.dbService.addMessage(msg);
+      }
+      
+      // Refresh the message repository cache
+      await this.messageRepository.refreshConversationCache(conversationId);
+      
+      return true;
+    } catch (error) {
+      console.error(`Failed to sync older messages for ${conversationId}:`, error);
+      return false;
+    }
   }
 }
