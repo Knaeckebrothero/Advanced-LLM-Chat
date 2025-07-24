@@ -268,4 +268,81 @@ export class DBService {
     // TODO: Implement store file info in IndexedDB
   }
 
+  /**
+   * Execute multiple database operations in a transaction
+   * Ensures all operations succeed or all fail atomically
+   */
+  async executeTransaction<T>(
+    storeNames: Array<'chatMessages' | 'conversations' | 'user' | 'settings'>, 
+    mode: 'readonly' | 'readwrite', 
+    operations: (tx: any) => Promise<T>
+  ): Promise<T> {
+    await this.status;
+    const tx = this.db.transaction(storeNames as any, mode);
+    
+    try {
+      const result = await operations(tx);
+      await tx.done;
+      return result;
+    } catch (error) {
+      // Transaction will automatically abort on error
+      throw error;
+    }
+  }
+
+  /**
+   * Replace all messages for a conversation atomically
+   * Used during sync to ensure data consistency
+   */
+  async replaceConversationMessages(
+    conversationId: string, 
+    messages: Message[]
+  ): Promise<void> {
+    return this.executeTransaction(['chatMessages'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('chatMessages');
+      
+      // Get all existing messages for this conversation
+      const index = store.index('by-conversationId');
+      const existingMessages = await index.getAll(conversationId);
+      
+      // Delete existing messages
+      for (const msg of existingMessages) {
+        await store.delete(msg.id);
+      }
+      
+      // Add new messages
+      for (const msg of messages) {
+        // Ensure message has all required fields before adding
+        if (!msg.id) {
+          console.error('Message missing id:', msg);
+          throw new Error('Cannot add message without id');
+        }
+        // Serialize message before storing
+        const serialized = msg.toJSON();
+        await store.add(serialized);
+      }
+    });
+  }
+
+  /**
+   * Get messages for a conversation with a limit
+   * Used for implementing the caching strategy
+   */
+  async getRecentMessagesByConversationId(
+    conversationId: string, 
+    limit: number = 20
+  ): Promise<Message[]> {
+    // Use the existing method to get all messages for the conversation
+    const messages = await this.getMessagesByConversationId(conversationId);
+    
+    // Sort by time descending and take the limit
+    messages.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    const recentMessages = messages.slice(0, limit);
+    
+    // Sort back to chronological order for display
+    recentMessages.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    
+    return recentMessages;
+  }
+
 }

@@ -78,9 +78,33 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
     } catch(err) { }
   }
 
+  // Track if we should auto-scroll
+  private shouldScrollToBottom = true;
+  private lastMessageCount = 0;
+  
+  // Check if user is near bottom of chat (within 100px)
+  private isNearBottom(): boolean {
+    if (!this.messageContainer) return true;
+    const element = this.messageContainer.nativeElement;
+    const threshold = 100;
+    return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
+  }
+
   // Use the AfterViewChecked lifecycle hook to trigger the scroll method.
   ngAfterViewChecked() {
-    this.scrollToBottom();
+    // Only scroll if new messages were added
+    const currentMessageCount = this.messages.length;
+    if (currentMessageCount !== this.lastMessageCount) {
+      // Check if user was near bottom before new messages
+      const wasNearBottom = this.isNearBottom();
+      this.lastMessageCount = currentMessageCount;
+      
+      // Only auto-scroll if user was already near the bottom
+      if (wasNearBottom || this.shouldScrollToBottom) {
+        this.shouldScrollToBottom = true;
+        this.shouldScrollToBottom = false; // Reset flag after scrolling
+      }
+    }
   }
 
   // Utility function to detect mobile devices - now uses UIStateService
@@ -105,7 +129,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         }
 
         console.log('User message sent:', message);
-        this.scrollToBottom();
+        this.shouldScrollToBottom = true;
 
         // AI response is now generated automatically by the backend
       } catch (error) {
@@ -162,7 +186,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         );
 
         console.log('Voice message sent');
-        this.scrollToBottom();
+        this.shouldScrollToBottom = true;
 
         // AI response is now generated automatically by the backend
       } catch (error) {
