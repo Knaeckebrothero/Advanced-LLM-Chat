@@ -144,15 +144,15 @@ describe('UIStateService', () => {
     });
 
     it('should set active conversation', (done) => {
-      service.setActiveConversation(123);
+      service.setActiveConversation('123');
       service.activeConversationId$.subscribe(id => {
-        expect(id).toBe(123);
+        expect(id).toBe('123');
         done();
       });
     });
 
     it('should clear active conversation', (done) => {
-      service.setActiveConversation(123);
+      service.setActiveConversation('123');
       service.setActiveConversation(null);
       service.activeConversationId$.subscribe(id => {
         expect(id).toBeNull();
@@ -164,7 +164,7 @@ describe('UIStateService', () => {
   describe('Combined State', () => {
     it('should provide complete UI state', (done) => {
       setViewportSize(500, 800);
-      service.setActiveConversation(123);
+      service.setActiveConversation('123');
       service.closeSidebar();
       
       service.state$.pipe(first()).subscribe(state => {
@@ -175,7 +175,7 @@ describe('UIStateService', () => {
           isDesktop: false,
           viewportWidth: 500,
           viewportHeight: 800,
-          activeConversationId: 123
+          activeConversationId: '123'
         }));
         done();
       });
@@ -183,7 +183,7 @@ describe('UIStateService', () => {
 
     it('should provide current state synchronously', () => {
       setViewportSize(1400, 900);
-      service.setActiveConversation(456);
+      service.setActiveConversation('456');
       service.openSidebar();
       
       const state = service.getCurrentState();
@@ -194,7 +194,7 @@ describe('UIStateService', () => {
         isDesktop: true,
         viewportWidth: 1400,
         viewportHeight: 900,
-        activeConversationId: 456
+        activeConversationId: 'conv-456'
       }));
     });
   });

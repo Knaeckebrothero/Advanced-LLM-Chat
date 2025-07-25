@@ -25,8 +25,8 @@ export class DBService {
     console.log("Starting database...");
 
     // Open the database
-    this.db = await openDB<MainAppDB>('main', 2, {
-      upgrade(db, oldVersion) {
+    this.db = await openDB<MainAppDB>('main', 3, {
+      upgrade: async (db, oldVersion, newVersion, transaction) => {
         // Upgrade from version 0 (new database) or version 1
         if (oldVersion < 1) {
           // Create a store for the user
@@ -46,6 +46,45 @@ export class DBService {
         if (oldVersion < 2) {
           // Create a store for settings
           db.createObjectStore('settings', { keyPath: 'id' });
+        }
+
+        // Add version fields in version 3
+        if (oldVersion < 3 && oldVersion > 0) {
+          console.log('Migrating database to version 3: Adding version fields');
+          
+          // Add version to existing messages
+          const messageStore = transaction.objectStore('chatMessages');
+          const messageCursor = await messageStore.openCursor();
+          
+          let messageCount = 0;
+          while (messageCursor) {
+            const message = messageCursor.value;
+            if (!message.version) {
+              message.version = 1;
+              message.lastModified = message.time ? Math.floor(new Date(message.time).getTime() / 1000) : Math.floor(Date.now() / 1000);
+              await messageCursor.update(message);
+              messageCount++;
+            }
+            await messageCursor.continue();
+          }
+          console.log(`Updated ${messageCount} messages with version information`);
+          
+          // Add version to existing conversations
+          const conversationStore = transaction.objectStore('conversations');
+          const conversationCursor = await conversationStore.openCursor();
+          
+          let conversationCount = 0;
+          while (conversationCursor) {
+            const conversation = conversationCursor.value;
+            if (!conversation.version) {
+              conversation.version = 1;
+              conversation.lastModified = Math.floor(Date.now() / 1000);
+              await conversationCursor.update(conversation);
+              conversationCount++;
+            }
+            await conversationCursor.continue();
+          }
+          console.log(`Updated ${conversationCount} conversations with version information`);
         }
       }
     });
@@ -79,6 +118,16 @@ export class DBService {
   public async getDb(): Promise<IDBPDatabase<MainAppDB>> {
     await this.status;
     return this.db;
+  }
+
+  // Helper method to generate UUID-like IDs
+  public generateUUID(): string {
+    // Simple UUID v4-like generator
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   // Method to add an entry to the collection
@@ -125,6 +174,10 @@ export class DBService {
   }
 
   async updateMessage(message: Message) {
+    // Increment version and update lastModified before saving
+    message.version = (message.version || 1) + 1;
+    message.lastModified = Math.floor(Date.now() / 1000);
+    
     // Serialize the message before updating
     const serialized = message.toJSON();
     return await this.db.put('chatMessages', serialized);
@@ -139,9 +192,15 @@ export class DBService {
   }
 
   async deleteMessagesByConversationId(conversationId: string) {
-    const messages = await this.getMessagesByConversationId(conversationId);
-    messages.forEach(async (message: any) => {
-      await this.deleteMessage(message.id);
+    return this.executeTransaction(['chatMessages'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('chatMessages');
+      const index = store.index('by-conversationId');
+      const messages = await index.getAll(conversationId);
+      
+      // Delete all messages in the transaction
+      for (const message of messages) {
+        await store.delete(message.id);
+      }
     });
   }
 
@@ -197,6 +256,10 @@ export class DBService {
 
 
   async updateConversation(conversation: Conversation) {
+    // Increment version and update lastModified before saving
+    conversation.version = (conversation.version || 1) + 1;
+    conversation.lastModified = Math.floor(Date.now() / 1000);
+    
     return await this.db.put('conversations', conversation);
   }
 
@@ -211,16 +274,18 @@ export class DBService {
   async clearAllUserData() {
     console.log('Clearing all user data from IndexedDB...');
     
-    // Clear all messages
-    await this.db.clear('chatMessages');
-    
-    // Clear all conversations
-    await this.db.clear('conversations');
-    
-    // Clear user store (settings, etc.)
-    await this.db.clear('user');
-    
-    console.log('All user data cleared from IndexedDB');
+    return this.executeTransaction(['chatMessages', 'conversations', 'user'], 'readwrite', async (tx) => {
+      // Clear all messages
+      await tx.objectStore('chatMessages').clear();
+      
+      // Clear all conversations
+      await tx.objectStore('conversations').clear();
+      
+      // Clear user store (settings, etc.)
+      await tx.objectStore('user').clear();
+      
+      console.log('All user data cleared from IndexedDB');
+    });
   }
 
   async getConversationsByUserId(userId: any = null) {
@@ -343,6 +408,147 @@ export class DBService {
     recentMessages.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
     
     return recentMessages;
+  }
+
+  /**
+   * Update conversation with transaction support
+   * Ensures atomicity when updating conversation metadata
+   */
+  async updateConversationTransactional(
+    conversation: Conversation,
+    messageUpdates?: { messages: Message[] }
+  ): Promise<void> {
+    const stores: Array<'conversations' | 'chatMessages'> = ['conversations'];
+    if (messageUpdates) stores.push('chatMessages');
+    
+    return this.executeTransaction(stores, 'readwrite', async (tx) => {
+      // Increment version and update lastModified
+      conversation.version = (conversation.version || 1) + 1;
+      conversation.lastModified = Math.floor(Date.now() / 1000);
+      
+      // Update conversation
+      await tx.objectStore('conversations').put(conversation);
+      
+      // Update messages if provided
+      if (messageUpdates) {
+        const messageStore = tx.objectStore('chatMessages');
+        for (const msg of messageUpdates.messages) {
+          // Increment message version
+          msg.version = (msg.version || 1) + 1;
+          msg.lastModified = Math.floor(Date.now() / 1000);
+          
+          const serialized = msg.toJSON();
+          await messageStore.put(serialized);
+        }
+      }
+    });
+  }
+
+  /**
+   * Delete conversation and all its messages atomically
+   */
+  async deleteConversationWithMessages(conversationId: string): Promise<void> {
+    return this.executeTransaction(['conversations', 'chatMessages'], 'readwrite', async (tx) => {
+      // Delete conversation
+      await tx.objectStore('conversations').delete(conversationId);
+      
+      // Delete all messages
+      const messageStore = tx.objectStore('chatMessages');
+      const index = messageStore.index('by-conversationId');
+      const messages = await index.getAll(conversationId);
+      
+      for (const message of messages) {
+        await messageStore.delete(message.id);
+      }
+    });
+  }
+
+  /**
+   * Add multiple messages in a single transaction
+   * Used for batch operations during sync
+   */
+  async addMessagesTransactional(messages: Message[]): Promise<void> {
+    return this.executeTransaction(['chatMessages'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('chatMessages');
+      
+      for (const msg of messages) {
+        const serialized = msg.toJSON();
+        await store.add(serialized);
+      }
+    });
+  }
+
+  /**
+   * Update multiple messages in a single transaction
+   */
+  async updateMessagesTransactional(messages: Message[]): Promise<void> {
+    return this.executeTransaction(['chatMessages'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('chatMessages');
+      
+      for (const msg of messages) {
+        // Increment version and update lastModified
+        msg.version = (msg.version || 1) + 1;
+        msg.lastModified = Math.floor(Date.now() / 1000);
+        
+        const serialized = msg.toJSON();
+        await store.put(serialized);
+      }
+    });
+  }
+
+  /**
+   * Create a backup of conversation data before sync operations
+   * Returns the backup data that can be restored if sync fails
+   */
+  async backupConversationData(conversationId: string): Promise<{
+    conversation: Conversation | undefined;
+    messages: Message[];
+  }> {
+    return this.executeTransaction(['conversations', 'chatMessages'], 'readonly', async (tx) => {
+      // Get conversation
+      const conversationData = await tx.objectStore('conversations').get(conversationId);
+      const conversation = conversationData ? Conversation.fromPlainObject(conversationData) : undefined;
+      
+      // Get all messages
+      const messageStore = tx.objectStore('chatMessages');
+      const index = messageStore.index('by-conversationId');
+      const rawMessages = await index.getAll(conversationId);
+      const messages = rawMessages.map((data: any) => Message.fromJSON(data));
+      
+      return { conversation, messages };
+    });
+  }
+
+  /**
+   * Restore conversation data from backup
+   * Used when sync operations fail
+   */
+  async restoreConversationData(
+    conversationId: string,
+    backup: { conversation: Conversation | undefined; messages: Message[] }
+  ): Promise<void> {
+    return this.executeTransaction(['conversations', 'chatMessages'], 'readwrite', async (tx) => {
+      // Restore conversation if it existed
+      if (backup.conversation) {
+        await tx.objectStore('conversations').put(backup.conversation);
+      }
+      
+      // Clear current messages and restore from backup
+      const messageStore = tx.objectStore('chatMessages');
+      const index = messageStore.index('by-conversationId');
+      const currentMessages = await index.getAll(conversationId);
+      
+      // Delete current messages
+      for (const msg of currentMessages) {
+        await messageStore.delete(msg.id);
+      }
+      
+      // Restore backup messages
+      for (const msg of backup.messages) {
+        const serialized = msg.toJSON();
+        await messageStore.add(serialized);
+      }
+    });
   }
 
 }

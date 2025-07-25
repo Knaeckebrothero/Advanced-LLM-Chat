@@ -25,6 +25,8 @@ interface MessageMetadata {
   conversationId: string;  // Id of the conversation (UUID)
   roleName: string;  // Role name of the participant who sent the message
   time: Date;  // Time the message was sent (in Date format)
+  version?: number;  // Version number for optimistic locking
+  lastModified?: number;  // Unix timestamp of last modification
 }
 
 /**
@@ -83,12 +85,16 @@ export class Message<T extends MessageContent = MessageContent> {
   get roleName() { return this.metadata.roleName; }
   get time() { return this.metadata.time; }
   get type() { return this.content.type; }
+  get version() { return this.metadata.version || 1; }
+  get lastModified() { return this.metadata.lastModified || Math.floor(this.time.getTime() / 1000); }
 
   // Setters for metadata (maintaining compatibility with existing code)
   set id(newId: number) { this.metadata.id = newId; }
   set conversationId(newConversationId: string) { this.metadata.conversationId = newConversationId; }
   set roleName(newRoleName: string) { this.metadata.roleName = newRoleName; }
   set time(newTime: Date) { this.metadata.time = newTime; }
+  set version(newVersion: number) { this.metadata.version = newVersion; }
+  set lastModified(newLastModified: number) { this.metadata.lastModified = newLastModified; }
 
   // Factory method for creating text messages
   static createText(
@@ -131,7 +137,9 @@ export class Message<T extends MessageContent = MessageContent> {
       id: messageId,
       conversationId: data.conversationId,
       roleName: data.roleName,
-      time: new Date(data.time * 1000)
+      time: new Date(data.time * 1000),
+      version: data.version || 1,
+      lastModified: data.lastModified || data.time
     };
 
     // Determine message type based on data
@@ -175,7 +183,9 @@ export class Message<T extends MessageContent = MessageContent> {
       conversationId: this.conversationId,
       roleName: this.roleName,
       time: Math.floor(this.time.getTime() / 1000),
-      type: this.content.type
+      type: this.content.type,
+      version: this.version,
+      lastModified: this.lastModified
     };
 
     switch (this.content.type) {
@@ -341,6 +351,8 @@ export class Message<T extends MessageContent = MessageContent> {
       conversationId: this.conversationId,
       roleName: this.roleName,
       time: this.time.toISOString(), // Store as ISO string for consistent serialization
+      version: this.version,
+      lastModified: this.lastModified,
       content: this.content
     };
   }
@@ -351,7 +363,9 @@ export class Message<T extends MessageContent = MessageContent> {
       id: data.id,
       conversationId: data.conversationId,
       roleName: data.roleName,
-      time: new Date(data.time)
+      time: new Date(data.time),
+      version: data.version || 1,
+      lastModified: data.lastModified || Math.floor(new Date(data.time).getTime() / 1000)
     };
 
     // Handle different content types

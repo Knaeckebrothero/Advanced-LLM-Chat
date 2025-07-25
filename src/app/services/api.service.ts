@@ -14,6 +14,7 @@ import { FilePreview } from '../data/objects/file-preview';
 export class ApiService {
   // Use the environment configuration to get
   private baseUrl: string = environment.apiUrl;
+  private csrfToken: string | null = null;
 
   constructor(private http: HttpClient) {
     // Development only - handle self-signed certificates
@@ -25,9 +26,16 @@ export class ApiService {
 
   // Headers setup method
   private getHeaders(): HttpHeaders {
-    return new HttpHeaders({
+    const headers: any = {
       'Content-Type': 'application/json',
-    });
+    };
+    
+    // Add CSRF token if available
+    if (this.csrfToken) {
+      headers['X-CSRF-Token'] = this.csrfToken;
+    }
+    
+    return new HttpHeaders(headers);
   }
 
   private getHttpOptions() {
@@ -36,6 +44,17 @@ export class ApiService {
       // TODO: Do we still need this now that we have the auth.guard?
       withCredentials: true  // Cookies
     };
+  }
+  
+  // Extract CSRF token from response headers
+  public extractCsrfToken(response: any): void {
+    if (response && response.headers) {
+      const token = response.headers.get('X-CSRF-Token');
+      if (token) {
+        this.csrfToken = token;
+        console.log('CSRF token updated');
+      }
+    }
   }
 
   async getLLMs(): Promise<string[]> {
@@ -65,6 +84,9 @@ export class ApiService {
       );
 
       console.log('Response:', response);
+      
+      // Extract CSRF token from response headers
+      this.extractCsrfToken(response);
 
       if (response.status === 200 && response.body) {
         // Convert plain objects to Conversation instances using the static method
@@ -209,12 +231,13 @@ export class ApiService {
   }
 
   // Patch an existing message
-  async patchMessage(conversationId: string | number, messageId: number, content: string): Promise<Message> {
+  async patchMessage(conversationId: string | number, messageId: number, content: string, version: number): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/patch`;
     const body = {
       id: messageId,
       conversationId: conversationId,
-      content: content
+      content: content,
+      version: version
     };
 
     try {
@@ -308,7 +331,8 @@ export class ApiService {
     const body = {
       id: conversation.id,
       name: conversation.name,
-      participants: conversation.participants
+      participants: conversation.participants,
+      version: conversation.version
     };
 
     try {
