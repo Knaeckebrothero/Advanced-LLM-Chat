@@ -31,6 +31,23 @@
   }
 }
 
+.loading-older-messages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 10px;
+  color: var(--theme-text-secondary);
+  
+  mat-spinner {
+    margin-right: 8px;
+  }
+  
+  span {
+    font-size: 14px;
+  }
+}
+
 .guest-limit-warning {
   background-color: var(--theme-input-bg);
   color: var(--theme-text-accent);

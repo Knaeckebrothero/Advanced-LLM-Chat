@@ -317,12 +317,21 @@ export class Message<T extends MessageContent = MessageContent> {
     const contentString = this.getDisplayContent();
     if (!contentString) return 0;
 
-    let hashValue = 0;
-    hashValue += contentString.charCodeAt(0);
-    hashValue += contentString.charCodeAt(contentString.length - 1);
-    hashValue += contentString.length;
+    // Use proper hash function from utility
+    return this.computeNumericHash(contentString);
+  }
 
-    return hashValue % (2**32);
+  private computeNumericHash(data: string): number {
+    let hash = 0;
+    if (data.length === 0) return hash;
+    
+    for (let i = 0; i < data.length; i++) {
+      const char = data.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    return Math.abs(hash);
   }
 
   // Serialization method for IndexedDB storage

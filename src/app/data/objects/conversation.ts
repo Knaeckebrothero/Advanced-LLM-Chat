@@ -49,22 +49,28 @@ export class Conversation {
 
         if (!messages.length) return 0;
 
-        let hashValue = 0;
-        for (const message of messages) {
-            const content = message.getDisplayContent();
-            if (!content) {
-                hashValue += 0;
-                continue;
-            }
+        // Concatenate all message contents for hashing
+        const allContent = messages
+            .map(m => m.getDisplayContent() || '')
+            .filter(content => content.length > 0)
+            .join('|'); // Use separator to ensure different message combinations produce different hashes
 
-            hashValue += content.charCodeAt(0);
-            hashValue += content.charCodeAt(content.length - 1);
-            hashValue *= content.length;
+        if (!allContent) return 0;
 
-            // Use modulo to stay within safe integer range
-            hashValue %= (2**32);
+        return this.computeNumericHash(allContent);
+    }
+
+    private computeNumericHash(data: string): number {
+        let hash = 0;
+        if (data.length === 0) return hash;
+        
+        for (let i = 0; i < data.length; i++) {
+            const char = data.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
         }
-        return hashValue;
+        
+        return Math.abs(hash);
     }
 
   // Convert to API check format
