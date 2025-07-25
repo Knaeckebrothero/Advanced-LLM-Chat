@@ -11,6 +11,8 @@ export class Conversation {
     hashsum?: number;  // Hashsum of the conversation
     createdAt: Date = new Date(); // Creation date of the conversation
     updatedAt: Date = new Date(); // Last update date of the conversation
+    version: number = 1;  // Version number for optimistic locking
+    lastModified: number = Math.floor(Date.now() / 1000);  // Unix timestamp of last modification
 
     constructor(
         id: string,
@@ -91,6 +93,8 @@ export class Conversation {
     );
     conv.createdAt = new Date(data.createdAt);
     conv.updatedAt = new Date(data.updatedAt);
+    conv.version = data.version || 1;
+    conv.lastModified = data.lastModified || Math.floor(Date.now() / 1000);
     return conv;
   }
 
@@ -107,6 +111,8 @@ export class Conversation {
     if (data.hashsum !== undefined) {
       conv.hashsum = data.hashsum;
     }
+    conv.version = data.version || 1;
+    conv.lastModified = data.lastModified || Math.floor(Date.now() / 1000);
     return conv;
   }
 }

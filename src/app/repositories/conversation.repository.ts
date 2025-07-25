@@ -68,7 +68,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
 
   async delete(id: string): Promise<void> {
     try {
-      await this.dbService.deleteConversation(id);
+      // Use transactional delete to remove conversation and all messages atomically
+      await this.dbService.deleteConversationWithMessages(id);
       
       const conversations = this.cache$.getValue();
       const filtered = conversations.filter(c => c.id !== id);
@@ -185,7 +186,12 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       }
     }
     
+    // Create backup before sync operation
+    let backup: { conversation: Conversation | undefined; messages: Message[] } | null = null;
+    
     try {
+      // Backup current state before any modifications
+      backup = await this.dbService.backupConversationData(conversationId);
       // Get local conversation
       let localConv = await this.dbService.getConversation(conversationId);
       
@@ -271,6 +277,18 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       return true;
     } catch (error) {
       console.error(`Failed to sync conversation ${conversationId}:`, error);
+      
+      // Restore from backup if sync failed and we have a backup
+      if (backup) {
+        try {
+          console.log(`Restoring conversation ${conversationId} from backup after sync failure`);
+          await this.dbService.restoreConversationData(conversationId, backup);
+          console.log(`Successfully restored conversation ${conversationId} from backup`);
+        } catch (restoreError) {
+          console.error(`Failed to restore conversation ${conversationId} from backup:`, restoreError);
+        }
+      }
+      
       return false;
     }
   }
@@ -603,9 +621,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         return false;
       }
       
-      // Add older messages to local database
-      for (const msg of olderServerMessages) {
-        await this.dbService.addMessage(msg);
+      // Add older messages to local database in a single transaction
+      if (olderServerMessages.length > 0) {
+        await this.dbService.addMessagesTransactional(olderServerMessages);
       }
       
       // Refresh the message repository cache

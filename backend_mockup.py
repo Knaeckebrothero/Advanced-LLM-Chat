@@ -16,6 +16,7 @@ import hashlib
 import uuid
 from fastapi import FastAPI, Response, status, Request, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
@@ -115,6 +116,8 @@ class ApiMessageSend(BaseModel):
   type: Literal["text", "voice"]
   content: Union[str, TextContent, VoiceContent]  # Backwards compatible - str for legacy, objects for new types
   time: int
+  version: Optional[int] = 1
+  lastModified: Optional[int] = None
 
 
 class ApiMessageGenerate(BaseModel):
@@ -138,6 +141,8 @@ class ApiMessageSendAndGenerate(BaseModel):
   type: Literal["text", "voice"]
   content: Union[str, TextContent, VoiceContent]
   time: int
+  version: Optional[int] = 1
+  lastModified: Optional[int] = None
   
   # AI generation settings
   generateResponse: bool = True
@@ -154,6 +159,7 @@ class MessagePatch(BaseModel):
   id: int
   conversationId: str  # Now using UUID
   content: str
+  version: int  # Required for optimistic locking
 
 
 class MessageResponse(BaseModel):
@@ -166,6 +172,8 @@ class MessageResponse(BaseModel):
   content: str
   time: int
   type: Optional[str] = "text"  # Default to "text" for backwards compatibility
+  version: int = 1
+  lastModified: Optional[int] = None
 
 class SendAndGenerateResponse(BaseModel):
   """
@@ -186,6 +194,8 @@ class ConversationResponse(BaseModel):
   createdAt: datetime
   updatedAt: datetime
   hashsum: int
+  version: int = 1
+  lastModified: Optional[int] = None
 
 class Conversation(BaseModel):
   id: str  # Now using UUID
@@ -280,24 +290,33 @@ def generate_conversation_id() -> str:
   return str(uuid.uuid4())
 
 
-def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False) -> str:
+def generate_csrf_token() -> str:
+  """
+  Generate a secure CSRF token.
+  """
+  return secrets.token_urlsafe(32)
+
+
+def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False) -> tuple[str, str]:
   """
   Creates a session for a given user with a specified duration in hours.
+  Returns tuple of (session_key, csrf_token).
   """
   session_key = generate_session_key()
+  csrf_token = generate_csrf_token()
   expires_at = datetime.now(UTC) + timedelta(hours=session_duration_hours)
 
   # Save session to database
   with get_db() as db:
     db.execute(
       """
-      INSERT INTO sessions (session_key, user_id, email, expires_at, is_guest)
-      VALUES (?, ?, ?, ?, ?)
-      """, (session_key, user_id, user_email, expires_at.isoformat(), is_guest))
+      INSERT INTO sessions (session_key, user_id, email, expires_at, is_guest, csrf_token)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """, (session_key, user_id, user_email, expires_at.isoformat(), is_guest, csrf_token))
 
     db.commit()
 
-  return session_key
+  return session_key, csrf_token
 
 
 def validate_session(session_key: str) -> Optional[dict]:
@@ -311,7 +330,7 @@ def validate_session(session_key: str) -> Optional[dict]:
     cur = conn.cursor()
     cur.execute(
       """
-      SELECT user_id, email, expires_at, last_activity, is_guest
+      SELECT user_id, email, expires_at, last_activity, is_guest, csrf_token
       FROM sessions
       WHERE session_key = ?
       """, (session_key,))
@@ -339,7 +358,8 @@ def validate_session(session_key: str) -> Optional[dict]:
     return {
       "user_id": result["user_id"],
       "email": result["email"],
-      "is_guest": result["is_guest"]
+      "is_guest": result["is_guest"],
+      "csrf_token": result["csrf_token"]
     }
 
 
@@ -351,6 +371,38 @@ def delete_session(session_key: str):
     cur = conn.cursor()
     cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
     conn.commit()
+
+
+async def validate_csrf_token(request: Request) -> bool:
+  """
+  Validates CSRF token from request headers against the session token.
+  Returns True if valid, False otherwise.
+  """
+  # Skip CSRF validation for safe methods
+  if request.method in ["GET", "HEAD", "OPTIONS"]:
+    return True
+  
+  # Skip CSRF validation for authentication endpoints
+  if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout"]:
+    return True
+  
+  # Get session key from cookie
+  session_key = request.cookies.get("session")
+  if not session_key:
+    return False
+  
+  # Get session data
+  session_data = validate_session(session_key)
+  if not session_data:
+    return False
+  
+  # Get CSRF token from header
+  csrf_token_header = request.headers.get("X-CSRF-Token")
+  if not csrf_token_header:
+    return False
+  
+  # Compare tokens
+  return csrf_token_header == session_data.get("csrf_token")
 
 
 async def get_current_user(request: Request) -> dict:
@@ -427,6 +479,8 @@ def migrate_to_uuid_conversations(conn):
       participants TEXT,
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      version INTEGER DEFAULT 1,
+      lastModified INTEGER,
       FOREIGN KEY(userId) REFERENCES users(id)
     )
   ''')
@@ -439,6 +493,8 @@ def migrate_to_uuid_conversations(conn):
       content TEXT NOT NULL,
       time INTEGER NOT NULL,
       type TEXT DEFAULT 'text',
+      version INTEGER DEFAULT 1,
+      lastModified INTEGER,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(conversationId) REFERENCES conversations_new(id)
     )
@@ -526,6 +582,8 @@ def init_db():
                                                            participants TEXT,
                                                            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                                            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                           version INTEGER DEFAULT 1,
+                                                           lastModified INTEGER,
                                                            FOREIGN KEY(userId) REFERENCES users(id)
                 )
                 ''')
@@ -539,6 +597,8 @@ def init_db():
                                                       content TEXT NOT NULL,
                                                       time INTEGER NOT NULL,
                                                       type TEXT DEFAULT 'text',
+                                                      version INTEGER DEFAULT 1,
+                                                      lastModified INTEGER,
                                                       FOREIGN KEY(conversationId) REFERENCES conversations(id)
                 )
                 ''')
@@ -563,6 +623,11 @@ def init_db():
     if 'is_guest' not in columns:
       print("Adding is_guest column to sessions table...")
       cur.execute('ALTER TABLE sessions ADD COLUMN is_guest BOOLEAN DEFAULT FALSE')
+    
+    # Check if csrf_token column exists, if not add it
+    if 'csrf_token' not in columns:
+      print("Adding csrf_token column to sessions table...")
+      cur.execute('ALTER TABLE sessions ADD COLUMN csrf_token TEXT')
 
     # Check if type column exists in messages table, if not add it
     cur.execute("PRAGMA table_info(messages)")
@@ -570,6 +635,26 @@ def init_db():
     if 'type' not in columns:
       print("Adding type column to messages table...")
       cur.execute("ALTER TABLE messages ADD COLUMN type TEXT DEFAULT 'text'")
+    
+    # Add version columns for optimistic locking
+    if 'version' not in columns:
+      print("Adding version column to messages table...")
+      cur.execute("ALTER TABLE messages ADD COLUMN version INTEGER DEFAULT 1")
+    
+    if 'lastModified' not in columns:
+      print("Adding lastModified column to messages table...")
+      cur.execute("ALTER TABLE messages ADD COLUMN lastModified INTEGER")
+    
+    # Check conversations table for version columns
+    cur.execute("PRAGMA table_info(conversations)")
+    columns = [column[1] for column in cur.fetchall()]
+    if 'version' not in columns:
+      print("Adding version column to conversations table...")
+      cur.execute("ALTER TABLE conversations ADD COLUMN version INTEGER DEFAULT 1")
+    
+    if 'lastModified' not in columns:
+      print("Adding lastModified column to conversations table...")
+      cur.execute("ALTER TABLE conversations ADD COLUMN lastModified INTEGER")
 
     # Create guest_usage table
     cur.execute('''
@@ -918,7 +1003,7 @@ async def guest_login(request: GuestLoginRequest, response: Response):
   guest_email = f"guest_{secrets.token_hex(4)}@guest.com"
   guest_user = {"id": 0, "email": guest_email, "name": "Guest"}
 
-  session_key = create_session(0, guest_email, is_guest=True)
+  session_key, csrf_token = create_session(0, guest_email, is_guest=True)
 
   response.set_cookie(
     key="session",
@@ -929,6 +1014,9 @@ async def guest_login(request: GuestLoginRequest, response: Response):
     samesite="lax",
     path="/"
   )
+  
+  # Set CSRF token in response header
+  response.headers["X-CSRF-Token"] = csrf_token
 
   return LoginResponse(
     user=guest_user,
@@ -959,7 +1047,7 @@ async def mock_login(request: MockLoginRequest, response: Response):
       user_name = user['name']
 
   # Create session with is_guest=False for regular users
-  session_key = create_session(user_id, request.email, is_guest=False)
+  session_key, csrf_token = create_session(user_id, request.email, is_guest=False)
 
   # Set session cookie
   response.set_cookie(
@@ -971,6 +1059,9 @@ async def mock_login(request: MockLoginRequest, response: Response):
     samesite="lax",
     path="/"
   )
+  
+  # Set CSRF token in response header
+  response.headers["X-CSRF-Token"] = csrf_token
 
   return LoginResponse(
     user={
@@ -997,11 +1088,17 @@ async def logout(request: Request, response: Response):
 
 
 @app.get("/api/auth/me")
-async def get_me(current_user: dict = Depends(get_current_user)):
+async def get_me(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
   """
   Retrieves the details of the currently authenticated user.
   """
-  return {"user": current_user}
+  # Include CSRF token in response header
+  if "csrf_token" in current_user:
+    response.headers["X-CSRF-Token"] = current_user["csrf_token"]
+  
+  # Remove CSRF token from user data before returning
+  user_data = {k: v for k, v in current_user.items() if k != "csrf_token"}
+  return {"user": user_data}
 
 
 # API endpoints with authentication
@@ -1030,7 +1127,7 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
       # Fetch conversations for the current user
       cur.execute(
         """
-        SELECT id, userId, name, participants, createdAt, updatedAt 
+        SELECT id, userId, name, participants, createdAt, updatedAt, version, lastModified 
         FROM conversations 
         WHERE userId = ?
         ORDER BY updatedAt DESC
@@ -1064,7 +1161,9 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
           participants=participants,
           createdAt=conv_row['createdAt'],
           updatedAt=conv_row['updatedAt'],
-          hashsum=hashsum
+          hashsum=hashsum,
+          version=conv_row['version'] or 1,
+          lastModified=conv_row['lastModified'] or int(time.time())
         ))
 
       return conversation_responses
@@ -1311,7 +1410,7 @@ async def get_conversation_messages(
       cur = conn.cursor()
       cur.execute(
         """
-        SELECT id, conversationId, roleName, content, time, type
+        SELECT id, conversationId, roleName, content, time, type, version, lastModified
         FROM messages
         WHERE conversationId = ? AND time < ?
         ORDER BY time DESC LIMIT ?
@@ -1397,11 +1496,12 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       cur = conn.cursor()
       cur.execute(
         """
-        INSERT INTO messages (id, conversationId, roleName, content, time, type)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (message_id, request_body.conversationId, request_body.roleName,
-         content_str, request_body.time, message_type)
+         content_str, request_body.time, message_type, 
+         request_body.version or 1, request_body.lastModified or int(time.time()))
       )
       conn.commit()
 
@@ -1491,18 +1591,20 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
       'conversationId': request_body.conversationId,
       'roleName': request_body.roleName,
       'content': ai_response_content,
-      'time': current_time
+      'time': current_time,
+      'version': 1,
+      'lastModified': current_time
     }
 
     with get_db() as conn:
       cur = conn.cursor()
       cur.execute(
         """
-        INSERT INTO messages (id, conversationId, roleName, content, time, type)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (message_id, request_body.conversationId, request_body.roleName,
-         message_doc_data['content'], current_time, 'text')
+         message_doc_data['content'], current_time, 'text', 1, current_time)
       )
       conn.commit()
 
@@ -1542,19 +1644,44 @@ async def patch_message(request_body: MessagePatch, response: Response,
 
     with get_db() as conn:
       cur = conn.cursor()
+      
+      # First check current version
+      cur.execute(
+        """
+        SELECT version FROM messages
+        WHERE id = ? AND conversationId = ?
+        """,
+        (request_body.id, request_body.conversationId)
+      )
+      result = cur.fetchone()
+      
+      if not result:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
+      
+      current_version = result[0] or 1
+      
+      # Check for version conflict
+      if current_version != request_body.version:
+        response.status_code = status.HTTP_409_CONFLICT
+        return ErrorResponse(error=f"Version conflict: current version is {current_version}, provided version is {request_body.version}")
+      
+      # Update with version increment
+      new_version = current_version + 1
       cur.execute(
         """
         UPDATE messages
-        SET content = ?
-        WHERE id = ? AND conversationId = ?
+        SET content = ?, version = ?, lastModified = ?
+        WHERE id = ? AND conversationId = ? AND version = ?
         """,
-        (request_body.content, request_body.id, request_body.conversationId)
+        (request_body.content, new_version, int(time.time()), 
+         request_body.id, request_body.conversationId, request_body.version)
       )
       conn.commit()
 
       if cur.rowcount == 0:
-        response.status_code = status.HTTP_404_NOT_FOUND
-        return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
+        response.status_code = status.HTTP_409_CONFLICT
+        return ErrorResponse(error="Version conflict during update")
 
     return None
 
@@ -1668,11 +1795,12 @@ async def send_and_generate_message(
       cur = conn.cursor()
       cur.execute(
         """
-        INSERT INTO messages (id, conversationId, roleName, content, time, type)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (user_message_id, request_body.conversationId, request_body.roleName,
-         content_str, request_body.time, message_type)
+         content_str, request_body.time, message_type,
+         request_body.version or 1, request_body.lastModified or int(time.time()))
       )
       conn.commit()
     
@@ -1682,7 +1810,9 @@ async def send_and_generate_message(
       roleName=request_body.roleName,
       content=content_str if message_type == 'text' and isinstance(request_body.content, str) else request_body.content.get('content', '') if isinstance(request_body.content, dict) else content_str,
       time=request_body.time,
-      type=message_type
+      type=message_type,
+      version=request_body.version or 1,
+      lastModified=request_body.lastModified or int(time.time())
     )
     
     # Step 2: Generate AI response if requested
@@ -1740,11 +1870,11 @@ async def send_and_generate_message(
         cur = conn.cursor()
         cur.execute(
           """
-          INSERT INTO messages (id, conversationId, roleName, content, time, type)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           """,
           (ai_message_id, request_body.conversationId, request_body.aiParticipant,
-           ai_response_content, current_time, 'text')
+           ai_response_content, current_time, 'text', 1, current_time)
         )
         conn.commit()
       
@@ -1754,7 +1884,9 @@ async def send_and_generate_message(
         roleName=request_body.aiParticipant,
         content=ai_response_content,
         time=current_time,
-        type='text'
+        type='text',
+        version=1,
+        lastModified=current_time
       )
     
     return SendAndGenerateResponse(
@@ -1854,6 +1986,22 @@ app.add_middleware(
   allow_headers=["*"],
   expose_headers=["*"]
 )
+
+
+@app.middleware("http")
+async def csrf_protection_middleware(request: Request, call_next):
+  """
+  Middleware to enforce CSRF protection on state-changing requests.
+  """
+  # Validate CSRF token
+  if not await validate_csrf_token(request):
+    return JSONResponse(
+      content={"error": "CSRF validation failed"},
+      status_code=403
+    )
+  
+  response = await call_next(request)
+  return response
 
 # Development certificate setup
 ssl_config = {}

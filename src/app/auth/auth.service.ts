@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { lastValueFrom } from 'rxjs';
@@ -9,6 +9,7 @@ import { SyncEngineService } from '../repositories/sync-engine.service';
 import { DBService } from '../data/db.service';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
+import { ApiService } from '../services/api.service';
 
 
 interface User {
@@ -53,7 +54,8 @@ export class AuthService {
     private syncEngine: SyncEngineService,
     private dbService: DBService,
     private conversationRepository: ConversationRepository,
-    private messageRepository: MessageRepository
+    private messageRepository: MessageRepository,
+    private apiService: ApiService
   ) {
     // Store the promise but don't await it in constructor
     this.authInitialized = this.initializeAuthFlow();
@@ -96,12 +98,15 @@ export class AuthService {
         this.http.post<{ user: User, message: string, token: string }>(
           `${this.baseUrl}/api/auth/guest-login`,
           { ip_address },
-          { withCredentials: true }
+          { withCredentials: true, observe: 'response' }
         )
       );
 
+      // Extract CSRF token
+      this.apiService.extractCsrfToken(response);
+
       this.isGuest = true;
-      this.currentUserSubject.next(response.user);
+      this.currentUserSubject.next(response.body!.user);
       console.log('AuthService: Guest session created successfully');
     } catch (error) {
       console.error('AuthService: Guest login failed, creating offline guest:', error);
@@ -127,14 +132,18 @@ export class AuthService {
       const response = await lastValueFrom(
         this.http.get<{ user: User }>(
           `${this.baseUrl}/api/auth/me`,
-          { withCredentials: true }
+          { withCredentials: true, observe: 'response' }
         )
       );
       console.log('AuthService: /api/auth/me response received:', response);
-      if (response && response.user) {
-        this.currentUserSubject.next(response.user);
-        this.isGuest = response.user.email.includes('guest');
-        console.log('AuthService: currentUserSubject updated with user:', response.user);
+      
+      // Extract CSRF token
+      this.apiService.extractCsrfToken(response);
+      
+      if (response && response.body && response.body.user) {
+        this.currentUserSubject.next(response.body.user);
+        this.isGuest = response.body.user.email.includes('guest');
+        console.log('AuthService: currentUserSubject updated with user:', response.body.user);
         return true;
       } else {
         console.log('AuthService: /api/auth/me response did not contain a valid user object.');
@@ -172,11 +181,14 @@ export class AuthService {
         this.http.post<{ user: User, message: string }>(
           `${this.baseUrl}/api/auth/mock-login`,
           { email },
-          { withCredentials: true }
+          { withCredentials: true, observe: 'response' }
         )
       );
 
-      this.currentUserSubject.next(response.user);
+      // Extract CSRF token
+      this.apiService.extractCsrfToken(response);
+
+      this.currentUserSubject.next(response.body!.user);
       this.isGuest = false;
       this.router.navigate(['/']);
       

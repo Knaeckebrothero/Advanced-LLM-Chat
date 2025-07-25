@@ -11,8 +11,10 @@ import { ApiService } from './api.service';
 import { AuthService } from '../auth/auth.service';
 import { SettingsStateService } from './settings-state.service';
 import { UIStateService } from './ui-state.service';
+import { NotificationService } from './notification.service';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
+import { DBService } from '../data/db.service';
 
 export interface ChatState {
   activeConversation: Conversation | null;
@@ -102,7 +104,9 @@ export class ChatStateService implements OnDestroy {
     private authService: AuthService,
     private settingsState: SettingsStateService,
     private uiState: UIStateService,
-    private http: HttpClient
+    private notificationService: NotificationService,
+    private http: HttpClient,
+    private dbService: DBService
   ) {
     this.initializeService();
     this.listenToAuthChanges();
@@ -402,9 +406,9 @@ export class ChatStateService implements OnDestroy {
   }
   
   /**
-   * Update (patch) a message
+   * Update (patch) a message with conflict resolution
    */
-  async patchMessage(messageId: number, content: string): Promise<void> {
+  async patchMessage(messageId: number, content: string, maxRetries: number = 3): Promise<void> {
     const messages = await firstValueFrom(this.messages$);
     const message = messages.find(m => m.id === messageId);
     
@@ -413,25 +417,72 @@ export class ChatStateService implements OnDestroy {
     }
     
     const conversationId = this.activeConversationId$.getValue()!;
+    let retryCount = 0;
+    let success = false;
     
-    // Update via API if online
-    if (await this.isBackendAvailable()) {
-      await this.apiService.patchMessage(conversationId, messageId, content);
+    while (retryCount < maxRetries && !success) {
+      try {
+        // Update via API if online
+        if (await this.isBackendAvailable()) {
+          await this.apiService.patchMessage(conversationId, messageId, content, message.version);
+          success = true;
+        } else {
+          // Offline mode - just update locally
+          success = true;
+        }
+        
+        // Create updated message with incremented version
+        const updatedMessage = Message.createText(
+          {
+            id: message.id,
+            conversationId: message.conversationId,
+            roleName: message.roleName,
+            time: message.time,
+            version: message.version + 1,
+            lastModified: Math.floor(Date.now() / 1000)
+          },
+          content,
+          message.content.attachments
+        );
+        
+        await this.messageRepository.update(updatedMessage);
+        
+        // Show success notification if we had retries
+        if (retryCount > 0) {
+          this.notificationService.showSuccess('Message updated successfully after resolving conflicts');
+        }
+        
+      } catch (error: any) {
+        if (error.status === 409) {
+          // Version conflict - refresh and retry
+          console.warn(`Version conflict for message ${messageId}, retrying...`);
+          retryCount++;
+          
+          if (retryCount < maxRetries) {
+            this.notificationService.showWarning(
+              `Version conflict detected. Refreshing and retrying... (Attempt ${retryCount}/${maxRetries})`
+            );
+            
+            // Refresh the conversation to get latest versions
+            await this.syncEngine.syncConversation(conversationId);
+            const refreshedMessages = await firstValueFrom(this.messages$);
+            const refreshedMessage = refreshedMessages.find(m => m.id === messageId);
+            
+            if (refreshedMessage) {
+              // Update our local reference for next retry
+              message.version = refreshedMessage.version;
+            }
+          } else {
+            const errorMsg = 'Unable to update message due to version conflicts. Please refresh and try again.';
+            this.error$.next(errorMsg);
+            this.notificationService.showError(errorMsg);
+            throw new Error(errorMsg);
+          }
+        } else {
+          throw error;
+        }
+      }
     }
-    
-    // Create updated message
-    const updatedMessage = Message.createText(
-      {
-        id: message.id,
-        conversationId: message.conversationId,
-        roleName: message.roleName,
-        time: message.time
-      },
-      content,
-      message.content.attachments
-    );
-    
-    await this.messageRepository.update(updatedMessage);
   }
   
   /**
@@ -464,11 +515,53 @@ export class ChatStateService implements OnDestroy {
   }
   
   /**
-   * Update conversation (e.g., rename)
+   * Update conversation (e.g., rename) with conflict resolution
    */
-  async updateConversation(conversation: Conversation): Promise<void> {
+  async updateConversation(conversation: Conversation, maxRetries: number = 3): Promise<void> {
     conversation.updatedAt = new Date();
-    await this.conversationRepository.save(conversation);
+    
+    let retryCount = 0;
+    let success = false;
+    
+    while (retryCount < maxRetries && !success) {
+      try {
+        await this.conversationRepository.save(conversation);
+        success = true;
+        
+        // Show success notification if we had retries
+        if (retryCount > 0) {
+          this.notificationService.showSuccess('Conversation updated successfully after resolving conflicts');
+        }
+      } catch (error: any) {
+        if (error.status === 409) {
+          // Version conflict - refresh and retry
+          console.warn(`Version conflict for conversation ${conversation.id}, retrying...`);
+          retryCount++;
+          
+          if (retryCount < maxRetries) {
+            this.notificationService.showWarning(
+              `Version conflict detected. Refreshing and retrying... (Attempt ${retryCount}/${maxRetries})`
+            );
+            
+            // Sync to get latest version
+            await this.syncEngine.syncConversation(conversation.id);
+            const refreshedConv = await firstValueFrom(this.activeConversation$);
+            
+            if (refreshedConv) {
+              // Update version for retry
+              conversation.version = refreshedConv.version;
+            }
+          } else {
+            const errorMsg = 'Unable to update conversation due to version conflicts. Please refresh and try again.';
+            this.error$.next(errorMsg);
+            this.notificationService.showError(errorMsg);
+            throw new Error(errorMsg);
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
   }
   
   /**
@@ -533,9 +626,9 @@ export class ChatStateService implements OnDestroy {
     let conversation: Conversation;
     
     if (!backendAvailable) {
-      // Create local-only conversation with timestamp-based UUID
+      // Create local-only conversation with proper UUID
       conversation = new Conversation(
-        `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        this.dbService.generateUUID(),
         0,
         title,
         ['user', 'Assistant']
@@ -549,7 +642,7 @@ export class ChatStateService implements OnDestroy {
         console.error('Failed to create conversation on server:', error);
         // Fallback to local with UUID
         conversation = new Conversation(
-          `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          this.dbService.generateUUID(),
           0,
           title,
           ['user', 'Assistant']
