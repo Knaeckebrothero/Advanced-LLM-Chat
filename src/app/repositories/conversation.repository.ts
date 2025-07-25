@@ -15,6 +15,7 @@ export interface ConversationSyncMetadata {
   hash: number;
   lastMessageTimestamp?: Date;
   expiresAt?: Date;
+  lastMessageSent?: Date;  // Track when we last sent a message
 }
 
 @Injectable({
@@ -22,6 +23,7 @@ export interface ConversationSyncMetadata {
 })
 export class ConversationRepository extends BaseRepository<Conversation> {
   private syncMetadata = new Map<string, ConversationSyncMetadata>();
+  private activeSyncs = new Map<string, Promise<boolean>>();
   
   constructor(
     dbService: DBService,
@@ -151,7 +153,37 @@ export class ConversationRepository extends BaseRepository<Conversation> {
    * @param messageLimit - Number of recent messages to keep in cache (default: 20)
    */
   async syncConversation(conversationId: string, messageLimit: number = 20): Promise<boolean> {
+    // Check if sync is already in progress for this conversation
+    const existingSync = this.activeSyncs.get(conversationId);
+    if (existingSync) {
+      console.log(`Sync already in progress for conversation ${conversationId}, waiting...`);
+      return existingSync;
+    }
+
+    // Create sync promise and store it
+    const syncPromise = this.performSync(conversationId, messageLimit);
+    this.activeSyncs.set(conversationId, syncPromise);
+
+    try {
+      const result = await syncPromise;
+      return result;
+    } finally {
+      // Clean up after sync completes
+      this.activeSyncs.delete(conversationId);
+    }
+  }
+
+  private async performSync(conversationId: string, messageLimit: number): Promise<boolean> {
     const metadata = this.syncMetadata.get(conversationId);
+    
+    // Skip sync if we just sent a message (within last 5 seconds)
+    if (metadata?.lastMessageSent) {
+      const timeSinceLastMessage = Date.now() - metadata.lastMessageSent.getTime();
+      if (timeSinceLastMessage < 5000) {
+        console.log(`Skipping sync for ${conversationId} - message sent ${timeSinceLastMessage}ms ago`);
+        return false;
+      }
+    }
     
     try {
       // Get local conversation
@@ -198,8 +230,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
                        (metadata && await this.isConversationStale(metadata));
       
       if (!needsSync) {
-        // Just update expiration date
-        await this.updateConversationExpiration(conversationId);
+        // Just update expiration date without changing updatedAt
+        await this.updateConversationExpiration(conversationId, false);
         return false;
       }
       
@@ -214,10 +246,11 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       console.log(`Fetched ${serverMessages.length} messages from server for conversation ${conversationId}`);
       
       // Merge messages using server-first strategy but preserve pending
-      await this.mergeMessages(conversationId, localMessages, serverMessages, pendingMessages);
+      const messagesChanged = await this.mergeMessages(conversationId, localMessages, serverMessages, pendingMessages);
       
       // Update conversation expiration date (30 days from now)
-      await this.updateConversationExpiration(conversationId);
+      // Only update timestamp if messages actually changed
+      await this.updateConversationExpiration(conversationId, messagesChanged);
       
       // Refresh the message repository cache to trigger UI update
       await this.messageRepository.refreshConversationCache(conversationId);
@@ -280,7 +313,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
           }
         }
       } else {
-        // Existing conversation - update timestamp from server
+        // Existing conversation - only update timestamp if server has newer timestamp
+        // This prevents updating just from viewing/syncing
         if (serverConv.updatedAt && new Date(serverConv.updatedAt) > new Date(localConv.updatedAt)) {
           localConv.updatedAt = new Date(serverConv.updatedAt);
           await this.dbService.updateConversation(localConv);
@@ -318,29 +352,29 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   clearCache(): void {
     this.updateCache([]);
     this.syncMetadata.clear();
+    this.activeSyncs.clear();
   }
 
   /**
    * Merge local and server messages with conflict resolution
    * Server-first strategy but preserves pending messages
+   * @returns true if messages were actually changed
    */
   private async mergeMessages(
     conversationId: string,
     localMessages: Message[],
     serverMessages: Message[],
     pendingMessages: Message[]
-  ): Promise<void> {
+  ): Promise<boolean> {
     // Create maps for efficient lookup
     const serverMessageMap = new Map(serverMessages.map(msg => [msg.id, msg]));
     const pendingMessageIds = new Set(pendingMessages.map(msg => msg.id));
     
-    // Log only in debug mode or when there are issues
-    if (pendingMessages.length > 0 || localMessages.length > 100) {
-      console.log(`Merging messages for conversation ${conversationId}:`);
-      console.log(`- Local messages: ${localMessages.length}`);
-      console.log(`- Server messages: ${serverMessages.length}`);
-      console.log(`- Pending messages: ${pendingMessages.length}`);
-    }
+    // Log merge details
+    console.log(`Merging messages for conversation ${conversationId}:`);
+    console.log(`- Local messages: ${localMessages.length}`);
+    console.log(`- Server messages: ${serverMessages.length} (limit: ${serverMessages.length > 0 ? '20 most recent' : 'N/A'})`);
+    console.log(`- Pending messages: ${pendingMessages.length}`);
     
     // Messages to keep
     const mergedMessages: Message[] = [];
@@ -361,6 +395,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       ? new Date(serverMessages[0].time).getTime()
       : Number.MAX_SAFE_INTEGER;
     
+    let preservedOlderMessages = 0;
     for (const localMsg of localMessages) {
       const msgTime = new Date(localMsg.time).getTime();
       // Check if it's older than server messages AND not already in server response AND not pending
@@ -368,7 +403,12 @@ export class ConversationRepository extends BaseRepository<Conversation> {
           !serverMessageMap.has(localMsg.id) && 
           !pendingMessageIds.has(localMsg.id)) {
         mergedMessages.push(localMsg);
+        preservedOlderMessages++;
       }
+    }
+    
+    if (preservedOlderMessages > 0) {
+      console.log(`- Preserved ${preservedOlderMessages} older messages from local storage`);
     }
     
     // Sort messages by time
@@ -376,49 +416,91 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       new Date(a.time).getTime() - new Date(b.time).getTime()
     );
     
-    // Check for duplicates
-    const messageIds = new Set<number>();
-    const duplicates: number[] = [];
+    // Remove duplicates - this is critical to prevent duplicate messages in UI
+    const uniqueMessages: Message[] = [];
+    const seenIds = new Set<number>();
+    const seenContents = new Map<string, Message>(); // Track by content+time for better dedup
+    let duplicateCount = 0;
+    
     for (const msg of mergedMessages) {
-      if (messageIds.has(msg.id)) {
-        duplicates.push(msg.id);
-      }
-      messageIds.add(msg.id);
-    }
-    if (duplicates.length > 0) {
-      console.error(`WARNING: Found duplicate message IDs in merge: ${duplicates.join(', ')}`);
-      // Remove duplicates, keeping the first occurrence
-      const uniqueMessages: Message[] = [];
-      const seenIds = new Set<number>();
-      for (const msg of mergedMessages) {
-        if (!seenIds.has(msg.id)) {
+      // Create a unique key based on message content and time
+      const contentKey = `${msg.time.toISOString()}_${msg.roleName}_${msg.getDisplayContent()}`;
+      
+      if (!seenIds.has(msg.id)) {
+        // Check if we've seen this exact content at this exact time
+        const existingMsg = seenContents.get(contentKey);
+        if (existingMsg) {
+          // Prefer the message with server ID (higher ID typically)
+          if (msg.id > existingMsg.id) {
+            // Remove the old one and add the new one
+            const idx = uniqueMessages.findIndex(m => m.id === existingMsg.id);
+            if (idx >= 0) {
+              uniqueMessages[idx] = msg;
+              seenIds.delete(existingMsg.id);
+              seenIds.add(msg.id);
+              seenContents.set(contentKey, msg);
+            }
+          }
+          duplicateCount++;
+        } else {
           uniqueMessages.push(msg);
           seenIds.add(msg.id);
+          seenContents.set(contentKey, msg);
         }
+      } else {
+        duplicateCount++;
       }
-      mergedMessages.length = 0;
-      mergedMessages.push(...uniqueMessages);
     }
     
-    // Update database with merged messages using transaction for atomicity
-    try {
-      await this.dbService.replaceConversationMessages(conversationId, mergedMessages);
-    } catch (error) {
-      console.error('Failed to replace messages in database:', error);
-      console.error('Merged messages:', mergedMessages);
-      throw error;
+    if (duplicateCount > 0) {
+      console.warn(`Removed ${duplicateCount} duplicate messages during merge for conversation ${conversationId}`);
     }
+    
+    // Sort both arrays by time for accurate comparison
+    const sortedLocal = [...localMessages].sort((a, b) => 
+      new Date(a.time).getTime() - new Date(b.time).getTime()
+    );
+    const sortedUnique = [...uniqueMessages].sort((a, b) => 
+      new Date(a.time).getTime() - new Date(b.time).getTime()
+    );
+    
+    // Check if messages actually changed
+    const messagesChanged = sortedUnique.length !== sortedLocal.length ||
+      !sortedUnique.every((msg, idx) => 
+        sortedLocal[idx] && 
+        msg.id === sortedLocal[idx].id &&
+        msg.getDisplayContent() === sortedLocal[idx].getDisplayContent()
+      );
+    
+    console.log(`- Merged result: ${uniqueMessages.length} messages (changed: ${messagesChanged})`);
+    
+    // Update database with merged messages using transaction for atomicity
+    if (messagesChanged) {
+      try {
+        await this.dbService.replaceConversationMessages(conversationId, uniqueMessages);
+      } catch (error) {
+        console.error('Failed to replace messages in database:', error);
+        console.error('Merged messages:', mergedMessages);
+        throw error;
+      }
+    }
+    
+    return messagesChanged;
   }
 
   /**
    * Update conversation expiration date
+   * @param updateTimestamp - Whether to update the updatedAt timestamp (only for actual changes)
    */
-  private async updateConversationExpiration(conversationId: string): Promise<void> {
+  private async updateConversationExpiration(conversationId: string, updateTimestamp: boolean = false): Promise<void> {
     const conversation = await this.dbService.getConversation(conversationId);
     if (conversation) {
-      // Update the updatedAt timestamp which serves as activity indicator
-      conversation.updatedAt = new Date();
-      await this.save(conversation);
+      // Only update the updatedAt timestamp if there were actual changes
+      if (updateTimestamp) {
+        conversation.updatedAt = new Date();
+      }
+      // Always update in DB to persist any sync metadata changes
+      await this.dbService.updateConversation(conversation);
     }
   }
 
@@ -481,6 +563,24 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     
     // Return in chronological order
     return olderMessages.reverse();
+  }
+
+  /**
+   * Mark that we just sent a message to prevent immediate re-sync
+   */
+  markMessageSent(conversationId: string): void {
+    const metadata = this.syncMetadata.get(conversationId);
+    if (metadata) {
+      metadata.lastMessageSent = new Date();
+    } else {
+      this.syncMetadata.set(conversationId, {
+        id: conversationId,
+        lastSynced: new Date(),
+        messageCount: 0,
+        hash: 0,
+        lastMessageSent: new Date()
+      });
+    }
   }
 
   /**

@@ -1,6 +1,7 @@
 import { BehaviorSubject, Observable } from 'rxjs';
 import { DBService } from '../data/db.service';
 import { ApiService } from '../services/api.service';
+import { computeSHA256Hash } from '../utils/hash.util';
 
 export interface SyncResult {
   success: boolean;
@@ -52,10 +53,6 @@ export abstract class BaseRepository<T> {
   }
 
   protected async computeHashFromString(data: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(data);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return computeSHA256Hash(data);
   }
 }

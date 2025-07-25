@@ -1,6 +1,11 @@
 <div class="chat-ui-container">
   <!-- Chat UI Header -->
-  <div class="message-container" #messageContainer>
+  <div class="message-container" #messageContainer (scroll)="onScroll($event)">
+    <!-- Loading spinner for older messages -->
+    <div class="loading-older-messages" *ngIf="isLoadingOlderMessages">
+      <mat-spinner diameter="30"></mat-spinner>
+      <span>Loading older messages...</span>
+    </div>
     <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
   </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">

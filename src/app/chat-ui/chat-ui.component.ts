@@ -59,6 +59,72 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
     this.guestLimitResetTimeSubscription = this.authService.guestLimitResetTime$.subscribe(message => {
       this.guestLimitWarningMessage = message;
     });
+    
+    // Subscribe to messages to track array for scroll logic
+    this.destroy$.add(
+      this.messages$.subscribe(messages => {
+        const previousLength = this.currentMessages.length;
+        this.currentMessages = messages || [];
+        
+        // When switching conversations or loading initial messages, scroll to bottom
+        if (previousLength === 0 && this.currentMessages.length > 0) {
+          this.shouldScrollToBottom = true;
+          // Use setTimeout to ensure DOM has updated
+          setTimeout(() => this.scrollToBottom(), 100);
+        }
+      })
+    );
+    
+    // Subscribe to active conversation changes
+    this.destroy$.add(
+      this.chatState.activeConversation$.subscribe(() => {
+        // Reset scroll state when conversation changes
+        this.shouldScrollToBottom = true;
+      })
+    );
+  }
+  
+  // Handle scroll events to load older messages
+  onScroll(event: Event): void {
+    const element = event.target as HTMLElement;
+    
+    // Check if user scrolled to top
+    if (element.scrollTop < 100 && !this.isLoadingMessages && this.currentMessages.length > 0) {
+      this.loadOlderMessages();
+    }
+  }
+  
+  private async loadOlderMessages(): Promise<void> {
+    if (this.isLoadingMessages) return;
+    
+    const conversationId = this.chatState.getActiveConversationId();
+    if (!conversationId || conversationId === '0') return;
+    
+    this.isLoadingMessages = true;
+    this.isLoadingOlderMessages = true;
+    
+    try {
+      const oldestMessage = this.currentMessages[0];
+      if (!oldestMessage) return;
+      
+      // Store scroll height before loading
+      const scrollContainer = this.messageContainer.nativeElement;
+      const scrollHeightBefore = scrollContainer.scrollHeight;
+      
+      await this.chatState.loadOlderMessages(oldestMessage.time, 20);
+      
+      // After messages load, maintain scroll position
+      setTimeout(() => {
+        const scrollHeightAfter = scrollContainer.scrollHeight;
+        const scrollDiff = scrollHeightAfter - scrollHeightBefore;
+        scrollContainer.scrollTop += scrollDiff;
+      }, 100);
+    } catch (error) {
+      console.error('Error loading older messages:', error);
+    } finally {
+      this.isLoadingMessages = false;
+      this.isLoadingOlderMessages = false;
+    }
   }
 
   ngOnDestroy() {
@@ -81,6 +147,12 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   // Track if we should auto-scroll
   private shouldScrollToBottom = true;
   private lastMessageCount = 0;
+  private currentMessages: Message[] = [];
+  private wasNearBottom = true; // Track scroll position before updates
+  
+  // Loading state for older messages
+  isLoadingOlderMessages = false;
+  private isLoadingMessages = false;
   
   // Check if user is near bottom of chat (within 100px)
   private isNearBottom(): boolean {
@@ -92,19 +164,22 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   // Use the AfterViewChecked lifecycle hook to trigger the scroll method.
   ngAfterViewChecked() {
-    // Only scroll if new messages were added
-    const currentMessageCount = this.messages.length;
+    // Check if we're at a different message count
+    const currentMessageCount = this.currentMessages.length;
+    
     if (currentMessageCount !== this.lastMessageCount) {
-      // Check if user was near bottom before new messages
-      const wasNearBottom = this.isNearBottom();
+      // Messages changed, check if we should scroll
       this.lastMessageCount = currentMessageCount;
       
-      // Only auto-scroll if user was already near the bottom
-      if (wasNearBottom || this.shouldScrollToBottom) {
-        this.shouldScrollToBottom = true;
+      // Only auto-scroll if user was already near the bottom OR we should force scroll
+      if (this.wasNearBottom || this.shouldScrollToBottom) {
+        this.scrollToBottom();
         this.shouldScrollToBottom = false; // Reset flag after scrolling
       }
     }
+    
+    // Always update the wasNearBottom status for next check
+    this.wasNearBottom = this.isNearBottom();
   }
 
   // Utility function to detect mobile devices - now uses UIStateService
@@ -130,6 +205,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
         console.log('User message sent:', message);
         this.shouldScrollToBottom = true;
+        this.wasNearBottom = true; // Force scroll for user's own messages
 
         // AI response is now generated automatically by the backend
       } catch (error) {
@@ -187,6 +263,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
         console.log('Voice message sent');
         this.shouldScrollToBottom = true;
+        this.wasNearBottom = true; // Force scroll for voice messages too
 
         // AI response is now generated automatically by the backend
       } catch (error) {

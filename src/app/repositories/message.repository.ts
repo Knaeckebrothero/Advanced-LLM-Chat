@@ -417,7 +417,17 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           if (result.aiMessage) {
             const aiMessage = result.aiMessage as MessageWithSyncStatus;
             aiMessage.syncStatus = 'synced';
-            await this.save(aiMessage);
+            
+            // Save directly to avoid duplicate sync attempt
+            await this.dbService.addMessage(aiMessage);
+            
+            // Update cache
+            if (this.conversationCaches.has(conversationId)) {
+              const cache = this.conversationCaches.get(conversationId)!;
+              const current = cache.getValue();
+              cache.next([...current, aiMessage]);
+            }
+            
             return aiMessage;
           }
         } catch (error) {

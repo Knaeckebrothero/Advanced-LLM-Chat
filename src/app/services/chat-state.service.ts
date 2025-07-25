@@ -201,6 +201,9 @@ export class ChatStateService implements OnDestroy {
     // Get settings for AI generation
     const settings = await firstValueFrom(this.settingsState.settings);
     
+    // Mark that we're sending a message to prevent immediate re-sync
+    this.conversationRepository.markMessageSent(conversationId);
+    
     // Use the new combined send and generate method
     const aiMessage = await this.messageRepository.sendAndGenerate(message, true, settings);
     
@@ -500,6 +503,25 @@ export class ChatStateService implements OnDestroy {
    */
   async uploadPendingFiles(): Promise<void> {
     await this.messageRepository.uploadPendingFiles();
+  }
+  
+  /**
+   * Get active conversation ID
+   */
+  getActiveConversationId(): string | null {
+    return this.activeConversationId$.getValue();
+  }
+  
+  /**
+   * Load older messages for the active conversation
+   */
+  async loadOlderMessages(beforeTime: Date, limit: number = 20): Promise<Message[]> {
+    const conversationId = this.activeConversationId$.getValue();
+    if (!conversationId || conversationId === '0') {
+      return [];
+    }
+    
+    return this.conversationRepository.loadOlderMessages(conversationId, beforeTime, limit);
   }
   
   /**
