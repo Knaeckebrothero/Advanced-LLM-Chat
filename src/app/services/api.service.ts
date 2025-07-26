@@ -103,12 +103,23 @@ export class ApiService {
   }
 
   // TODO: Fix this one!
-  async getConversationMessages(conversationId: string | number, count: number, latestTimestamp: Date | null = null): Promise<Message[]> {
+  async getConversationMessages(
+    conversationId: string | number, 
+    count: number, 
+    latestTimestamp: Date | null = null,
+    afterTimestamp?: Date
+  ): Promise<{ messages: Message[], hasMoreMessages?: boolean }> {
     // Use the current time if no timestamp is provided
     if (latestTimestamp === null) {
       latestTimestamp = new Date();
     }
-    const endpoint = `${this.baseUrl}/api/conversation/messages/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}/${count}`;
+    
+    let endpoint = `${this.baseUrl}/api/conversation/messages/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}/${count}`;
+    
+    // Add after_timestamp query parameter for incremental sync
+    if (afterTimestamp) {
+      endpoint += `?after_timestamp=${Math.floor(afterTimestamp.getTime() / 1000)}`;
+    }
 
     try {
       const response = await lastValueFrom(
@@ -118,15 +129,20 @@ export class ApiService {
         })
       );
 
-      if (response.status === 200 && response.body) {
+      if ((response.status === 200 || response.status === 206) && response.body) {
         // Convert all messages using the new factory method
-        return response.body.map(messageData => Message.fromApiResponse(messageData));
+        const messages = response.body.map(messageData => Message.fromApiResponse(messageData));
+        
+        // Check if server indicated more messages exist
+        const hasMoreMessages = response.headers.get('X-Has-More-Messages') === 'true';
+        
+        return { messages, hasMoreMessages };
       } else if (response.status === 204 && !response.body) {
-        return [];
+        return { messages: [], hasMoreMessages: false };
       } else {
         // Handle unexpected response statuses
         console.warn(`Unexpected response status: ${response.status}`);
-        return [];
+        return { messages: [], hasMoreMessages: false };
       }
     } catch (error) {
       console.error('Error refreshing conversation:', error);

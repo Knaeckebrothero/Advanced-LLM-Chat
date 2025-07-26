@@ -206,7 +206,7 @@ export class ChatStateService implements OnDestroy {
     const settings = await firstValueFrom(this.settingsState.settings);
     
     // Mark that we're sending a message to prevent immediate re-sync
-    this.conversationRepository.markMessageSent(conversationId);
+    await this.conversationRepository.markMessageSent(conversationId);
     
     // Use the new combined send and generate method
     const aiMessage = await this.messageRepository.sendAndGenerate(message, true, settings);

@@ -8,15 +8,8 @@ import { Conversation } from '../data/objects/conversation';
 import { Message } from '../data/objects/message';
 import { MessageRepository } from './message.repository';
 
-export interface ConversationSyncMetadata {
-  id: string;
-  lastSynced: Date;
-  messageCount: number;
-  hash: number;
-  lastMessageTimestamp?: Date;
-  expiresAt?: Date;
-  lastMessageSent?: Date;  // Track when we last sent a message
-}
+// Import from db-schema instead of defining here
+import { ConversationSyncMetadata } from '../data/db-schema';
 
 @Injectable({
   providedIn: 'root'
@@ -32,6 +25,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   ) {
     super(dbService, apiService);
     this.loadConversations();
+    this.loadSyncMetadata();
   }
 
   getAll(): Observable<Conversation[]> {
@@ -75,7 +69,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       const filtered = conversations.filter(c => c.id !== id);
       this.updateCache(filtered);
       
+      // Delete sync metadata from memory and database
       this.syncMetadata.delete(id);
+      await this.dbService.deleteSyncMetadata(id);
     } catch (error) {
       console.error('Failed to delete conversation:', error);
       throw error;
@@ -241,40 +237,130 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         return false;
       }
       
-      console.log(`Syncing conversation ${conversationId} (no messages: ${hasNoMessages}, hash mismatch: ${localHash !== serverConv.hashsum})`);
+      console.log(`Syncing conversation ${conversationId} (hash mismatch: ${localHash !== serverConv.hashsum})`);
       
-      // Fetch recent messages from server (using the caching limit)
-      const serverMessages = await this.apiService.getConversationMessages(
-        conversationId,
-        messageLimit
-      );
+      let serverResponse: { messages: Message[], hasMoreMessages?: boolean };
       
-      console.log(`Fetched ${serverMessages.length} messages from server for conversation ${conversationId}`);
+      // If we have local messages, always try incremental sync first
+      if (localMessages.length > 0) {
+        try {
+          // Find the newest local message timestamp
+          const newestLocalMessage = localMessages.reduce((newest, msg) => 
+            new Date(msg.time) > new Date(newest.time) ? msg : newest
+          );
+          const afterTimestamp = new Date(newestLocalMessage.time);
+          
+          console.log(`Performing incremental sync for messages after ${afterTimestamp.toISOString()}`);
+          
+          serverResponse = await this.apiService.getConversationMessages(
+            conversationId,
+            messageLimit,
+            new Date(), // current time as latest timestamp
+            afterTimestamp
+          );
+          
+          const newMessages = serverResponse.messages;
+          console.log(`Incremental sync fetched ${newMessages.length} new messages`);
+          
+          // If we got new messages, add them incrementally
+          if (newMessages.length > 0) {
+            // Add new messages to the database
+            await this.dbService.addMessagesTransactional(newMessages);
+            
+            // Update sync metadata
+            const lastNewMessage = newMessages[newMessages.length - 1];
+            const updatedMetadata: ConversationSyncMetadata = {
+              id: conversationId,
+              lastSynced: new Date(),
+              messageCount: localMessages.length + newMessages.length,
+              hash: serverConv.hashsum || 0,
+              lastMessageTimestamp: new Date(lastNewMessage.time),
+              lastSyncedMessageId: lastNewMessage.id,
+              lastSyncedTimestamp: Math.floor(new Date(lastNewMessage.time).getTime() / 1000),
+              expiresAt: this.calculateExpirationDate(),
+              lastMessageSent: metadata?.lastMessageSent
+            };
+            
+            this.syncMetadata.set(conversationId, updatedMetadata);
+            await this.dbService.saveSyncMetadata(updatedMetadata);
+            
+            // Update conversation expiration
+            await this.updateConversationExpiration(conversationId, true);
+            
+            // Refresh the message repository cache
+            await this.messageRepository.refreshConversationCache(conversationId);
+            
+            return true;
+          } else {
+            // No new messages, just update metadata
+            const updatedMetadata: ConversationSyncMetadata = {
+              id: conversationId,
+              lastSynced: new Date(),
+              messageCount: localMessages.length,
+              hash: serverConv.hashsum || 0,
+              lastMessageTimestamp: new Date(newestLocalMessage.time),
+              lastSyncedMessageId: newestLocalMessage.id,
+              lastSyncedTimestamp: Math.floor(new Date(newestLocalMessage.time).getTime() / 1000),
+              expiresAt: this.calculateExpirationDate(),
+              lastMessageSent: metadata?.lastMessageSent
+            };
+            
+            this.syncMetadata.set(conversationId, updatedMetadata);
+            await this.dbService.saveSyncMetadata(updatedMetadata);
+            
+            return false;
+          }
+        } catch (incrementalError) {
+          console.warn(`Incremental sync failed for conversation ${conversationId}, falling back to full sync:`, incrementalError);
+          // Fall through to full sync below
+        }
+      }
       
-      // Merge messages using server-first strategy but preserve pending
-      const messagesChanged = await this.mergeMessages(conversationId, localMessages, serverMessages, pendingMessages);
+      // Full sync: either no local messages or incremental sync failed
+      {
+        // Full sync: fetch recent messages as before
+        console.log(`Performing full sync for conversation ${conversationId}`);
+        
+        serverResponse = await this.apiService.getConversationMessages(
+          conversationId,
+          messageLimit
+        );
+        
+        const serverMessages = serverResponse.messages;
+        console.log(`Full sync fetched ${serverMessages.length} messages from server`);
+        
+        // Merge messages using server-first strategy but preserve pending
+        const messagesChanged = await this.mergeMessages(conversationId, localMessages, serverMessages, pendingMessages);
+        
+        // Update sync metadata
+        const lastServerMessage = serverMessages.length > 0 ? 
+          serverMessages[serverMessages.length - 1] : null;
+        
+        const updatedMetadata: ConversationSyncMetadata = {
+          id: conversationId,
+          lastSynced: new Date(),
+          messageCount: serverMessages.length,
+          hash: serverConv.hashsum || 0,
+          lastMessageTimestamp: lastServerMessage ? new Date(lastServerMessage.time) : undefined,
+          lastSyncedMessageId: lastServerMessage?.id,
+          lastSyncedTimestamp: lastServerMessage ? Math.floor(new Date(lastServerMessage.time).getTime() / 1000) : undefined,
+          expiresAt: this.calculateExpirationDate(),
+          lastMessageSent: metadata?.lastMessageSent
+        };
+        
+        this.syncMetadata.set(conversationId, updatedMetadata);
+        await this.dbService.saveSyncMetadata(updatedMetadata);
+        
+        // Update conversation expiration
+        await this.updateConversationExpiration(conversationId, messagesChanged);
+        
+        // Refresh the message repository cache
+        await this.messageRepository.refreshConversationCache(conversationId);
+        
+        return messagesChanged;
+      }
       
-      // Update conversation expiration date (30 days from now)
-      // Only update timestamp if messages actually changed
-      await this.updateConversationExpiration(conversationId, messagesChanged);
-      
-      // Refresh the message repository cache to trigger UI update
-      await this.messageRepository.refreshConversationCache(conversationId);
-      
-      // Update sync metadata with enhanced information
-      const lastServerMessage = serverMessages.length > 0 ? 
-        serverMessages[serverMessages.length - 1] : null;
-      
-      this.syncMetadata.set(conversationId, {
-        id: conversationId,
-        lastSynced: new Date(),
-        messageCount: serverMessages.length,
-        hash: serverConv.hashsum || 0,
-        lastMessageTimestamp: lastServerMessage ? new Date(lastServerMessage.time) : undefined,
-        expiresAt: this.calculateExpirationDate()
-      });
-      
-      return true;
+      return false;
     } catch (error) {
       console.error(`Failed to sync conversation ${conversationId}:`, error);
       
@@ -364,6 +450,22 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   }
 
   /**
+   * Load sync metadata from IndexedDB on startup
+   */
+  private async loadSyncMetadata(): Promise<void> {
+    try {
+      const metadataList = await this.dbService.getAllSyncMetadata();
+      this.syncMetadata.clear();
+      for (const metadata of metadataList) {
+        this.syncMetadata.set(metadata.id, metadata);
+      }
+      console.log(`Loaded sync metadata for ${metadataList.length} conversations`);
+    } catch (error) {
+      console.error('Failed to load sync metadata:', error);
+    }
+  }
+
+  /**
    * Clear all cached data
    * Used during logout to ensure clean state
    */
@@ -371,6 +473,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     this.updateCache([]);
     this.syncMetadata.clear();
     this.activeSyncs.clear();
+    // Note: We don't clear persistent sync metadata here
+    // It will be cleared when user data is cleared from DB
   }
 
   /**
@@ -586,18 +690,23 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   /**
    * Mark that we just sent a message to prevent immediate re-sync
    */
-  markMessageSent(conversationId: string): void {
+  async markMessageSent(conversationId: string): Promise<void> {
     const metadata = this.syncMetadata.get(conversationId);
+    const now = new Date();
+    
     if (metadata) {
-      metadata.lastMessageSent = new Date();
+      metadata.lastMessageSent = now;
+      await this.dbService.saveSyncMetadata(metadata);
     } else {
-      this.syncMetadata.set(conversationId, {
+      const newMetadata: ConversationSyncMetadata = {
         id: conversationId,
-        lastSynced: new Date(),
+        lastSynced: now,
         messageCount: 0,
         hash: 0,
-        lastMessageSent: new Date()
-      });
+        lastMessageSent: now
+      };
+      this.syncMetadata.set(conversationId, newMetadata);
+      await this.dbService.saveSyncMetadata(newMetadata);
     }
   }
 
@@ -611,19 +720,19 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   ): Promise<boolean> {
     try {
       // Fetch older messages from server
-      const olderServerMessages = await this.apiService.getConversationMessages(
+      const response = await this.apiService.getConversationMessages(
         conversationId,
         20,
         oldestLocalTimestamp
       );
       
-      if (olderServerMessages.length === 0) {
+      if (response.messages.length === 0) {
         return false;
       }
       
       // Add older messages to local database in a single transaction
-      if (olderServerMessages.length > 0) {
-        await this.dbService.addMessagesTransactional(olderServerMessages);
+      if (response.messages.length > 0) {
+        await this.dbService.addMessagesTransactional(response.messages);
       }
       
       // Refresh the message repository cache

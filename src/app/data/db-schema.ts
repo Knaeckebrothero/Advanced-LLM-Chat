@@ -5,6 +5,18 @@ import { User } from './objects/user';
 import { SettingsWithMetadata } from '../repositories/settings.repository';
 
 
+export interface ConversationSyncMetadata {
+  id: string;
+  lastSynced: Date;
+  messageCount: number;
+  hash: number;
+  lastMessageTimestamp?: Date;
+  lastSyncedMessageId?: number;
+  lastSyncedTimestamp?: number;
+  expiresAt?: Date;
+  lastMessageSent?: Date;
+}
+
 export interface MainAppDB extends DBSchema {
   // Messages store
   chatMessages: {
@@ -32,5 +44,10 @@ export interface MainAppDB extends DBSchema {
   settings: {
     key: string;
     value: SettingsWithMetadata;
+  };
+  // Sync metadata store
+  syncMetadata: {
+    key: string; // conversation ID
+    value: ConversationSyncMetadata;
   };
 }
