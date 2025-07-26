@@ -1491,12 +1491,15 @@ async def get_conversation_messages(
   timestamp: int,
   messages_count: int,
   response: Response,
-  current_user: dict = Depends(get_current_user)
+  current_user: dict = Depends(get_current_user),
+  after_timestamp: Optional[int] = None
 ):
   """
-  Get messages for a specific conversation, before a given timestamp.
+  Get messages for a specific conversation.
+  - If after_timestamp is provided, get messages newer than that timestamp (incremental sync)
+  - Otherwise, get messages before the given timestamp (pagination)
   """
-  print("Get conversation messages called")
+  print(f"Get conversation messages called - after_timestamp: {after_timestamp}")
 
   try:
     if not conversation_id or timestamp is None:
@@ -1510,25 +1513,59 @@ async def get_conversation_messages(
 
     with get_db() as conn:
       cur = conn.cursor()
-      cur.execute(
-        """
-        SELECT id, conversationId, roleName, content, time, type, version, lastModified
-        FROM messages
-        WHERE conversationId = ? AND time < ?
-        ORDER BY time DESC LIMIT ?
-        """,
-        (conversation_id, timestamp, min(messages_count, 30))
-      )
+      
+      # Different queries for incremental sync vs pagination
+      if after_timestamp is not None:
+        # Incremental sync: get messages newer than after_timestamp
+        cur.execute(
+          """
+          SELECT id, conversationId, roleName, content, time, type, version, lastModified
+          FROM messages
+          WHERE conversationId = ? AND time > ?
+          ORDER BY time ASC
+          """,
+          (conversation_id, after_timestamp)
+        )
+      else:
+        # Normal pagination: get messages before timestamp
+        cur.execute(
+          """
+          SELECT id, conversationId, roleName, content, time, type, version, lastModified
+          FROM messages
+          WHERE conversationId = ? AND time < ?
+          ORDER BY time DESC LIMIT ?
+          """,
+          (conversation_id, timestamp, min(messages_count, 30))
+        )
+      
       messages_rows = cur.fetchall()
 
       if messages_rows:
         messages_data = [dict(msg) for msg in messages_rows]
-        messages_data.reverse()  # Reverse to get chronological order
-
-        if messages_count > 30 and len(messages_data) == 30:
+        
+        # For pagination, reverse to get chronological order
+        if after_timestamp is None:
+          messages_data.reverse()
+        
+        # Check if there might be more messages
+        has_more = False
+        if after_timestamp is None and messages_count > 30 and len(messages_data) == 30:
+          has_more = True
           response.status_code = status.HTTP_206_PARTIAL_CONTENT
         else:
           response.status_code = status.HTTP_200_OK
+          
+        # Add header to indicate if more messages exist
+        if after_timestamp is not None:
+          # For incremental sync, check if there are any messages we didn't fetch
+          oldest_fetched = messages_data[0]['time'] if messages_data else 0
+          cur.execute(
+            "SELECT COUNT(*) as count FROM messages WHERE conversationId = ? AND time < ?",
+            (conversation_id, oldest_fetched)
+          )
+          older_count = cur.fetchone()['count']
+          response.headers["X-Has-More-Messages"] = str(older_count > 0)
+          
         return messages_data
       else:
         response.status_code = status.HTTP_204_NO_CONTENT
@@ -2104,6 +2141,52 @@ async def csrf_protection_middleware(request: Request, call_next):
   
   response = await call_next(request)
   return response
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+  """
+  Middleware to add security headers to all responses.
+  """
+  response = await call_next(request)
+  
+  # Prevent MIME type sniffing
+  response.headers["X-Content-Type-Options"] = "nosniff"
+  
+  # Prevent clickjacking
+  response.headers["X-Frame-Options"] = "DENY"
+  
+  # Enable XSS filter (legacy but still useful for older browsers)
+  response.headers["X-XSS-Protection"] = "1; mode=block"
+  
+  # Force HTTPS (only in production - not when using dev certs)
+  if not os.getenv("USE_DEV_CERTS", "False").lower() == "true":
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+  
+  # Content Security Policy
+  # Note: 'unsafe-inline' and 'unsafe-eval' are required for Angular to work properly
+  csp_directives = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # unsafe-eval needed for Angular
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:",
+    "connect-src 'self' wss: https:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'"
+  ]
+  response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+  
+  # Referrer Policy
+  response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+  
+  # Permissions Policy (formerly Feature Policy)
+  # Disable access to sensitive browser features
+  response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+  
+  return response
+
 
 # Development certificate setup
 ssl_config = {}

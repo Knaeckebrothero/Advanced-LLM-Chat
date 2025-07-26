@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { openDB, IDBPDatabase } from 'idb';
 import { Message } from './objects/message';
-import { MainAppDB } from './db-schema';
+import { MainAppDB, ConversationSyncMetadata } from './db-schema';
 import { Conversation } from './objects/conversation';
 import { User } from './objects/user';
 import { FilePreview } from './objects/file-preview';
@@ -25,7 +25,7 @@ export class DBService {
     console.log("Starting database...");
 
     // Open the database
-    this.db = await openDB<MainAppDB>('main', 3, {
+    this.db = await openDB<MainAppDB>('main', 4, {
       upgrade: async (db, oldVersion, newVersion, transaction) => {
         // Upgrade from version 0 (new database) or version 1
         if (oldVersion < 1) {
@@ -85,6 +85,12 @@ export class DBService {
             await conversationCursor.continue();
           }
           console.log(`Updated ${conversationCount} conversations with version information`);
+        }
+        
+        // Add syncMetadata store in version 4
+        if (oldVersion < 4) {
+          console.log('Migrating database to version 4: Adding syncMetadata store');
+          db.createObjectStore('syncMetadata', { keyPath: 'id' });
         }
       }
     });
@@ -274,7 +280,7 @@ export class DBService {
   async clearAllUserData() {
     console.log('Clearing all user data from IndexedDB...');
     
-    return this.executeTransaction(['chatMessages', 'conversations', 'user'], 'readwrite', async (tx) => {
+    await this.executeTransaction(['chatMessages', 'conversations', 'user'], 'readwrite', async (tx) => {
       // Clear all messages
       await tx.objectStore('chatMessages').clear();
       
@@ -284,8 +290,12 @@ export class DBService {
       // Clear user store (settings, etc.)
       await tx.objectStore('user').clear();
       
-      console.log('All user data cleared from IndexedDB');
+      console.log('All user data cleared from IndexedDB (excluding syncMetadata)');
     });
+    
+    // Clear sync metadata separately
+    await this.status;
+    await this.db.clear('syncMetadata');
   }
 
   async getConversationsByUserId(userId: any = null) {
@@ -549,6 +559,38 @@ export class DBService {
         await messageStore.add(serialized);
       }
     });
+  }
+
+  /**
+   * Get sync metadata for a conversation
+   */
+  async getSyncMetadata(conversationId: string): Promise<ConversationSyncMetadata | undefined> {
+    await this.status;
+    return this.db.get('syncMetadata', conversationId);
+  }
+
+  /**
+   * Save sync metadata for a conversation
+   */
+  async saveSyncMetadata(metadata: ConversationSyncMetadata): Promise<void> {
+    await this.status;
+    await this.db.put('syncMetadata', metadata);
+  }
+
+  /**
+   * Delete sync metadata for a conversation
+   */
+  async deleteSyncMetadata(conversationId: string): Promise<void> {
+    await this.status;
+    await this.db.delete('syncMetadata', conversationId);
+  }
+
+  /**
+   * Get all sync metadata
+   */
+  async getAllSyncMetadata(): Promise<ConversationSyncMetadata[]> {
+    await this.status;
+    return this.db.getAll('syncMetadata');
   }
 
 }
