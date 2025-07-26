@@ -1558,23 +1558,39 @@ async def get_conversation_messages(
         # Add header to indicate if more messages exist
         if after_timestamp is not None:
           # For incremental sync, check if there are any messages we didn't fetch
-          oldest_fetched = messages_data[0]['time'] if messages_data else 0
-          cur.execute(
-            "SELECT COUNT(*) as count FROM messages WHERE conversationId = ? AND time < ?",
-            (conversation_id, oldest_fetched)
-          )
-          older_count = cur.fetchone()['count']
-          response.headers["X-Has-More-Messages"] = str(older_count > 0)
+          if messages_data:
+            oldest_fetched = messages_data[0]['time']
+            cur.execute(
+              "SELECT COUNT(*) as count FROM messages WHERE conversationId = ? AND time < ?",
+              (conversation_id, oldest_fetched)
+            )
+            older_count = cur.fetchone()['count']
+            response.headers["X-Has-More-Messages"] = str(older_count > 0)
+          else:
+            # No new messages, but check if there are any messages at all
+            cur.execute(
+              "SELECT COUNT(*) as count FROM messages WHERE conversationId = ?",
+              (conversation_id,)
+            )
+            total_count = cur.fetchone()['count']
+            response.headers["X-Has-More-Messages"] = str(total_count > 0)
           
         return messages_data
       else:
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return None
+        # Return empty list instead of None to satisfy response model
+        response.status_code = status.HTTP_200_OK
+        # Add header for incremental sync
+        if after_timestamp is not None:
+          response.headers["X-Has-More-Messages"] = "false"
+        return []
 
   except Exception as e:
-    print(f"Error: {str(e)}")
+    print(f"Error in get_conversation_messages: {str(e)}")
+    import traceback
+    traceback.print_exc()
+    # Return empty list on error to satisfy the response model
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    return ErrorResponse(error=str(e))
+    return []
 
 
 @app.post("/api/message/send",
