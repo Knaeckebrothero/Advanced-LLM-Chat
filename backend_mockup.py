@@ -297,14 +297,22 @@ def generate_csrf_token() -> str:
   return secrets.token_urlsafe(32)
 
 
-def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False) -> tuple[str, str]:
+def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False, regenerate_from=None) -> tuple[str, str]:
   """
   Creates a session for a given user with a specified duration in hours.
+  If regenerate_from is provided, deletes the old session first.
   Returns tuple of (session_key, csrf_token).
   """
+  # Delete old session if regenerating
+  if regenerate_from:
+    delete_session(regenerate_from)
+  
   session_key = generate_session_key()
   csrf_token = generate_csrf_token()
-  expires_at = datetime.now(UTC) + timedelta(hours=session_duration_hours)
+  
+  # Use environment variable for session timeout if available
+  session_timeout = int(os.getenv('SESSION_TIMEOUT_HOURS', str(session_duration_hours)))
+  expires_at = datetime.now(UTC) + timedelta(hours=session_timeout)
 
   # Save session to database
   with get_db() as db:
@@ -322,6 +330,7 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
 def validate_session(session_key: str) -> Optional[dict]:
   """
   Validates a provided session key by checking the database.
+  Includes session timeout information.
   """
   if not session_key:
     return None
@@ -340,26 +349,33 @@ def validate_session(session_key: str) -> Optional[dict]:
       return None
 
     expires_at = datetime.fromisoformat(result["expires_at"])
-    if datetime.now(UTC) > expires_at:
+    current_time = datetime.now(UTC)
+    
+    if current_time > expires_at:
       # Session expired, clean up
       cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
       conn.commit()
       return None
 
     # Update last activity timestamp
-    current_time = datetime.now(UTC)
     cur.execute("""
                 UPDATE sessions
                 SET last_activity = ?
                 WHERE session_key = ?
                 """, (current_time.isoformat(), session_key))
     conn.commit()
+    
+    # Calculate time until expiry
+    time_until_expiry = expires_at - current_time
+    expires_in_seconds = int(time_until_expiry.total_seconds())
 
     return {
       "user_id": result["user_id"],
       "email": result["email"],
       "is_guest": result["is_guest"],
-      "csrf_token": result["csrf_token"]
+      "csrf_token": result["csrf_token"],
+      "expires_at": expires_at.isoformat(),
+      "expires_in": expires_in_seconds
     }
 
 
@@ -383,7 +399,7 @@ async def validate_csrf_token(request: Request) -> bool:
     return True
   
   # Skip CSRF validation for authentication endpoints
-  if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout"]:
+  if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout", "/api/auth/refresh-session"]:
     return True
   
   # Get session key from cookie
@@ -972,7 +988,7 @@ async def custom_swagger_ui_html(req: Request):
   )
 
 @app.post("/api/auth/guest-login", response_model=LoginResponse)
-async def guest_login(request: GuestLoginRequest, response: Response):
+async def guest_login(request: GuestLoginRequest, req: Request, response: Response):
   ip_address = request.ip_address
 
   # If IP address is 'unknown', use a fallback
@@ -1000,15 +1016,24 @@ async def guest_login(request: GuestLoginRequest, response: Response):
 
     db.commit()
 
+  # Get existing session to regenerate from
+  old_session_key = req.cookies.get("session")
+
   guest_email = f"guest_{secrets.token_hex(4)}@guest.com"
   guest_user = {"id": 0, "email": guest_email, "name": "Guest"}
 
-  session_key, csrf_token = create_session(0, guest_email, is_guest=True)
+  # Use shorter timeout for guest sessions
+  guest_timeout_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
+  
+  # Create new guest session with custom timeout, regenerating old session
+  session_key, csrf_token = create_session(0, guest_email, session_duration_hours=guest_timeout_hours, is_guest=True, regenerate_from=old_session_key)
+  
+  max_age = guest_timeout_hours * 3600
 
   response.set_cookie(
     key="session",
     value=session_key,
-    max_age=86400,  # 24 hours
+    max_age=max_age,
     httponly=True,
     secure=True,
     samesite="lax",
@@ -1025,11 +1050,14 @@ async def guest_login(request: GuestLoginRequest, response: Response):
   )
 
 @app.post("/api/auth/mock-login", response_model=LoginResponse)
-async def mock_login(request: MockLoginRequest, response: Response):
+async def mock_login(request: MockLoginRequest, req: Request, response: Response):
   """
   Handles a mock login process for a user with provided request data.
   """
   print(f"Login attempt for: {request.email}")
+
+  # Get existing session to regenerate from
+  old_session_key = req.cookies.get("session")
 
   with get_db() as db:
     cur = db.cursor()
@@ -1046,14 +1074,18 @@ async def mock_login(request: MockLoginRequest, response: Response):
       user_id = user['id']
       user_name = user['name']
 
-  # Create session with is_guest=False for regular users
-  session_key, csrf_token = create_session(user_id, request.email, is_guest=False)
+  # Create session with is_guest=False for regular users, regenerating old session
+  session_key, csrf_token = create_session(user_id, request.email, is_guest=False, regenerate_from=old_session_key)
+  
+  # Calculate max_age based on session timeout
+  session_timeout_hours = int(os.getenv('SESSION_TIMEOUT_HOURS', '24'))
+  max_age = session_timeout_hours * 3600
 
   # Set session cookie
   response.set_cookie(
     key="session",
     value=session_key,
-    max_age=86400,  # 24 hours
+    max_age=max_age,
     httponly=True,  # Prevents JS access
     secure=True,  # HTTPS only
     samesite="lax",
@@ -1077,27 +1109,97 @@ async def mock_login(request: MockLoginRequest, response: Response):
 async def logout(request: Request, response: Response):
   """
   Handles user logout by deleting the session and clearing the session cookie.
+  Does not auto-create a guest session - let the frontend decide.
   """
   session_key = request.cookies.get("session")
   if session_key:
     delete_session(session_key)
 
   # Delete cookie
-  response.delete_cookie("session")
+  response.delete_cookie(
+    key="session",
+    path="/",
+    secure=True,
+    httponly=True,
+    samesite="lax"
+  )
   return {"message": "Logged out successfully"}
+
+
+@app.post("/api/auth/refresh-session")
+async def refresh_session(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
+  """
+  Refreshes the current session by extending its expiration time.
+  Only works if the session has less than 1 hour remaining.
+  """
+  session_key = request.cookies.get("session")
+  if not session_key:
+    raise HTTPException(status_code=401, detail="No session to refresh")
+  
+  # Check if session is close to expiring (less than 1 hour)
+  expires_in = current_user.get("expires_in", 0)
+  if expires_in > 3600:  # More than 1 hour remaining
+    return {
+      "message": "Session does not need refresh yet",
+      "expires_in": expires_in
+    }
+  
+  # Create new session with same user info
+  user_id = current_user["user_id"]
+  email = current_user["email"]
+  is_guest = current_user.get("is_guest", False)
+  
+  # Determine session duration based on user type
+  if is_guest:
+    session_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
+  else:
+    session_hours = int(os.getenv('SESSION_TIMEOUT_HOURS', '24'))
+  
+  # Create new session, regenerating the old one
+  new_session_key, new_csrf_token = create_session(
+    user_id, email, session_hours, is_guest, regenerate_from=session_key
+  )
+  
+  # Set new session cookie
+  max_age = session_hours * 3600
+  response.set_cookie(
+    key="session",
+    value=new_session_key,
+    max_age=max_age,
+    httponly=True,
+    secure=True,
+    samesite="lax",
+    path="/"
+  )
+  
+  # Set new CSRF token
+  response.headers["X-CSRF-Token"] = new_csrf_token
+  
+  return {
+    "message": "Session refreshed successfully",
+    "expires_in": max_age
+  }
 
 
 @app.get("/api/auth/me")
 async def get_me(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
   """
   Retrieves the details of the currently authenticated user.
+  Includes session timeout information.
   """
   # Include CSRF token in response header
   if "csrf_token" in current_user:
     response.headers["X-CSRF-Token"] = current_user["csrf_token"]
   
-  # Remove CSRF token from user data before returning
-  user_data = {k: v for k, v in current_user.items() if k != "csrf_token"}
+  # Prepare user data with session info
+  user_data = {
+    "user_id": current_user["user_id"],
+    "email": current_user["email"],
+    "is_guest": current_user.get("is_guest", False),
+    "session_expires_at": current_user.get("expires_at"),
+    "session_expires_in": current_user.get("expires_in")
+  }
+  
   return {"user": user_data}
 
 

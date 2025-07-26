@@ -57,7 +57,7 @@ describe('ChatStateService - Conflict Resolution', () => {
       // First call fails with 409, second succeeds
       apiService.patchMessage
         .withArgs('test-conv-1', 1001, 'Updated content', 1)
-        .and.returnValue(throwError({ status: 409 }));
+        .and.returnValue(Promise.reject({ status: 409 }));
       
       apiService.patchMessage
         .withArgs('test-conv-1', 1001, 'Updated content', 2)
@@ -100,7 +100,7 @@ describe('ChatStateService - Conflict Resolution', () => {
 
       // All calls fail with 409
       apiService.patchMessage.and.returnValue(
-        throwError({ status: 409 })
+        Promise.reject({ status: 409 })
       );
 
       // Mock sync engine
