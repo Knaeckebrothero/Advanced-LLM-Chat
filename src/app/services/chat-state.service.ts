@@ -22,6 +22,7 @@ export interface ChatState {
   isNewConversation: boolean;
   isLoading: boolean;
   error: string | null;
+  hasReachedEnd?: boolean;
 }
 
 @Injectable({
@@ -35,6 +36,7 @@ export class ChatStateService implements OnDestroy {
   private isNewConversation$ = new BehaviorSubject<boolean>(false);
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
+  private hasReachedEnd$ = new BehaviorSubject<boolean>(false);
   
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
@@ -84,14 +86,16 @@ export class ChatStateService implements OnDestroy {
     this.messages$,
     this.isNewConversation$,
     this.isLoading$,
-    this.error$
+    this.error$,
+    this.hasReachedEnd$
   ]).pipe(
-    map(([activeConversation, messages, isNewConversation, isLoading, error]) => ({
+    map(([activeConversation, messages, isNewConversation, isLoading, error, hasReachedEnd]) => ({
       activeConversation,
       messages,
       isNewConversation,
       isLoading,
-      error
+      error,
+      hasReachedEnd
     })),
     shareReplay(1)
   );
@@ -145,6 +149,7 @@ export class ChatStateService implements OnDestroy {
   async loadConversation(conversationId: string): Promise<void> {
     this.isLoading$.next(true);
     this.error$.next(null);
+    this.hasReachedEnd$.next(false); // Reset when loading a conversation
     
     try {
       if (conversationId === '0') {
@@ -614,7 +619,14 @@ export class ChatStateService implements OnDestroy {
       return [];
     }
     
-    return this.conversationRepository.loadOlderMessages(conversationId, beforeTime, limit);
+    const messages = await this.conversationRepository.loadOlderMessages(conversationId, beforeTime, limit);
+    
+    // If we got fewer messages than requested, we've likely reached the beginning
+    if (messages.length < limit) {
+      this.hasReachedEnd$.next(true);
+    }
+    
+    return messages;
   }
   
   /**

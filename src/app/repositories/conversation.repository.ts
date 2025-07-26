@@ -675,6 +675,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     beforeTimestamp: Date, 
     limit: number = 20
   ): Promise<Message[]> {
+    // First check local messages
     const allMessages = await this.dbService.getMessagesByConversationId(conversationId);
     
     // Filter messages before the timestamp
@@ -682,6 +683,29 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       .filter(msg => new Date(msg.time) < beforeTimestamp)
       .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
       .slice(0, limit);
+    
+    // If we found fewer messages than requested, try to fetch more from server
+    if (olderMessages.length < limit) {
+      // Find the oldest message we have locally
+      const oldestLocal = allMessages.length > 0 
+        ? allMessages.reduce((oldest, msg) => 
+            new Date(msg.time) < new Date(oldest.time) ? msg : oldest
+          )
+        : null;
+      
+      if (oldestLocal) {
+        // Try to fetch older messages from server
+        const fetchedMore = await this.checkAndSyncOlderMessages(
+          conversationId, 
+          new Date(oldestLocal.time)
+        );
+        
+        if (fetchedMore) {
+          // Recursively call to get the newly fetched messages
+          return this.loadOlderMessages(conversationId, beforeTimestamp, limit);
+        }
+      }
+    }
     
     // Return in chronological order
     return olderMessages.reverse();
