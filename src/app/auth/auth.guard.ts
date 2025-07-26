@@ -20,9 +20,16 @@ export class AuthGuard implements CanActivate {
       take(1),
       map(user => {
         console.log('Current user in guard:', user);
-        // Always allow access - guest sessions are created automatically
-        // The AuthService will handle creating guest sessions if needed
-        return true;
+        
+        // Check if user exists (either authenticated or guest)
+        if (user) {
+          // User is authenticated (could be guest or regular user)
+          return true;
+        } else {
+          // No user found, redirect to login
+          console.log('No user found, redirecting to login');
+          return this.router.createUrlTree(['/login']);
+        }
       })
     );
   }
