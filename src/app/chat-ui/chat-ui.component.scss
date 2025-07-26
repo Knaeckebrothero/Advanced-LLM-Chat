@@ -31,7 +31,8 @@
   }
 }
 
-.loading-older-messages {
+.loading-older-messages,
+.end-of-conversation {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -46,6 +47,11 @@
   span {
     font-size: 14px;
   }
+}
+
+.end-of-conversation {
+  font-style: italic;
+  opacity: 0.7;
 }
 
 .guest-limit-warning {

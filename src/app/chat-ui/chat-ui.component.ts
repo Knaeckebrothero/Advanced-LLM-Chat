@@ -32,6 +32,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   messages$: Observable<Message[]> = this.chatState.messages$;
   isLoading$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.isLoading));
   error$: Observable<string | null> = this.chatState.state$.pipe(map(state => state.error));
+  hasReachedEnd$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.hasReachedEnd || false));
   
   // For template compatibility - expose messages as non-observable
   messages = this.chatState.messages$;
@@ -86,6 +87,9 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   
   // Handle scroll events to load older messages
   onScroll(event: Event): void {
+    // Ignore scroll events during restoration
+    if (this.isRestoringScroll) return;
+    
     const element = event.target as HTMLElement;
     
     // Check if user scrolled to top
@@ -97,6 +101,13 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   private async loadOlderMessages(): Promise<void> {
     if (this.isLoadingMessages) return;
     
+    // Debounce rapid requests
+    const now = Date.now();
+    if (now - this.lastLoadTime < this.LOAD_DEBOUNCE_MS) {
+      return;
+    }
+    this.lastLoadTime = now;
+    
     const conversationId = this.chatState.getActiveConversationId();
     if (!conversationId || conversationId === '0') return;
     
@@ -107,18 +118,35 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
       const oldestMessage = this.currentMessages[0];
       if (!oldestMessage) return;
       
-      // Store scroll height before loading
+      // Store scroll position before loading
       const scrollContainer = this.messageContainer.nativeElement;
       const scrollHeightBefore = scrollContainer.scrollHeight;
+      const scrollTopBefore = scrollContainer.scrollTop;
       
-      await this.chatState.loadOlderMessages(oldestMessage.time, 20);
+      // Load older messages
+      const newMessages = await this.chatState.loadOlderMessages(oldestMessage.time, 20);
       
-      // After messages load, maintain scroll position
-      setTimeout(() => {
+      // If no new messages were loaded, we've reached the beginning
+      if (newMessages.length === 0) {
+        return;
+      }
+      
+      // Use requestAnimationFrame for smoother scroll restoration
+      requestAnimationFrame(() => {
         const scrollHeightAfter = scrollContainer.scrollHeight;
         const scrollDiff = scrollHeightAfter - scrollHeightBefore;
-        scrollContainer.scrollTop += scrollDiff;
-      }, 100);
+        
+        // Restore scroll position by adding the height difference
+        scrollContainer.scrollTop = scrollTopBefore + scrollDiff;
+        
+        // Allow new scroll events after a short delay
+        setTimeout(() => {
+          this.isRestoringScroll = false;
+        }, 100);
+      });
+      
+      // Prevent scroll events during restoration
+      this.isRestoringScroll = true;
     } catch (error) {
       console.error('Error loading older messages:', error);
     } finally {
@@ -153,6 +181,9 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   // Loading state for older messages
   isLoadingOlderMessages = false;
   private isLoadingMessages = false;
+  private isRestoringScroll = false;
+  private lastLoadTime = 0;
+  private readonly LOAD_DEBOUNCE_MS = 300;
   
   // Check if user is near bottom of chat (within 100px)
   private isNearBottom(): boolean {

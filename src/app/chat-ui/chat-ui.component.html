@@ -6,6 +6,10 @@
       <mat-spinner diameter="30"></mat-spinner>
       <span>Loading older messages...</span>
     </div>
+    <!-- End of conversation indicator -->
+    <div class="end-of-conversation" *ngIf="(hasReachedEnd$ | async) && !isLoadingOlderMessages">
+      <span>Beginning of conversation</span>
+    </div>
     <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
   </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
