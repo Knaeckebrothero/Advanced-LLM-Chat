@@ -14,6 +14,7 @@ import asyncio
 import json
 import hashlib
 import uuid
+import logging
 from fastapi import FastAPI, Response, status, Request, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -26,6 +27,42 @@ from pathlib import Path
 from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timedelta, UTC
 
+
+# Configure logging for security events
+logging.basicConfig(level=logging.INFO)
+security_logger = logging.getLogger("security")
+security_logger.setLevel(logging.WARNING)
+
+# Create a file handler for security events
+security_log_path = os.path.join(os.getenv('DB_DIR', '.'), 'security.log')
+security_handler = logging.FileHandler(security_log_path)
+security_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+security_logger.addHandler(security_handler)
+
+def log_security_event(event_type: str, details: dict, request: Request = None):
+    """
+    Log security-related events with context.
+    """
+    log_entry = {
+        "event_type": event_type,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "details": details
+    }
+    
+    if request:
+        log_entry["request_info"] = {
+            "method": request.method,
+            "path": str(request.url.path),
+            "client_host": request.client.host if request.client else "unknown",
+            "headers": {
+                "user-agent": request.headers.get("user-agent", "unknown"),
+                "origin": request.headers.get("origin", "unknown")
+            }
+        }
+    
+    security_logger.warning(json.dumps(log_entry))
 
 # List of available LLMs
 AVAILABLE_LLMS = [
@@ -391,7 +428,8 @@ def delete_session(session_key: str):
 
 async def validate_csrf_token(request: Request) -> bool:
   """
-  Validates CSRF token from request headers against the session token.
+  Validates CSRF token using double-submit cookie pattern.
+  Compares token from header with token from cookie.
   Returns True if valid, False otherwise.
   """
   # Skip CSRF validation for safe methods
@@ -402,23 +440,35 @@ async def validate_csrf_token(request: Request) -> bool:
   if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout", "/api/auth/refresh-session"]:
     return True
   
-  # Get session key from cookie
-  session_key = request.cookies.get("session")
-  if not session_key:
-    return False
-  
-  # Get session data
-  session_data = validate_session(session_key)
-  if not session_data:
+  # Get CSRF token from cookie
+  csrf_token_cookie = request.cookies.get("csrf_token")
+  if not csrf_token_cookie:
+    log_security_event("csrf_validation_failed", {
+      "reason": "missing_csrf_cookie",
+      "session_cookie_present": "session" in request.cookies
+    }, request)
     return False
   
   # Get CSRF token from header
   csrf_token_header = request.headers.get("X-CSRF-Token")
   if not csrf_token_header:
+    log_security_event("csrf_validation_failed", {
+      "reason": "missing_csrf_header",
+      "session_cookie_present": "session" in request.cookies
+    }, request)
     return False
   
-  # Compare tokens
-  return csrf_token_header == session_data.get("csrf_token")
+  # Compare tokens (double-submit pattern)
+  is_valid = csrf_token_cookie == csrf_token_header
+  if not is_valid:
+    log_security_event("csrf_validation_failed", {
+      "reason": "token_mismatch",
+      "cookie_token_length": len(csrf_token_cookie),
+      "header_token_length": len(csrf_token_header),
+      "session_cookie_present": "session" in request.cookies
+    }, request)
+  
+  return is_valid
 
 
 async def get_current_user(request: Request) -> dict:
@@ -1040,8 +1090,26 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     path="/"
   )
   
-  # Set CSRF token in response header
+  # Set CSRF token as cookie for double-submit pattern
+  response.set_cookie(
+    key="csrf_token",
+    value=csrf_token,
+    max_age=max_age,
+    httponly=False,  # JS needs to read this
+    secure=True,
+    samesite="strict",  # Strict for CSRF protection
+    path="/"
+  )
+  
+  # Also set CSRF token in response header for backward compatibility
   response.headers["X-CSRF-Token"] = csrf_token
+  
+  # Log successful guest login
+  log_security_event("guest_login_success", {
+    "user_id": guest_user["id"],
+    "ip_address": ip_address,
+    "session_duration_hours": session_duration_hours
+  }, req)
 
   return LoginResponse(
     user=guest_user,
@@ -1092,8 +1160,26 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     path="/"
   )
   
-  # Set CSRF token in response header
+  # Set CSRF token as cookie for double-submit pattern
+  response.set_cookie(
+    key="csrf_token",
+    value=csrf_token,
+    max_age=max_age,
+    httponly=False,  # JS needs to read this
+    secure=True,
+    samesite="strict",  # Strict for CSRF protection
+    path="/"
+  )
+  
+  # Also set CSRF token in response header for backward compatibility
   response.headers["X-CSRF-Token"] = csrf_token
+  
+  # Log successful login
+  log_security_event("user_login_success", {
+    "user_id": user_id,
+    "email": request.email,
+    "new_user": user is None
+  }, req)
 
   return LoginResponse(
     user={
@@ -1113,15 +1199,30 @@ async def logout(request: Request, response: Response):
   """
   session_key = request.cookies.get("session")
   if session_key:
+    # Log logout event before deleting session
+    session_data = validate_session(session_key)
+    if session_data:
+      log_security_event("user_logout", {
+        "user_id": session_data["user_id"],
+        "email": session_data["email"]
+      }, request)
+    
     delete_session(session_key)
 
-  # Delete cookie
+  # Delete cookies
   response.delete_cookie(
     key="session",
     path="/",
     secure=True,
     httponly=True,
     samesite="lax"
+  )
+  response.delete_cookie(
+    key="csrf_token",
+    path="/",
+    secure=True,
+    httponly=False,
+    samesite="strict"
   )
   return {"message": "Logged out successfully"}
 
@@ -1172,7 +1273,18 @@ async def refresh_session(request: Request, response: Response, current_user: di
     path="/"
   )
   
-  # Set new CSRF token
+  # Set CSRF token as cookie for double-submit pattern
+  response.set_cookie(
+    key="csrf_token",
+    value=new_csrf_token,
+    max_age=max_age,
+    httponly=False,  # JS needs to read this
+    secure=True,
+    samesite="strict",  # Strict for CSRF protection
+    path="/"
+  )
+  
+  # Also set new CSRF token in response header for backward compatibility
   response.headers["X-CSRF-Token"] = new_csrf_token
   
   return {
@@ -2137,9 +2249,9 @@ app.add_middleware(
   CORSMiddleware,
   allow_origins=origins,
   allow_credentials=True,
-  allow_methods=["*"],
-  allow_headers=["*"],
-  expose_headers=["X-CSRF-Token", "X-Has-More-Messages", "Content-Type", "Authorization"]
+  allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-Requested-With", "Accept", "Origin"],
+  expose_headers=["X-CSRF-Token", "X-Has-More-Messages", "Content-Type", "Authorization", "X-CSP-Nonce"]
 )
 
 
@@ -2175,6 +2287,10 @@ async def add_security_headers(request: Request, call_next):
   """
   Middleware to add security headers to all responses.
   """
+  # Generate nonce for this request
+  csp_nonce = secrets.token_urlsafe(16)
+  request.state.csp_nonce = csp_nonce
+  
   response = await call_next(request)
   
   # Prevent MIME type sniffing
@@ -2191,19 +2307,43 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
   
   # Content Security Policy
-  # Note: 'unsafe-inline' and 'unsafe-eval' are required for Angular to work properly
-  csp_directives = [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # unsafe-eval needed for Angular
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: blob:",
-    "connect-src 'self' wss: https:",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'"
-  ]
+  # For Angular compatibility, we need a more permissive policy in development
+  # In production, consider migrating away from unsafe-inline and unsafe-eval
+  is_dev = os.getenv("USE_DEV_CERTS", "False").lower() == "true"
+  
+  if is_dev:
+    # Development CSP - more permissive for Angular CLI
+    csp_directives = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # Required for Angular dev mode
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: blob:",
+      "connect-src 'self' wss: https: ws://localhost:* http://localhost:*",  # Allow dev server websockets
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ]
+  else:
+    # Production CSP - stricter but still Angular-compatible
+    # Note: Moving to nonce-based CSP requires Angular build configuration changes
+    csp_directives = [
+      "default-src 'self'",
+      f"script-src 'self' 'nonce-{csp_nonce}' 'strict-dynamic'",  # Nonce-based with strict-dynamic
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # Styles still need unsafe-inline
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: blob:",
+      "connect-src 'self' wss: https:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "require-trusted-types-for 'script'"  # Additional XSS protection
+    ]
+  
   response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+  
+  # Send nonce in header for Angular to use
+  response.headers["X-CSP-Nonce"] = csp_nonce
   
   # Referrer Policy
   response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"

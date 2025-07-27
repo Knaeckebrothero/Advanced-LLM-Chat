@@ -22,6 +22,24 @@ export class ApiService {
     //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
     //}
     // TODO: Either enable or remove this
+    
+    // Try to read CSRF token from cookie on initialization
+    this.readCsrfTokenFromCookie();
+  }
+
+  // Read CSRF token from cookie
+  private readCsrfTokenFromCookie(): void {
+    // Simple cookie parser
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name, value] = cookie.trim().split('=');
+      if (name === 'csrf_token') {
+        this.csrfToken = decodeURIComponent(value);
+        console.log('CSRF token loaded from cookie:', this.csrfToken);
+        return;
+      }
+    }
+    console.warn('No CSRF token found in cookies');
   }
 
   // Headers setup method
@@ -29,6 +47,11 @@ export class ApiService {
     const headers: any = {
       'Content-Type': 'application/json',
     };
+    
+    // Try to read from cookie if not already set
+    if (!this.csrfToken) {
+      this.readCsrfTokenFromCookie();
+    }
     
     // Add CSRF token if available
     if (this.csrfToken) {
@@ -51,6 +74,11 @@ export class ApiService {
   // Extract CSRF token from response headers
   public extractCsrfToken(response: any): void {
     console.log('Extracting CSRF token from response:', response);
+    
+    // First try to read from cookie (primary method now)
+    this.readCsrfTokenFromCookie();
+    
+    // Also check headers for backward compatibility
     if (response && response.headers) {
       // Debug: Log all available headers
       console.log('Available headers:');
@@ -64,15 +92,15 @@ export class ApiService {
                    response.headers.get('X-Csrf-Token');
       
       console.log('CSRF token from headers:', token);
-      if (token) {
+      if (token && !this.csrfToken) {
+        // Only use header token if cookie wasn't found
         this.csrfToken = token;
-        console.log('CSRF token updated successfully:', this.csrfToken);
-      } else {
-        console.warn('No CSRF token found in response headers');
-        console.warn('Tried: X-CSRF-Token, x-csrf-token, X-Csrf-Token');
+        console.log('CSRF token updated from headers:', this.csrfToken);
       }
-    } else {
-      console.warn('No headers in response');
+    }
+    
+    if (!this.csrfToken) {
+      console.warn('No CSRF token found in cookies or headers');
     }
   }
 
