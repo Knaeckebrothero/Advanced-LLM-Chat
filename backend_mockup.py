@@ -1097,7 +1097,7 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     max_age=max_age,
     httponly=False,  # JS needs to read this
     secure=True,
-    samesite="strict",  # Strict for CSRF protection
+    samesite="lax",  # Lax allows cross-site requests from different ports
     path="/"
   )
   
@@ -1167,7 +1167,7 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     max_age=max_age,
     httponly=False,  # JS needs to read this
     secure=True,
-    samesite="strict",  # Strict for CSRF protection
+    samesite="lax",  # Lax allows cross-site requests from different ports
     path="/"
   )
   
@@ -1222,7 +1222,7 @@ async def logout(request: Request, response: Response):
     path="/",
     secure=True,
     httponly=False,
-    samesite="strict"
+    samesite="lax"
   )
   return {"message": "Logged out successfully"}
 
@@ -1280,7 +1280,7 @@ async def refresh_session(request: Request, response: Response, current_user: di
     max_age=max_age,
     httponly=False,  # JS needs to read this
     secure=True,
-    samesite="strict",  # Strict for CSRF protection
+    samesite="lax",  # Lax allows cross-site requests from different ports
     path="/"
   )
   
@@ -1298,10 +1298,29 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
   """
   Retrieves the details of the currently authenticated user.
   Includes session timeout information.
+  Also ensures CSRF cookie is set for existing sessions.
   """
+  # Check if CSRF cookie exists
+  csrf_cookie = request.cookies.get("csrf_token")
+  csrf_token = current_user.get("csrf_token")
+  
+  # If we have a CSRF token in session but no cookie, set the cookie
+  if csrf_token and not csrf_cookie:
+    # Calculate max age based on remaining session time
+    expires_in = current_user.get("expires_in", 86400)  # Default to 24 hours
+    response.set_cookie(
+      key="csrf_token",
+      value=csrf_token,
+      max_age=expires_in,
+      httponly=False,  # JS needs to read this
+      secure=True,
+      samesite="lax",  # Lax allows cross-site requests from different ports
+      path="/"
+    )
+  
   # Include CSRF token in response header
-  if "csrf_token" in current_user:
-    response.headers["X-CSRF-Token"] = current_user["csrf_token"]
+  if csrf_token:
+    response.headers["X-CSRF-Token"] = csrf_token
   
   # Prepare user data with session info
   user_data = {
