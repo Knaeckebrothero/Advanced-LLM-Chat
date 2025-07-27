@@ -2139,7 +2139,7 @@ app.add_middleware(
   allow_credentials=True,
   allow_methods=["*"],
   allow_headers=["*"],
-  expose_headers=["*"]
+  expose_headers=["X-CSRF-Token", "X-Has-More-Messages", "Content-Type", "Authorization"]
 )
 
 
@@ -2148,12 +2148,23 @@ async def csrf_protection_middleware(request: Request, call_next):
   """
   Middleware to enforce CSRF protection on state-changing requests.
   """
+  # Skip CSRF for OPTIONS requests (CORS preflight)
+  if request.method == "OPTIONS":
+    response = await call_next(request)
+    return response
+  
   # Validate CSRF token
   if not await validate_csrf_token(request):
-    return JSONResponse(
+    response = JSONResponse(
       content={"error": "CSRF validation failed"},
       status_code=403
     )
+    # Add CORS headers to error response
+    origin = request.headers.get("origin")
+    if origin in origins:
+      response.headers["Access-Control-Allow-Origin"] = origin
+      response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
   
   response = await call_next(request)
   return response

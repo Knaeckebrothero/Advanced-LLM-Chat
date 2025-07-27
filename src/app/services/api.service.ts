@@ -14,7 +14,7 @@ import { FilePreview } from '../data/objects/file-preview';
 export class ApiService {
   // Use the environment configuration to get
   private baseUrl: string = environment.apiUrl;
-  private csrfToken: string | null = null;
+  public csrfToken: string | null = null;
 
   constructor(private http: HttpClient) {
     // Development only - handle self-signed certificates
@@ -33,6 +33,8 @@ export class ApiService {
     // Add CSRF token if available
     if (this.csrfToken) {
       headers['X-CSRF-Token'] = this.csrfToken;
+    } else {
+      console.warn('No CSRF token available when building headers');
     }
     
     return new HttpHeaders(headers);
@@ -48,12 +50,29 @@ export class ApiService {
   
   // Extract CSRF token from response headers
   public extractCsrfToken(response: any): void {
+    console.log('Extracting CSRF token from response:', response);
     if (response && response.headers) {
-      const token = response.headers.get('X-CSRF-Token');
+      // Debug: Log all available headers
+      console.log('Available headers:');
+      response.headers.keys().forEach((key: string) => {
+        console.log(`  ${key}: ${response.headers.get(key)}`);
+      });
+      
+      // Try different case variations
+      const token = response.headers.get('X-CSRF-Token') || 
+                   response.headers.get('x-csrf-token') || 
+                   response.headers.get('X-Csrf-Token');
+      
+      console.log('CSRF token from headers:', token);
       if (token) {
         this.csrfToken = token;
-        console.log('CSRF token updated');
+        console.log('CSRF token updated successfully:', this.csrfToken);
+      } else {
+        console.warn('No CSRF token found in response headers');
+        console.warn('Tried: X-CSRF-Token, x-csrf-token, X-Csrf-Token');
       }
+    } else {
+      console.warn('No headers in response');
     }
   }
 
@@ -308,12 +327,24 @@ export class ApiService {
 
     try {
       // Upload files and return their server IDs
+      // Get existing headers with CSRF token
+      const baseHeaders = this.getHeaders();
+      
+      // For multipart/form-data, we need to let the browser set Content-Type with boundary
+      // So we create new headers without Content-Type but keep other headers like CSRF
+      let uploadHeaders = new HttpHeaders();
+      baseHeaders.keys().forEach(key => {
+        if (key.toLowerCase() !== 'content-type') {
+          const value = baseHeaders.get(key);
+          if (value) {
+            uploadHeaders = uploadHeaders.set(key, value);
+          }
+        }
+      });
+      
       const response = await lastValueFrom(
         this.http.post<string[]>(endpoint, formData, {
-          ...this.getHttpOptions(),
-          headers: new HttpHeaders({
-            // Don't set Content-Type - let the browser set it with boundary for multipart
-          }),
+          headers: uploadHeaders,
           withCredentials: true,
           reportProgress: true
         })

@@ -31,11 +31,12 @@ import {BrowserModule} from '@angular/platform-browser';
 import {AppComponent} from './app.component';
 import {ServiceWorkerModule} from '@angular/service-worker';
 import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
-import {provideHttpClient, withInterceptorsFromDi} from '@angular/common/http';
+import {provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS} from '@angular/common/http';
 import {FormsModule, ReactiveFormsModule} from '@angular/forms';
 import {RouterModule, Routes} from '@angular/router';
 import {SidebarComponent} from "./sidebar/sidebar.component";
 import {CommonModule} from '@angular/common';
+import {AuthInterceptor} from './auth/auth.interceptor';
 
 
 // Routes
@@ -83,6 +84,11 @@ const routes: Routes = [
   ],
   providers: [
     provideHttpClient(withInterceptorsFromDi()),
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: AuthInterceptor,
+      multi: true
+    },
     provideAppInitializer(() => {
       const authService = inject(AuthService);
       return authService.initializeAuth();
