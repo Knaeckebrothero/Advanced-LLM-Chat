@@ -343,7 +343,12 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   // Method to rate a message
   rateMessage(message: Message, rating: number | null) {
     // Call the ChatStateService to rate the message (handles null for rating removal)
-    this.chatState.rateMessage(message, rating);
+    try {
+      this.chatState.rateMessage(message, rating);
+    } catch (error) {
+      console.error('Failed to rate message:', error);
+      // Optionally, handle the error (e.g., show a user-friendly message)
+    }
   }
 
   // Check if a message is the last AI message in the conversation
