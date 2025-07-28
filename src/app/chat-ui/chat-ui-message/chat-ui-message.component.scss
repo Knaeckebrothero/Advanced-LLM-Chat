@@ -208,6 +208,13 @@
     &:not(:last-child) {
       margin-right: 3px;
     }
+    
+    // Active rating style
+    &.active-rating {
+      mat-icon {
+        color: var(--theme-primary);
+      }
+    }
   }
 }
 

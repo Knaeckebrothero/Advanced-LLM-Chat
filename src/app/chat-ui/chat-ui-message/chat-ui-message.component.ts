@@ -13,6 +13,7 @@ import { ChatUiComponent } from '../chat-ui.component';
 export class ChatUiMessageComponent {
   // Pass the message object from the parent component
   @Input() message!: Message;
+  @Input() isLastAiMessage: boolean = false;
 
   // Variables
   editing: boolean = false;
@@ -172,5 +173,36 @@ export class ChatUiMessageComponent {
   // Check if message is editable
   get isEditable(): boolean {
     return this.message.isText();
+  }
+
+  // Check if message can be regenerated
+  get canRegenerate(): boolean {
+    // Only AI messages can be regenerated
+    if (this.message.roleName === 'user') {
+      return false;
+    }
+    
+    // Check if this is the last AI message in the conversation
+    return this.isLastAiMessage;
+  }
+
+  // Regenerate the message
+  regenerateMessage() {
+    console.log('Regenerating message:', this.message.id);
+    this.chatUI.regenerateMessage(this.message);
+  }
+
+  // Rate the message
+  rateMessage(rating: number) {
+    console.log('Rating message:', this.message.id, 'with rating:', rating);
+    
+    // Toggle rating if clicking the same rating
+    if (this.message.rating === rating) {
+      // If already rated with this value, remove the rating
+      this.chatUI.rateMessage(this.message, null);
+    } else {
+      // Otherwise, set the new rating
+      this.chatUI.rateMessage(this.message, rating);
+    }
   }
 }

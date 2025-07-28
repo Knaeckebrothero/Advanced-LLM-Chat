@@ -10,7 +10,9 @@
     <div class="end-of-conversation" *ngIf="(hasReachedEnd$ | async) && !isLoadingOlderMessages">
       <span>Beginning of conversation</span>
     </div>
-    <app-chat-ui-message *ngFor="let message of messages | async" [message]="message"></app-chat-ui-message>
+    <app-chat-ui-message *ngFor="let message of messages | async; let i = index" 
+                         [message]="message"
+                         [isLastAiMessage]="isLastAiMessage(message, i)"></app-chat-ui-message>
   </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
     <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>

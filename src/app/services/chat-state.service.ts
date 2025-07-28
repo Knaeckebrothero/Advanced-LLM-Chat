@@ -501,22 +501,73 @@ export class ChatStateService implements OnDestroy {
    * Regenerate a message
    */
   async regenerateMessage(message: Message): Promise<void> {
-    const messages = await firstValueFrom(this.messages$);
-    const messageIndex = messages.findIndex(m => m.id === message.id);
-    
-    if (messageIndex === -1) {
-      throw new Error('Message not found');
+    if (!message.id || !message.conversationId) {
+      throw new Error('Message ID and conversation ID are required');
     }
     
-    // Delete this message and all after it
-    const messagesToDelete = messages.slice(messageIndex);
-    
-    for (const msg of messagesToDelete) {
-      await this.deleteMessage(msg.id);
+    // Check if it's an AI message
+    if (message.roleName === 'user') {
+      throw new Error('Can only regenerate AI messages');
     }
     
-    // Generate new response
-    await this.generateMessage(message.roleName);
+    this.isLoading$.next(true);
+    this.error$.next(null);
+    
+    try {
+      // Use the new regenerate endpoint
+      const regeneratedMessage = await this.messageRepository.regenerateMessage(
+        message.id,
+        message.conversationId
+      );
+      
+      // The message repository will automatically update the cache and trigger
+      // the messages$ observable to emit the new value
+      
+      // Show success notification
+      this.notificationService.showSuccess('Message regenerated successfully');
+    } catch (error) {
+      console.error('Error regenerating message:', error);
+      this.error$.next('Failed to regenerate message');
+      this.notificationService.showError('Failed to regenerate message');
+      throw error;
+    } finally {
+      this.isLoading$.next(false);
+    }
+  }
+  
+  /**
+   * Rate a message (thumbs up or thumbs down)
+   */
+  async rateMessage(message: Message, rating: number): Promise<void> {
+    if (!message.id || !message.conversationId) {
+      throw new Error('Message ID and conversation ID are required');
+    }
+    
+    // Validate rating value
+    if (rating !== 0 && rating !== 1) {
+      throw new Error('Rating must be 0 (thumbs down) or 1 (thumbs up)');
+    }
+    
+    try {
+      // Update the rating via repository
+      const updatedMessage = await this.messageRepository.rateMessage(
+        message.id,
+        message.conversationId,
+        rating
+      );
+      
+      // The message repository will automatically update the cache and trigger
+      // the messages$ observable to emit the new value
+      
+      // Show success notification
+      const ratingText = rating === 1 ? 'liked' : 'disliked';
+      this.notificationService.showSuccess(`Message ${ratingText}`);
+    } catch (error) {
+      console.error('Error rating message:', error);
+      this.error$.next('Failed to rate message');
+      this.notificationService.showError('Failed to rate message');
+      throw error;
+    }
   }
   
   /**

@@ -333,4 +333,45 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
     // Call the ChatStateService to alter the message
     this.chatState.patchMessage(messageId, content);
   }
+
+  // Method to regenerate a message
+  regenerateMessage(message: Message) {
+    // Call the ChatStateService to regenerate the message
+    this.chatState.regenerateMessage(message);
+  }
+
+  // Method to rate a message
+  rateMessage(message: Message, rating: number | null) {
+    // If rating is null, we're removing the rating
+    if (rating === null) {
+      // For now, we don't have an "unrate" endpoint, so we'll skip this
+      console.log('Removing rating not yet implemented');
+      return;
+    }
+    
+    // Call the ChatStateService to rate the message
+    this.chatState.rateMessage(message, rating);
+  }
+
+  // Check if a message is the last AI message in the conversation
+  isLastAiMessage(message: Message, index: number): boolean {
+    if (message.roleName === 'user') {
+      return false;
+    }
+    
+    // Use the currentMessages array that's maintained by the subscription
+    const messages = this.currentMessages;
+    if (!messages || messages.length === 0) {
+      return false;
+    }
+    
+    // Find the last AI message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].roleName !== 'user') {
+        return messages[i].id === message.id;
+      }
+    }
+    
+    return false;
+  }
 }

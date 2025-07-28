@@ -336,6 +336,47 @@ export class ApiService {
     }
   }
 
+  // Rate a message (thumbs up or thumbs down)
+  async rateMessage(messageId: number, conversationId: string, rating: number): Promise<Message> {
+    const endpoint = `${this.baseUrl}/api/message/rate`;
+    const body = {
+      id: messageId,
+      conversationId: conversationId,
+      rating: rating
+    };
+
+    try {
+      const response = await lastValueFrom(
+        this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
+      );
+
+      return Message.fromApiResponse(response);
+    } catch (error) {
+      console.error('Error rating message:', error);
+      throw error;
+    }
+  }
+
+  // Regenerate an AI message
+  async regenerateMessage(messageId: number, conversationId: string): Promise<Message> {
+    const endpoint = `${this.baseUrl}/api/message/regenerate`;
+    const body = {
+      id: messageId,
+      conversationId: conversationId
+    };
+
+    try {
+      const response = await lastValueFrom(
+        this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
+      );
+
+      return Message.fromApiResponse(response);
+    } catch (error) {
+      console.error('Error regenerating message:', error);
+      throw error;
+    }
+  }
+
   // TODO: Implement get all conversations
   async getAllConversations(userId: number): Promise<Conversation[]> {
     const endpoint = `${this.baseUrl}/api/conversations/user/${userId}`;

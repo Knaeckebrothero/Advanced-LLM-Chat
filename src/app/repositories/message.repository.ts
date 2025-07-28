@@ -449,6 +449,78 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   }
 
   /**
+   * Rate a message (thumbs up or thumbs down)
+   */
+  async rateMessage(messageId: number, conversationId: string, rating: number): Promise<MessageWithSyncStatus> {
+    try {
+      // Update in backend
+      const updatedMessage = await this.apiService.rateMessage(messageId, conversationId, rating);
+      
+      // Convert to MessageWithSyncStatus
+      const messageWithSync: MessageWithSyncStatus = Object.assign(
+        Object.create(Object.getPrototypeOf(updatedMessage)),
+        updatedMessage,
+        { syncStatus: 'synced' as const }
+      );
+      
+      // Update in local database
+      await this.dbService.updateMessage(messageWithSync);
+      
+      // Update cache
+      if (this.conversationCaches.has(conversationId)) {
+        const cache = this.conversationCaches.get(conversationId)!;
+        const current = cache.getValue();
+        const index = current.findIndex(m => m.id === messageId);
+        if (index >= 0) {
+          current[index] = messageWithSync;
+          cache.next([...current]);
+        }
+      }
+      
+      return messageWithSync;
+    } catch (error) {
+      console.error('Failed to rate message:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Regenerate an AI message
+   */
+  async regenerateMessage(messageId: number, conversationId: string): Promise<MessageWithSyncStatus> {
+    try {
+      // Regenerate in backend
+      const regeneratedMessage = await this.apiService.regenerateMessage(messageId, conversationId);
+      
+      // Convert to MessageWithSyncStatus
+      const messageWithSync: MessageWithSyncStatus = Object.assign(
+        Object.create(Object.getPrototypeOf(regeneratedMessage)),
+        regeneratedMessage,
+        { syncStatus: 'synced' as const }
+      );
+      
+      // Update in local database
+      await this.dbService.updateMessage(messageWithSync);
+      
+      // Update cache
+      if (this.conversationCaches.has(conversationId)) {
+        const cache = this.conversationCaches.get(conversationId)!;
+        const current = cache.getValue();
+        const index = current.findIndex(m => m.id === messageId);
+        if (index >= 0) {
+          current[index] = messageWithSync;
+          cache.next([...current]);
+        }
+      }
+      
+      return messageWithSync;
+    } catch (error) {
+      console.error('Failed to regenerate message:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Check if backend is available
    */
   private async isOnline(): Promise<boolean> {
