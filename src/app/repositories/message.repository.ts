@@ -451,7 +451,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   /**
    * Rate a message (thumbs up or thumbs down)
    */
-  async rateMessage(messageId: number, conversationId: string, rating: number): Promise<MessageWithSyncStatus> {
+  async rateMessage(messageId: number, conversationId: string, rating: number | null): Promise<MessageWithSyncStatus> {
     try {
       // Update in backend
       const updatedMessage = await this.apiService.rateMessage(messageId, conversationId, rating);
