@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Union, Literal
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
@@ -282,7 +282,7 @@ class RateMessageRequest(BaseModel):
   """
   id: int
   conversationId: str  # UUID
-  rating: int  # 1 for thumbs up, 0 for thumbs down
+  rating: Optional[int] = Field(None, ge=0, le=1)  # 1 for thumbs up, 0 for thumbs down, None to remove rating
 
 
 class RegenerateMessageRequest(BaseModel):
@@ -2142,15 +2142,15 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
 async def rate_message(request_body: RateMessageRequest, response: Response,
                       current_user: dict = Depends(get_current_user)):
   """
-  Endpoint to rate a message (thumbs up or thumbs down).
+  Endpoint to rate a message (thumbs up or thumbs down) or remove rating.
   """
   crud_logger.info(f"Rate message called - User: {current_user['user_id']}, Message: {request_body.id}, Rating: {request_body.rating}")
   
   try:
-    # Validate rating value
-    if request_body.rating not in [0, 1]:
+    # Validate rating value (None is allowed to remove rating)
+    if request_body.rating is not None and request_body.rating not in [0, 1]:
       response.status_code = status.HTTP_400_BAD_REQUEST
-      return ErrorResponse(error="Rating must be 0 (thumbs down) or 1 (thumbs up)")
+      return ErrorResponse(error="Rating must be 0 (thumbs down), 1 (thumbs up), or null to remove rating")
     
     # Verify ownership
     if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
@@ -2201,7 +2201,8 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
         except:
           pass  # Use content as-is if not JSON
         
-        crud_logger.info(f"Message rated successfully - Message ID: {request_body.id}, Rating: {request_body.rating}")
+        rating_text = "removed" if request_body.rating is None else str(request_body.rating)
+        crud_logger.info(f"Message rated successfully - Message ID: {request_body.id}, Rating: {rating_text}")
         return MessageResponse(
           id=row['id'],
           conversationId=row['conversationId'],

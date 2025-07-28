@@ -536,16 +536,16 @@ export class ChatStateService implements OnDestroy {
   }
   
   /**
-   * Rate a message (thumbs up or thumbs down)
+   * Rate a message (thumbs up or thumbs down) or remove rating
    */
-  async rateMessage(message: Message, rating: number): Promise<void> {
+  async rateMessage(message: Message, rating: number | null): Promise<void> {
     if (!message.id || !message.conversationId) {
       throw new Error('Message ID and conversation ID are required');
     }
     
-    // Validate rating value
-    if (rating !== 0 && rating !== 1) {
-      throw new Error('Rating must be 0 (thumbs down) or 1 (thumbs up)');
+    // Validate rating value (null is allowed to remove rating)
+    if (rating !== null && rating !== 0 && rating !== 1) {
+      throw new Error('Rating must be 0 (thumbs down), 1 (thumbs up), or null to remove rating');
     }
     
     try {
@@ -560,7 +560,7 @@ export class ChatStateService implements OnDestroy {
       // the messages$ observable to emit the new value
       
       // Show success notification
-      const ratingText = rating === 1 ? 'liked' : 'disliked';
+      const ratingText = rating === null ? 'rating removed' : (rating === 1 ? 'liked' : 'disliked');
       this.notificationService.showSuccess(`Message ${ratingText}`);
     } catch (error) {
       console.error('Error rating message:', error);

@@ -342,14 +342,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   // Method to rate a message
   rateMessage(message: Message, rating: number | null) {
-    // If rating is null, we're removing the rating
-    if (rating === null) {
-      // For now, we don't have an "unrate" endpoint, so we'll skip this
-      console.log('Removing rating not yet implemented');
-      return;
-    }
-    
-    // Call the ChatStateService to rate the message
+    // Call the ChatStateService to rate the message (handles null for rating removal)
     this.chatState.rateMessage(message, rating);
   }
 

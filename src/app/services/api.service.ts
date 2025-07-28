@@ -337,7 +337,7 @@ export class ApiService {
   }
 
   // Rate a message (thumbs up or thumbs down)
-  async rateMessage(messageId: number, conversationId: string, rating: number): Promise<Message> {
+  async rateMessage(messageId: number, conversationId: string, rating: number | null): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/rate`;
     const body = {
       id: messageId,
