@@ -123,15 +123,9 @@ export class ChatUiMessageComponent {
     this.editing = true;
   }
 
-  // Regenerate message button
+  // Delete message button
   deleteMessage() {
     this.chatUI.deleteMessage(this.message.id!);
-  }
-
-  // Insert message above and regenerate button
-  insertMessageAbove() {
-    console.log('Inserting message above:', this.message.id);
-    //this.chatUI.inputSystemMessage(this.message.id!);
   }
 
   /*
