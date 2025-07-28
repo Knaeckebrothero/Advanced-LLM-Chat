@@ -28,6 +28,13 @@ from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timedelta, UTC
 
 
+# Default settings for LLM generation
+DEFAULT_MODEL = "openai/gpt-4o"
+DEFAULT_TEMPERATURE = 0.5
+DEFAULT_TOP_P = 0.5
+DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant!"
+
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -2236,8 +2243,10 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
   try:
     # Verify ownership
     if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
-      response.status_code = status.HTTP_403_FORBIDDEN
-      return ErrorResponse(error="Access denied to this conversation")
+      raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied to this conversation"
+      )
     
     with get_db() as conn:
       cur = conn.cursor()
@@ -2245,7 +2254,7 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
       # Get the message to regenerate
       cur.execute(
         """
-        SELECT id, conversationId, roleName, time
+        SELECT id, conversationId, roleName, time, version
         FROM messages
         WHERE id = ? AND conversationId = ?
         """,
@@ -2254,13 +2263,17 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
       
       message_row = cur.fetchone()
       if not message_row:
-        response.status_code = status.HTTP_404_NOT_FOUND
-        return ErrorResponse(error="Message not found")
+        raise HTTPException(
+          status_code=status.HTTP_404_NOT_FOUND,
+          detail="Message not found"
+        )
       
       # Verify it's an AI message
       if message_row['roleName'] == 'user':
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return ErrorResponse(error="Can only regenerate AI messages")
+        raise HTTPException(
+          status_code=status.HTTP_400_BAD_REQUEST,
+          detail="Can only regenerate AI messages"
+        )
       
       # Get all messages before this one
       cur.execute(
@@ -2290,17 +2303,25 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
       )
       settings_row = cur.fetchone()
       
+      # Build prompt from context messages
+      prompt_lines = []
+      for msg in context_messages:
+        role = "User" if msg['role'] == 'user' else "Assistant"
+        prompt_lines.append(f"{role}: {msg['content']}")
+      prompt_lines.append("Assistant:")
+      prompt = "\n".join(prompt_lines)
+      
       # Generate new AI response
       ai_response_content = await generate_llm_response(
-        context_messages,
-        settings_row['model'] if settings_row else DEFAULT_MODEL,
+        prompt,
         settings_row['temperature'] if settings_row else DEFAULT_TEMPERATURE,
         settings_row['top_p'] if settings_row else DEFAULT_TOP_P,
-        settings_row['systemPrompt'] if settings_row else DEFAULT_SYSTEM_PROMPT
+        settings_row['systemPrompt'] if settings_row else DEFAULT_SYSTEM_PROMPT,
+        settings_row['model'] if settings_row else DEFAULT_MODEL
       )
       
       # Update the message with new content
-      new_version = (message_row.get('version', 1) or 1) + 1
+      new_version = (message_row['version'] if message_row['version'] else 1) + 1
       current_time = int(time.time())
       
       cur.execute(
@@ -2343,8 +2364,10 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
   
   except Exception as e:
     crud_logger.error(f"Error regenerating message: {str(e)}", exc_info=True)
-    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    return ErrorResponse(error=f"Failed to regenerate message: {str(e)}")
+    raise HTTPException(
+      status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+      detail=f"Failed to regenerate message: {str(e)}"
+    )
 
 
 @app.post("/api/message/send-and-generate",
