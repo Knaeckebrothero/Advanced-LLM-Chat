@@ -55,6 +55,11 @@
           <mat-icon>thumb_down</mat-icon>
         </button>
         <button mat-icon-button
+                (click)="copyMessage()"
+                aria-label="Copy message">
+          <mat-icon>content_copy</mat-icon>
+        </button>
+        <button mat-icon-button
                 (click)="deleteMessage()"
                 aria-label="Delete message">
           <mat-icon>delete</mat-icon>
