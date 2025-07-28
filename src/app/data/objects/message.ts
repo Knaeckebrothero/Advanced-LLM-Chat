@@ -27,6 +27,7 @@ interface MessageMetadata {
   time: Date;  // Time the message was sent (in Date format)
   version?: number;  // Version number for optimistic locking
   lastModified?: number;  // Unix timestamp of last modification
+  rating?: number | null;  // Rating: 1 for thumbs up, 0 for thumbs down, null/undefined for unrated
 }
 
 /**
@@ -87,6 +88,7 @@ export class Message<T extends MessageContent = MessageContent> {
   get type() { return this.content.type; }
   get version() { return this.metadata.version || 1; }
   get lastModified() { return this.metadata.lastModified || Math.floor(this.time.getTime() / 1000); }
+  get rating() { return this.metadata.rating; }
 
   // Setters for metadata (maintaining compatibility with existing code)
   set id(newId: number) { this.metadata.id = newId; }
@@ -95,6 +97,7 @@ export class Message<T extends MessageContent = MessageContent> {
   set time(newTime: Date) { this.metadata.time = newTime; }
   set version(newVersion: number) { this.metadata.version = newVersion; }
   set lastModified(newLastModified: number) { this.metadata.lastModified = newLastModified; }
+  set rating(newRating: number | null | undefined) { this.metadata.rating = newRating; }
 
   // Factory method for creating text messages
   static createText(
@@ -139,7 +142,8 @@ export class Message<T extends MessageContent = MessageContent> {
       roleName: data.roleName,
       time: new Date(data.time * 1000),
       version: data.version || 1,
-      lastModified: data.lastModified || data.time
+      lastModified: data.lastModified || data.time,
+      rating: data.rating !== undefined ? data.rating : null
     };
 
     // Determine message type based on data
@@ -353,6 +357,7 @@ export class Message<T extends MessageContent = MessageContent> {
       time: this.time.toISOString(), // Store as ISO string for consistent serialization
       version: this.version,
       lastModified: this.lastModified,
+      rating: this.rating,
       content: this.content
     };
   }
@@ -365,7 +370,8 @@ export class Message<T extends MessageContent = MessageContent> {
       roleName: data.roleName,
       time: new Date(data.time),
       version: data.version || 1,
-      lastModified: data.lastModified || Math.floor(new Date(data.time).getTime() / 1000)
+      lastModified: data.lastModified || Math.floor(new Date(data.time).getTime() / 1000),
+      rating: data.rating !== undefined ? data.rating : null
     };
 
     // Handle different content types

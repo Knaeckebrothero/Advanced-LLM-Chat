@@ -232,6 +232,7 @@ class MessageResponse(BaseModel):
   type: Optional[str] = "text"  # Default to "text" for backwards compatibility
   version: int = 1
   lastModified: Optional[int] = None
+  rating: Optional[int] = None  # 1 for thumbs up, 0 for thumbs down, None for unrated
 
 class SendAndGenerateResponse(BaseModel):
   """
@@ -266,6 +267,23 @@ class Conversation(BaseModel):
 class ConversationCreateRequest(BaseModel):
   name: str
   participants: List[str]
+
+
+class RateMessageRequest(BaseModel):
+  """
+  Request body for rating a message.
+  """
+  id: int
+  conversationId: str  # UUID
+  rating: int  # 1 for thumbs up, 0 for thumbs down
+
+
+class RegenerateMessageRequest(BaseModel):
+  """
+  Request body for regenerating a message.
+  """
+  id: int
+  conversationId: str  # UUID
 
 
 class AppSettings(BaseModel):
@@ -794,6 +812,13 @@ def init_db():
     if 'updated_at' not in columns:
       print("Adding updated_at column to user_settings table...")
       cur.execute("ALTER TABLE user_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+    # Add rating column to messages table if it doesn't exist
+    cur.execute("PRAGMA table_info(messages)")
+    columns = [column[1] for column in cur.fetchall()]
+    if 'rating' not in columns:
+      print("Adding rating column to messages table...")
+      cur.execute("ALTER TABLE messages ADD COLUMN rating INTEGER")
 
     # Create trigger to update conversations timestamp
     cur.execute('''
@@ -1680,7 +1705,7 @@ async def get_conversation_messages(
         # Incremental sync: get messages newer than after_timestamp
         cur.execute(
           """
-          SELECT id, conversationId, roleName, content, time, type, version, lastModified
+          SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
           FROM messages
           WHERE conversationId = ? AND time > ?
           ORDER BY time ASC
@@ -1691,7 +1716,7 @@ async def get_conversation_messages(
         # Normal pagination: get messages before timestamp
         cur.execute(
           """
-          SELECT id, conversationId, roleName, content, time, type, version, lastModified
+          SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
           FROM messages
           WHERE conversationId = ? AND time < ?
           ORDER BY time DESC LIMIT ?
@@ -2005,7 +2030,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
       # Fetch the updated message to return
       cur.execute(
         """
-        SELECT id, conversationId, roleName, content, time, type, version, lastModified
+        SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
         FROM messages
         WHERE id = ? AND conversationId = ?
         """,
@@ -2036,7 +2061,8 @@ async def patch_message(request_body: MessagePatch, response: Response,
           time=updated_row['time'],
           type=message_type,
           version=updated_row['version'],
-          lastModified=updated_row['lastModified']
+          lastModified=updated_row['lastModified'],
+          rating=updated_row['rating']
         )
 
     return None
@@ -2094,6 +2120,231 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
     crud_logger.error(f"Error deleting message: {str(e)}", exc_info=True)
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     return ErrorResponse(error=f"Failed to delete message: {str(e)}. Please check your connection and try again.")
+
+
+@app.post("/api/message/rate",
+          response_model=MessageResponse,
+          status_code=status.HTTP_200_OK,
+          responses={
+            status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Invalid request"},
+            status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+            status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Message not found"},
+            status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
+          },
+          tags=["Message"])
+async def rate_message(request_body: RateMessageRequest, response: Response,
+                      current_user: dict = Depends(get_current_user)):
+  """
+  Endpoint to rate a message (thumbs up or thumbs down).
+  """
+  crud_logger.info(f"Rate message called - User: {current_user['user_id']}, Message: {request_body.id}, Rating: {request_body.rating}")
+  
+  try:
+    # Validate rating value
+    if request_body.rating not in [0, 1]:
+      response.status_code = status.HTTP_400_BAD_REQUEST
+      return ErrorResponse(error="Rating must be 0 (thumbs down) or 1 (thumbs up)")
+    
+    # Verify ownership
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+      response.status_code = status.HTTP_403_FORBIDDEN
+      return ErrorResponse(error="Access denied to this conversation")
+    
+    with get_db() as conn:
+      cur = conn.cursor()
+      
+      # Update the rating
+      cur.execute(
+        """
+        UPDATE messages 
+        SET rating = ?
+        WHERE id = ? AND conversationId = ?
+        """,
+        (request_body.rating, request_body.id, request_body.conversationId)
+      )
+      
+      if cur.rowcount == 0:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return ErrorResponse(error="Message not found")
+      
+      conn.commit()
+      
+      # Fetch the updated message
+      cur.execute(
+        """
+        SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
+        FROM messages
+        WHERE id = ? AND conversationId = ?
+        """,
+        (request_body.id, request_body.conversationId)
+      )
+      
+      row = cur.fetchone()
+      if row:
+        # Parse content based on type
+        message_type = row['type'] or 'text'
+        content = row['content']
+        
+        # Try to parse JSON content for complex types
+        try:
+          if message_type == 'text' and content.startswith('{'):
+            content_obj = json.loads(content)
+            if 'content' in content_obj:
+              content = content_obj['content']
+        except:
+          pass  # Use content as-is if not JSON
+        
+        crud_logger.info(f"Message rated successfully - Message ID: {request_body.id}, Rating: {request_body.rating}")
+        return MessageResponse(
+          id=row['id'],
+          conversationId=row['conversationId'],
+          roleName=row['roleName'],
+          content=content,
+          time=row['time'],
+          type=message_type,
+          version=row['version'],
+          lastModified=row['lastModified'],
+          rating=row['rating']
+        )
+    
+    return None
+  
+  except Exception as e:
+    crud_logger.error(f"Error rating message: {str(e)}", exc_info=True)
+    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    return ErrorResponse(error=f"Failed to rate message: {str(e)}")
+
+
+@app.post("/api/message/regenerate",
+          response_model=MessageResponse,
+          status_code=status.HTTP_200_OK,
+          responses={
+            status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Invalid request"},
+            status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+            status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Message not found"},
+            status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
+          },
+          tags=["Message"],
+          dependencies=[Depends(rate_limit_guest)])
+async def regenerate_message(request_body: RegenerateMessageRequest, response: Response,
+                           current_user: dict = Depends(get_current_user)):
+  """
+  Endpoint to regenerate an AI message using the conversation history up to that point.
+  """
+  crud_logger.info(f"Regenerate message called - User: {current_user['user_id']}, Message: {request_body.id}")
+  
+  try:
+    # Verify ownership
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+      response.status_code = status.HTTP_403_FORBIDDEN
+      return ErrorResponse(error="Access denied to this conversation")
+    
+    with get_db() as conn:
+      cur = conn.cursor()
+      
+      # Get the message to regenerate
+      cur.execute(
+        """
+        SELECT id, conversationId, roleName, time
+        FROM messages
+        WHERE id = ? AND conversationId = ?
+        """,
+        (request_body.id, request_body.conversationId)
+      )
+      
+      message_row = cur.fetchone()
+      if not message_row:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return ErrorResponse(error="Message not found")
+      
+      # Verify it's an AI message
+      if message_row['roleName'] == 'user':
+        response.status_code = status.HTTP_400_BAD_REQUEST
+        return ErrorResponse(error="Can only regenerate AI messages")
+      
+      # Get all messages before this one
+      cur.execute(
+        """
+        SELECT roleName, content, time
+        FROM messages
+        WHERE conversationId = ? AND time < ?
+        ORDER BY time ASC
+        """,
+        (request_body.conversationId, message_row['time'])
+      )
+      
+      previous_messages = cur.fetchall()
+      
+      # Build conversation context
+      context_messages = []
+      for msg in previous_messages:
+        context_messages.append({
+          "role": "user" if msg['roleName'] == 'user' else "assistant",
+          "content": msg['content']
+        })
+      
+      # Get user settings for generation
+      cur.execute(
+        "SELECT * FROM user_settings WHERE user_id = ?",
+        (current_user['user_id'],)
+      )
+      settings_row = cur.fetchone()
+      
+      # Generate new AI response
+      ai_response_content = await generate_llm_response(
+        context_messages,
+        settings_row['model'] if settings_row else DEFAULT_MODEL,
+        settings_row['temperature'] if settings_row else DEFAULT_TEMPERATURE,
+        settings_row['top_p'] if settings_row else DEFAULT_TOP_P,
+        settings_row['systemPrompt'] if settings_row else DEFAULT_SYSTEM_PROMPT
+      )
+      
+      # Update the message with new content
+      new_version = (message_row.get('version', 1) or 1) + 1
+      current_time = int(time.time())
+      
+      cur.execute(
+        """
+        UPDATE messages 
+        SET content = ?, version = ?, lastModified = ?
+        WHERE id = ? AND conversationId = ?
+        """,
+        (ai_response_content, new_version, current_time, request_body.id, request_body.conversationId)
+      )
+      
+      conn.commit()
+      
+      # Fetch and return the updated message
+      cur.execute(
+        """
+        SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
+        FROM messages
+        WHERE id = ? AND conversationId = ?
+        """,
+        (request_body.id, request_body.conversationId)
+      )
+      
+      row = cur.fetchone()
+      if row:
+        crud_logger.info(f"Message regenerated successfully - Message ID: {request_body.id}")
+        return MessageResponse(
+          id=row['id'],
+          conversationId=row['conversationId'],
+          roleName=row['roleName'],
+          content=row['content'],
+          time=row['time'],
+          type=row['type'] or 'text',
+          version=row['version'],
+          lastModified=row['lastModified'],
+          rating=row['rating']
+        )
+    
+    return None
+  
+  except Exception as e:
+    crud_logger.error(f"Error regenerating message: {str(e)}", exc_info=True)
+    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    return ErrorResponse(error=f"Failed to regenerate message: {str(e)}")
 
 
 @app.post("/api/message/send-and-generate",

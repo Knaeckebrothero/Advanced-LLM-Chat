@@ -32,6 +32,28 @@
                 aria-label="Edit message">
           <mat-icon>edit</mat-icon>
         </button>
+        <!-- Regenerate button - only for AI messages that are the last AI message -->
+        <button *ngIf="canRegenerate"
+                mat-icon-button
+                (click)="regenerateMessage()"
+                aria-label="Regenerate message">
+          <mat-icon>refresh</mat-icon>
+        </button>
+        <!-- Rating buttons - only for AI messages -->
+        <button *ngIf="message.roleName !== 'user'"
+                mat-icon-button
+                [class.active-rating]="message.rating === 1"
+                (click)="rateMessage(1)"
+                aria-label="Thumbs up">
+          <mat-icon>thumb_up</mat-icon>
+        </button>
+        <button *ngIf="message.roleName !== 'user'"
+                mat-icon-button
+                [class.active-rating]="message.rating === 0"
+                (click)="rateMessage(0)"
+                aria-label="Thumbs down">
+          <mat-icon>thumb_down</mat-icon>
+        </button>
         <button mat-icon-button
                 (click)="insertMessageAbove()"
                 aria-label="Insert message">
