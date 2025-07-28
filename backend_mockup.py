@@ -28,10 +28,23 @@ from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timedelta, UTC
 
 
-# Configure logging for security events
-logging.basicConfig(level=logging.INFO)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Main application logger
+logger = logging.getLogger(__name__)
+
+# Security logger with separate handler
 security_logger = logging.getLogger("security")
 security_logger.setLevel(logging.WARNING)
+
+# CRUD operations logger
+crud_logger = logging.getLogger("crud")
+crud_logger.setLevel(logging.INFO)
 
 # Create a file handler for security events
 security_log_path = os.path.join(os.getenv('DB_DIR', '.'), 'security.log')
@@ -40,6 +53,14 @@ security_handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ))
 security_logger.addHandler(security_handler)
+
+# Create a file handler for CRUD operations
+crud_log_path = os.path.join(os.getenv('DB_DIR', '.'), 'crud_operations.log')
+crud_handler = logging.FileHandler(crud_log_path)
+crud_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'
+))
+crud_logger.addHandler(crud_handler)
 
 def log_security_event(event_type: str, details: dict, request: Request = None):
     """
@@ -1334,6 +1355,15 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
   return {"user": user_data}
 
 
+# Handle OPTIONS requests for all endpoints (CORS preflight)
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    """
+    Handle CORS preflight requests for all endpoints.
+    """
+    return Response(status_code=status.HTTP_200_OK)
+
+
 # API endpoints with authentication
 @app.get("/api/conversations",
          response_model=List[ConversationResponse],
@@ -1738,7 +1768,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
   """
   Endpoint for a user to send a message.
   """
-  print("Message send called")
+  crud_logger.info(f"Message send called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
 
   try:
     if not request_body.content:
@@ -1791,12 +1821,13 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       )
       conn.commit()
 
+    crud_logger.info(f"Message sent successfully - Message ID: {message_id}")
     return {"id": message_id}
 
   except Exception as e:
-    print(f"Error: {str(e)}")
+    crud_logger.error(f"Error sending message: {str(e)}", exc_info=True)
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    return ErrorResponse(error=str(e))
+    return ErrorResponse(error=f"Failed to send message: {str(e)}. Please try again later.")
 
 
 @app.post("/api/message/generate",
@@ -1814,7 +1845,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
   """
   Endpoint to generate an AI response for a conversation.
   """
-  print("Generate message called")
+  crud_logger.info(f"Generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
 
   try:
     # Verify ownership
@@ -1903,11 +1934,13 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
 
 
 @app.patch("/api/message/patch",
-           status_code=status.HTTP_204_NO_CONTENT,
+           response_model=MessageResponse,
+           status_code=status.HTTP_200_OK,
            responses={
              status.HTTP_400_BAD_REQUEST: {"description": "Message ID missing or invalid request"},
              status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
              status.HTTP_404_NOT_FOUND: {"description": "Message not found"},
+             status.HTTP_409_CONFLICT: {"model": ErrorResponse, "description": "Version conflict"},
              status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
            },
            tags=["Message"])
@@ -1916,7 +1949,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
   """
   Endpoint to update the content of an existing message.
   """
-  print("Patch message called")
+  crud_logger.info(f"Patch message called - User: {current_user['user_id']}, Message: {request_body.id}, Conversation: {request_body.conversationId}")
 
   try:
     if not request_body.id:
@@ -1968,13 +2001,50 @@ async def patch_message(request_body: MessagePatch, response: Response,
       if cur.rowcount == 0:
         response.status_code = status.HTTP_409_CONFLICT
         return ErrorResponse(error="Version conflict during update")
+      
+      # Fetch the updated message to return
+      cur.execute(
+        """
+        SELECT id, conversationId, roleName, content, time, type, version, lastModified
+        FROM messages
+        WHERE id = ? AND conversationId = ?
+        """,
+        (request_body.id, request_body.conversationId)
+      )
+      updated_row = cur.fetchone()
+      
+      if updated_row:
+        # Parse content based on type
+        message_type = updated_row['type'] or 'text'
+        content = updated_row['content']
+        
+        # Try to parse JSON content for complex types
+        try:
+          if message_type == 'text' and content.startswith('{'):
+            content_obj = json.loads(content)
+            if 'content' in content_obj:
+              content = content_obj['content']
+        except:
+          pass  # Use content as-is if not JSON
+        
+        crud_logger.info(f"Message patched successfully - Message ID: {request_body.id}, New version: {new_version}")
+        return MessageResponse(
+          id=updated_row['id'],
+          conversationId=updated_row['conversationId'],
+          roleName=updated_row['roleName'],
+          content=content,
+          time=updated_row['time'],
+          type=message_type,
+          version=updated_row['version'],
+          lastModified=updated_row['lastModified']
+        )
 
     return None
 
   except Exception as e:
-    print(f"Error: {str(e)}")
+    crud_logger.error(f"Error patching message: {str(e)}", exc_info=True)
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    return ErrorResponse(error=str(e))
+    return ErrorResponse(error=f"Failed to update message: {str(e)}. Please refresh and try again.")
 
 
 @app.delete("/api/message/delete/{conversation_id}/{message_id}",
@@ -1991,7 +2061,7 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
   """
   Endpoint to delete a specific message.
   """
-  print("Delete message called")
+  crud_logger.info(f"Delete message called - User: {current_user['user_id']}, Message: {message_id}, Conversation: {conversation_id}")
 
   try:
     if not conversation_id or not message_id:
@@ -2013,15 +2083,17 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
       conn.commit()
 
       if cur.rowcount == 0:
+        crud_logger.warning(f"Message not found for deletion - Message ID: {message_id}")
         response.status_code = status.HTTP_404_NOT_FOUND
         return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
 
+    crud_logger.info(f"Message deleted successfully - Message ID: {message_id}")
     return None
 
   except Exception as e:
-    print(f"Error: {str(e)}")
+    crud_logger.error(f"Error deleting message: {str(e)}", exc_info=True)
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    return ErrorResponse(error=str(e))
+    return ErrorResponse(error=f"Failed to delete message: {str(e)}. Please check your connection and try again.")
 
 
 @app.post("/api/message/send-and-generate",
@@ -2043,7 +2115,7 @@ async def send_and_generate_message(
   Combined endpoint to send a user message and optionally generate an AI response.
   This reduces the number of API calls and ensures atomic operations.
   """
-  print("Send and generate message called")
+  crud_logger.info(f"Send and generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}, Generate: {request_body.generateResponse}")
   
   try:
     # Verify ownership
@@ -2268,10 +2340,42 @@ app.add_middleware(
   CORSMiddleware,
   allow_origins=origins,
   allow_credentials=True,
-  allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-Requested-With", "Accept", "Origin"],
   expose_headers=["X-CSRF-Token", "X-Has-More-Messages", "Content-Type", "Authorization", "X-CSP-Nonce"]
 )
+
+
+@app.middleware("http")
+async def logging_middleware(request: Request, call_next):
+  """
+  Middleware to log HTTP requests and responses for CRUD operations.
+  """
+  # Skip logging for OPTIONS requests and non-CRUD endpoints
+  if request.method == "OPTIONS" or (not request.url.path.startswith("/api/message") and not request.url.path.startswith("/api/conversation")):
+    return await call_next(request)
+  
+  # Log request
+  start_time = time.time()
+  
+  # Log request body size for POST/PATCH/PUT
+  body_size = 0
+  if request.method in ["POST", "PATCH", "PUT"]:
+    # Don't read the body here as it interferes with the request processing
+    # Just get the content-length header if available
+    body_size = int(request.headers.get("content-length", 0))
+  
+  # Log request details
+  crud_logger.info(f"Request: {request.method} {request.url.path} - Body size: {body_size} bytes")
+  
+  # Process request
+  response = await call_next(request)
+  
+  # Log response
+  duration = time.time() - start_time
+  crud_logger.info(f"Response: {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.3f}s")
+  
+  return response
 
 
 @app.middleware("http")

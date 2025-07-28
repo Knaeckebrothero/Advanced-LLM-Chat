@@ -162,8 +162,11 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       if (await this.isOnline()) {
         try {
           await this.apiService.deleteMessage(conversationId, numId);
-        } catch (error) {
-          console.error('Failed to sync message deletion:', error);
+        } catch (error: any) {
+          // Don't log 404 errors - message might already be deleted on backend
+          if (error.status !== 404) {
+            console.error('Failed to sync message deletion:', error);
+          }
         }
       }
     } catch (error) {
