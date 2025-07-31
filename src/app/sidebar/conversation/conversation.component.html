@@ -2,7 +2,10 @@
   <button class="conversation-button" 
           [class.active]="highlighted" 
           (click)="onSelect()"
-          (contextmenu)="onRightClick($event)">
+          (mousedown)="onPressStart($event)"
+          (mouseup)="onPressEnd()"
+          (touchstart)="onPressStart($event)"
+          (touchend)="onPressEnd()">
     <div class="conversation-content">
       <span *ngIf="!editing">{{ conversation.name }}</span>
       <input *ngIf="editing"

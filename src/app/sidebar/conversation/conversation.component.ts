@@ -1,11 +1,11 @@
-import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, ViewChild, OnDestroy } from '@angular/core';
 import { Conversation } from '../../data/objects/conversation';
 import { Message } from '../../data/objects/message';
 import { CommonModule } from '@angular/common';
 import { ChatStateService } from "../../services/chat-state.service";
 import { FormsModule } from "@angular/forms";
 import { firstValueFrom } from 'rxjs';
-import { MatMenuModule } from '@angular/material/menu';
+import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 
@@ -17,20 +17,27 @@ import { MatButtonModule } from '@angular/material/button';
   templateUrl: './conversation.component.html',
   styleUrls: ['./conversation.component.scss']
 })
-export class ConversationComponent implements OnInit {
+export class ConversationComponent implements OnInit, OnDestroy {
   @Input() conversation!: Conversation;
   @Input() highlighted: boolean = false; // Added Input
   @Output() selected = new EventEmitter<Conversation>();
   @Output() delete = new EventEmitter<string>();
+  @ViewChild(MatMenuTrigger) menuTrigger!: MatMenuTrigger;
 
   messages: Message[] = [];
   editing = false;
   newName = '';
+  private longPressTimer: any;
+  private longPressTriggered = false;
 
   constructor(private chatState: ChatStateService) {}
 
   onSelect(): void {
-    this.selected.emit(this.conversation);
+    // Don't select if long press was triggered
+    if (!this.longPressTriggered) {
+      this.selected.emit(this.conversation);
+    }
+    this.longPressTriggered = false;
   }
 
   onDelete(event: MouseEvent): void {
@@ -50,17 +57,6 @@ export class ConversationComponent implements OnInit {
     this.selected.emit(this.conversation);
   }
 
-  /**
-   * Handles the right-click event by preventing the default context menu
-   * and initiating the editing process.
-   *
-   * @param {Event} event - The event object associated with the right-click action.
-   * @return {void} This method does not return a value.
-   */
-  onRightClick(event: Event): void {
-    event.preventDefault();
-    this.startEditing();
-  }
 
   startEditing(): void {
     this.editing = true;
@@ -73,6 +69,31 @@ export class ConversationComponent implements OnInit {
 
   onRename(): void {
     this.startEditing();
+  }
+
+  onLongPress(): void {
+    // Open the dropdown menu programmatically on long press (mobile)
+    if (this.menuTrigger) {
+      this.longPressTriggered = true;
+      this.menuTrigger.openMenu();
+    }
+  }
+
+  onPressStart(event: MouseEvent | TouchEvent): void {
+    // Only handle long press on mobile (screen width < 768px)
+    if (window.innerWidth < 768) {
+      event.preventDefault();
+      this.longPressTimer = setTimeout(() => {
+        this.onLongPress();
+      }, 500); // 500ms for long press
+    }
+  }
+
+  onPressEnd(): void {
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
   }
 
   async finishEditing(): Promise<void> {
@@ -98,6 +119,13 @@ export class ConversationComponent implements OnInit {
   async deleteConversation(): Promise<void> {
     if (confirm('Delete this conversation?')) {
       await this.chatState.deleteConversation(this.conversation.id);
+    }
+  }
+
+  ngOnDestroy(): void {
+    // Clean up any pending timers
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
     }
   }
 }

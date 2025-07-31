@@ -84,6 +84,11 @@ button.delete-button {
   mat-icon {
     color: var(--theme-text);
   }
+  
+  // Hide options button on mobile devices
+  @media (max-width: 767px) {
+    display: none !important;
+  }
 }
 
 .conversation-content {
