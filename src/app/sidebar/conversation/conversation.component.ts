@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, ViewChild, OnDestroy } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, ViewChild, OnDestroy, ElementRef } from '@angular/core';
 import { Conversation } from '../../data/objects/conversation';
 import { Message } from '../../data/objects/message';
 import { CommonModule } from '@angular/common';
@@ -23,6 +23,7 @@ export class ConversationComponent implements OnInit, OnDestroy {
   @Output() selected = new EventEmitter<Conversation>();
   @Output() delete = new EventEmitter<string>();
   @ViewChild(MatMenuTrigger) menuTrigger!: MatMenuTrigger;
+  @ViewChild('editInput') editInput?: ElementRef<HTMLInputElement>;
 
   messages: Message[] = [];
   editing = false;
@@ -61,6 +62,14 @@ export class ConversationComponent implements OnInit, OnDestroy {
   startEditing(): void {
     this.editing = true;
     this.newName = this.conversation.name;
+    
+    // Auto-focus the input field after DOM updates
+    setTimeout(() => {
+      if (this.editInput) {
+        this.editInput.nativeElement.focus();
+        this.editInput.nativeElement.select(); // Select all text for easy replacement
+      }
+    }, 50);
   }
 
   onMenuClick(event: MouseEvent): void {
@@ -82,7 +91,6 @@ export class ConversationComponent implements OnInit, OnDestroy {
   onPressStart(event: MouseEvent | TouchEvent): void {
     // Only handle long press on mobile (screen width < 768px)
     if (window.innerWidth < 768) {
-      event.preventDefault();
       this.longPressTimer = setTimeout(() => {
         this.onLongPress();
       }, 500); // 500ms for long press
