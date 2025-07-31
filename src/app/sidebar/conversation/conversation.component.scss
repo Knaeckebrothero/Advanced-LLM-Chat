@@ -85,9 +85,11 @@ button.delete-button {
     color: var(--theme-text);
   }
   
-  // Hide options button on mobile devices
+  // Hide options button on mobile devices but keep it as anchor
   @media (max-width: 767px) {
-    display: none !important;
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0 !important; // Ensure it's not visible even on hover
   }
 }
 

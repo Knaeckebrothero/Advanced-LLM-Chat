@@ -9,6 +9,7 @@
     <div class="conversation-content">
       <span *ngIf="!editing">{{ conversation.name }}</span>
       <input *ngIf="editing"
+             #editInput
              class="edit-input"
              [(ngModel)]="newName"
              (blur)="finishEditing()"
