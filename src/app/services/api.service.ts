@@ -441,6 +441,34 @@ export class ApiService {
     }
   }
 
+  // Update conversation name
+  async updateConversationName(id: string, name: string): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/${id}`;
+    const body = { name };
+    try {
+      const responseData = await lastValueFrom(
+        this.http.patch<any>(endpoint, body, this.getHttpOptions())
+      );
+      return Conversation.fromApiResponse(responseData);
+    } catch (error) {
+      console.error('Error updating conversation:', error);
+      throw error;
+    }
+  }
+
+  // Delete conversation
+  async deleteConversation(id: string): Promise<void> {
+    const endpoint = `${this.baseUrl}/api/conversation/${id}`;
+    try {
+      await lastValueFrom(
+        this.http.delete(endpoint, this.getHttpOptions())
+      );
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+      throw error;
+    }
+  }
+
   // TODO: Implement update conversation
   async updateConversation(conversation: Conversation): Promise<void> {
     const endpoint = `${this.baseUrl}/api/conversation/update`;
@@ -457,20 +485,6 @@ export class ApiService {
       );
     } catch (error) {
       console.error('Error updating conversation:', error);
-      throw error;
-    }
-  }
-
-  // TODO: Implement delete conversation
-  async deleteConversation(conversationId: string | number): Promise<void> {
-    const endpoint = `${this.baseUrl}/api/conversation/delete/${conversationId}`;
-
-    try {
-      await lastValueFrom(
-        this.http.delete(endpoint, this.getHttpOptions())
-      );
-    } catch (error) {
-      console.error('Error deleting conversation:', error);
       throw error;
     }
   }

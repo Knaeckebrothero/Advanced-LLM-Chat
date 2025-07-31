@@ -60,9 +60,35 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     }
   }
 
+  async updateConversation(id: string, name: string): Promise<Conversation> {
+    try {
+      // Call API to update conversation on backend
+      const updatedConversation = await this.apiService.updateConversationName(id, name);
+      
+      // Update local database
+      await this.dbService.updateConversation(updatedConversation);
+      
+      // Update cache
+      const conversations = this.cache$.getValue();
+      const index = conversations.findIndex(c => c.id === id);
+      if (index >= 0) {
+        conversations[index] = updatedConversation;
+        this.updateCache([...conversations]);
+      }
+      
+      return updatedConversation;
+    } catch (error) {
+      console.error('Failed to update conversation:', error);
+      throw error;
+    }
+  }
+
   async delete(id: string): Promise<void> {
     try {
-      // Use transactional delete to remove conversation and all messages atomically
+      // Call API to delete conversation on backend
+      await this.apiService.deleteConversation(id);
+      
+      // Use transactional delete to remove conversation and all messages atomically from local DB
       await this.dbService.deleteConversationWithMessages(id);
       
       const conversations = this.cache$.getValue();
