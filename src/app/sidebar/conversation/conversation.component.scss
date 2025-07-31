@@ -3,6 +3,12 @@
   align-items: center;
   margin-bottom: 4px; // Reduced margin for a tighter list
   position: relative;
+  
+  &:hover {
+    .options-button {
+      opacity: 1;
+    }
+  }
 }
 
 button.conversation-button {
@@ -64,5 +70,39 @@ button.delete-button {
   .delete-icon {
     font-size: 18px;
     font-weight: bold;
+  }
+}
+
+.options-button {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  
+  mat-icon {
+    color: var(--theme-text);
+  }
+}
+
+.conversation-content {
+  width: 100%;
+  text-align: left;
+  
+  .edit-input {
+    width: 100%;
+    background-color: var(--theme-input-bg);
+    color: var(--theme-text);
+    border: 1px solid var(--theme-primary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 14px;
+    outline: none;
+    
+    &:focus {
+      border-color: var(--theme-primary);
+      box-shadow: 0 0 0 1px var(--theme-primary);
+    }
   }
 }

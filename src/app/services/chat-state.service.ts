@@ -571,52 +571,16 @@ export class ChatStateService implements OnDestroy {
   }
   
   /**
-   * Update conversation (e.g., rename) with conflict resolution
+   * Update conversation (e.g., rename)
    */
-  async updateConversation(conversation: Conversation, maxRetries: number = 3): Promise<void> {
-    conversation.updatedAt = new Date();
-    
-    let retryCount = 0;
-    let success = false;
-    
-    while (retryCount < maxRetries && !success) {
-      try {
-        await this.conversationRepository.save(conversation);
-        success = true;
-        
-        // Show success notification if we had retries
-        if (retryCount > 0) {
-          this.notificationService.showSuccess('Conversation updated successfully after resolving conflicts');
-        }
-      } catch (error: any) {
-        if (error.status === 409) {
-          // Version conflict - refresh and retry
-          console.warn(`Version conflict for conversation ${conversation.id}, retrying...`);
-          retryCount++;
-          
-          if (retryCount < maxRetries) {
-            this.notificationService.showWarning(
-              `Version conflict detected. Refreshing and retrying... (Attempt ${retryCount}/${maxRetries})`
-            );
-            
-            // Sync to get latest version
-            await this.syncEngine.syncConversation(conversation.id);
-            const refreshedConv = await firstValueFrom(this.activeConversation$);
-            
-            if (refreshedConv) {
-              // Update version for retry
-              conversation.version = refreshedConv.version;
-            }
-          } else {
-            const errorMsg = 'Unable to update conversation due to version conflicts. Please refresh and try again.';
-            this.error$.next(errorMsg);
-            this.notificationService.showError(errorMsg);
-            throw new Error(errorMsg);
-          }
-        } else {
-          throw error;
-        }
-      }
+  async updateConversation(conversation: Conversation): Promise<void> {
+    try {
+      // Use the new updateConversation method that calls the API
+      await this.conversationRepository.updateConversation(conversation.id, conversation.name);
+      // The activeConversation$ will automatically update via the observable chain
+    } catch (error) {
+      console.error('Failed to update conversation:', error);
+      throw error;
     }
   }
   

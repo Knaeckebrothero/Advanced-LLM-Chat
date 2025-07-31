@@ -5,12 +5,15 @@ import { CommonModule } from '@angular/common';
 import { ChatStateService } from "../../services/chat-state.service";
 import { FormsModule } from "@angular/forms";
 import { firstValueFrom } from 'rxjs';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
 
 
 @Component({
   selector: 'app-conversation',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MatMenuModule, MatIconModule, MatButtonModule],
   templateUrl: './conversation.component.html',
   styleUrls: ['./conversation.component.scss']
 })
@@ -62,6 +65,14 @@ export class ConversationComponent implements OnInit {
   startEditing(): void {
     this.editing = true;
     this.newName = this.conversation.name;
+  }
+
+  onMenuClick(event: MouseEvent): void {
+    event.stopPropagation();
+  }
+
+  onRename(): void {
+    this.startEditing();
   }
 
   async finishEditing(): Promise<void> {
