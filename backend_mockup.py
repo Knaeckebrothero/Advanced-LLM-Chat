@@ -4,29 +4,29 @@ It provides a simple API for sending and receiving messages in a conversation.
 The server uses SQLite as a database to store messages and conversation data.
 The server also uses Replicate to generate AI responses to messages in a conversation.
 """
-import os
-import sqlite3
-import trustme
-import time
-import replicate
-import secrets
 import asyncio
-import json
 import hashlib
-import uuid
+import json
 import logging
-from fastapi import FastAPI, Response, status, Request, HTTPException, Depends, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.openapi.utils import get_openapi
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Union, Literal
-from dotenv import load_dotenv, find_dotenv
-from pathlib import Path
+import os
+import secrets
+import sqlite3
+import time
+import uuid
 from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timedelta, UTC
+from pathlib import Path
+from typing import List, Dict, Optional, Union, Literal
 
+import replicate
+import trustme
+from dotenv import load_dotenv, find_dotenv
+from fastapi import FastAPI, Response, status, Request, HTTPException, Depends, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 # Default settings for LLM generation
 DEFAULT_MODEL = "openai/gpt-4o"
@@ -34,12 +34,11 @@ DEFAULT_TEMPERATURE = 0.5
 DEFAULT_TOP_P = 0.5
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant!"
 
-
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+  level=logging.INFO,
+  format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+  datefmt='%Y-%m-%d %H:%M:%S'
 )
 
 # Main application logger
@@ -57,7 +56,7 @@ crud_logger.setLevel(logging.INFO)
 security_log_path = os.path.join(os.getenv('DB_DIR', '.'), 'security.log')
 security_handler = logging.FileHandler(security_log_path)
 security_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ))
 security_logger.addHandler(security_handler)
 
@@ -65,32 +64,34 @@ security_logger.addHandler(security_handler)
 crud_log_path = os.path.join(os.getenv('DB_DIR', '.'), 'crud_operations.log')
 crud_handler = logging.FileHandler(crud_log_path)
 crud_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'
+  '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'
 ))
 crud_logger.addHandler(crud_handler)
 
+
 def log_security_event(event_type: str, details: dict, request: Request = None):
-    """
-    Log security-related events with context.
-    """
-    log_entry = {
-        "event_type": event_type,
-        "timestamp": datetime.now(UTC).isoformat(),
-        "details": details
+  """
+  Log security-related events with context.
+  """
+  log_entry = {
+    "event_type": event_type,
+    "timestamp": datetime.now(UTC).isoformat(),
+    "details": details
+  }
+
+  if request:
+    log_entry["request_info"] = {
+      "method": request.method,
+      "path": str(request.url.path),
+      "client_host": request.client.host if request.client else "unknown",
+      "headers": {
+        "user-agent": request.headers.get("user-agent", "unknown"),
+        "origin": request.headers.get("origin", "unknown")
+      }
     }
-    
-    if request:
-        log_entry["request_info"] = {
-            "method": request.method,
-            "path": str(request.url.path),
-            "client_host": request.client.host if request.client else "unknown",
-            "headers": {
-                "user-agent": request.headers.get("user-agent", "unknown"),
-                "origin": request.headers.get("origin", "unknown")
-            }
-        }
-    
-    security_logger.warning(json.dumps(log_entry))
+
+  security_logger.warning(json.dumps(log_entry))
+
 
 # List of available LLMs
 AVAILABLE_LLMS = [
@@ -112,6 +113,7 @@ class ErrorResponse(BaseModel):
 class MockLoginRequest(BaseModel):
   email: str
   # In real implementation, this might include IDP tokens, SAML response, etc.
+
 
 class GuestLoginRequest(BaseModel):
   ip_address: str
@@ -196,6 +198,7 @@ class ApiMessageGenerate(BaseModel):
   top_p: Optional[float] = None
   systemPrompt: Optional[str] = None
 
+
 class ApiMessageSendAndGenerate(BaseModel):
   """
   Combined request for sending a message and generating AI response.
@@ -208,7 +211,7 @@ class ApiMessageSendAndGenerate(BaseModel):
   time: int
   version: Optional[int] = 1
   lastModified: Optional[int] = None
-  
+
   # AI generation settings
   generateResponse: bool = True
   aiParticipant: str = "Assistant"
@@ -241,6 +244,7 @@ class MessageResponse(BaseModel):
   lastModified: Optional[int] = None
   rating: Optional[int] = None  # 1 for thumbs up, 0 for thumbs down, None for unrated
 
+
 class SendAndGenerateResponse(BaseModel):
   """
   Response containing both the saved user message and generated AI response.
@@ -263,6 +267,7 @@ class ConversationResponse(BaseModel):
   version: int = 1
   lastModified: Optional[int] = None
 
+
 class Conversation(BaseModel):
   id: str  # Now using UUID
   userId: int
@@ -270,6 +275,7 @@ class Conversation(BaseModel):
   participants: Optional[str] = None
   createdAt: datetime
   updatedAt: datetime
+
 
 class ConversationCreateRequest(BaseModel):
   name: str
@@ -297,12 +303,8 @@ class AppSettings(BaseModel):
   """
   Define the structure of the settings that the frontend can GET or PUT
   """
-  model: str
-  temperature: float
-  top_p: float
-  systemPrompt: str
-  darkMode: int
-  languageIsEnglish: int
+  theme: str
+  language: str
 
 
 class AppSettingsWithMetadata(AppSettings):
@@ -380,7 +382,8 @@ def generate_csrf_token() -> str:
   return secrets.token_urlsafe(32)
 
 
-def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False, regenerate_from=None) -> tuple[str, str]:
+def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False, regenerate_from=None) -> \
+tuple[str, str]:
   """
   Creates a session for a given user with a specified duration in hours.
   If regenerate_from is provided, deletes the old session first.
@@ -389,10 +392,10 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
   # Delete old session if regenerating
   if regenerate_from:
     delete_session(regenerate_from)
-  
+
   session_key = generate_session_key()
   csrf_token = generate_csrf_token()
-  
+
   # Use environment variable for session timeout if available
   session_timeout = int(os.getenv('SESSION_TIMEOUT_HOURS', str(session_duration_hours)))
   expires_at = datetime.now(UTC) + timedelta(hours=session_timeout)
@@ -433,7 +436,7 @@ def validate_session(session_key: str) -> Optional[dict]:
 
     expires_at = datetime.fromisoformat(result["expires_at"])
     current_time = datetime.now(UTC)
-    
+
     if current_time > expires_at:
       # Session expired, clean up
       cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
@@ -447,7 +450,7 @@ def validate_session(session_key: str) -> Optional[dict]:
                 WHERE session_key = ?
                 """, (current_time.isoformat(), session_key))
     conn.commit()
-    
+
     # Calculate time until expiry
     time_until_expiry = expires_at - current_time
     expires_in_seconds = int(time_until_expiry.total_seconds())
@@ -481,11 +484,12 @@ async def validate_csrf_token(request: Request) -> bool:
   # Skip CSRF validation for safe methods
   if request.method in ["GET", "HEAD", "OPTIONS"]:
     return True
-  
+
   # Skip CSRF validation for authentication endpoints
-  if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout", "/api/auth/refresh-session"]:
+  if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout",
+                          "/api/auth/refresh-session"]:
     return True
-  
+
   # Get CSRF token from cookie
   csrf_token_cookie = request.cookies.get("csrf_token")
   if not csrf_token_cookie:
@@ -494,7 +498,7 @@ async def validate_csrf_token(request: Request) -> bool:
       "session_cookie_present": "session" in request.cookies
     }, request)
     return False
-  
+
   # Get CSRF token from header
   csrf_token_header = request.headers.get("X-CSRF-Token")
   if not csrf_token_header:
@@ -503,7 +507,7 @@ async def validate_csrf_token(request: Request) -> bool:
       "session_cookie_present": "session" in request.cookies
     }, request)
     return False
-  
+
   # Compare tokens (double-submit pattern)
   is_valid = csrf_token_cookie == csrf_token_header
   if not is_valid:
@@ -513,7 +517,7 @@ async def validate_csrf_token(request: Request) -> bool:
       "header_token_length": len(csrf_token_header),
       "session_cookie_present": "session" in request.cookies
     }, request)
-  
+
   return is_valid
 
 
@@ -570,100 +574,100 @@ def migrate_to_uuid_conversations(conn):
   Migrate existing conversations from integer IDs to UUID-based IDs.
   """
   cur = conn.cursor()
-  
+
   # Check if we already have UUID-based conversations
   cur.execute("PRAGMA table_info(conversations)")
   columns = cur.fetchall()
   id_column = next((col for col in columns if col[1] == 'id'), None)
-  
+
   # If ID column is already TEXT, migration is done
   if id_column and id_column[2] == 'TEXT':
     return
-  
+
   print("Migrating conversations to UUID-based IDs...")
-  
+
   # Create new tables with UUID support
   cur.execute('''
-    CREATE TABLE IF NOT EXISTS conversations_new (
-      id TEXT PRIMARY KEY,
-      userId INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      participants TEXT,
-      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      version INTEGER DEFAULT 1,
-      lastModified INTEGER,
-      FOREIGN KEY(userId) REFERENCES users(id)
-    )
-  ''')
-  
+              CREATE TABLE IF NOT EXISTS conversations_new (
+                                                             id TEXT PRIMARY KEY,
+                                                             userId INTEGER NOT NULL,
+                                                             name TEXT NOT NULL,
+                                                             participants TEXT,
+                                                             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                             updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                             version INTEGER DEFAULT 1,
+                                                             lastModified INTEGER,
+                                                             FOREIGN KEY(userId) REFERENCES users(id)
+                )
+              ''')
+
   cur.execute('''
-    CREATE TABLE IF NOT EXISTS messages_new (
-      id INTEGER PRIMARY KEY,
-      conversationId TEXT NOT NULL,
-      roleName TEXT NOT NULL,
-      content TEXT NOT NULL,
-      time INTEGER NOT NULL,
-      type TEXT DEFAULT 'text',
-      version INTEGER DEFAULT 1,
-      lastModified INTEGER,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(conversationId) REFERENCES conversations_new(id)
-    )
-  ''')
-  
+              CREATE TABLE IF NOT EXISTS messages_new (
+                                                        id INTEGER PRIMARY KEY,
+                                                        conversationId TEXT NOT NULL,
+                                                        roleName TEXT NOT NULL,
+                                                        content TEXT NOT NULL,
+                                                        time INTEGER NOT NULL,
+                                                        type TEXT DEFAULT 'text',
+                                                        version INTEGER DEFAULT 1,
+                                                        lastModified INTEGER,
+                                                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                        FOREIGN KEY(conversationId) REFERENCES conversations_new(id)
+                )
+              ''')
+
   # Migrate existing conversations
   cur.execute("SELECT * FROM conversations")
   old_conversations = cur.fetchall()
-  
+
   id_mapping = {}  # old_id -> new_uuid
-  
+
   for conv in old_conversations:
     new_id = generate_conversation_id()
     id_mapping[conv['id']] = new_id
-    
+
     cur.execute('''
-      INSERT INTO conversations_new (id, userId, name, participants, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    ''', (new_id, conv['userId'], conv['name'], conv['participants'], 
-          conv['createdAt'], conv['updatedAt']))
-  
+                INSERT INTO conversations_new (id, userId, name, participants, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ''', (new_id, conv['userId'], conv['name'], conv['participants'],
+                      conv['createdAt'], conv['updatedAt']))
+
   # Migrate messages
   cur.execute("SELECT * FROM messages")
   old_messages = cur.fetchall()
-  
+
   for msg in old_messages:
     old_conv_id = msg['conversationId']
     new_conv_id = id_mapping.get(old_conv_id)
-    
+
     if new_conv_id:
       # Handle sqlite3.Row objects which don't have .get() method
       msg_type = msg['type'] if 'type' in msg.keys() else 'text'
       updated_at = msg['updated_at'] if 'updated_at' in msg.keys() else None
-      
+
       cur.execute('''
-        INSERT INTO messages_new (id, conversationId, roleName, content, time, type, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      ''', (msg['id'], new_conv_id, msg['roleName'], msg['content'], 
-            msg['time'], msg_type, updated_at))
-  
+                  INSERT INTO messages_new (id, conversationId, roleName, content, time, type, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                  ''', (msg['id'], new_conv_id, msg['roleName'], msg['content'],
+                        msg['time'], msg_type, updated_at))
+
   # Drop old tables and rename new ones
   cur.execute("DROP TABLE IF EXISTS messages")
   cur.execute("DROP TABLE IF EXISTS conversations")
   cur.execute("ALTER TABLE conversations_new RENAME TO conversations")
   cur.execute("ALTER TABLE messages_new RENAME TO messages")
-  
+
   # Recreate indexes
   cur.execute('''
-    CREATE INDEX IF NOT EXISTS idx_conversation_time
-    ON messages(conversationId, time)
-  ''')
-  
+              CREATE INDEX IF NOT EXISTS idx_conversation_time
+                ON messages(conversationId, time)
+              ''')
+
   cur.execute('''
-    CREATE INDEX IF NOT EXISTS idx_conversations_user
-    ON conversations(userId)
-  ''')
-  
+              CREATE INDEX IF NOT EXISTS idx_conversations_user
+                ON conversations(userId)
+              ''')
+
   conn.commit()
   print("Migration to UUID-based conversations completed!")
 
@@ -697,7 +701,7 @@ def init_db():
                                                            version INTEGER DEFAULT 1,
                                                            lastModified INTEGER,
                                                            FOREIGN KEY(userId) REFERENCES users(id)
-                )
+                  )
                 ''')
 
     # Create messages table to store chat messages
@@ -712,7 +716,7 @@ def init_db():
                                                       version INTEGER DEFAULT 1,
                                                       lastModified INTEGER,
                                                       FOREIGN KEY(conversationId) REFERENCES conversations(id)
-                )
+                  )
                 ''')
 
     # Create sessions table to manage user sessions
@@ -726,7 +730,7 @@ def init_db():
                                                       expires_at TIMESTAMP NOT NULL,
                                                       last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                                       FOREIGN KEY(user_id) REFERENCES users(id)
-                )
+                  )
                 ''')
 
     # Check if is_guest column exists, if not add it (for existing databases)
@@ -735,7 +739,7 @@ def init_db():
     if 'is_guest' not in columns:
       print("Adding is_guest column to sessions table...")
       cur.execute('ALTER TABLE sessions ADD COLUMN is_guest BOOLEAN DEFAULT FALSE')
-    
+
     # Check if csrf_token column exists, if not add it
     if 'csrf_token' not in columns:
       print("Adding csrf_token column to sessions table...")
@@ -747,23 +751,23 @@ def init_db():
     if 'type' not in columns:
       print("Adding type column to messages table...")
       cur.execute("ALTER TABLE messages ADD COLUMN type TEXT DEFAULT 'text'")
-    
+
     # Add version columns for optimistic locking
     if 'version' not in columns:
       print("Adding version column to messages table...")
       cur.execute("ALTER TABLE messages ADD COLUMN version INTEGER DEFAULT 1")
-    
+
     if 'lastModified' not in columns:
       print("Adding lastModified column to messages table...")
       cur.execute("ALTER TABLE messages ADD COLUMN lastModified INTEGER")
-    
+
     # Check conversations table for version columns
     cur.execute("PRAGMA table_info(conversations)")
     columns = [column[1] for column in cur.fetchall()]
     if 'version' not in columns:
       print("Adding version column to conversations table...")
       cur.execute("ALTER TABLE conversations ADD COLUMN version INTEGER DEFAULT 1")
-    
+
     if 'lastModified' not in columns:
       print("Adding lastModified column to conversations table...")
       cur.execute("ALTER TABLE conversations ADD COLUMN lastModified INTEGER")
@@ -791,17 +795,12 @@ def init_db():
 
     conn.commit()
 
-
     # Create Table for user-based settings
     cur.execute('''
                 CREATE TABLE IF NOT EXISTS user_settings (
                                                            user_id INTEGER PRIMARY KEY,
-                                                           model TEXT NOT NULL,
-                                                           temperature REAL NOT NULL,
-                                                           top_p REAL NOT NULL,
-                                                           systemPrompt TEXT NOT NULL,
-                                                           darkMode INTEGER NOT NULL,
-                                                           languageIsEnglish INTEGER NOT NULL,
+                                                           theme TEXT NOT NULL,
+                                                           language TEXT NOT NULL,
                                                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 ''')
@@ -829,36 +828,35 @@ def init_db():
 
     # Create trigger to update conversations timestamp
     cur.execute('''
-                CREATE TRIGGER IF NOT EXISTS update_conversations_timestamp 
-                AFTER UPDATE ON conversations 
+                CREATE TRIGGER IF NOT EXISTS update_conversations_timestamp
+                AFTER UPDATE ON conversations
                 BEGIN
-                  UPDATE conversations SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
+                UPDATE conversations SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
                 END;
                 ''')
 
     # Create trigger to update messages timestamp
     cur.execute('''
-                CREATE TRIGGER IF NOT EXISTS update_messages_timestamp 
-                AFTER UPDATE ON messages 
+                CREATE TRIGGER IF NOT EXISTS update_messages_timestamp
+                AFTER UPDATE ON messages
                 BEGIN
-                  UPDATE messages SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+                UPDATE messages SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
                 END;
                 ''')
 
     # Create trigger to update user_settings timestamp
     cur.execute('''
-                CREATE TRIGGER IF NOT EXISTS update_user_settings_timestamp 
-                AFTER UPDATE ON user_settings 
+                CREATE TRIGGER IF NOT EXISTS update_user_settings_timestamp
+                AFTER UPDATE ON user_settings
                 BEGIN
-                  UPDATE user_settings SET updated_at = CURRENT_TIMESTAMP WHERE user_id = NEW.user_id;
+                UPDATE user_settings SET updated_at = CURRENT_TIMESTAMP WHERE user_id = NEW.user_id;
                 END;
                 ''')
 
     conn.commit()
-    
+
     # Migrate existing data to UUID-based conversations
     migrate_to_uuid_conversations(conn)
-
 
 
 def setup_development_certificates():
@@ -936,7 +934,6 @@ async def generate_llm_response(prompt: str, temperature: float, top_p: float, s
       prompt
     ]))
 
-
     # Replicate returns a generator, collect all parts of the streamed response
     return "".join(output)
   except Exception as e:
@@ -957,7 +954,7 @@ async def get_conversation_context(conversation_id: str, limit: int = 5) -> str:
         FROM messages
         WHERE conversationId = ?
         ORDER BY time DESC
-        LIMIT ?
+          LIMIT ?
         """,
         (conversation_id, limit)
       )
@@ -996,6 +993,7 @@ def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: 
 
     return result['userId'] == user_id
 
+
 async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
   if current_user and not current_user.get("is_guest"):
     return  # Not a guest, no rate limit
@@ -1014,7 +1012,8 @@ async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depe
       last_request_at = datetime.fromisoformat(usage["last_request_at"])
       if now - last_request_at > limit_duration:
         # Reset counter
-        cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+        cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?",
+                    (now.isoformat(), ip_address))
       elif usage["request_count"] >= max_requests:
         reset_time = last_request_at + limit_duration
         retry_after_seconds = (reset_time - now).total_seconds()
@@ -1025,9 +1024,12 @@ async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depe
           headers=headers
         )
       else:
-        cur.execute("UPDATE guest_usage SET request_count = request_count + 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+        cur.execute(
+          "UPDATE guest_usage SET request_count = request_count + 1, last_request_at = ? WHERE ip_address = ?",
+          (now.isoformat(), ip_address))
     else:
-      cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
+      cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)",
+                  (ip_address, now.isoformat()))
     db.commit()
 
 
@@ -1090,6 +1092,7 @@ async def custom_swagger_ui_html(req: Request):
     title=app.title + " - Swagger UI"
   )
 
+
 @app.post("/api/auth/guest-login", response_model=LoginResponse)
 async def guest_login(request: GuestLoginRequest, req: Request, response: Response):
   ip_address = request.ip_address
@@ -1110,12 +1113,15 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     if usage:
       last_request_at = datetime.fromisoformat(usage["last_request_at"])
       if now - last_request_at > limit_duration:
-        cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?", (now.isoformat(), ip_address))
+        cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?",
+                    (now.isoformat(), ip_address))
       elif usage["request_count"] >= max_requests:
         reset_time = last_request_at + limit_duration
-        raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
+        raise HTTPException(status_code=429,
+                            detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
     else:
-      cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)", (ip_address, now.isoformat()))
+      cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)",
+                  (ip_address, now.isoformat()))
 
     db.commit()
 
@@ -1127,10 +1133,11 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
 
   # Use shorter timeout for guest sessions
   guest_timeout_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
-  
+
   # Create new guest session with custom timeout, regenerating old session
-  session_key, csrf_token = create_session(0, guest_email, session_duration_hours=guest_timeout_hours, is_guest=True, regenerate_from=old_session_key)
-  
+  session_key, csrf_token = create_session(0, guest_email, session_duration_hours=guest_timeout_hours, is_guest=True,
+                                           regenerate_from=old_session_key)
+
   max_age = guest_timeout_hours * 3600
 
   response.set_cookie(
@@ -1142,7 +1149,7 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     samesite="lax",
     path="/"
   )
-  
+
   # Set CSRF token as cookie for double-submit pattern
   response.set_cookie(
     key="csrf_token",
@@ -1153,15 +1160,15 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     samesite="lax",  # Lax allows cross-site requests from different ports
     path="/"
   )
-  
+
   # Also set CSRF token in response header for backward compatibility
   response.headers["X-CSRF-Token"] = csrf_token
-  
+
   # Log successful guest login
   log_security_event("guest_login_success", {
     "user_id": guest_user["id"],
     "ip_address": ip_address,
-    "session_duration_hours": session_duration_hours
+    "session_duration_hours": guest_timeout_hours
   }, req)
 
   return LoginResponse(
@@ -1169,6 +1176,7 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     message="Guest login successful",
     token=session_key
   )
+
 
 @app.post("/api/auth/mock-login", response_model=LoginResponse)
 async def mock_login(request: MockLoginRequest, req: Request, response: Response):
@@ -1197,7 +1205,7 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
 
   # Create session with is_guest=False for regular users, regenerating old session
   session_key, csrf_token = create_session(user_id, request.email, is_guest=False, regenerate_from=old_session_key)
-  
+
   # Calculate max_age based on session timeout
   session_timeout_hours = int(os.getenv('SESSION_TIMEOUT_HOURS', '24'))
   max_age = session_timeout_hours * 3600
@@ -1212,7 +1220,7 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     samesite="lax",
     path="/"
   )
-  
+
   # Set CSRF token as cookie for double-submit pattern
   response.set_cookie(
     key="csrf_token",
@@ -1223,10 +1231,10 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     samesite="lax",  # Lax allows cross-site requests from different ports
     path="/"
   )
-  
+
   # Also set CSRF token in response header for backward compatibility
   response.headers["X-CSRF-Token"] = csrf_token
-  
+
   # Log successful login
   log_security_event("user_login_success", {
     "user_id": user_id,
@@ -1259,7 +1267,7 @@ async def logout(request: Request, response: Response):
         "user_id": session_data["user_id"],
         "email": session_data["email"]
       }, request)
-    
+
     delete_session(session_key)
 
   # Delete cookies
@@ -1289,7 +1297,7 @@ async def refresh_session(request: Request, response: Response, current_user: di
   session_key = request.cookies.get("session")
   if not session_key:
     raise HTTPException(status_code=401, detail="No session to refresh")
-  
+
   # Check if session is close to expiring (less than 1 hour)
   expires_in = current_user.get("expires_in", 0)
   if expires_in > 3600:  # More than 1 hour remaining
@@ -1297,23 +1305,23 @@ async def refresh_session(request: Request, response: Response, current_user: di
       "message": "Session does not need refresh yet",
       "expires_in": expires_in
     }
-  
+
   # Create new session with same user info
   user_id = current_user["user_id"]
   email = current_user["email"]
   is_guest = current_user.get("is_guest", False)
-  
+
   # Determine session duration based on user type
   if is_guest:
     session_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
   else:
     session_hours = int(os.getenv('SESSION_TIMEOUT_HOURS', '24'))
-  
+
   # Create new session, regenerating the old one
   new_session_key, new_csrf_token = create_session(
     user_id, email, session_hours, is_guest, regenerate_from=session_key
   )
-  
+
   # Set new session cookie
   max_age = session_hours * 3600
   response.set_cookie(
@@ -1325,7 +1333,7 @@ async def refresh_session(request: Request, response: Response, current_user: di
     samesite="lax",
     path="/"
   )
-  
+
   # Set CSRF token as cookie for double-submit pattern
   response.set_cookie(
     key="csrf_token",
@@ -1336,10 +1344,10 @@ async def refresh_session(request: Request, response: Response, current_user: di
     samesite="lax",  # Lax allows cross-site requests from different ports
     path="/"
   )
-  
+
   # Also set new CSRF token in response header for backward compatibility
   response.headers["X-CSRF-Token"] = new_csrf_token
-  
+
   return {
     "message": "Session refreshed successfully",
     "expires_in": max_age
@@ -1356,7 +1364,7 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
   # Check if CSRF cookie exists
   csrf_cookie = request.cookies.get("csrf_token")
   csrf_token = current_user.get("csrf_token")
-  
+
   # If we have a CSRF token in session but no cookie, set the cookie
   if csrf_token and not csrf_cookie:
     # Calculate max age based on remaining session time
@@ -1370,11 +1378,11 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
       samesite="lax",  # Lax allows cross-site requests from different ports
       path="/"
     )
-  
+
   # Include CSRF token in response header
   if csrf_token:
     response.headers["X-CSRF-Token"] = csrf_token
-  
+
   # Prepare user data with session info
   user_data = {
     "user_id": current_user["user_id"],
@@ -1383,17 +1391,17 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
     "session_expires_at": current_user.get("expires_at"),
     "session_expires_in": current_user.get("expires_in")
   }
-  
+
   return {"user": user_data}
 
 
 # Handle OPTIONS requests for all endpoints (CORS preflight)
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
-    """
-    Handle CORS preflight requests for all endpoints.
-    """
-    return Response(status_code=status.HTTP_200_OK)
+  """
+  Handle CORS preflight requests for all endpoints.
+  """
+  return Response(status_code=status.HTTP_200_OK)
 
 
 # API endpoints with authentication
@@ -1422,8 +1430,8 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
       # Fetch conversations for the current user
       cur.execute(
         """
-        SELECT id, userId, name, participants, createdAt, updatedAt, version, lastModified 
-        FROM conversations 
+        SELECT id, userId, name, participants, createdAt, updatedAt, version, lastModified
+        FROM conversations
         WHERE userId = ?
         ORDER BY updatedAt DESC
         """,
@@ -1445,10 +1453,10 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
         )
         messages = cur.fetchall()
         hashsum = generate_hash(messages)
-        
+
         # Parse participants (stored as JSON string)
         participants = json.loads(conv_row['participants']) if conv_row['participants'] else []
-        
+
         conversation_responses.append(ConversationResponse(
           id=conversation_id,
           userId=conv_row['userId'],
@@ -1469,7 +1477,7 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
     return ErrorResponse(error=str(e))
 
 
-@app.get("/api/conversation/{conversation_id}", 
+@app.get("/api/conversation/{conversation_id}",
          response_model=ConversationWithDetails,
          responses={
            status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Conversation not found"},
@@ -1481,36 +1489,36 @@ async def get_conversation(conversation_id: str, response: Response, current_use
   Get a single conversation with metadata for sync
   """
   user_id = current_user['user_id']
-  
+
   try:
     with get_db() as conn:
       cur = conn.cursor()
-      
+
       # Fetch conversation details
       cur.execute("""
-        SELECT id, userId, name, participants, createdAt, updatedAt
-        FROM conversations 
-        WHERE id = ? AND userId = ?
-      """, (conversation_id, user_id))
-      
+                  SELECT id, userId, name, participants, createdAt, updatedAt
+                  FROM conversations
+                  WHERE id = ? AND userId = ?
+                  """, (conversation_id, user_id))
+
       conv_row = cur.fetchone()
-      
+
       if not conv_row:
         response.status_code = status.HTTP_404_NOT_FOUND
         return ErrorResponse(error="Conversation not found")
-      
+
       # Get message count
       cur.execute("SELECT COUNT(*) as count FROM messages WHERE conversationId = ?", (conversation_id,))
       message_count = cur.fetchone()['count']
-      
+
       # Get all messages to compute hash
       cur.execute("SELECT content FROM messages WHERE conversationId = ? ORDER BY time", (conversation_id,))
       messages = cur.fetchall()
-      
+
       # Compute SHA-256 hash of conversation content
       content_str = ''.join([msg['content'] for msg in messages if msg['content']])
       sync_hash = generate_sha256_hash(content_str) if content_str else None
-      
+
       # Return conversation with details
       return ConversationWithDetails(
         id=conv_row['id'],
@@ -1522,7 +1530,7 @@ async def get_conversation(conversation_id: str, response: Response, current_use
         messageCount=message_count,
         syncHash=sync_hash
       )
-      
+
   except Exception as e:
     print(f"Error fetching conversation: {str(e)}")
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -1536,14 +1544,10 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
   if current_user.get("is_guest"):
     # Generate consistent hash for guest settings
     guest_settings = AppSettings(
-      model="openai/gpt-4o",
-      temperature=0.5,
-      top_p=0.5,
-      systemPrompt="You are a helpful assistant!",
-      darkMode=0,
-      languageIsEnglish=0
+      theme="auto",
+      language="en"
     )
-    settings_str = f"{guest_settings.model}:{guest_settings.temperature}:{guest_settings.top_p}:{guest_settings.systemPrompt}:{guest_settings.darkMode}:{guest_settings.languageIsEnglish}"
+    settings_str = f"{guest_settings.theme}:{guest_settings.language}"
     return AppSettingsWithMetadata(
       **guest_settings.dict(),
       id=f"guest-{user_id}",
@@ -1554,7 +1558,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
   with get_db() as db:
     cur = db.cursor()
     cur.execute("""
-                SELECT model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish, updated_at
+                SELECT theme, language, updated_at
                 FROM user_settings
                 WHERE user_id = ?
                 """, (user_id,))
@@ -1567,8 +1571,8 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
       # Create settings object
       settings = AppSettings(**settings_dict)
       # Generate hash
-      settings_str = f"{settings.model}:{settings.temperature}:{settings.top_p}:{settings.systemPrompt}:{settings.darkMode}:{settings.languageIsEnglish}"
-      
+      settings_str = f"{settings.theme}:{settings.language}"
+
       return AppSettingsWithMetadata(
         **settings.dict(),
         id=f"user-{user_id}",
@@ -1578,15 +1582,11 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
     else:
       # Fallback defaults if user has no settings yet
       default_settings = AppSettings(
-        model="openai/gpt-4o",
-        temperature=0.5,
-        top_p=0.5,
-        systemPrompt="You are a helpful assistant!",
-        darkMode=0,
-        languageIsEnglish=0
+        theme="auto",
+        language="en"
       )
-      settings_str = f"{default_settings.model}:{default_settings.temperature}:{default_settings.top_p}:{default_settings.systemPrompt}:{default_settings.darkMode}:{default_settings.languageIsEnglish}"
-      
+      settings_str = f"{default_settings.theme}:{default_settings.language}"
+
       return AppSettingsWithMetadata(
         **default_settings.dict(),
         id=f"user-{user_id}",
@@ -1604,27 +1604,19 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
   with get_db() as db:
     cur = db.cursor()
     cur.execute("""
-                INSERT INTO user_settings (user_id, model, temperature, top_p, systemPrompt, darkMode, languageIsEnglish, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(user_id) DO UPDATE SET
-                                                 model = excluded.model,
-                                                 temperature = excluded.temperature,
-                                                 top_p = excluded.top_p,
-                                                 systemPrompt = excluded.systemPrompt,
-                                                 darkMode = excluded.darkMode,
-                                                 languageIsEnglish = excluded.languageIsEnglish,
-                                                 updated_at = CURRENT_TIMESTAMP
+                INSERT INTO user_settings (user_id, theme, language, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                  ON CONFLICT(user_id) DO UPDATE SET
+                  theme = excluded.theme,
+                                            language = excluded.language,
+                                            updated_at = CURRENT_TIMESTAMP
                 """, (
-                  user_id,
-                  new_settings.model,
-                  new_settings.temperature,
-                  new_settings.top_p,
-                  new_settings.systemPrompt,
-                  new_settings.darkMode,
-                  new_settings.languageIsEnglish
-                ))
+      user_id,
+      new_settings.theme,
+      new_settings.language
+    ))
     db.commit()
-    
+
     # Fetch the updated settings with timestamp
     cur.execute("""
                 SELECT updated_at
@@ -1633,10 +1625,10 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
                 """, (user_id,))
     row = cur.fetchone()
     timestamp = row['updated_at'] if row else datetime.now(UTC)
-    
+
   # Generate hash for the settings
-  settings_str = f"{new_settings.model}:{new_settings.temperature}:{new_settings.top_p}:{new_settings.systemPrompt}:{new_settings.darkMode}:{new_settings.languageIsEnglish}"
-  
+  settings_str = f"{new_settings.theme}:{new_settings.language}"
+
   return AppSettingsWithMetadata(
     **new_settings.dict(),
     id=f"user-{user_id}",
@@ -1645,7 +1637,8 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
   )
 
 
-@app.post("/api/conversation/create", response_model=Conversation, status_code=status.HTTP_201_CREATED, tags=["Conversation"])
+@app.post("/api/conversation/create", response_model=Conversation, status_code=status.HTTP_201_CREATED,
+          tags=["Conversation"])
 async def create_conversation(req: ConversationCreateRequest, current_user: dict = Depends(get_current_user)):
   """
   Creates a new conversation for the authenticated user.
@@ -1655,14 +1648,15 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     cur = conn.cursor()
     participants_json = json.dumps(req.participants)
     new_id = generate_conversation_id()  # Generate UUID
-    
+
     cur.execute(
       "INSERT INTO conversations (id, userId, name, participants) VALUES (?, ?, ?, ?)",
       (new_id, user_id, req.name, participants_json)
     )
     conn.commit()
 
-    cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?", (new_id,))
+    cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?",
+                (new_id,))
     new_conv_row = cur.fetchone()
 
     return Conversation(**dict(new_conv_row))
@@ -1674,18 +1668,18 @@ class ConversationUpdateRequest(BaseModel):
 
 @app.patch("/api/conversation/{conversation_id}", response_model=Conversation, tags=["Conversation"])
 async def update_conversation(
-    conversation_id: str,
-    req: ConversationUpdateRequest,
-    current_user: dict = Depends(get_current_user)
+  conversation_id: str,
+  req: ConversationUpdateRequest,
+  current_user: dict = Depends(get_current_user)
 ):
   """
   Updates a conversation name for the authenticated user.
   """
   user_id = current_user['user_id']
-  
+
   with get_db() as conn:
     cur = conn.cursor()
-    
+
     # Check if conversation exists and belongs to user
     cur.execute(
       "SELECT id FROM conversations WHERE id = ? AND userId = ?",
@@ -1693,40 +1687,40 @@ async def update_conversation(
     )
     if not cur.fetchone():
       raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     # Update conversation
     cur.execute(
       "UPDATE conversations SET name = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND userId = ?",
       (req.name, conversation_id, user_id)
     )
     conn.commit()
-    
+
     # Return updated conversation
     cur.execute(
       "SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?",
       (conversation_id,)
     )
     updated_conv = cur.fetchone()
-    
+
     crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name}' by user {user_id}")
-    
+
     return Conversation(**dict(updated_conv))
 
 
 @app.delete("/api/conversation/{conversation_id}", status_code=status.HTTP_200_OK, tags=["Conversation"])
 async def delete_conversation(
-    conversation_id: str,
-    current_user: dict = Depends(get_current_user)
+  conversation_id: str,
+  current_user: dict = Depends(get_current_user)
 ):
   """
   Deletes a conversation and all associated messages for the authenticated user.
   Returns 200 OK on successful deletion, 204 No Content if conversation doesn't exist.
   """
   user_id = current_user['user_id']
-  
+
   with get_db() as conn:
     cur = conn.cursor()
-    
+
     # Check if conversation exists and belongs to user
     cur.execute(
       "SELECT id FROM conversations WHERE id = ? AND userId = ?",
@@ -1735,17 +1729,17 @@ async def delete_conversation(
     if not cur.fetchone():
       # Return 204 No Content if conversation doesn't exist
       return Response(status_code=status.HTTP_204_NO_CONTENT)
-    
+
     # Delete all messages in the conversation
     cur.execute("DELETE FROM messages WHERE conversationId = ?", (conversation_id,))
-    
+
     # Delete the conversation
     cur.execute("DELETE FROM conversations WHERE id = ? AND userId = ?", (conversation_id, user_id))
-    
+
     conn.commit()
-    
+
     crud_logger.info(f"Conversation {conversation_id} and all messages deleted by user {user_id}")
-    
+
     return {"message": "Conversation deleted successfully"}
 
 
@@ -1787,7 +1781,7 @@ async def get_conversation_messages(
 
     with get_db() as conn:
       cur = conn.cursor()
-      
+
       # Different queries for incremental sync vs pagination
       if after_timestamp is not None:
         # Incremental sync: get messages newer than after_timestamp
@@ -1811,16 +1805,16 @@ async def get_conversation_messages(
           """,
           (conversation_id, timestamp, min(messages_count, 30))
         )
-      
+
       messages_rows = cur.fetchall()
 
       if messages_rows:
         messages_data = [dict(msg) for msg in messages_rows]
-        
+
         # For pagination, reverse to get chronological order
         if after_timestamp is None:
           messages_data.reverse()
-        
+
         # Check if there might be more messages
         has_more = False
         if after_timestamp is None and messages_count > 30 and len(messages_data) == 30:
@@ -1828,7 +1822,7 @@ async def get_conversation_messages(
           response.status_code = status.HTTP_206_PARTIAL_CONTENT
         else:
           response.status_code = status.HTTP_200_OK
-          
+
         # Add header to indicate if more messages exist
         if after_timestamp is not None:
           # For incremental sync, check if there are any messages we didn't fetch
@@ -1848,7 +1842,7 @@ async def get_conversation_messages(
             )
             total_count = cur.fetchone()['count']
             response.headers["X-Has-More-Messages"] = str(total_count > 0)
-          
+
         return messages_data
       else:
         # Return empty list instead of None to satisfy response model
@@ -1881,7 +1875,8 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
   """
   Endpoint for a user to send a message.
   """
-  crud_logger.info(f"Message send called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
+  crud_logger.info(
+    f"Message send called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
 
   try:
     if not request_body.content:
@@ -1889,7 +1884,8 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
       return ErrorResponse(error="Message content cannot be empty")
 
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
+                                         current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -1929,7 +1925,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (message_id, request_body.conversationId, request_body.roleName,
-         content_str, request_body.time, message_type, 
+         content_str, request_body.time, message_type,
          request_body.version or 1, request_body.lastModified or int(time.time()))
       )
       conn.commit()
@@ -1958,11 +1954,13 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
   """
   Endpoint to generate an AI response for a conversation.
   """
-  crud_logger.info(f"Generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
+  crud_logger.info(
+    f"Generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
 
   try:
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
+                                         current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
@@ -1970,47 +1968,16 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Conversation ID missing or invalid in request")
 
-    # Get latest user settings from DB
-    user_id = current_user["user_id"]
-    with get_db() as db:
-      cur = db.cursor()
-      cur.execute("""
-                  SELECT model, temperature, top_p, systemPrompt,
-                         darkMode, languageIsEnglish
-                  FROM user_settings
-                  WHERE user_id = ?
-                  """, (user_id,))
-
-      row = cur.fetchone()
-
-      if row:
-        db_settings = AppSettings(**dict(row))
-        print(f"Using settings from DB: {db_settings}")
-      else:
-        db_settings = AppSettings(
-          model="openai/gpt-4o",
-          temperature=0.5,
-          top_p=0.5,
-          systemPrompt="You are a helpful assistant!",
-          darkMode=0,
-          languageIsEnglish=0
-        )
-
-    temperature = request_body.temperature if request_body.temperature is not None else db_settings.temperature
-    top_p = request_body.top_p if request_body.top_p is not None else db_settings.top_p
-    system_prompt = request_body.systemPrompt if request_body.systemPrompt is not None else db_settings.systemPrompt
-    model = db_settings.model
-
     # Get conversation context for the LLM
     context = await get_conversation_context(request_body.conversationId)
 
     # Generate AI response
     ai_response_content = await generate_llm_response(
       context,
-      temperature,
-      top_p,
-      system_prompt,
-      model
+      DEFAULT_TEMPERATURE,
+      DEFAULT_TOP_P,
+      DEFAULT_SYSTEM_PROMPT,
+      DEFAULT_MODEL
     )
 
     message_id = int(time.time() * 1000)
@@ -2062,7 +2029,8 @@ async def patch_message(request_body: MessagePatch, response: Response,
   """
   Endpoint to update the content of an existing message.
   """
-  crud_logger.info(f"Patch message called - User: {current_user['user_id']}, Message: {request_body.id}, Conversation: {request_body.conversationId}")
+  crud_logger.info(
+    f"Patch message called - User: {current_user['user_id']}, Message: {request_body.id}, Conversation: {request_body.conversationId}")
 
   try:
     if not request_body.id:
@@ -2070,13 +2038,14 @@ async def patch_message(request_body: MessagePatch, response: Response,
       return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Message ID missing")
 
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
+                                         current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
     with get_db() as conn:
       cur = conn.cursor()
-      
+
       # First check current version
       cur.execute(
         """
@@ -2086,18 +2055,19 @@ async def patch_message(request_body: MessagePatch, response: Response,
         (request_body.id, request_body.conversationId)
       )
       result = cur.fetchone()
-      
+
       if not result:
         response.status_code = status.HTTP_404_NOT_FOUND
         return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
-      
+
       current_version = result[0] or 1
-      
+
       # Check for version conflict
       if current_version != request_body.version:
         response.status_code = status.HTTP_409_CONFLICT
-        return ErrorResponse(error=f"Version conflict: current version is {current_version}, provided version is {request_body.version}")
-      
+        return ErrorResponse(
+          error=f"Version conflict: current version is {current_version}, provided version is {request_body.version}")
+
       # Update with version increment
       new_version = current_version + 1
       cur.execute(
@@ -2106,7 +2076,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
         SET content = ?, version = ?, lastModified = ?
         WHERE id = ? AND conversationId = ? AND version = ?
         """,
-        (request_body.content, new_version, int(time.time()), 
+        (request_body.content, new_version, int(time.time()),
          request_body.id, request_body.conversationId, request_body.version)
       )
       conn.commit()
@@ -2114,7 +2084,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
       if cur.rowcount == 0:
         response.status_code = status.HTTP_409_CONFLICT
         return ErrorResponse(error="Version conflict during update")
-      
+
       # Fetch the updated message to return
       cur.execute(
         """
@@ -2125,12 +2095,12 @@ async def patch_message(request_body: MessagePatch, response: Response,
         (request_body.id, request_body.conversationId)
       )
       updated_row = cur.fetchone()
-      
+
       if updated_row:
         # Parse content based on type
         message_type = updated_row['type'] or 'text'
         content = updated_row['content']
-        
+
         # Try to parse JSON content for complex types
         try:
           if message_type == 'text' and content.startswith('{'):
@@ -2139,7 +2109,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
               content = content_obj['content']
         except:
           pass  # Use content as-is if not JSON
-        
+
         crud_logger.info(f"Message patched successfully - Message ID: {request_body.id}, New version: {new_version}")
         return MessageResponse(
           id=updated_row['id'],
@@ -2175,7 +2145,8 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
   """
   Endpoint to delete a specific message.
   """
-  crud_logger.info(f"Delete message called - User: {current_user['user_id']}, Message: {message_id}, Conversation: {conversation_id}")
+  crud_logger.info(
+    f"Delete message called - User: {current_user['user_id']}, Message: {message_id}, Conversation: {conversation_id}")
 
   try:
     if not conversation_id or not message_id:
@@ -2221,42 +2192,44 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
           },
           tags=["Message"])
 async def rate_message(request_body: RateMessageRequest, response: Response,
-                      current_user: dict = Depends(get_current_user)):
+                       current_user: dict = Depends(get_current_user)):
   """
   Endpoint to rate a message (thumbs up or thumbs down) or remove rating.
   """
-  crud_logger.info(f"Rate message called - User: {current_user['user_id']}, Message: {request_body.id}, Rating: {request_body.rating}")
-  
+  crud_logger.info(
+    f"Rate message called - User: {current_user['user_id']}, Message: {request_body.id}, Rating: {request_body.rating}")
+
   try:
     # Validate rating value (None is allowed to remove rating)
     if request_body.rating is not None and request_body.rating not in [0, 1]:
       response.status_code = status.HTTP_400_BAD_REQUEST
       return ErrorResponse(error="Rating must be 0 (thumbs down), 1 (thumbs up), or null to remove rating")
-    
+
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
+                                         current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
-    
+
     with get_db() as conn:
       cur = conn.cursor()
-      
+
       # Update the rating
       cur.execute(
         """
-        UPDATE messages 
+        UPDATE messages
         SET rating = ?
         WHERE id = ? AND conversationId = ?
         """,
         (request_body.rating, request_body.id, request_body.conversationId)
       )
-      
+
       if cur.rowcount == 0:
         response.status_code = status.HTTP_404_NOT_FOUND
         return ErrorResponse(error="Message not found")
-      
+
       conn.commit()
-      
+
       # Fetch the updated message
       cur.execute(
         """
@@ -2266,13 +2239,13 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
         """,
         (request_body.id, request_body.conversationId)
       )
-      
+
       row = cur.fetchone()
       if row:
         # Parse content based on type
         message_type = row['type'] or 'text'
         content = row['content']
-        
+
         # Try to parse JSON content for complex types
         try:
           if message_type == 'text' and content.startswith('{'):
@@ -2281,7 +2254,7 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
               content = content_obj['content']
         except:
           pass  # Use content as-is if not JSON
-        
+
         rating_text = "removed" if request_body.rating is None else str(request_body.rating)
         crud_logger.info(f"Message rated successfully - Message ID: {request_body.id}, Rating: {rating_text}")
         return MessageResponse(
@@ -2295,9 +2268,9 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
           lastModified=row['lastModified'],
           rating=row['rating']
         )
-    
+
     return None
-  
+
   except Exception as e:
     crud_logger.error(f"Error rating message: {str(e)}", exc_info=True)
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -2316,23 +2289,24 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
           tags=["Message"],
           dependencies=[Depends(rate_limit_guest)])
 async def regenerate_message(request_body: RegenerateMessageRequest, response: Response,
-                           current_user: dict = Depends(get_current_user)):
+                             current_user: dict = Depends(get_current_user)):
   """
   Endpoint to regenerate an AI message using the conversation history up to that point.
   """
   crud_logger.info(f"Regenerate message called - User: {current_user['user_id']}, Message: {request_body.id}")
-  
+
   try:
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
+                                         current_user.get("is_guest", False)):
       raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Access denied to this conversation"
       )
-    
+
     with get_db() as conn:
       cur = conn.cursor()
-      
+
       # Get the message to regenerate
       cur.execute(
         """
@@ -2342,21 +2316,21 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
         """,
         (request_body.id, request_body.conversationId)
       )
-      
+
       message_row = cur.fetchone()
       if not message_row:
         raise HTTPException(
           status_code=status.HTTP_404_NOT_FOUND,
           detail="Message not found"
         )
-      
+
       # Verify it's an AI message
       if message_row['roleName'] == 'user':
         raise HTTPException(
           status_code=status.HTTP_400_BAD_REQUEST,
           detail="Can only regenerate AI messages"
         )
-      
+
       # Get all messages before this one
       cur.execute(
         """
@@ -2367,9 +2341,9 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
         """,
         (request_body.conversationId, message_row['time'])
       )
-      
+
       previous_messages = cur.fetchall()
-      
+
       # Build conversation context
       context_messages = []
       for msg in previous_messages:
@@ -2377,14 +2351,7 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
           "role": "user" if msg['roleName'] == 'user' else "assistant",
           "content": msg['content']
         })
-      
-      # Get user settings for generation
-      cur.execute(
-        "SELECT * FROM user_settings WHERE user_id = ?",
-        (current_user['user_id'],)
-      )
-      settings_row = cur.fetchone()
-      
+
       # Build prompt from context messages
       prompt_lines = []
       for msg in context_messages:
@@ -2392,31 +2359,31 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
         prompt_lines.append(f"{role}: {msg['content']}")
       prompt_lines.append("Assistant:")
       prompt = "\n".join(prompt_lines)
-      
+
       # Generate new AI response
       ai_response_content = await generate_llm_response(
         prompt,
-        settings_row['temperature'] if settings_row else DEFAULT_TEMPERATURE,
-        settings_row['top_p'] if settings_row else DEFAULT_TOP_P,
-        settings_row['systemPrompt'] if settings_row else DEFAULT_SYSTEM_PROMPT,
-        settings_row['model'] if settings_row else DEFAULT_MODEL
+        DEFAULT_TEMPERATURE,
+        DEFAULT_TOP_P,
+        DEFAULT_SYSTEM_PROMPT,
+        DEFAULT_MODEL
       )
-      
+
       # Update the message with new content
       new_version = (message_row['version'] if message_row['version'] else 1) + 1
       current_time = int(time.time())
-      
+
       cur.execute(
         """
-        UPDATE messages 
+        UPDATE messages
         SET content = ?, version = ?, lastModified = ?
         WHERE id = ? AND conversationId = ?
         """,
         (ai_response_content, new_version, current_time, request_body.id, request_body.conversationId)
       )
-      
+
       conn.commit()
-      
+
       # Fetch and return the updated message
       cur.execute(
         """
@@ -2426,7 +2393,7 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
         """,
         (request_body.id, request_body.conversationId)
       )
-      
+
       row = cur.fetchone()
       if row:
         crud_logger.info(f"Message regenerated successfully - Message ID: {request_body.id}")
@@ -2441,9 +2408,9 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
           lastModified=row['lastModified'],
           rating=row['rating']
         )
-    
+
     return None
-  
+
   except Exception as e:
     crud_logger.error(f"Error regenerating message: {str(e)}", exc_info=True)
     raise HTTPException(
@@ -2463,29 +2430,31 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
           tags=["Message"],
           dependencies=[Depends(rate_limit_guest)])
 async def send_and_generate_message(
-    request_body: ApiMessageSendAndGenerate, 
-    response: Response,
-    current_user: dict = Depends(get_current_user)
+  request_body: ApiMessageSendAndGenerate,
+  response: Response,
+  current_user: dict = Depends(get_current_user)
 ):
   """
   Combined endpoint to send a user message and optionally generate an AI response.
   This reduces the number of API calls and ensures atomic operations.
   """
-  crud_logger.info(f"Send and generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}, Generate: {request_body.generateResponse}")
-  
+  crud_logger.info(
+    f"Send and generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}, Generate: {request_body.generateResponse}")
+
   try:
     # Verify ownership
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'], current_user.get("is_guest", False)):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
+                                         current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
-    
+
     # Step 1: Save the user message
     user_message_id = int(time.time() * 1000)
-    
+
     # Extract content based on message type
     content_str = ""
     message_type = request_body.type
-    
+
     if message_type == 'text':
       if isinstance(request_body.content, str):
         content_str = request_body.content
@@ -2503,7 +2472,7 @@ async def send_and_generate_message(
         content_str = json.dumps(request_body.content)
       else:
         content_str = str(request_body.content)
-    
+
     # Save user message
     with get_db() as conn:
       cur = conn.cursor()
@@ -2517,68 +2486,41 @@ async def send_and_generate_message(
          request_body.version or 1, request_body.lastModified or int(time.time()))
       )
       conn.commit()
-    
+
     user_message_response = MessageResponse(
       id=user_message_id,
       conversationId=request_body.conversationId,
       roleName=request_body.roleName,
-      content=content_str if message_type == 'text' and isinstance(request_body.content, str) else request_body.content.get('content', '') if isinstance(request_body.content, dict) else content_str,
+      content=content_str if message_type == 'text' and isinstance(request_body.content,
+                                                                   str) else request_body.content.get('content',
+                                                                                                      '') if isinstance(
+        request_body.content, dict) else content_str,
       time=request_body.time,
       type=message_type,
       version=request_body.version or 1,
       lastModified=request_body.lastModified or int(time.time())
     )
-    
+
     # Step 2: Generate AI response if requested
     ai_message_response = None
-    
+
     if request_body.generateResponse:
-      # Get user settings
-      user_id = current_user["user_id"]
-      with get_db() as db:
-        cur = db.cursor()
-        cur.execute("""
-                    SELECT model, temperature, top_p, systemPrompt,
-                           darkMode, languageIsEnglish
-                    FROM user_settings
-                    WHERE user_id = ?
-                    """, (user_id,))
-        
-        row = cur.fetchone()
-        
-        if row:
-          db_settings = AppSettings(**dict(row))
-        else:
-          db_settings = AppSettings(
-            model="openai/gpt-4o",
-            temperature=0.5,
-            top_p=0.5,
-            systemPrompt="You are a helpful assistant!",
-            darkMode=0,
-            languageIsEnglish=0
-          )
-      
-      # Use provided values or fall back to settings
-      temperature = request_body.temperature if request_body.temperature is not None else db_settings.temperature
-      top_p = request_body.top_p if request_body.top_p is not None else db_settings.top_p
-      system_prompt = request_body.systemPrompt if request_body.systemPrompt is not None else db_settings.systemPrompt
-      model = db_settings.model
-      
       # Get conversation context including the just-sent message
-      context = await get_conversation_context(request_body.conversationId, limit=6)  # Get one more to include new message
-      
+      context = await get_conversation_context(request_body.conversationId,
+                                               limit=6)  # Get one more to include new message
+
       # Generate AI response
       ai_response_content = await generate_llm_response(
         context,
-        temperature,
-        top_p,
-        system_prompt,
-        model
+        DEFAULT_TEMPERATURE,
+        DEFAULT_TOP_P,
+        DEFAULT_SYSTEM_PROMPT,
+        DEFAULT_MODEL
       )
-      
+
       ai_message_id = int(time.time() * 1000) + 1  # Ensure different ID
       current_time = int(time.time())
-      
+
       # Save AI message
       with get_db() as conn:
         cur = conn.cursor()
@@ -2591,7 +2533,7 @@ async def send_and_generate_message(
            ai_response_content, current_time, 'text', 1, current_time)
         )
         conn.commit()
-      
+
       ai_message_response = MessageResponse(
         id=ai_message_id,
         conversationId=request_body.conversationId,
@@ -2602,12 +2544,12 @@ async def send_and_generate_message(
         version=1,
         lastModified=current_time
       )
-    
+
     return SendAndGenerateResponse(
       userMessage=user_message_response,
       aiMessage=ai_message_response
     )
-    
+
   except Exception as e:
     print(f"Error in send_and_generate: {str(e)}")
     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -2642,7 +2584,7 @@ async def upload_files(
     file_ids = []
     max_file_size = 10 * 1024 * 1024  # 10MB limit per file
     files_dir = Path("./files")
-    
+
     # Ensure files directory exists
     files_dir.mkdir(exist_ok=True)
 
@@ -2656,19 +2598,19 @@ async def upload_files(
       timestamp = int(time.time() * 1000)
       random_suffix = secrets.token_hex(8)
       file_id = f"file_{timestamp}_{random_suffix}"
-      
+
       # Preserve file extension if present
       if file.filename and "." in file.filename:
         original_ext = Path(file.filename).suffix
         stored_filename = f"{file_id}{original_ext}"
       else:
         stored_filename = file_id
-      
+
       # Save file to disk
       file_path = files_dir / stored_filename
       with open(file_path, "wb") as f:
         f.write(contents)
-      
+
       file_ids.append(file_id)
       print(f"Uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes) saved to {file_path}")
 
@@ -2708,29 +2650,31 @@ async def logging_middleware(request: Request, call_next):
   Middleware to log HTTP requests and responses for CRUD operations.
   """
   # Skip logging for OPTIONS requests and non-CRUD endpoints
-  if request.method == "OPTIONS" or (not request.url.path.startswith("/api/message") and not request.url.path.startswith("/api/conversation")):
+  if request.method == "OPTIONS" or (
+    not request.url.path.startswith("/api/message") and not request.url.path.startswith("/api/conversation")):
     return await call_next(request)
-  
+
   # Log request
   start_time = time.time()
-  
+
   # Log request body size for POST/PATCH/PUT
   body_size = 0
   if request.method in ["POST", "PATCH", "PUT"]:
     # Don't read the body here as it interferes with the request processing
     # Just get the content-length header if available
     body_size = int(request.headers.get("content-length", 0))
-  
+
   # Log request details
   crud_logger.info(f"Request: {request.method} {request.url.path} - Body size: {body_size} bytes")
-  
+
   # Process request
   response = await call_next(request)
-  
+
   # Log response
   duration = time.time() - start_time
-  crud_logger.info(f"Response: {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.3f}s")
-  
+  crud_logger.info(
+    f"Response: {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.3f}s")
+
   return response
 
 
@@ -2743,7 +2687,7 @@ async def csrf_protection_middleware(request: Request, call_next):
   if request.method == "OPTIONS":
     response = await call_next(request)
     return response
-  
+
   # Validate CSRF token
   if not await validate_csrf_token(request):
     response = JSONResponse(
@@ -2756,7 +2700,7 @@ async def csrf_protection_middleware(request: Request, call_next):
       response.headers["Access-Control-Allow-Origin"] = origin
       response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
-  
+
   response = await call_next(request)
   return response
 
@@ -2769,27 +2713,27 @@ async def add_security_headers(request: Request, call_next):
   # Generate nonce for this request
   csp_nonce = secrets.token_urlsafe(16)
   request.state.csp_nonce = csp_nonce
-  
+
   response = await call_next(request)
-  
+
   # Prevent MIME type sniffing
   response.headers["X-Content-Type-Options"] = "nosniff"
-  
+
   # Prevent clickjacking
   response.headers["X-Frame-Options"] = "DENY"
-  
+
   # Enable XSS filter (legacy but still useful for older browsers)
   response.headers["X-XSS-Protection"] = "1; mode=block"
-  
+
   # Force HTTPS (only in production - not when using dev certs)
   if not os.getenv("USE_DEV_CERTS", "False").lower() == "true":
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-  
+
   # Content Security Policy
   # For Angular compatibility, we need a more permissive policy in development
   # In production, consider migrating away from unsafe-inline and unsafe-eval
   is_dev = os.getenv("USE_DEV_CERTS", "False").lower() == "true"
-  
+
   if is_dev:
     # Development CSP - more permissive for Angular CLI
     csp_directives = [
@@ -2818,19 +2762,19 @@ async def add_security_headers(request: Request, call_next):
       "form-action 'self'",
       "require-trusted-types-for 'script'"  # Additional XSS protection
     ]
-  
+
   response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
-  
+
   # Send nonce in header for Angular to use
   response.headers["X-CSP-Nonce"] = csp_nonce
-  
+
   # Referrer Policy
   response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-  
+
   # Permissions Policy (formerly Feature Policy)
   # Disable access to sensitive browser features
   response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-  
+
   return response
 
 

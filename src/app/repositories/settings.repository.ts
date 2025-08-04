@@ -20,7 +20,7 @@ export interface SettingsWithMetadata extends Settings {
 export class SettingsRepository extends BaseRepository<SettingsWithMetadata> {
   private readonly SETTINGS_KEY = 'app_settings';
   private readonly STORE_NAME = 'settings';
-  
+
   constructor(
     dbService: DBService,
     apiService: ApiService,
@@ -49,14 +49,14 @@ export class SettingsRepository extends BaseRepository<SettingsWithMetadata> {
   async save(settings: SettingsWithMetadata): Promise<SettingsWithMetadata> {
     settings.id = this.SETTINGS_KEY;
     settings.timestamp = new Date();
-    
+
     try {
       await this.saveToIndexedDB(settings);
-      
+
       if (await this.isOnline()) {
         await this.saveToBackend(settings);
       }
-      
+
       this.updateCache([settings]);
       return settings;
     } catch (error) {
@@ -71,27 +71,23 @@ export class SettingsRepository extends BaseRepository<SettingsWithMetadata> {
 
   async computeHash(settings: SettingsWithMetadata[]): Promise<string> {
     if (settings.length === 0) return '';
-    
+
     const current = settings[0];
     const data = JSON.stringify({
-      model: current.model,
-      temperature: current.temperature,
-      top_p: current.top_p,
-      systemPrompt: current.systemPrompt,
-      darkMode: current.darkMode,
-      languageIsEnglish: current.languageIsEnglish
+      theme: current.theme,
+      language: current.language
     });
-    
+
     return this.computeHashFromString(data);
   }
 
   async sync(): Promise<SyncResult> {
     this.isSyncing$.next(true);
-    
+
     try {
       const localSettings = this.cache$.getValue();
       const localHash = await this.computeHash(localSettings);
-      
+
       const remoteSettings = await this.fetchFromBackend();
       if (!remoteSettings) {
         return {
@@ -100,24 +96,24 @@ export class SettingsRepository extends BaseRepository<SettingsWithMetadata> {
           errors: ['Failed to fetch settings from backend']
         };
       }
-      
+
       const remoteHash = await this.computeHash([remoteSettings]);
-      
+
       if (localHash !== remoteHash) {
         remoteSettings.id = this.SETTINGS_KEY;
         remoteSettings.timestamp = new Date();
         remoteSettings.syncHash = remoteHash;
-        
+
         await this.saveToIndexedDB(remoteSettings);
         this.updateCache([remoteSettings]);
         this.lastSyncTime = new Date();
-        
+
         return {
           success: true,
           itemsUpdated: 1
         };
       }
-      
+
       this.lastSyncTime = new Date();
       return {
         success: true,
@@ -140,7 +136,7 @@ export class SettingsRepository extends BaseRepository<SettingsWithMetadata> {
       const db = await this.dbService.getDb();
       const transaction = db.transaction([this.STORE_NAME], 'readonly');
       const store = transaction.objectStore(this.STORE_NAME);
-      
+
       const result = await store.get(this.SETTINGS_KEY);
       if (result) {
         this.updateCache([result]);
@@ -159,17 +155,13 @@ export class SettingsRepository extends BaseRepository<SettingsWithMetadata> {
 
   private async saveToBackend(settings: SettingsWithMetadata): Promise<void> {
     const settingsDto: Settings = {
-      model: settings.model,
-      temperature: settings.temperature,
-      top_p: settings.top_p,
-      systemPrompt: settings.systemPrompt,
-      darkMode: settings.darkMode,
-      languageIsEnglish: settings.languageIsEnglish
+      theme: settings.theme,
+      language: settings.language
     };
-    
+
     const response = await firstValueFrom(
-      this.http.put(`${environment.apiUrl}/api/settings`, settingsDto, { 
-        withCredentials: true 
+      this.http.put(`${environment.apiUrl}/api/settings`, settingsDto, {
+        withCredentials: true
       })
     );
   }
@@ -177,8 +169,8 @@ export class SettingsRepository extends BaseRepository<SettingsWithMetadata> {
   private async fetchFromBackend(): Promise<SettingsWithMetadata | null> {
     try {
       const settings = await firstValueFrom(
-        this.http.get<Settings>(`${environment.apiUrl}/api/settings`, { 
-          withCredentials: true 
+        this.http.get<Settings>(`${environment.apiUrl}/api/settings`, {
+          withCredentials: true
         })
       );
       return settings as SettingsWithMetadata;

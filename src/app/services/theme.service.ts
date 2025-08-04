@@ -1,8 +1,7 @@
 import { Injectable, Inject, Renderer2, RendererFactory2 } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { BehaviorSubject, Observable } from 'rxjs';
-
-export type Theme = 'light' | 'dark' | 'auto';
+import {Theme} from "../models/enum";
 
 @Injectable({
   providedIn: 'root'
@@ -10,10 +9,10 @@ export type Theme = 'light' | 'dark' | 'auto';
 export class ThemeService {
   private renderer: Renderer2;
   private readonly STORAGE_KEY = 'theme-preference';
-  
-  private themeSubject = new BehaviorSubject<Theme>('auto');
+
+  private themeSubject = new BehaviorSubject<Theme>(Theme.Auto);
   public theme$: Observable<Theme> = this.themeSubject.asObservable();
-  
+
   private mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
   constructor(
@@ -27,13 +26,13 @@ export class ThemeService {
 
   private initializeTheme(): void {
     const storedTheme = this.getStoredTheme() as Theme;
-    const initialTheme = storedTheme || 'auto';
+    const initialTheme = storedTheme || Theme.Auto;
     this.setTheme(initialTheme);
   }
 
   private setupSystemThemeListener(): void {
     this.mediaQuery.addEventListener('change', (e) => {
-      if (this.themeSubject.value === 'auto') {
+      if (this.themeSubject.value === Theme.Auto) {
         this.applyThemeToDOM(e.matches ? 'dark' : 'light');
       }
     });
@@ -42,18 +41,18 @@ export class ThemeService {
   public setTheme(theme: Theme): void {
     this.themeSubject.next(theme);
     this.storeTheme(theme);
-    
+
     const effectiveTheme = this.getEffectiveTheme(theme);
     this.applyThemeToDOM(effectiveTheme);
   }
 
   public getEffectiveTheme(theme?: Theme): 'light' | 'dark' {
     const currentTheme = theme || this.themeSubject.value;
-    
-    if (currentTheme === 'auto') {
+
+    if (currentTheme === Theme.Auto) {
       return this.mediaQuery.matches ? 'dark' : 'light';
     }
-    
+
     return currentTheme;
   }
 
@@ -62,7 +61,7 @@ export class ThemeService {
     this.renderer.removeClass(body, 'theme-light');
     this.renderer.removeClass(body, 'theme-dark');
     this.renderer.addClass(body, `theme-${theme}`);
-    
+
     // Mark as initialized after first theme application to enable transitions
     if (!body.classList.contains('theme-initialized')) {
       setTimeout(() => {
@@ -72,7 +71,7 @@ export class ThemeService {
   }
 
   public toggleTheme(): void {
-    const themes: Theme[] = ['light', 'dark', 'auto'];
+    const themes: Theme[] = [Theme.Light, Theme.Dark, Theme.Auto];
     const currentIndex = themes.indexOf(this.themeSubject.value);
     const nextTheme = themes[(currentIndex + 1) % themes.length];
     this.setTheme(nextTheme);

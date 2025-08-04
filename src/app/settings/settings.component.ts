@@ -14,6 +14,7 @@ import { SettingsStateService, AppSettings } from '../services/settings-state.se
 import { SyncEngineService } from '../repositories/sync-engine.service';
 import { StatusBarService } from '../status-bar/status-bar.service';
 import { Settings } from '../models/settings.model';
+import {Language, Theme} from "../models/enum";
 
 /**
  * Settings component using the new unified data architecture.
@@ -36,24 +37,15 @@ import { Settings } from '../models/settings.model';
 export class SettingsComponent implements OnInit, OnDestroy {
   // Local form model
   settings: Settings = {
-    model: 'openai/gpt-4o',
-    temperature: 0.5,
-    top_p: 0.5,
-    systemPrompt: '',
-    darkMode: 0,
-    languageIsEnglish: 1
+    theme: Theme.Auto,
+    language: Language.English
   };
 
-  // UI state
-  models: string[] = [];
-  temperatures: number[] = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-  topPValues: number[] = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-  
   // Loading states from the state service
   isLoading$ = this.settingsState.isLoading$;
   isSyncing$ = this.settingsState.isSyncing$;
   lastError$ = this.settingsState.lastError$;
-  
+
   // Sync status from sync engine
   syncStatus$ = this.syncEngine.status$;
 
@@ -70,25 +62,20 @@ export class SettingsComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     // Load settings through the state service
     this.loadSettings();
-    this.loadAvailableModels();
-    
+
     // Subscribe to settings changes
     this.settingsState.settings
       .pipe(takeUntil(this.destroy$))
       .subscribe(settings => {
         if (settings) {
           this.settings = {
-            model: settings.model,
-            temperature: settings.temperature,
-            top_p: settings.top_p,
-            systemPrompt: settings.systemPrompt,
-            darkMode: settings.darkMode,
-            languageIsEnglish: settings.languageIsEnglish
+            theme: settings.theme,
+            language: settings.language
           };
           this.initialSettings = { ...this.settings };
         }
       });
-    
+
     // Subscribe to sync errors
     this.settingsState.lastError$
       .pipe(takeUntil(this.destroy$))
@@ -110,18 +97,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.statusBar.showMessage('Settings loaded successfully', 'success');
     } catch (error) {
       this.statusBar.showMessage('Failed to load settings', 'error');
-    }
-  }
-
-  private async loadAvailableModels(): Promise<void> {
-    try {
-      this.models = await this.settingsState.getAvailableModels();
-      if (this.models.length > 0 && !this.models.includes(this.settings.model)) {
-        this.settings.model = this.models[0];
-      }
-    } catch (error) {
-      this.statusBar.showMessage('Failed to load available models', 'error');
-      console.error(error);
     }
   }
 
@@ -155,12 +130,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
    */
   resetToDefaults(): void {
     this.settings = {
-      model: 'openai/gpt-4o',
-      temperature: 0.5,
-      top_p: 0.5,
-      systemPrompt: '',
-      darkMode: 0,
-      languageIsEnglish: 1
+      theme: Theme.Auto,
+      language: Language.English
     };
     this.statusBar.showMessage('Reset to default settings', 'info');
   }
@@ -176,21 +147,30 @@ export class SettingsComponent implements OnInit, OnDestroy {
    * Toggle theme
    */
   toggleTheme(): void {
-    this.settings.darkMode = this.settings.darkMode === 1 ? 0 : 1;
+    const themes: Theme[] = [Theme.Light, Theme.Dark, Theme.Auto];
+    const currentIndex = themes.indexOf(this.settings.theme);
+    this.settings.theme = themes[(currentIndex + 1) % themes.length];
   }
 
   /**
    * Toggle language
    */
   toggleLanguage(): void {
-    this.settings.languageIsEnglish = this.settings.languageIsEnglish === 1 ? 0 : 1;
+    this.settings.language = this.settings.language === Language.English ? Language.German : Language.English;
   }
 
   /**
    * Get theme icon based on current theme
    */
   getThemeIcon(): string {
-    return this.settings.darkMode === 1 ? 'dark_mode' : 'light_mode';
+    switch (this.settings.theme) {
+      case Theme.Dark:
+        return 'dark_mode';
+      case Theme.Light:
+        return 'light_mode';
+      default:
+        return 'brightness_auto';
+    }
   }
 
   /**

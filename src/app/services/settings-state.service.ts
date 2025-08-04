@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { map, switchMap, shareReplay } from 'rxjs/operators';
+import { map, shareReplay } from 'rxjs/operators';
 import { SettingsRepository, SettingsWithMetadata } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
 import { Settings } from '../models/settings.model';
+import {Language, Theme} from "../models/enum";
 
 export interface AppSettings extends Settings {
   // From SettingsWithMetadata
@@ -37,14 +38,12 @@ export class SettingsStateService {
     // Apply theme when settings change
     this.settings$.subscribe(settings => {
       if (settings) {
-        // If darkMode is undefined, respect system preference
-        if (settings.darkMode === undefined) {
-          // Get effective theme from system preference
-          const effectiveTheme = this.themeService.getEffectiveTheme('auto');
-          this.themeService.setTheme('auto');
+        // If theme is undefined, respect system preference
+        if (settings.theme === undefined) {
+          this.themeService.setTheme(Theme.Auto);
         } else {
           // Apply user's preference
-          this.themeService.setTheme(settings.darkMode === 1 ? 'dark' : 'light');
+          this.themeService.setTheme(settings.theme);
         }
       }
     });
@@ -98,19 +97,15 @@ export class SettingsStateService {
       const updated: SettingsWithMetadata = {
         ...current,
         ...settings,
-        model: settings.model || current?.model || 'gpt-3.5-turbo',
-        temperature: settings.temperature ?? current?.temperature ?? 0.7,
-        top_p: settings.top_p ?? current?.top_p ?? 1,
-        systemPrompt: settings.systemPrompt || current?.systemPrompt || '',
-        darkMode: settings.darkMode ?? current?.darkMode ?? 0,
-        languageIsEnglish: settings.languageIsEnglish ?? current?.languageIsEnglish ?? 1
+        theme: settings.theme || current?.theme || Theme.Auto,
+        language: settings.language || current?.language || Language.English
       };
 
       await this.settingsRepository.save(updated);
-      
+
       // Apply theme if changed
-      if (settings.darkMode !== undefined) {
-        this.themeService.setTheme(settings.darkMode === 1 ? 'dark' : 'light');
+      if (settings.theme !== undefined) {
+        this.themeService.setTheme(settings.theme);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save settings';
@@ -126,40 +121,13 @@ export class SettingsStateService {
    */
   async syncSettings(): Promise<void> {
     this.lastError$.next(null);
-    
+
     try {
       await this.settingsRepository.sync();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to sync settings';
       this.lastError$.next(errorMessage);
       throw error;
-    }
-  }
-
-  /**
-   * Get available LLM models
-   */
-  async getAvailableModels(): Promise<string[]> {
-    try {
-      // This still uses the API service directly as it's not settings data
-      const response = await fetch('/api/llms', {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch models');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to fetch models:', error);
-      // Return default models as fallback
-      return [
-        'gpt-3.5-turbo',
-        'gpt-4',
-        'claude-2',
-        'claude-instant-1'
-      ];
     }
   }
 
@@ -180,15 +148,14 @@ export class SettingsStateService {
   private enrichSettings(settings: SettingsWithMetadata | null): AppSettings | null {
     if (!settings) return null;
 
-    // When darkMode is undefined, determine based on current theme
-    const darkModeValue = settings.darkMode ?? 
-      (this.themeService.getCurrentEffectiveTheme() === 'dark' ? 1 : 0);
+    // When theme is undefined, default to auto
+    const themeValue = settings.theme || Theme.Auto;
 
     return {
       ...settings,
-      darkMode: darkModeValue,
-      isEnglish: settings.languageIsEnglish === 1,
-      isDarkMode: darkModeValue === 1
+      theme: themeValue,
+      isEnglish: settings.language === Language.English,
+      isDarkMode: this.themeService.getEffectiveTheme(themeValue) === 'dark'
     };
   }
 }

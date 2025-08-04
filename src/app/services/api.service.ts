@@ -22,7 +22,7 @@ export class ApiService {
     //  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
     //}
     // TODO: Either enable or remove this
-    
+
     // Try to read CSRF token from cookie on initialization
     this.readCsrfTokenFromCookie();
   }
@@ -47,19 +47,19 @@ export class ApiService {
     const headers: any = {
       'Content-Type': 'application/json',
     };
-    
+
     // Try to read from cookie if not already set
     if (!this.csrfToken) {
       this.readCsrfTokenFromCookie();
     }
-    
+
     // Add CSRF token if available
     if (this.csrfToken) {
       headers['X-CSRF-Token'] = this.csrfToken;
     } else {
       console.warn('No CSRF token available when building headers');
     }
-    
+
     return new HttpHeaders(headers);
   }
 
@@ -70,14 +70,14 @@ export class ApiService {
       withCredentials: true  // Cookies
     };
   }
-  
+
   // Extract CSRF token from response headers
   public extractCsrfToken(response: any): void {
     console.log('Extracting CSRF token from response:', response);
-    
+
     // First try to read from cookie (primary method now)
     this.readCsrfTokenFromCookie();
-    
+
     // Also check headers for backward compatibility
     if (response && response.headers) {
       // Debug: Log all available headers
@@ -85,12 +85,12 @@ export class ApiService {
       response.headers.keys().forEach((key: string) => {
         console.log(`  ${key}: ${response.headers.get(key)}`);
       });
-      
+
       // Try different case variations
-      const token = response.headers.get('X-CSRF-Token') || 
-                   response.headers.get('x-csrf-token') || 
-                   response.headers.get('X-Csrf-Token');
-      
+      const token = response.headers.get('X-CSRF-Token') ||
+        response.headers.get('x-csrf-token') ||
+        response.headers.get('X-Csrf-Token');
+
       console.log('CSRF token from headers:', token);
       if (token && !this.csrfToken) {
         // Only use header token if cookie wasn't found
@@ -98,7 +98,7 @@ export class ApiService {
         console.log('CSRF token updated from headers:', this.csrfToken);
       }
     }
-    
+
     if (!this.csrfToken) {
       console.warn('No CSRF token found in cookies or headers');
     }
@@ -131,7 +131,7 @@ export class ApiService {
       );
 
       console.log('Response:', response);
-      
+
       // Extract CSRF token from response headers
       this.extractCsrfToken(response);
 
@@ -151,8 +151,8 @@ export class ApiService {
 
   // TODO: Fix this one!
   async getConversationMessages(
-    conversationId: string | number, 
-    count: number, 
+    conversationId: string | number,
+    count: number,
     latestTimestamp: Date | null = null,
     afterTimestamp?: Date
   ): Promise<{ messages: Message[], hasMoreMessages?: boolean }> {
@@ -160,9 +160,9 @@ export class ApiService {
     if (latestTimestamp === null) {
       latestTimestamp = new Date();
     }
-    
+
     let endpoint = `${this.baseUrl}/api/conversation/messages/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}/${count}`;
-    
+
     // Add after_timestamp query parameter for incremental sync
     if (afterTimestamp) {
       endpoint += `?after_timestamp=${Math.floor(afterTimestamp.getTime() / 1000)}`;
@@ -179,10 +179,10 @@ export class ApiService {
       if ((response.status === 200 || response.status === 206) && response.body) {
         // Convert all messages using the new factory method
         const messages = response.body.map(messageData => Message.fromApiResponse(messageData));
-        
+
         // Check if server indicated more messages exist
         const hasMoreMessages = response.headers.get('X-Has-More-Messages') === 'true';
-        
+
         return { messages, hasMoreMessages };
       } else if (response.status === 204 && !response.body) {
         return { messages: [], hasMoreMessages: false };
@@ -232,10 +232,7 @@ export class ApiService {
 
     // Use the new toApiGenerate method
     const body = {
-      ...lastMessage.toApiGenerate(participant),
-      temperature: settings.temperature,
-      top_p: settings.top_p,
-      systemPrompt: settings.systemPrompt
+      ...lastMessage.toApiGenerate(participant)
     };
 
     try {
@@ -252,7 +249,7 @@ export class ApiService {
   }
 
   async sendAndGenerateMessage(
-    message: Message, 
+    message: Message,
     generateResponse: boolean = true,
     settings?: Settings
   ): Promise<{ userMessageId: number; aiMessage?: Message }> {
@@ -267,9 +264,7 @@ export class ApiService {
 
     // Add generation settings if provided and generateResponse is true
     if (generateResponse && settings) {
-      body.temperature = settings.temperature;
-      body.top_p = settings.top_p;
-      body.systemPrompt = settings.systemPrompt;
+      // No settings to add
     }
 
     try {
@@ -398,7 +393,7 @@ export class ApiService {
       // Upload files and return their server IDs
       // Get existing headers with CSRF token
       const baseHeaders = this.getHeaders();
-      
+
       // For multipart/form-data, we need to let the browser set Content-Type with boundary
       // So we create new headers without Content-Type but keep other headers like CSRF
       let uploadHeaders = new HttpHeaders();
@@ -410,7 +405,7 @@ export class ApiService {
           }
         }
       });
-      
+
       const response = await lastValueFrom(
         this.http.post<string[]>(endpoint, formData, {
           headers: uploadHeaders,
