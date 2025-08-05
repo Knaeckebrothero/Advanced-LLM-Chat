@@ -298,7 +298,7 @@ class RegenerateMessageRequest(BaseModel):
   id: int
   conversationId: str  # UUID
 
-
+# **MODIFIED:** Simplified AppSettings to match frontend
 class AppSettings(BaseModel):
   """
   Define the structure of the settings that the frontend can GET or PUT
@@ -306,15 +306,12 @@ class AppSettings(BaseModel):
   theme: str
   language: str
 
-
-class AppSettingsWithMetadata(AppSettings):
-  """
-  Settings with sync metadata for frontend sync architecture
-  """
-  id: Optional[str] = None
-  timestamp: Optional[datetime] = None
-  syncHash: Optional[str] = None
-
+# **ADDED:** New response model for settings to include timestamp
+class AppSettingsResponse(AppSettings):
+    """
+    Settings with sync metadata for frontend sync architecture
+    """
+    lastUpdated: int # Unix timestamp
 
 class ConversationWithDetails(Conversation):
   """
@@ -1537,22 +1534,17 @@ async def get_conversation(conversation_id: str, response: Response, current_use
     return ErrorResponse(error=str(e))
 
 
-@app.get("/api/settings", response_model=AppSettingsWithMetadata)
+# **MODIFIED:** Updated settings endpoint to match new frontend logic
+@app.get("/api/settings", response_model=AppSettingsResponse)
 async def get_settings(current_user: dict = Depends(get_current_user)):
   user_id = current_user["user_id"]
 
   if current_user.get("is_guest"):
-    # Generate consistent hash for guest settings
-    guest_settings = AppSettings(
+    # Return default settings for guest users with current timestamp
+    return AppSettingsResponse(
       theme="auto",
-      language="en"
-    )
-    settings_str = f"{guest_settings.theme}:{guest_settings.language}"
-    return AppSettingsWithMetadata(
-      **guest_settings.dict(),
-      id=f"guest-{user_id}",
-      timestamp=datetime.now(UTC),
-      syncHash=generate_sha256_hash(settings_str)
+      language="en",
+      lastUpdated=int(time.time())
     )
 
   with get_db() as db:
@@ -1565,37 +1557,25 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
     row = cur.fetchone()
 
     if row:
-      settings_dict = dict(row)
-      # Extract timestamp
-      timestamp = settings_dict.pop('updated_at', None)
-      # Create settings object
-      settings = AppSettings(**settings_dict)
-      # Generate hash
-      settings_str = f"{settings.theme}:{settings.language}"
+      # Convert datetime string to datetime object, then to Unix timestamp
+      updated_at_dt = datetime.fromisoformat(row['updated_at'])
+      last_updated_ts = int(updated_at_dt.timestamp())
 
-      return AppSettingsWithMetadata(
-        **settings.dict(),
-        id=f"user-{user_id}",
-        timestamp=timestamp,
-        syncHash=generate_sha256_hash(settings_str)
+      return AppSettingsResponse(
+        theme=row['theme'],
+        language=row['language'],
+        lastUpdated=last_updated_ts
       )
     else:
       # Fallback defaults if user has no settings yet
-      default_settings = AppSettings(
+      return AppSettingsResponse(
         theme="auto",
-        language="en"
-      )
-      settings_str = f"{default_settings.theme}:{default_settings.language}"
-
-      return AppSettingsWithMetadata(
-        **default_settings.dict(),
-        id=f"user-{user_id}",
-        timestamp=datetime.now(UTC),
-        syncHash=generate_sha256_hash(settings_str)
+        language="en",
+        lastUpdated=int(time.time())
       )
 
-
-@app.put("/api/settings", response_model=AppSettingsWithMetadata)
+# **MODIFIED:** Updated settings endpoint to match new frontend logic
+@app.put("/api/settings", response_model=AppSettingsResponse)
 async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
   user_id = current_user["user_id"]
   if current_user.get("is_guest"):
@@ -1603,13 +1583,14 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
 
   with get_db() as db:
     cur = db.cursor()
+    # Use CURRENT_TIMESTAMP to let the database handle the update time
     cur.execute("""
                 INSERT INTO user_settings (user_id, theme, language, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                  ON CONFLICT(user_id) DO UPDATE SET
+                ON CONFLICT(user_id) DO UPDATE SET
                   theme = excluded.theme,
-                                            language = excluded.language,
-                                            updated_at = CURRENT_TIMESTAMP
+                  language = excluded.language,
+                  updated_at = CURRENT_TIMESTAMP
                 """, (
       user_id,
       new_settings.theme,
@@ -1617,23 +1598,21 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
     ))
     db.commit()
 
-    # Fetch the updated settings with timestamp
+    # Fetch the updated settings to get the new timestamp
     cur.execute("""
-                SELECT updated_at
+                SELECT theme, language, updated_at
                 FROM user_settings
                 WHERE user_id = ?
                 """, (user_id,))
     row = cur.fetchone()
-    timestamp = row['updated_at'] if row else datetime.now(UTC)
 
-  # Generate hash for the settings
-  settings_str = f"{new_settings.theme}:{new_settings.language}"
+    updated_at_dt = datetime.fromisoformat(row['updated_at'])
+    last_updated_ts = int(updated_at_dt.timestamp())
 
-  return AppSettingsWithMetadata(
-    **new_settings.dict(),
-    id=f"user-{user_id}",
-    timestamp=timestamp,
-    syncHash=generate_sha256_hash(settings_str)
+  return AppSettingsResponse(
+      theme=row['theme'],
+      language=row['language'],
+      lastUpdated=last_updated_ts
   )
 
 
