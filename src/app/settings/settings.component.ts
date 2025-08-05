@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialogRef } from '@angular/material/dialog';
@@ -14,7 +14,7 @@ import { Observable } from 'rxjs';
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss'],
 })
-export class SettingsComponent implements OnInit {
+export class SettingsComponent {
   settings$: Observable<AppSettings | null>;
 
   themeOptions = [
@@ -34,8 +34,6 @@ export class SettingsComponent implements OnInit {
   ) {
     this.settings$ = this.settingsState.settings$;
   }
-
-  ngOnInit(): void {}
 
   updateTheme(theme: Theme): void {
     this.settingsState.updateSettings({ theme });

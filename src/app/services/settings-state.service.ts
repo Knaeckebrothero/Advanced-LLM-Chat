@@ -24,9 +24,15 @@ export class SettingsStateService {
   }
 
   private async loadInitialSettings() {
-    const settings = await this.repository.getSettings();
-    this.settingsSubject.next(settings);
-    this.themeService.setTheme(settings.theme);
+    try {
+      const settings = await this.repository.getSettings();
+      this.settingsSubject.next(settings);
+      this.themeService.setTheme(settings.theme);
+    } catch (error) {
+      console.error('Failed to load initial settings:', error);
+      this.settingsSubject.next(DEFAULT_SETTINGS);
+      this.themeService.setTheme(DEFAULT_SETTINGS.theme);
+    }
   }
 
   async updateSettings(newSettings: Partial<AppSettings>) {

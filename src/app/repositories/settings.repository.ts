@@ -18,7 +18,14 @@ export class SettingsRepository {
 
   async getSettings(): Promise<AppSettings> {
     const db = await this.dbService.getDb();
-    const localSettings = await db.get('settings', SETTINGS_KEY);
+    let localSettings: AppSettings | undefined;
+
+    try {
+      localSettings = await db.get('settings', 'user-settings');
+    } catch (error) {
+      console.warn('Could not fetch local settings from IndexedDB. Using remote/default.', error);
+      localSettings = undefined;
+    }
 
     try {
       const remoteSettings = await this.apiService.getSettings();
@@ -26,7 +33,7 @@ export class SettingsRepository {
         remoteSettings &&
         (!localSettings || remoteSettings.lastUpdated > localSettings.lastUpdated)
       ) {
-        const storableSettings = { ...remoteSettings, id: SETTINGS_KEY };
+        const storableSettings = { ...remoteSettings, id: 'user-settings' };
         await db.put('settings', storableSettings);
         return remoteSettings;
       }

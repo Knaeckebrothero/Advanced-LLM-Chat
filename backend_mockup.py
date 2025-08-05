@@ -1606,8 +1606,12 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
                 """, (user_id,))
     row = cur.fetchone()
 
-    updated_at_dt = datetime.fromisoformat(row['updated_at'])
-    last_updated_ts = int(updated_at_dt.timestamp())
+    try:
+      updated_at_dt = datetime.fromisoformat(row['updated_at'])
+      last_updated_ts = int(updated_at_dt.timestamp())
+    except (ValueError, TypeError):
+      # Fallback to current time if parsing fails
+      last_updated_ts = int(time.time())
 
   return AppSettingsResponse(
       theme=row['theme'],
