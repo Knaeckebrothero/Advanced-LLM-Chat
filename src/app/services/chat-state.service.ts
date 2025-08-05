@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, from, of } from 'rxjs';
-import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter } from 'rxjs/operators';
+import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
 import { SyncEngineService } from '../repositories/sync-engine.service';
@@ -207,13 +207,18 @@ export class ChatStateService implements OnDestroy {
     );
 
     // Get settings for AI generation
-    const settings = await firstValueFrom(this.settingsState.settings$);
+    const settings = await firstValueFrom(
+      this.settingsState.settings$.pipe(
+        timeout(5000), // 5 seconds timeout
+        catchError(() => of({} as AppSettings)) // fallback to empty settings object
+      )
+    );
 
     // Mark that we're sending a message to prevent immediate re-sync
     await this.conversationRepository.markMessageSent(conversationId);
 
     // Use the new combined send and generate method
-    const aiMessage = await this.messageRepository.sendAndGenerate(message, true, settings);
+    const aiMessage = await this.messageRepository.sendAndGenerate(message, true, settings!);
 
     // Update conversation timestamp
     const conversation = await firstValueFrom(this.activeConversation$);
@@ -368,7 +373,12 @@ export class ChatStateService implements OnDestroy {
     try {
       const messages = await firstValueFrom(this.messages$);
       const lastMessage = messages[messages.length - 1];
-      const settings = await firstValueFrom(this.settingsState.settings$);
+      const settings = await firstValueFrom(
+        this.settingsState.settings$.pipe(
+          timeout(5000), // 5 seconds timeout
+          catchError(() => of({} as AppSettings)) // fallback to empty settings object
+        )
+      );
 
       if (!lastMessage || !settings) {
         throw new Error('No message or settings available');

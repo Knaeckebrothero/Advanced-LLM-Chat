@@ -73,11 +73,34 @@ export class ApiService {
 
   // Extract CSRF token from response headers
   public extractCsrfToken(response: any): void {
+    console.log('Extracting CSRF token from response:', response);
+
+    // First try to read from cookie (primary method now)
+    this.readCsrfTokenFromCookie();
+
+    // Also check headers for backward compatibility
     if (response && response.headers) {
-      const token = response.headers.get('X-CSRF-Token');
-      if (token) {
+      // Debug: Log all available headers
+      console.log('Available headers:');
+      response.headers.keys().forEach((key: string) => {
+        console.log(`  ${key}: ${response.headers.get(key)}`);
+      });
+
+      // Try different case variations
+      const token = response.headers.get('X-CSRF-Token') ||
+        response.headers.get('x-csrf-token') ||
+        response.headers.get('X-Csrf-Token');
+
+      console.log('CSRF token from headers:', token);
+      if (token && !this.csrfToken) {
+        // Only use header token if cookie wasn't found
         this.csrfToken = token;
+        console.log('CSRF token updated from headers:', this.csrfToken);
       }
+    }
+
+    if (!this.csrfToken) {
+      console.warn('No CSRF token found in cookies or headers');
     }
   }
 
