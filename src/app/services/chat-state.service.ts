@@ -210,15 +210,22 @@ export class ChatStateService implements OnDestroy {
     const settings = await firstValueFrom(
       this.settingsState.settings$.pipe(
         timeout(5000), // 5 seconds timeout
-        catchError(() => of({} as AppSettings)) // fallback to empty settings object
+        catchError(() => of(null)) // fallback to null
       )
     );
+
+    // Ensure settings are valid before proceeding
+    if (!settings) {
+      console.error("Settings are not available, cannot send message with AI generation.");
+      // Decide how to handle this - maybe send without AI or show an error
+      return;
+    }
 
     // Mark that we're sending a message to prevent immediate re-sync
     await this.conversationRepository.markMessageSent(conversationId);
 
     // Use the new combined send and generate method
-    const aiMessage = await this.messageRepository.sendAndGenerate(message, true, settings!);
+    const aiMessage = await this.messageRepository.sendAndGenerate(message, true, settings);
 
     // Update conversation timestamp
     const conversation = await firstValueFrom(this.activeConversation$);
@@ -376,7 +383,7 @@ export class ChatStateService implements OnDestroy {
       const settings = await firstValueFrom(
         this.settingsState.settings$.pipe(
           timeout(5000), // 5 seconds timeout
-          catchError(() => of({} as AppSettings)) // fallback to empty settings object
+          catchError(() => of(null)) // fallback to null
         )
       );
 

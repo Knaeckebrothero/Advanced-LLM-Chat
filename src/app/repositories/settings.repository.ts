@@ -21,7 +21,7 @@ export class SettingsRepository {
     let localSettings: AppSettings | undefined;
 
     try {
-      localSettings = await db.get('settings', 'user-settings');
+      localSettings = await db.get('settings', SETTINGS_KEY);
     } catch (error) {
       console.warn('Could not fetch local settings from IndexedDB. Using remote/default.', error);
       localSettings = undefined;
@@ -33,7 +33,7 @@ export class SettingsRepository {
         remoteSettings &&
         (!localSettings || remoteSettings.lastUpdated > localSettings.lastUpdated)
       ) {
-        const storableSettings = { ...remoteSettings, id: 'user-settings' };
+        const storableSettings = { ...remoteSettings, id: SETTINGS_KEY };
         await db.put('settings', storableSettings);
         return remoteSettings;
       }
@@ -58,4 +58,5 @@ export class SettingsRepository {
       );
     }
   }
+
 }

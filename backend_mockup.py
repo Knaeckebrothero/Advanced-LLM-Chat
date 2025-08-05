@@ -1165,7 +1165,7 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
   log_security_event("guest_login_success", {
     "user_id": guest_user["id"],
     "ip_address": ip_address,
-    "session_duration_hours": guest_timeout_hours
+    "guest_timeout_hours": guest_timeout_hours
   }, req)
 
   return LoginResponse(
