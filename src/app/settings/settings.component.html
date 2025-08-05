@@ -9,6 +9,7 @@
         class="option-button"
         [class.active]="settings.theme === option.value"
         (click)="updateTheme(option.value)"
+        [attr.aria-pressed]="settings.theme === option.value"
       >
         <mat-icon>{{ option.icon }}</mat-icon>
         <span>{{ option.label }}</span>
@@ -24,9 +25,14 @@
         class="option-button"
         [class.active]="settings.language === option.value"
         (click)="updateLanguage(option.value)"
+        [attr.aria-pressed]="settings.language === option.value"
       >
         <span>{{ option.label }}</span>
       </button>
     </div>
+  </div>
+
+  <div class="button-row">
+    <button class="done-button" (click)="close()">Done</button>
   </div>
 </div>

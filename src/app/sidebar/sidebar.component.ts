@@ -30,12 +30,11 @@ import { takeUntil } from 'rxjs/operators';
 export class SidebarComponent implements OnInit, OnDestroy {
 
   groupedConversations: { [key: string]: Conversation[] } = {};
-  
-  // Observable streams from state services
+
   conversations$: Observable<Conversation[]> = this.chatState.conversations$;
   activeConversationId$: Observable<string | null> = this.uiState.activeConversationId$;
   isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
-  
+
   private destroy$ = new Subject<void>();
 
   constructor(
@@ -46,9 +45,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
     private authService: AuthService
   ) {}
 
-  /**
-   * Gets the current user's name to display
-   */
   getUserName(): string {
     const user = this.authService.getCurrentUser();
     if (user) {
@@ -57,9 +53,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return 'Guest';
   }
 
-  /**
-   * Gets the initials for the avatar
-   */
   getUserInitials(): string {
     const user = this.authService.getCurrentUser();
     if (user) {
@@ -73,47 +66,32 @@ export class SidebarComponent implements OnInit, OnDestroy {
         return user.email.substring(0, 2).toUpperCase();
       }
     }
-    return 'G'; // Default for Guest
+    return 'G';
   }
 
-  /**
-   * Handles click on user profile - navigates to login if guest, shows logout option if logged in
-   */
   handleUserClick(): void {
     if (this.authService.isGuest) {
-      // Navigate to login page
       this.router.navigate(['/login']);
       this.uiState.closeSidebarOnMobile();
     } else {
-      // Show logout confirmation
       if (confirm('Are you sure you want to logout?')) {
         this.authService.logout();
       }
     }
   }
 
-  /**
-   * Öffnet die Einstellungen als modales Dialogfenster.
-   * Nutzt die neue SettingsNewComponent und zeigt sie über MatDialog an.
-   */
   openSettings(): void {
     const dialogRef = this.dialog.open(SettingsComponent, {
-      width: '400px'
+      panelClass: 'settings-dialog-panel', // Apply custom class for responsive styling
+      backdropClass: 'custom-backdrop' // Optional: for custom backdrop styles
     });
 
-    // The new settings component handles saving internally
     dialogRef.afterClosed().subscribe(() => {
-      // Settings are already saved by the component itself
+      // Logic after dialog closes
     });
   }
 
-  /**
-   * Angular lifecycle hook that initializes the component's state.
-   * It subscribes to a list of conversations from the chat state service.
-   * It groups existing conversations by date and stores them accordingly.
-   */
   ngOnInit(): void {
-    // Subscribe to conversations from ChatStateService
     this.conversations$
       .pipe(takeUntil(this.destroy$))
       .subscribe(conversations => {
@@ -121,10 +99,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
       });
   }
 
-  /**
-   * Groups conversations into time-based categories for display.
-   * Each group is also sorted by newest first.
-   */
   groupConversationsByDate(conversations: Conversation[]): { [key: string]: Conversation[] } {
     const groups: { [key: string]: Conversation[] } = {
       'Heute': [],
@@ -134,7 +108,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
     };
 
     const now = new Date();
-    now.setHours(0, 0, 0, 0); // Reset time for accurate date comparison
+    now.setHours(0, 0, 0, 0);
 
     for (const conv of conversations) {
       const updated = new Date(conv.updatedAt);
@@ -158,7 +132,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Sort each group by newest first
     for (const key in groups) {
       groups[key].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -168,32 +141,22 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return groups;
   }
 
-  /**
-   * Called when a conversation is selected (clicked).
-   * Passes the selected conversation to the ChatStateService and updates highlighting.
-   */
   onSelectConversation(conversation: Conversation): void {
     this.chatState.loadConversation(conversation.id);
-    this.router.navigate(['/']); // Navigate to the main chat view
-    this.uiState.closeSidebarOnMobile(); // Close sidebar on mobile if open
+    this.router.navigate(['/']);
+    this.uiState.closeSidebarOnMobile();
   }
 
-  /**
-   * Creates a new placeholder conversation.
-   */
   createNewConversation(): void {
     this.chatState.createNewConversation();
     this.uiState.closeSidebarOnMobile();
   }
 
-  /**
-   * Navigates to a specific route and closes sidebar on mobile
-   */
   navigateTo(route: string): void {
     this.router.navigate([route]);
     this.uiState.closeSidebarOnMobile();
   }
-  
+
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();

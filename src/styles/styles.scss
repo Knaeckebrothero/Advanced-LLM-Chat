@@ -54,28 +54,56 @@ body.theme-initialized {
   .sidebar, .content-wrapper, .chat-ui, .settings-container,
   .input-field-container, .message, .surface-element,
   .nav-button, .new-conversation-button, mat-card {
-    transition: background-color 0.3s ease, 
-                color 0.3s ease, 
+    transition: background-color 0.3s ease,
+                color 0.3s ease,
                 border-color 0.3s ease,
                 box-shadow 0.3s ease;
   }
-  
+
   // Background pseudo-element transition
   .content-wrapper::before {
     transition: opacity 0.3s ease;
   }
-  
+
   // Form elements
   input, textarea, select, .custom-input {
-    transition: background-color 0.3s ease, 
-                color 0.3s ease, 
+    transition: background-color 0.3s ease,
+                color 0.3s ease,
                 border-color 0.3s ease;
   }
-  
+
   // Buttons and interactive elements
   button, .toggle-switch, .slider {
-    transition: background-color 0.3s ease, 
-                color 0.3s ease, 
+    transition: background-color 0.3s ease,
+                color 0.3s ease,
                 border-color 0.3s ease;
   }
+}
+
+// **UPDATED:** Custom dialog panel for settings
+.settings-dialog-panel {
+  // Set the width of the dialog pane itself
+  max-width: 95vw;
+  width: 400px;
+
+  // Target the container that holds the component
+  .mat-mdc-dialog-container {
+    // Apply the theme variables for the dialog's frame
+    background-color: var(--theme-surface);
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    border-radius: 20px;
+    padding: 0; // Remove default padding
+  }
+
+  // Responsive adjustments for mobile
+  @media (max-width: 480px) {
+    width: 90vw;
+  }
+}
+
+// Custom backdrop style for the dialog
+.custom-backdrop {
+  backdrop-filter: blur(4px);
+  background-color: rgba(0, 0, 0, 0.3);
 }

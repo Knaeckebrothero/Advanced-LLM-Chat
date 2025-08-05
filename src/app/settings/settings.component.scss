@@ -1,289 +1,107 @@
 :host {
   display: block;
-  padding: 24px;
-  background-color: var(--theme-surface);
-  color: var(--theme-text);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  max-width: 100%;
-  min-width: 320px;
-  overflow: hidden;
+  // Host styles for the frame (like background, border, etc.) are no longer needed here
+}
+
+.settings-container {
+  padding: 32px;
 }
 
 h2 {
-  font-size: 1.6rem;
-  margin-bottom: 1.2rem;
-  color: var(--theme-text-accent);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 2rem;
+  color: var(--theme-text);
+  text-align: left;
 }
 
-.toggles-row {
+.setting-option {
+  margin-bottom: 2rem;
+
+  label {
+    display: block;
+    margin-bottom: 0.75rem;
+    font-weight: 500;
+    color: var(--theme-text);
+    opacity: 0.8;
+    font-size: 0.9rem;
+  }
+}
+
+.options-group {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
-
-  .toggle-switch, .language-switch {
-    .slider {
-      // Use the new input background for the inactive state for consistency
-      background-color: var(--theme-input-bg);
-    }
-  }
-
-  .dark-mode-toggle {
-    .toggle-switch {
-      position: relative;
-      display: inline-block;
-      width: 60px;
-      height: 32px;
-
-      input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-      }
-
-      .slider {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        // Use theme variable
-        background-color: var(--theme-border);
-        border-radius: 32px;
-        cursor: pointer;
-        transition: background-color 0.3s;
-
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        padding: 2px;
-
-        mat-icon.icon {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          // Use theme variables
-          background-color: var(--theme-surface);
-          color: var(--theme-text);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          transition: transform 0.3s ease;
-        }
-      }
-
-      input:checked + .slider {
-        // Use theme variable
-        background-color: var(--theme-primary);
-
-        mat-icon.icon {
-          transform: translateX(28px);
-          // Use theme variables
-          color: var(--theme-surface);
-          background-color: var(--theme-secondary);
-        }
-      }
-    }
-  }
-
-  .language-toggle {
-    display: flex;
-    align-items: center;
-  }
-
-  // This `.switch` class seems to be a duplicate or old version of the toggle style.
-  // I will apply theme variables here as well to be safe.
-  .switch {
-    width: 60px;
-    height: 32px;
-    background-color: var(--theme-border);
-    border-radius: 32px;
-    position: relative;
-    cursor: pointer;
-    display: block;
-
-    .slider {
-      width: 28px;
-      height: 28px;
-      background-color: var(--theme-surface);
-      border-radius: 50%;
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.3s ease, background-color 0.3s ease;
-      box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
-
-      .icon {
-        font-size: 16px;
-        // The specific .light and .dark classes are no longer needed
-        // as the color will be inherited from the parent color property.
-        // We will set a default here.
-        color: var(--theme-text);
-      }
-    }
-
-    input[type='checkbox'] {
-      display: none;
-    }
-
-    input:checked + .switch {
-      background-color: var(--theme-primary);
-
-      .slider {
-        transform: translateX(28px);
-        background-color: var(--theme-secondary);
-
-        .icon {
-          color: var(--theme-surface);
-        }
-      }
-    }
-  }
-
-  .language-switch {
-    position: relative;
-    display: inline-block;
-    width: 60px;
-    height: 32px;
-
-    .slider {
-      background-color: var(--theme-border);
-      border-radius: 32px;
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      transition: background-color 0.3s;
-
-      .lang-label {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--theme-text);
-        height: 100%;
-      }
-    }
-
-    input[type='checkbox']:checked + .slider {
-      background-color: var(--theme-primary);
-
-      .lang-label {
-        color: var(--theme-surface);
-      }
-    }
-  }
+  gap: 8px;
+  background-color: var(--theme-input-bg);
+  border-radius: 10px;
+  padding: 6px;
+  border: 1px solid var(--theme-border);
 }
 
-/* Dropdown und Input allgemein */
-mat-form-field {
-  width: 100%;
-  margin-bottom: 1.5rem;
-
-  ::ng-deep .mat-form-field-flex {
-    background-color: var(--theme-surface) !important;
-    border-radius: 6px;
-  }
-
-  ::ng-deep .mat-select-trigger,
-  ::ng-deep .mat-select-value,
-  ::ng-deep textarea.mat-input-element {
-    background-color: var(--theme-surface) !important;
-    color: var(--theme-text) !important;
-  }
-
-  ::ng-deep .mat-form-field-wrapper {
-    padding: 4px 8px;
-  }
-}
-
-/* Label über System Prompt */
-.input-label {
-  display: block;
-  font-weight: 500;
-  margin: 8px 0 4px;
-  color: var(--theme-primary);
-}
-
-/* Slider für Temperature & Top_p */
-.slider-row {
+.option-button {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-
-  label {
-    min-width: 110px;
-    color: var(--theme-primary);
-    font-weight: 500;
-  }
-
-  mat-slider {
-    flex: 1;
-
-    ::ng-deep .mat-slider-thumb {
-      background-color: var(--theme-primary);
-    }
-
-    ::ng-deep .mat-slider-track-fill {
-      background-color: var(--theme-primary);
-    }
-
-    ::ng-deep .mat-slider-track-background {
-      // Use the theme's border color for the track background
-      background-color: var(--theme-border);
-    }
-  }
-}
-
-/* Linkähnlicher Button */
-.link-button {
-  background: none;
-  border: none;
-  color: var(--theme-primary);
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-color: transparent;
+  color: var(--theme-text);
   cursor: pointer;
   font-size: 0.9rem;
-  text-decoration: underline;
-  padding: 4px;
-  margin-top: 1rem;
+  font-weight: 500;
+  transition: all 0.2s ease-in-out;
 
-  &:hover {
-    text-decoration: none;
-    opacity: 0.8;
+  &:hover:not(.active) {
+    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+    border-color: var(--theme-border);
+  }
+
+  &.active {
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+    box-shadow: 0 4px 12px rgba(var(--theme-primary-rgb), 0.3);
+    transform: translateY(-1px);
+  }
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
   }
 }
 
-.custom-input {
-  width: 100%;
-  padding: 10px;
-  border: 2px solid var(--theme-text-accent);;
-  border-radius: 4px;
-  // **CHANGED:** Apply the new background color to inputs
-  background-color: var(--theme-input-bg);
-  color: var(--theme-text);
-  font-size: 14px;
-  box-sizing: border-box;
-  margin-bottom: 16px;
-  // Add a subtle inner shadow for depth
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+.button-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--theme-border);
+
+  .done-button {
+    padding: 10px 24px;
+    font-weight: 600;
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+
+    &:hover {
+      background-color: var(--theme-secondary);
+      transform: translateY(-1px);
+    }
+  }
 }
 
-.custom-input:focus {
-  outline: none;
-  border-color: var(--theme-secondary);
-}
-
-label {
-  display: block;
-  margin: 8px 0 4px;
-  font-weight: 600;
-  color: var(--theme-text-accent);
+// Mobile-specific padding adjustments
+@media (max-width: 480px) {
+  .settings-container {
+    padding: 24px;
+  }
 }
