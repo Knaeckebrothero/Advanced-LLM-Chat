@@ -54,10 +54,10 @@ export class SyncEngineService {
   private initialize() {
     // Set up connection monitoring
     this.setupConnectionMonitoring();
-    
+
     // Set up periodic sync
     this.setupPeriodicSync();
-    
+
     // Perform initial sync
     this.performInitialSync();
   }
@@ -105,8 +105,7 @@ export class SyncEngineService {
     try {
       // Step 1: Sync settings
       console.log('Syncing settings...');
-      const settingsResult = await this.settingsRepository.sync();
-      console.log(`Settings sync result:`, settingsResult);
+      await this.settingsRepository.getSettings();
 
       // Step 2: Sync last 5 conversations
       console.log('Syncing recent conversations...');
@@ -138,10 +137,10 @@ export class SyncEngineService {
     this.connectionCheckInterval = setInterval(async () => {
       const isOnline = await this.checkConnection();
       const status = this.syncStatus$.getValue();
-      
+
       if (isOnline !== status.isOnline) {
         this.updateStatus({ isOnline });
-        
+
         if (isOnline && !status.isOnline) {
           console.log('Connection restored, triggering sync...');
           // Upload any pending files first

@@ -4,7 +4,9 @@ import {Language, Theme} from "./enum";
 /**
  * Settings model shared across the application
  */
-export interface Settings {
+
+export interface AppSettings {
   theme: Theme;
   language: Language;
+  lastUpdated: number; // Unix timestamp
 }

@@ -2,8 +2,7 @@ import { DBSchema } from 'idb';
 import { Message } from './objects/message';
 import { Conversation } from './objects/conversation';
 import { User } from './objects/user';
-import { SettingsWithMetadata } from '../repositories/settings.repository';
-
+import { AppSettings } from '../models/settings.model';
 
 export interface ConversationSyncMetadata {
   id: string;
@@ -43,7 +42,7 @@ export interface MainAppDB extends DBSchema {
   // Settings store
   settings: {
     key: string;
-    value: SettingsWithMetadata;
+    value: AppSettings;
   };
   // Sync metadata store
   syncMetadata: {

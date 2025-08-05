@@ -1,28 +1,32 @@
-<div class="settings-container">
-  <h2>Einstellungen</h2>
+<div class="settings-container" *ngIf="settings$ | async as settings">
+  <h2>Settings</h2>
 
-  <div class="toggles-row">
-    <div class="dark-mode-toggle">
-      <label class="toggle-switch">
-        <input type="checkbox" [ngModel]="settings.theme !== 'light'" (ngModelChange)="toggleTheme()" />
-        <span class="slider">
-          <mat-icon class="icon">{{ getThemeIcon() }}</mat-icon>
-        </span>
-      </label>
-    </div>
-
-    <div class="language-toggle">
-      <label class="language-switch">
-        <input type="checkbox" [ngModel]="settings.language === 'en'" (ngModelChange)="toggleLanguage()" />
-        <span class="slider">
-          <span class="lang-label">{{ settings.language === 'en' ? 'EN' : 'DE' }}</span>
-        </span>
-      </label>
+  <div class="setting-option">
+    <label>Theme</label>
+    <div class="options-group">
+      <button
+        *ngFor="let option of themeOptions"
+        class="option-button"
+        [class.active]="settings.theme === option.value"
+        (click)="updateTheme(option.value)"
+      >
+        <mat-icon>{{ option.icon }}</mat-icon>
+        <span>{{ option.label }}</span>
+      </button>
     </div>
   </div>
 
-  <div class="button-row">
-    <button mat-stroked-button color="primary" (click)="resetSettings()">Zurücksetzen</button>
-    <button mat-flat-button color="primary" (click)="closeAndSave()">Speichern</button>
+  <div class="setting-option">
+    <label>Language</label>
+    <div class="options-group">
+      <button
+        *ngFor="let option of languageOptions"
+        class="option-button"
+        [class.active]="settings.language === option.value"
+        (click)="updateLanguage(option.value)"
+      >
+        <span>{{ option.label }}</span>
+      </button>
+    </div>
   </div>
 </div>

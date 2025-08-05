@@ -4,7 +4,7 @@ import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
-import { Settings } from '../models/settings.model';
+import { AppSettings } from '../models/settings.model';
 import { FilePreview } from '../data/objects/file-preview';
 
 
@@ -73,34 +73,36 @@ export class ApiService {
 
   // Extract CSRF token from response headers
   public extractCsrfToken(response: any): void {
-    console.log('Extracting CSRF token from response:', response);
-
-    // First try to read from cookie (primary method now)
-    this.readCsrfTokenFromCookie();
-
-    // Also check headers for backward compatibility
     if (response && response.headers) {
-      // Debug: Log all available headers
-      console.log('Available headers:');
-      response.headers.keys().forEach((key: string) => {
-        console.log(`  ${key}: ${response.headers.get(key)}`);
-      });
-
-      // Try different case variations
-      const token = response.headers.get('X-CSRF-Token') ||
-        response.headers.get('x-csrf-token') ||
-        response.headers.get('X-Csrf-Token');
-
-      console.log('CSRF token from headers:', token);
-      if (token && !this.csrfToken) {
-        // Only use header token if cookie wasn't found
+      const token = response.headers.get('X-CSRF-Token');
+      if (token) {
         this.csrfToken = token;
-        console.log('CSRF token updated from headers:', this.csrfToken);
       }
     }
+  }
 
-    if (!this.csrfToken) {
-      console.warn('No CSRF token found in cookies or headers');
+  async getSettings(): Promise<AppSettings> {
+    const endpoint = `${this.baseUrl}/api/settings`;
+    try {
+      const response = await lastValueFrom(
+        this.http.get<AppSettings>(endpoint, this.getHttpOptions())
+      );
+      return response;
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+      throw error;
+    }
+  }
+
+  async saveSettings(settings: AppSettings): Promise<void> {
+    const endpoint = `${this.baseUrl}/api/settings`;
+    try {
+      await lastValueFrom(
+        this.http.put<void>(endpoint, settings, this.getHttpOptions())
+      );
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      throw error;
     }
   }
 
@@ -227,14 +229,9 @@ export class ApiService {
     }
   }
 
-  async generateMessage(lastMessage: Message, participant: string, settings: Settings): Promise<Message> {
+  async generateMessage(lastMessage: Message, participant: string, settings: AppSettings): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/generate`;
-
-    // Use the new toApiGenerate method
-    const body = {
-      ...lastMessage.toApiGenerate(participant)
-    };
-
+    const body = { ...lastMessage.toApiGenerate(participant) };
     try {
       const response = await lastValueFrom(
         this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })
@@ -251,7 +248,7 @@ export class ApiService {
   async sendAndGenerateMessage(
     message: Message,
     generateResponse: boolean = true,
-    settings?: Settings
+    settings?: AppSettings
   ): Promise<{ userMessageId: number; aiMessage?: Message }> {
     const endpoint = `${this.baseUrl}/api/message/send-and-generate`;
 
@@ -302,15 +299,7 @@ export class ApiService {
       const response = await lastValueFrom(
         this.http.patch<any>(endpoint, body, { ...this.getHttpOptions() })
       );
-
-      // The response should be a success status, but we'll return a reconstructed message
-      // In a real implementation, the backend might return the updated message
-      return Message.fromApiResponse({
-        id: messageId,
-        conversationId: conversationId,
-        content: content,
-        ...response // Include any additional fields from response
-      });
+      return Message.fromApiResponse({ id: messageId, conversationId, content, ...response });
     } catch (error) {
       console.error('Error patching message:', error);
       throw error;
