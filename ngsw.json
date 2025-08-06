@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1753946492060,
+  "timestamp": 1754476726928,
   "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
@@ -13,10 +13,10 @@
       "urls": [
         "/Advanced-LLM-Chat/favicon.ico",
         "/Advanced-LLM-Chat/index.html",
-        "/Advanced-LLM-Chat/main-BKKLVCGR.js",
+        "/Advanced-LLM-Chat/main-O2D56IDN.js",
         "/Advanced-LLM-Chat/manifest.webmanifest",
         "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js",
-        "/Advanced-LLM-Chat/styles-JAWUCWNY.css"
+        "/Advanced-LLM-Chat/styles-3HNNMYO5.css"
       ],
       "patterns": []
     },
@@ -57,11 +57,11 @@
     "/Advanced-LLM-Chat/assets/icons/fra_uas_logo_white.png": "cb9faa8844b86535e5341ac5156710e29578b3c4",
     "/Advanced-LLM-Chat/assets/icons/light-mode-robot.svg": "67e6ced3db641c3ccb0c902e18717ebad4410dfa",
     "/Advanced-LLM-Chat/favicon.ico": "22f6a4a3bcaafafb0254e0f2fa4ceb89e505e8b2",
-    "/Advanced-LLM-Chat/index.html": "f4d0e474056a24947b7eef3387187fb3af15ecab",
-    "/Advanced-LLM-Chat/main-BKKLVCGR.js": "193423ca87525e74871b826db92c31832642da3d",
+    "/Advanced-LLM-Chat/index.html": "3b90f1265e5e2ccdfa667ccf909965448471411e",
+    "/Advanced-LLM-Chat/main-O2D56IDN.js": "a1172469070a26de66b4919c22417455bb13729b",
     "/Advanced-LLM-Chat/manifest.webmanifest": "a81d65b6133d5367d68f9d650c1117eae6c0de62",
     "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js": "f49b49a155bc7d192db62a4c15d0a612b460a667",
-    "/Advanced-LLM-Chat/styles-JAWUCWNY.css": "1f3d56a618ce21f711fae9d557cd45e68b92964e"
+    "/Advanced-LLM-Chat/styles-3HNNMYO5.css": "a63801bc6f08ecbef9af6bf28488dea1ac11e331"
   },
   "navigationUrls": [
     {
