@@ -1,54 +1,38 @@
-<div class="settings-container">
-  <h2>Einstellungen</h2>
+<div class="settings-container" *ngIf="settings$ | async as settings">
+  <h2>Settings</h2>
 
-  <!-- Toggle-Leiste -->
-  <div class="toggles-row">
-    <!-- Dark Mode Toggle -->
-    <div class="dark-mode-toggle">
-      <label class="toggle-switch">
-        <input type="checkbox" [(ngModel)]="settings.darkMode" (change)="toggleTheme()" />
-        <span class="slider">
-          <mat-icon class="icon">{{ getThemeIcon() }}</mat-icon>
-        </span>
-      </label>
-    </div>
-
-    <!-- Language Toggle  -->
-    <div class="language-toggle">
-      <label class="language-switch">
-        <input type="checkbox" [(ngModel)]="settings.languageIsEnglish" (change)="toggleLanguage()" />
-        <span class="slider">
-          <span class="lang-label">{{ settings.languageIsEnglish ? 'EN' : 'DE' }}</span>
-        </span>
-      </label>
+  <div class="setting-option">
+    <label>Theme</label>
+    <div class="options-group">
+      <button
+        *ngFor="let option of themeOptions"
+        class="option-button"
+        [class.active]="settings.theme === option.value"
+        (click)="updateTheme(option.value)"
+        [attr.aria-pressed]="settings.theme === option.value"
+      >
+        <mat-icon>{{ option.icon }}</mat-icon>
+        <span>{{ option.label }}</span>
+      </button>
     </div>
   </div>
 
-  <!-- Modell -->
-  <label for="model">Modell</label>
-  <select id="model" [(ngModel)]="settings.model" class="custom-input">
-    <option *ngFor="let m of models" [value]="m">{{ m }}</option>
-  </select>
-
-  <!-- Temperature -->
-  <label for="temperature">Temperature</label>
-  <select id="temperature" [(ngModel)]="settings.temperature" class="custom-input">
-    <option *ngFor="let t of temperatures" [value]="t">{{ t }}</option>
-  </select>
-
-  <!-- Top_p -->
-  <label for="top_p">Top_p</label>
-  <select id="top_p" [(ngModel)]="settings.top_p" class="custom-input">
-    <option *ngFor="let p of topPValues" [value]="p">{{ p }}</option>
-  </select>
-
-  <!-- System Prompt -->
-  <label for="prompt">System Prompt</label>
-  <textarea id="prompt" [(ngModel)]="settings.systemPrompt" rows="4" class="custom-input"></textarea>
-
+  <div class="setting-option">
+    <label>Language</label>
+    <div class="options-group">
+      <button
+        *ngFor="let option of languageOptions"
+        class="option-button"
+        [class.active]="settings.language === option.value"
+        (click)="updateLanguage(option.value)"
+        [attr.aria-pressed]="settings.language === option.value"
+      >
+        <span>{{ option.label }}</span>
+      </button>
+    </div>
+  </div>
 
   <div class="button-row">
-    <button mat-stroked-button color="primary" (click)="resetSettings()">Zurücksetzen</button>
-    <button mat-flat-button color="primary" (click)="closeAndSave()">Speichern</button>
+    <button class="done-button" (click)="close()">Done</button>
   </div>
 </div>

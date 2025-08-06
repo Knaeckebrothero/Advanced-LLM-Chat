@@ -1,194 +1,54 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { map, switchMap, shareReplay } from 'rxjs/operators';
-import { SettingsRepository, SettingsWithMetadata } from '../repositories/settings.repository';
+import { BehaviorSubject } from 'rxjs';
+import { SettingsRepository } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
-import { Settings } from '../models/settings.model';
+import { AppSettings } from '../models/settings.model';
+import { Language, Theme } from '../models/enum';
 
-export interface AppSettings extends Settings {
-  // From SettingsWithMetadata
-  id?: string;
-  timestamp?: Date;
-  syncHash?: string;
-  // Computed properties
-  isEnglish?: boolean;
-  isDarkMode?: boolean;
-}
+const DEFAULT_SETTINGS: AppSettings = {
+  theme: Theme.Auto,
+  language: Language.English,
+  lastUpdated: 0,
+};
 
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable({ providedIn: 'root' })
 export class SettingsStateService {
-  // Current settings state
-  private settings$ = this.settingsRepository.getCurrent().pipe(
-    map(settings => this.enrichSettings(settings)),
-    shareReplay(1)
-  );
-
-  // Loading and sync states
-  public isLoading$ = new BehaviorSubject<boolean>(false);
-  public isSyncing$ = this.settingsRepository.syncing$;
-  public lastError$ = new BehaviorSubject<string | null>(null);
+  private settingsSubject = new BehaviorSubject<AppSettings>(DEFAULT_SETTINGS);
+  public settings$ = this.settingsSubject.asObservable();
 
   constructor(
-    private settingsRepository: SettingsRepository,
+    private repository: SettingsRepository,
     private themeService: ThemeService
   ) {
-    // Apply theme when settings change
-    this.settings$.subscribe(settings => {
-      if (settings) {
-        // If darkMode is undefined, respect system preference
-        if (settings.darkMode === undefined) {
-          // Get effective theme from system preference
-          const effectiveTheme = this.themeService.getEffectiveTheme('auto');
-          this.themeService.setTheme('auto');
-        } else {
-          // Apply user's preference
-          this.themeService.setTheme(settings.darkMode === 1 ? 'dark' : 'light');
-        }
-      }
-    });
+    this.loadInitialSettings();
   }
 
-  /**
-   * Get current settings
-   */
-  get settings(): Observable<AppSettings | null> {
-    return this.settings$;
-  }
-
-  /**
-   * Get specific setting value
-   */
-  getSetting<K extends keyof AppSettings>(key: K): Observable<AppSettings[K] | undefined> {
-    return this.settings$.pipe(
-      map(settings => settings?.[key])
-    );
-  }
-
-  /**
-   * Load settings (from cache or backend)
-   */
-  async loadSettings(): Promise<void> {
-    this.isLoading$.next(true);
-    this.lastError$.next(null);
-
+  private async loadInitialSettings() {
     try {
-      // Repository will handle loading from IndexedDB first
-      // If online, it will sync with backend
-      await this.settingsRepository.sync();
+      const settings = await this.repository.getSettings();
+      this.settingsSubject.next(settings);
+      this.themeService.setTheme(settings.theme);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load settings';
-      this.lastError$.next(errorMessage);
-      console.error('Failed to load settings:', error);
-    } finally {
-      this.isLoading$.next(false);
+      console.error('Failed to load initial settings:', error);
+      this.settingsSubject.next(DEFAULT_SETTINGS);
+      this.themeService.setTheme(DEFAULT_SETTINGS.theme);
     }
   }
 
-  /**
-   * Save settings
-   */
-  async saveSettings(settings: Partial<AppSettings>): Promise<void> {
-    this.isLoading$.next(true);
-    this.lastError$.next(null);
-
-    try {
-      const current = await this.getCurrentSettings();
-      const updated: SettingsWithMetadata = {
-        ...current,
-        ...settings,
-        model: settings.model || current?.model || 'gpt-3.5-turbo',
-        temperature: settings.temperature ?? current?.temperature ?? 0.7,
-        top_p: settings.top_p ?? current?.top_p ?? 1,
-        systemPrompt: settings.systemPrompt || current?.systemPrompt || '',
-        darkMode: settings.darkMode ?? current?.darkMode ?? 0,
-        languageIsEnglish: settings.languageIsEnglish ?? current?.languageIsEnglish ?? 1
-      };
-
-      await this.settingsRepository.save(updated);
-      
-      // Apply theme if changed
-      if (settings.darkMode !== undefined) {
-        this.themeService.setTheme(settings.darkMode === 1 ? 'dark' : 'light');
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save settings';
-      this.lastError$.next(errorMessage);
-      throw error;
-    } finally {
-      this.isLoading$.next(false);
-    }
-  }
-
-  /**
-   * Force sync with backend
-   */
-  async syncSettings(): Promise<void> {
-    this.lastError$.next(null);
-    
-    try {
-      await this.settingsRepository.sync();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to sync settings';
-      this.lastError$.next(errorMessage);
-      throw error;
-    }
-  }
-
-  /**
-   * Get available LLM models
-   */
-  async getAvailableModels(): Promise<string[]> {
-    try {
-      // This still uses the API service directly as it's not settings data
-      const response = await fetch('/api/llms', {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch models');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to fetch models:', error);
-      // Return default models as fallback
-      return [
-        'gpt-3.5-turbo',
-        'gpt-4',
-        'claude-2',
-        'claude-instant-1'
-      ];
-    }
-  }
-
-  /**
-   * Helper to get current settings synchronously
-   */
-  private async getCurrentSettings(): Promise<AppSettings | null> {
-    return new Promise((resolve) => {
-      this.settings$.pipe(
-        map(settings => settings)
-      ).subscribe(settings => resolve(settings));
-    });
-  }
-
-  /**
-   * Enrich settings with computed properties
-   */
-  private enrichSettings(settings: SettingsWithMetadata | null): AppSettings | null {
-    if (!settings) return null;
-
-    // When darkMode is undefined, determine based on current theme
-    const darkModeValue = settings.darkMode ?? 
-      (this.themeService.getCurrentEffectiveTheme() === 'dark' ? 1 : 0);
-
-    return {
-      ...settings,
-      darkMode: darkModeValue,
-      isEnglish: settings.languageIsEnglish === 1,
-      isDarkMode: darkModeValue === 1
+  async updateSettings(newSettings: Partial<AppSettings>) {
+    const currentSettings = this.settingsSubject.value;
+    const updatedSettings: AppSettings = {
+      ...currentSettings,
+      ...newSettings,
+      lastUpdated: Date.now(),
     };
+
+    this.settingsSubject.next(updatedSettings);
+
+    if (newSettings.theme) {
+      this.themeService.setTheme(newSettings.theme);
+    }
+
+    await this.repository.saveSettings(updatedSettings);
   }
 }

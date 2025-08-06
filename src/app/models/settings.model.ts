@@ -1,11 +1,12 @@
+import {Language, Theme} from "./enum";
+
+
 /**
  * Settings model shared across the application
  */
-export interface Settings {
-  model: string;
-  temperature: number;
-  top_p: number;
-  systemPrompt: string;
-  darkMode: number;
-  languageIsEnglish: number;
+
+export interface AppSettings {
+  theme: Theme;
+  language: Language;
+  lastUpdated: number; // Unix timestamp
 }
