@@ -166,8 +166,13 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Handle Enter key press - send on Enter, new line on Shift+Enter
   handleKeyPress(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      this.sendMessage();
+      // On mobile devices, allow Enter to create new lines
+      // since Shift+Enter is not available
+      if (!this.isMobileDevice()) {
+        event.preventDefault();
+        this.sendMessage();
+      }
+      // On mobile, do nothing - let the default behavior create a new line
     }
   }
 
