@@ -1,10 +1,11 @@
 import { Component, OnDestroy, OnInit, HostListener } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
-import { Subscription, interval } from 'rxjs';
-import { filter } from 'rxjs/operators';
+import { Subscription, interval, combineLatest } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
 import { ChatService } from './services/chat.service';
-import { ThemeService } from './services/theme.service'; // Corrected path
+import { ThemeService } from './services/theme.service';
 import { UIStateService } from './services/ui-state.service';
+import { AuthService } from './auth/auth.service';
 
 @Component({
   selector: 'app-root',
@@ -14,16 +15,16 @@ import { UIStateService } from './services/ui-state.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Advanced LLM Chat';
-  showMenuIcon: boolean = true;
-  private routerSubscription: Subscription | undefined;
-  private syncSubscription: Subscription | undefined;
+  showMenuIcon: boolean = false; // Initialize to false to prevent showing on load
+  private subscriptions = new Subscription();
   private readonly visibilityChangeHandler: () => void;
 
   constructor(
     public uiState: UIStateService,
     private router: Router,
     private chatService: ChatService,
-    private themeService: ThemeService // Injected the service
+    private themeService: ThemeService, // Injected the service
+    private authService: AuthService
   ) {
     // Bind the handler so we can remove it later
     this.visibilityChangeHandler = () => {
@@ -35,43 +36,49 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     // Theme is automatically initialized in the ThemeService constructor
+    this.themeService.initializeTheme();
 
     this.setViewportHeight();
 
     // Initialize sidebar state CSS variable
     this.initializeSidebarState();
 
-    // Router subscription
-    this.routerSubscription = this.router.events.pipe(
-      filter(event => event instanceof NavigationEnd)
-    ).subscribe((event: NavigationEnd) => {
-      this.showMenuIcon = !(event.url === '/login' || event.urlAfterRedirects === '/login');
-    });
+    const routerEvents$ = this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd)
+    );
+
+    // A user is considered authenticated for UI purposes if a user object exists (includes guests)
+    const isAuthenticated$ = this.authService.currentUser$.pipe(
+      map(user => !!user)
+    );
+
+    // Combine router and auth state to determine sidebar visibility
+    this.subscriptions.add(
+      combineLatest([routerEvents$, isAuthenticated$]).subscribe(([navigationEnd, isAuthenticated]) => {
+        const url = navigationEnd.urlAfterRedirects;
+        // Show the menu icon if the user is authenticated and not on the login page
+        this.showMenuIcon = isAuthenticated && url !== '/login';
+      })
+    );
 
     // TODO: Make this a env variable instead of a hardcoded value!
     // Periodic sync every 60 seconds
-    this.syncSubscription = interval(60000).subscribe(() => {
+    this.subscriptions.add(interval(60000).subscribe(() => {
       this.chatService.syncCurrentConversation();
-    });
+    }));
 
     // Sync when app regains focus
     document.addEventListener('visibilitychange', this.visibilityChangeHandler);
 
     // Subscribe to sidebar state changes and update CSS variable
-    this.uiState.sidebarOpen$.subscribe(isOpen => {
+    this.subscriptions.add(this.uiState.sidebarOpen$.subscribe(isOpen => {
       this.updateSidebarState(isOpen);
-    });
+    }));
   }
 
   ngOnDestroy() {
     // Unsubscribe to prevent memory leaks
-    if (this.routerSubscription) {
-      this.routerSubscription.unsubscribe();
-    }
-
-    if (this.syncSubscription) {
-      this.syncSubscription.unsubscribe();
-    }
+    this.subscriptions.unsubscribe();
 
     // Remove event listener using the same handler reference
     document.removeEventListener('visibilitychange', this.visibilityChangeHandler);

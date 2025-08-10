@@ -136,10 +136,10 @@ export class AuthService {
         )
       );
       console.log('AuthService: /api/auth/me response received:', response);
-      
+
       // Extract CSRF token
       this.apiService.extractCsrfToken(response);
-      
+
       if (response && response.body && response.body.user) {
         this.currentUserSubject.next(response.body.user);
         this.isGuest = response.body.user.email.includes('guest');
@@ -191,7 +191,7 @@ export class AuthService {
       this.currentUserSubject.next(response.body!.user);
       this.isGuest = false;
       this.router.navigate(['/']);
-      
+
       // Trigger sync after successful login
       console.log('Triggering sync after login...');
       await this.syncEngine.syncNow();
@@ -243,15 +243,14 @@ export class AuthService {
       // Clear all user data from IndexedDB before switching to guest
       console.log('Clearing user data on logout...');
       await this.dbService.clearAllUserData();
-      
+
       // Clear repository caches
       this.conversationRepository.clearCache();
       this.messageRepository.clearAllCaches();
-      
+
       // After logout, automatically create a new guest session
       await this.autoGuestLogin();
-      // Don't navigate away from current page after logout
-      // this.router.navigate(['/']);
+      this.router.navigate(['/login']); // Ensure redirection to login page
     }
   }
 

@@ -24,7 +24,7 @@ export class ThemeService {
     this.setupSystemThemeListener();
   }
 
-  private initializeTheme(): void {
+   initializeTheme(): void {
     const storedTheme = this.getStoredTheme() as Theme;
     const initialTheme = storedTheme || Theme.Auto;
     this.setTheme(initialTheme);
