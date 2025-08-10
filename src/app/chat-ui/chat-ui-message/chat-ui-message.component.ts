@@ -1,7 +1,9 @@
-import { Component, Input } from '@angular/core';
-import { Message } from '../../data/objects/message';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+// src/app/chat-ui/chat-ui-message/chat-ui-message.component.ts
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Message, VoiceContent } from '../../data/objects/message';
+import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
 import { ChatUiComponent } from '../chat-ui.component';
+import { FileType, FilePreviewUtil } from '../../data/objects/file-preview';
 
 
 @Component({
@@ -10,7 +12,7 @@ import { ChatUiComponent } from '../chat-ui.component';
   styleUrls: ['./chat-ui-message.component.scss'],
   standalone: false
 })
-export class ChatUiMessageComponent {
+export class ChatUiMessageComponent implements OnChanges {
   // Pass the message object from the parent component
   @Input() message!: Message;
   @Input() isLastAiMessage: boolean = false;
@@ -18,77 +20,27 @@ export class ChatUiMessageComponent {
   // Variables
   editing: boolean = false;
   backupContent!: string;
+  formattedTextContent: SafeHtml = '';
 
   constructor(private sanitizer: DomSanitizer, private chatUI: ChatUiComponent) { }
 
-  // Function to replace prompt relevant elements to format the message
-  formatMessage(message: Message): SafeHtml {
-    if(!this.editing) {
-      // Handle different message types
-      if (message.isVoice()) {
-        // Format voice message
-        const duration = this.formatDuration(message.content.duration);
-        let voiceHtml = `
-          <div class="voice-message">
-            <div class="voice-header">
-              <span class="voice-icon">🎤</span>
-              <span class="voice-duration">Voice message (${duration})</span>
-            </div>
-        `;
-
-        // Add transcript if available
-        if (message.content.transcript) {
-          voiceHtml += `
-            <div class="voice-transcript">
-              <em>${this.formatTextContent(message.content.transcript)}</em>
-            </div>
-          `;
-        }
-
-        // Add audio player controls
-        voiceHtml += `
-          <div class="voice-player">
-            <audio controls class="voice-audio-player">
-              <source src="data:${message.content.mimeType};base64,${message.content.audioData}" type="${message.content.mimeType}">
-              Your browser does not support the audio element.
-            </audio>
-          </div>
-        `;
-
-        voiceHtml += '</div>';
-
-        return this.sanitizer.bypassSecurityTrustHtml(voiceHtml);
-      }
-
-      // Handle text messages (default)
-      const textContent = message.getDisplayContent();
-      const formattedText = this.formatTextContent(textContent);
-
-      // Add file attachments if present
-      let html = formattedText;
-      if (message.hasAttachments() && message.attachments) {
-        html += '<div class="message-attachments">';
-        message.attachments.forEach(attachment => {
-          html += `
-            <div class="attachment-item">
-              <span class="attachment-icon">📎</span>
-              <span class="attachment-name">${attachment.name}</span>
-              <span class="attachment-size">(${attachment.sizeFormatted})</span>
-            </div>
-          `;
-        });
-        html += '</div>';
-      }
-
-      return this.sanitizer.bypassSecurityTrustHtml(html);
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['message']) {
+      this.updateFormattedContent();
     }
-
-    // Return the raw message when editing to preserve line breaks
-    return message.getDisplayContent();
   }
 
-  // Helper to format text content with replacements
-  private formatTextContent(text: string): string {
+  private updateFormattedContent() {
+    if (this.message && this.message.isText()) {
+      const textContent = this.message.getDisplayContent();
+      const formattedText = this.formatText(textContent);
+      this.formattedTextContent = this.sanitizer.bypassSecurityTrustHtml(formattedText);
+    }
+  }
+
+  // Function to replace prompt relevant elements to format the message
+  protected formatText(text: string): string {
+    if (!text) return '';
     return text
       // First, convert line breaks to <br> tags to preserve formatting
       .replace(/\n/g, '<br>')
@@ -100,10 +52,19 @@ export class ChatUiMessageComponent {
   }
 
   // Helper to format duration
-  private formatDuration(seconds: number): string {
+  formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = Math.round(seconds % 60);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  getVoiceMessageUrl(message: Message<VoiceContent>): SafeUrl {
+    const src = `data:${message.content.mimeType};base64,${message.content.audioData}`;
+    return this.sanitizer.bypassSecurityTrustUrl(src);
+  }
+
+  getAttachmentIcon(type: FileType): string {
+    return FilePreviewUtil.getFileIcon(type);
   }
 
   // Edit message button
@@ -175,7 +136,7 @@ export class ChatUiMessageComponent {
     if (this.message.roleName === 'user') {
       return false;
     }
-    
+
     // Check if this is the last AI message in the conversation
     return this.isLastAiMessage;
   }
@@ -189,7 +150,7 @@ export class ChatUiMessageComponent {
   // Rate the message
   rateMessage(rating: number) {
     console.log('Rating message:', this.message.id, 'with rating:', rating);
-    
+
     // Toggle rating if clicking the same rating
     if (this.message.rating === rating) {
       // If already rated with this value, remove the rating

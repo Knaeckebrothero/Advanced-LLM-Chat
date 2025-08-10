@@ -26,17 +26,17 @@
       <div class="file-info">
         <span class="file-name">{{ preview.name }}</span>
         <span class="file-size">{{ preview.sizeFormatted }}</span>
-        
+
         <!-- Upload progress -->
         <div class="upload-progress" *ngIf="preview.uploadStatus === 'uploading'">
-          <mat-progress-bar 
-            mode="determinate" 
+          <mat-progress-bar
+            mode="determinate"
             [value]="preview.uploadProgress || 0"
             color="primary">
           </mat-progress-bar>
           <span class="progress-text">{{ preview.uploadProgress || 0 }}%</span>
         </div>
-        
+
         <!-- Upload status indicators -->
         <div class="upload-status" *ngIf="preview.uploadStatus && preview.uploadStatus !== 'uploading'">
           <mat-icon *ngIf="preview.uploadStatus === 'completed'" class="status-completed">check_circle</mat-icon>

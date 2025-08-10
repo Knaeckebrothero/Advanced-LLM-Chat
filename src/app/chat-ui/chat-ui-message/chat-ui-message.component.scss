@@ -1,3 +1,4 @@
+// src/app/chat-ui/chat-ui-message/chat-ui-message.component.scss
 @use 'src/styles/variables' as vars;
 
 // Ensure the message display container takes up the full width so that the messages are displayed in a column.
@@ -150,26 +151,77 @@
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid rgba(var(--theme-primary-contrast-rgb), 0.1);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 
-    .attachment-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 0;
-      .attachment-icon { font-size: 1em; }
-      .attachment-name {
-        font-weight: 500;
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
+  .attachment-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
+    border: 1px solid rgba(var(--theme-primary-contrast-rgb), 0.1);
+    border-radius: 16px;
+    max-width: 220px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
 
-      .attachment-size {
-        font-size: 0.85em;
-        opacity: 0.7;
-        white-space: nowrap;
-      }
+    &:hover {
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+    }
+  }
+
+  .attachment-thumbnail {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .attachment-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+    border-radius: 6px;
+    flex-shrink: 0;
+
+    mat-icon {
+      font-size: 20px;
+      color: var(--theme-text);
+      opacity: 0.8;
+    }
+  }
+
+  .attachment-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+
+    .attachment-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .attachment-size {
+      font-size: 11px;
+      opacity: 0.7;
     }
   }
 }
@@ -208,7 +260,7 @@
     &:not(:last-child) {
       margin-right: 3px;
     }
-    
+
     // Active rating style
     &.active-rating {
       mat-icon {

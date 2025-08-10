@@ -1,3 +1,4 @@
+// src/app/chat-ui/chat-ui-inputfield/chat-ui-inputfield.component.scss
 // Import the project's variables and mixins
 @use 'src/styles/variables' as vars;
 @use 'src/styles/mixins' as mixins;
@@ -46,10 +47,10 @@
   z-index: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 8px;
   border-bottom: 1px solid var(--theme-border);
-  max-height: 120px;
+  max-height: 150px;
   overflow-y: auto;
   background: transparent;
 
@@ -65,29 +66,31 @@
 .file-preview-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  background: rgba(var(--theme-primary-contrast-rgb), 0.1);
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(var(--theme-primary-contrast-rgb), 0.05);
   border: 1px solid var(--theme-border);
-  border-radius: 16px;
-  max-width: 200px;
+  border-radius: 24px;
+  max-width: 250px;
   position: relative;
   transition: all 0.2s ease;
+  overflow: hidden;
 
   &:hover {
-    background: rgba(var(--theme-primary-contrast-rgb), 0.2);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: rgba(var(--theme-primary-contrast-rgb), 0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 
     .remove-file-button {
       opacity: 1;
+      transform: scale(1);
     }
   }
 }
 
 .file-thumbnail {
-  width: 32px;
-  height: 32px;
-  border-radius: 4px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
 
@@ -99,17 +102,17 @@
 }
 
 .file-icon {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(var(--theme-primary-contrast-rgb), 0.05);
-  border-radius: 4px;
+  background: rgba(var(--theme-primary-contrast-rgb), 0.1);
+  border-radius: 8px;
   flex-shrink: 0;
 
   .mat-icon {
-    font-size: 20px;
+    font-size: 24px;
     color: var(--theme-primary);
   }
 }
@@ -121,7 +124,7 @@
   flex: 1;
 
   .file-name {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--theme-text);
     white-space: nowrap;
@@ -130,7 +133,7 @@
   }
 
   .file-size {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--theme-text);
     opacity: 0.7;
   }
@@ -184,27 +187,32 @@
 }
 
 .remove-file-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
   width: 20px;
   height: 20px;
-  padding: 0;
+  line-height: 20px;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
-  transition: opacity 0.2s ease;
-  flex-shrink: 0;
+  transform: scale(0.8);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 2;
 
   .mat-icon {
     font-size: 16px;
     width: 16px;
     height: 16px;
-    color: var(--theme-text);
-    opacity: 0.6;
+    line-height: 16px;
+    color: white;
   }
-
   &:hover {
-    background-color: rgba(220, 53, 69, 0.1);
-
-    .mat-icon {
-      color: #dc3545;
-    }
+    background-color: #dc3545;
   }
 }
 
