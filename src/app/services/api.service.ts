@@ -107,10 +107,9 @@ export class ApiService {
   async getSettings(): Promise<AppSettings> {
     const endpoint = `${this.baseUrl}/api/settings`;
     try {
-      const response = await lastValueFrom(
+      return await lastValueFrom(
         this.http.get<AppSettings>(endpoint, this.getHttpOptions())
       );
-      return response;
     } catch (error) {
       console.error('Error fetching settings:', error);
       throw error;
@@ -125,19 +124,6 @@ export class ApiService {
       );
     } catch (error) {
       console.error('Error saving settings:', error);
-      throw error;
-    }
-  }
-
-  async getLLMs(): Promise<string[]> {
-    const endpoint = `${this.baseUrl}/api/llms`;
-    try {
-      const response = await lastValueFrom(
-        this.http.get<string[]>(endpoint, this.getHttpOptions())
-      );
-      return response;
-    } catch (error) {
-      console.error('Error requesting LLMs:', error);
       throw error;
     }
   }
@@ -232,8 +218,8 @@ export class ApiService {
       const response = await lastValueFrom(
         this.http.post<{ id: number }>(endpoint, body, {
           ...this.getHttpOptions(),
-          observe: 'response' }
-        )
+          observe: 'response'
+        })
       );
 
       if (response.status === 201) {
@@ -270,8 +256,7 @@ export class ApiService {
 
   async sendAndGenerateMessage(
     message: Message,
-    generateResponse: boolean = true,
-    settings?: AppSettings
+    generateResponse: boolean = true
   ): Promise<{ userMessageId: number; aiMessage?: Message }> {
     const endpoint = `${this.baseUrl}/api/message/send-and-generate`;
 
@@ -281,12 +266,6 @@ export class ApiService {
       generateResponse: generateResponse,
       aiParticipant: 'Assistant'
     };
-
-    // Add generation settings if provided and generateResponse is true
-    if (generateResponse && settings) {
-      // No settings to add
-    }
-
     try {
       const response = await lastValueFrom(
         this.http.post<any>(endpoint, body, { ...this.getHttpOptions() })

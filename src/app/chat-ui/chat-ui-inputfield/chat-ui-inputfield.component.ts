@@ -16,6 +16,7 @@ import { ApiService } from '../../services/api.service';
 import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+import {lastValueFrom} from "rxjs";
 
 
 /**
@@ -575,13 +576,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     try {
       // Simple check to see if backend is reachable
       // We'll use a lightweight endpoint check
-      const response = await fetch(`${environment.apiUrl}/api/llms`, {
+      const response = await fetch(`${environment.apiUrl}/api/auth/me`, {
         method: 'GET',
         credentials: 'include'
       });
       return response.ok;
     } catch (error) {
-      console.warn('Backend not available:', error);
       return false;
     }
   }

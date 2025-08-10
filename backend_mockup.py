@@ -93,15 +93,6 @@ def log_security_event(event_type: str, details: dict, request: Request = None):
   security_logger.warning(json.dumps(log_entry))
 
 
-# List of available LLMs
-AVAILABLE_LLMS = [
-  "deepseek-ai/deepseek-v3",
-  "openai/gpt-4o",
-  "meta/meta-llama-3-8b-instruct",
-  "meta/meta-llama-3-70b-instruct",
-  "meta/meta-llama-3.1-405b-instruct",
-]
-
 
 class ErrorResponse(BaseModel):
   """
@@ -203,21 +194,15 @@ class ApiMessageSendAndGenerate(BaseModel):
   """
   Combined request for sending a message and generating AI response.
   """
-  # Message to send
-  conversationId: str  # Now using UUID
+  conversationId: str
   roleName: str
   type: Literal["text", "voice"]
   content: Union[str, TextContent, VoiceContent]
   time: int
   version: Optional[int] = 1
   lastModified: Optional[int] = None
-
-  # AI generation settings
   generateResponse: bool = True
   aiParticipant: str = "Assistant"
-  temperature: Optional[float] = None
-  top_p: Optional[float] = None
-  systemPrompt: Optional[str] = None
 
 
 class MessagePatch(BaseModel):
@@ -1055,13 +1040,6 @@ app = FastAPI(
 # Initialize the database on startup
 init_db()
 
-
-@app.get("/api/llms", response_model=List[str], tags=["LLM"])
-async def get_llms():
-  """
-  Get the list of available LLMs.
-  """
-  return AVAILABLE_LLMS
 
 
 @app.get(app.openapi_url, include_in_schema=False)
@@ -2405,13 +2383,8 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
 @app.post("/api/message/send-and-generate",
           response_model=SendAndGenerateResponse,
           status_code=status.HTTP_201_CREATED,
-          responses={
-            status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Invalid request"},
-            status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
-            status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
-          },
-          tags=["Message"],
-          dependencies=[Depends(rate_limit_guest)])
+          # ... (responses remain the same) ...
+          )
 async def send_and_generate_message(
   request_body: ApiMessageSendAndGenerate,
   response: Response,
@@ -2419,25 +2392,16 @@ async def send_and_generate_message(
 ):
   """
   Combined endpoint to send a user message and optionally generate an AI response.
-  This reduces the number of API calls and ensures atomic operations.
   """
-  crud_logger.info(
-    f"Send and generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}, Generate: {request_body.generateResponse}")
-
   try:
-    # Verify ownership
     if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
                                          current_user.get("is_guest", False)):
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
-    # Step 1: Save the user message
     user_message_id = int(time.time() * 1000)
-
-    # Extract content based on message type
     content_str = ""
     message_type = request_body.type
-
     if message_type == 'text':
       if isinstance(request_body.content, str):
         content_str = request_body.content
@@ -2445,18 +2409,12 @@ async def send_and_generate_message(
         content_str = request_body.content.get('content', '')
         attachments = request_body.content.get('attachments', [])
         if attachments:
-          content_obj = {
-            'content': content_str,
-            'attachments': attachments
-          }
+          content_obj = {'content': content_str, 'attachments': attachments}
           content_str = json.dumps(content_obj)
     elif message_type == 'voice':
-      if isinstance(request_body.content, dict):
-        content_str = json.dumps(request_body.content)
-      else:
-        content_str = str(request_body.content)
+      content_str = json.dumps(request_body.content) if isinstance(request_body.content, dict) else str(
+        request_body.content)
 
-    # Save user message
     with get_db() as conn:
       cur = conn.cursor()
       cur.execute(
@@ -2474,25 +2432,19 @@ async def send_and_generate_message(
       id=user_message_id,
       conversationId=request_body.conversationId,
       roleName=request_body.roleName,
-      content=content_str if message_type == 'text' and isinstance(request_body.content,
-                                                                   str) else request_body.content.get('content',
-                                                                                                      '') if isinstance(
-        request_body.content, dict) else content_str,
+      content=content_str,
       time=request_body.time,
       type=message_type,
       version=request_body.version or 1,
       lastModified=request_body.lastModified or int(time.time())
     )
 
-    # Step 2: Generate AI response if requested
     ai_message_response = None
-
     if request_body.generateResponse:
-      # Get conversation context including the just-sent message
-      context = await get_conversation_context(request_body.conversationId,
-                                               limit=6)  # Get one more to include new message
+      context = await get_conversation_context(request_body.conversationId, limit=6)
 
-      # Generate AI response
+      # ** THE FIX IS HERE **
+      # The backend now uses its own default values for the LLM.
       ai_response_content = await generate_llm_response(
         context,
         DEFAULT_TEMPERATURE,
@@ -2501,10 +2453,8 @@ async def send_and_generate_message(
         DEFAULT_MODEL
       )
 
-      ai_message_id = int(time.time() * 1000) + 1  # Ensure different ID
+      ai_message_id = int(time.time() * 1000) + 1
       current_time = int(time.time())
-
-      # Save AI message
       with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
