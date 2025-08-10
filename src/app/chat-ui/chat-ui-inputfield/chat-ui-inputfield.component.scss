@@ -46,20 +46,23 @@
   position: relative;
   z-index: 1;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; // Use nowrap for a single scrollable line
   gap: 10px;
   padding: 8px;
   border-bottom: 1px solid var(--theme-border);
-  max-height: 150px;
-  overflow-y: auto;
-  background: transparent;
+  overflow-y: hidden; // Hide vertical scrollbar
+  overflow-x: auto;   // Enable horizontal scrolling
 
-  &::-webkit-scrollbar-track {
-    background: rgba(var(--theme-primary-contrast-rgb), 0.05);
+  // Custom scrollbar styling
+  &::-webkit-scrollbar {
+    height: 4px;
   }
-
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
   &::-webkit-scrollbar-thumb {
-    background: rgba(var(--theme-primary-contrast-rgb), 0.2);
+    background-color: var(--theme-border);
+    border-radius: 4px;
   }
 }
 
@@ -71,7 +74,9 @@
   background: rgba(var(--theme-primary-contrast-rgb), 0.05);
   border: 1px solid var(--theme-border);
   border-radius: 24px;
+  min-width: 200px;
   max-width: 250px;
+  max-height: 100px;
   position: relative;
   transition: all 0.2s ease;
   overflow: hidden;
@@ -85,19 +90,64 @@
       transform: scale(1);
     }
   }
+
+  // Styles for square image previews
+  &.is-image {
+    max-width: 100px;
+    max-height: 100px;
+    min-width: 100px;
+    padding: 0;
+    gap: 0;
+    border-radius: 12px;
+    flex-shrink: 0; // Prevent images from shrinking
+
+    .file-thumbnail {
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+    }
+
+    .file-icon, .file-info {
+      display: none; // Hide icon and default info
+    }
+  }
 }
 
 .file-thumbnail {
-  width: 40px;
-  height: 40px;
+  width: 50px;
+  height: 50px;
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
+  position: relative; // For overlay
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+}
+
+.file-info-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 4px 8px;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom-left-radius: 11px; // Match parent
+  border-bottom-right-radius: 11px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+
+  .file-preview-item.is-image:hover & {
+    opacity: 1;
   }
 }
 
@@ -138,51 +188,8 @@
     opacity: 0.7;
   }
 
-  .upload-progress {
+  .upload-progress, .upload-status {
     margin-top: 4px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-
-    mat-progress-bar {
-      flex: 1;
-      height: 4px;
-      border-radius: 2px;
-    }
-
-    .progress-text {
-      font-size: 10px;
-      color: var(--theme-primary);
-      font-weight: 500;
-      min-width: 30px;
-      text-align: right;
-    }
-  }
-
-  .upload-status {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 4px;
-
-    .mat-icon {
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-
-      &.status-completed {
-        color: #28a745; // Keeping explicit success color
-      }
-
-      &.status-failed {
-        color: #dc3545; // Keeping explicit danger color
-      }
-    }
-
-    .error-message {
-      font-size: 10px;
-      color: #dc3545;
-    }
   }
 }
 
@@ -193,12 +200,8 @@
   width: 20px;
   height: 20px;
   line-height: 20px;
-  background-color: rgba(0, 0, 0, 0.5);
-  color: white;
+  background-color: rgba(0, 0, 0, 0.6);
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   opacity: 0;
   transform: scale(0.8);
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -211,6 +214,7 @@
     line-height: 16px;
     color: white;
   }
+
   &:hover {
     background-color: #dc3545;
   }

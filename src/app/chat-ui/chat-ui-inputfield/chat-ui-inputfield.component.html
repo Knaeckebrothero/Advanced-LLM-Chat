@@ -1,7 +1,5 @@
-<!-- Input field container with background visualization -->
 <div class="input-field-container" [class.recording-mode]="isRecording">
 
-  <!-- Background waveform canvas (always present but only visible when recording) -->
   <canvas #waveformCanvas
           class="background-waveform-canvas"
           [class.hidden]="!isRecording"
@@ -9,25 +7,23 @@
           [height]="canvasHeight">
   </canvas>
 
-  <!-- File preview area (shown when files are selected) -->
   <div class="file-preview-area" *ngIf="filePreviews.length > 0 && !isRecording">
-    <div class="file-preview-item" *ngFor="let preview of filePreviews">
-      <!-- Image preview -->
+    <div class="file-preview-item" *ngFor="let preview of filePreviews" [class.is-image]="preview.type === 'image'">
       <div class="file-thumbnail" *ngIf="preview.type === 'image' && preview.preview">
         <img [src]="preview.preview" [alt]="preview.name">
+        <div class="file-info-overlay">
+          {{ preview.name }}
+        </div>
       </div>
 
-      <!-- Icon for non-image files -->
-      <div class="file-icon" *ngIf="preview.type !== 'image' || !preview.preview">
+      <div class="file-icon" *ngIf="preview.type !== 'image'">
         <mat-icon>{{ getFileIcon(preview.type) }}</mat-icon>
       </div>
 
-      <!-- File info -->
-      <div class="file-info">
+      <div class="file-info" *ngIf="preview.type !== 'image'">
         <span class="file-name">{{ preview.name }}</span>
         <span class="file-size">{{ preview.sizeFormatted }}</span>
 
-        <!-- Upload progress -->
         <div class="upload-progress" *ngIf="preview.uploadStatus === 'uploading'">
           <mat-progress-bar
             mode="determinate"
@@ -37,7 +33,6 @@
           <span class="progress-text">{{ preview.uploadProgress || 0 }}%</span>
         </div>
 
-        <!-- Upload status indicators -->
         <div class="upload-status" *ngIf="preview.uploadStatus && preview.uploadStatus !== 'uploading'">
           <mat-icon *ngIf="preview.uploadStatus === 'completed'" class="status-completed">check_circle</mat-icon>
           <mat-icon *ngIf="preview.uploadStatus === 'failed'" class="status-failed">error</mat-icon>
@@ -47,7 +42,6 @@
         </div>
       </div>
 
-      <!-- Remove button -->
       <button mat-icon-button
               class="remove-file-button"
               (click)="removeFilePreview(preview.id)"
@@ -57,7 +51,6 @@
     </div>
   </div>
 
-  <!-- Main input area with textarea (hidden during recording) -->
   <div class="input-content-area" *ngIf="!isRecording">
     <textarea
       #messageTextarea
@@ -71,9 +64,7 @@
     </textarea>
   </div>
 
-  <!-- Voice recording info area (shown during recording) -->
   <div class="voice-recording-info" *ngIf="isRecording">
-    <!-- Cancel recording button -->
     <button mat-icon-button
             class="cancel-recording-button"
             (click)="cancelRecording()"
@@ -81,13 +72,11 @@
       <mat-icon>close</mat-icon>
     </button>
 
-    <!-- Recording indicator -->
     <div class="recording-indicator">
       <span class="recording-dot"></span>
       <span class="recording-time">{{ recordingTime | date:'mm:ss' }}</span>
     </div>
 
-    <!-- Send voice message button -->
     <button mat-icon-button
             class="send-voice-button"
             (click)="sendVoiceMessage()"
@@ -96,11 +85,8 @@
     </button>
   </div>
 
-  <!-- Action buttons bar at the bottom -->
   <div class="action-buttons-bar" *ngIf="!isRecording">
-    <!-- Left side buttons -->
     <div class="left-actions">
-      <!-- Camera button (only shown if device has camera and is a mobile device) -->
       <button
         *ngIf="hasCamera && isMobile"
         mat-icon-button
@@ -111,7 +97,6 @@
         <mat-icon>photo_camera</mat-icon>
       </button>
 
-      <!-- File attachment button with menu -->
       <button
         mat-icon-button
         class="action-button attachment-button"
@@ -121,9 +106,7 @@
         <mat-icon>attach_file</mat-icon>
       </button>
 
-      <!-- Attachment menu -->
       <mat-menu #attachmentMenu="matMenu" class="attachment-menu">
-        <!-- Camera option (only shown if device has camera) -->
         <button
           *ngIf="hasCamera"
           mat-menu-item
@@ -132,7 +115,6 @@
           <span>Take Photo</span>
         </button>
 
-        <!-- File upload option -->
         <button
           mat-menu-item
           (click)="handleFileMenuClick('file')">
@@ -140,7 +122,6 @@
           <span>Choose File</span>
         </button>
 
-        <!-- Location option (only shown if device supports geolocation) -->
         <button
           *ngIf="hasGeolocation"
           mat-menu-item
@@ -151,9 +132,7 @@
       </mat-menu>
     </div>
 
-    <!-- Right side buttons -->
     <div class="right-actions">
-      <!-- Send button when there's content -->
       <button
         *ngIf="hasContent"
         mat-icon-button
@@ -164,7 +143,6 @@
         <mat-icon>send</mat-icon>
       </button>
 
-      <!-- Microphone button when input is empty -->
       <button
         *ngIf="!hasContent"
         mat-icon-button
@@ -182,7 +160,6 @@
     </div>
   </div>
 
-  <!-- Hidden file input -->
   <input
     #fileInput
     type="file"
@@ -191,7 +168,6 @@
     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
     style="display: none;">
 
-  <!-- Hidden camera input (for mobile camera capture) -->
   <input
     #cameraInput
     type="file"
