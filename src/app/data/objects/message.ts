@@ -58,7 +58,7 @@ interface TextContent {
 /**
  * Voice message content
  */
-interface VoiceContent {
+export interface VoiceContent {
   type: 'voice';
   audioData: string;  // base64 encoded audio
   duration: number;  // in seconds
@@ -135,7 +135,7 @@ export class Message<T extends MessageContent = MessageContent> {
   static fromApiResponse(data: any): Message {
     // Generate ID if not provided by server
     const messageId = data.id || Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 1000);
-    
+
     const metadata: MessageMetadata = {
       id: messageId,
       conversationId: data.conversationId,
@@ -338,13 +338,13 @@ export class Message<T extends MessageContent = MessageContent> {
   private computeNumericHash(data: string): number {
     let hash = 0;
     if (data.length === 0) return hash;
-    
+
     for (let i = 0; i < data.length; i++) {
       const char = data.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
-    
+
     return Math.abs(hash);
   }
 
