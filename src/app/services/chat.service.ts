@@ -1,3 +1,4 @@
+// src/app/services/chat.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -42,7 +43,9 @@ export class ChatService implements OnDestroy {
 
   // Send a message
   public async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
-    await this.chatState.sendMessage(content, roleName);
+    // ** THE FIX IS HERE **
+    // Call the correct method, passing an empty array for files.
+    await this.chatState.sendMessageWithFiles(content, [], roleName);
   }
 
   // Send a file inside a message

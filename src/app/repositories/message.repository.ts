@@ -20,7 +20,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   // Separate cache for each conversation
   private conversationCaches = new Map<string, BehaviorSubject<MessageWithSyncStatus[]>>();
   private pendingUploads = new Map<string, FilePreview[]>();
-  
+
   constructor(
     dbService: DBService,
     apiService: ApiService
@@ -55,11 +55,11 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     if (!this.conversationCaches.has(conversationId)) {
       const cache = new BehaviorSubject<MessageWithSyncStatus[]>([]);
       this.conversationCaches.set(conversationId, cache);
-      
+
       // Load initial data
       this.loadConversationMessages(conversationId);
     }
-    
+
     return this.conversationCaches.get(conversationId)!.asObservable();
   }
 
@@ -72,10 +72,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       if (message.isText() && message.attachments?.length) {
         await this.handleFileAttachments(message);
       }
-      
+
       // Save to IndexedDB first
       await this.dbService.addMessage(message);
-      
+
       // Update cache
       const conversationId = message.conversationId;
       if (this.conversationCaches.has(conversationId)) {
@@ -83,10 +83,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         const current = cache.getValue();
         cache.next([...current, message]);
       }
-      
+
       // Mark as pending sync
       message.syncStatus = 'pending';
-      
+
       // Attempt to sync with backend if online
       if (await this.isOnline()) {
         try {
@@ -97,7 +97,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           message.syncError = error instanceof Error ? error.message : 'Unknown error';
         }
       }
-      
+
       return message;
     } catch (error) {
       console.error('Failed to save message:', error);
@@ -111,7 +111,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   async update(message: MessageWithSyncStatus): Promise<MessageWithSyncStatus> {
     try {
       await this.dbService.updateMessage(message);
-      
+
       // Update cache
       const conversationId = message.conversationId;
       if (this.conversationCaches.has(conversationId)) {
@@ -123,12 +123,12 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           cache.next([...current]);
         }
       }
-      
+
       // Sync with backend if online
       if (await this.isOnline() && message.syncStatus === 'pending') {
         await this.syncMessage(message);
       }
-      
+
       return message;
     } catch (error) {
       console.error('Failed to update message:', error);
@@ -141,14 +141,14 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    */
   async delete(id: string | number): Promise<void> {
     const numId = typeof id === 'string' ? parseInt(id, 10) : id;
-    
+
     try {
       // Get message to find conversation ID
       const message = await this.dbService.getMessage(numId);
       if (!message) return;
-      
+
       await this.dbService.deleteMessage(numId);
-      
+
       // Update cache
       const conversationId = message.conversationId;
       if (this.conversationCaches.has(conversationId)) {
@@ -157,7 +157,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         const filtered = current.filter(m => m.id !== numId);
         cache.next(filtered);
       }
-      
+
       // Sync deletion with backend if online
       if (await this.isOnline()) {
         try {
@@ -188,7 +188,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         time: m.time?.toISOString()
       }))
       .sort((a, b) => (a.id || 0) - (b.id || 0));
-    
+
     return this.computeHashFromString(JSON.stringify(data));
   }
 
@@ -220,32 +220,32 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    */
   async uploadPendingFiles(): Promise<void> {
     const messagesWithPending = await this.getMessagesWithPendingUploads();
-    
+
     for (const message of messagesWithPending) {
       if (!message.attachments) continue;
-      
+
       const pendingFiles = message.attachments.filter(f => f.uploadStatus === UploadStatus.PENDING);
       if (pendingFiles.length === 0) continue;
-      
+
       try {
         const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
-        
+
         // Update file statuses
         pendingFiles.forEach((f, index) => {
           f.uploadStatus = UploadStatus.COMPLETED;
           f.id = uploadedFileIds[index] || f.id;
           f.error = undefined;
         });
-        
+
         await this.update(message);
       } catch (error) {
         console.error(`Failed to upload files for message ${message.id}:`, error);
-        
+
         pendingFiles.forEach(f => {
           f.uploadStatus = UploadStatus.FAILED;
           f.error = 'Upload failed';
         });
-        
+
         await this.update(message);
       }
     }
@@ -293,23 +293,23 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    */
   private async handleFileAttachments(message: MessageWithSyncStatus): Promise<void> {
     if (!message.isText() || !message.attachments) return;
-    
+
     const pendingFiles = message.attachments.filter(f => f.uploadStatus === UploadStatus.PENDING);
     if (pendingFiles.length === 0) return;
-    
+
     // Store pending uploads for later retry
     this.pendingUploads.set(message.conversationId, pendingFiles);
-    
+
     // Try to upload if online
     if (await this.isOnline()) {
       try {
         const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
-        
+
         pendingFiles.forEach((f, index) => {
           f.uploadStatus = UploadStatus.COMPLETED;
           f.id = uploadedFileIds[index] || f.id;
         });
-        
+
         this.pendingUploads.delete(message.conversationId);
       } catch (error) {
         console.error('Failed to upload files:', error);
@@ -328,21 +328,21 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     if (!message.conversationId) {
       throw new Error('Cannot sync message without conversation ID');
     }
-    
+
     try {
       // For now, just use the regular send message endpoint
       // In the future, this could handle updates differently
       const serverId = await this.apiService.sendMessage(message);
-      
+
       // Update the message ID with the server-assigned ID if it's different
       if (serverId && serverId !== message.id) {
         const oldId = message.id;
         message.id = serverId;
-        
+
         // Update in IndexedDB with new ID
         await this.dbService.deleteMessage(oldId);
         await this.dbService.addMessage(message);
-        
+
         // Update cache
         const conversationId = message.conversationId;
         if (this.conversationCaches.has(conversationId)) {
@@ -355,7 +355,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           }
         }
       }
-      
+
       message.syncStatus = 'synced';
     } catch (error) {
       console.error('Failed to sync message with backend:', error);
@@ -369,14 +369,14 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    * Send message and optionally generate AI response
    */
   async sendAndGenerate(
-    message: MessageWithSyncStatus, 
+    message: MessageWithSyncStatus,
     generateResponse: boolean = true,
     settings?: any
   ): Promise<MessageWithSyncStatus | null> {
     try {
       // Save to IndexedDB first
       await this.dbService.addMessage(message);
-      
+
       // Update cache
       const conversationId = message.conversationId;
       if (this.conversationCaches.has(conversationId)) {
@@ -384,24 +384,24 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         const current = cache.getValue();
         cache.next([...current, message]);
       }
-      
+
       // Mark as pending sync
       message.syncStatus = 'pending';
-      
+
       // Attempt to sync with backend if online
       if (await this.isOnline()) {
         try {
-          const result = await this.apiService.sendAndGenerateMessage(message, generateResponse, settings);
-          
+          const result = await this.apiService.sendAndGenerateMessage(message, generateResponse);
+
           // Update user message ID if different
           if (result.userMessageId && result.userMessageId !== message.id) {
             const oldId = message.id;
             message.id = result.userMessageId;
-            
+
             // Update in IndexedDB
             await this.dbService.deleteMessage(oldId);
             await this.dbService.addMessage(message);
-            
+
             // Update cache
             if (this.conversationCaches.has(conversationId)) {
               const cache = this.conversationCaches.get(conversationId)!;
@@ -413,24 +413,24 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
               }
             }
           }
-          
+
           message.syncStatus = 'synced';
-          
+
           // If AI message was generated, save it too
           if (result.aiMessage) {
             const aiMessage = result.aiMessage as MessageWithSyncStatus;
             aiMessage.syncStatus = 'synced';
-            
+
             // Save directly to avoid duplicate sync attempt
             await this.dbService.addMessage(aiMessage);
-            
+
             // Update cache
             if (this.conversationCaches.has(conversationId)) {
               const cache = this.conversationCaches.get(conversationId)!;
               const current = cache.getValue();
               cache.next([...current, aiMessage]);
             }
-            
+
             return aiMessage;
           }
         } catch (error) {
@@ -440,7 +440,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           // Don't throw - message is saved locally
         }
       }
-      
+
       return null;
     } catch (error) {
       console.error('Failed to save message:', error);
@@ -455,17 +455,17 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     try {
       // Update in backend
       const updatedMessage = await this.apiService.rateMessage(messageId, conversationId, rating);
-      
+
       // Convert to MessageWithSyncStatus
       const messageWithSync: MessageWithSyncStatus = Object.assign(
         Object.create(Object.getPrototypeOf(updatedMessage)),
         updatedMessage,
         { syncStatus: 'synced' as const }
       );
-      
+
       // Update in local database
       await this.dbService.updateMessage(messageWithSync);
-      
+
       // Update cache
       if (this.conversationCaches.has(conversationId)) {
         const cache = this.conversationCaches.get(conversationId)!;
@@ -476,7 +476,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           cache.next([...current]);
         }
       }
-      
+
       return messageWithSync;
     } catch (error) {
       console.error('Failed to rate message:', error);
@@ -491,17 +491,17 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     try {
       // Regenerate in backend
       const regeneratedMessage = await this.apiService.regenerateMessage(messageId, conversationId);
-      
+
       // Convert to MessageWithSyncStatus
       const messageWithSync: MessageWithSyncStatus = Object.assign(
         Object.create(Object.getPrototypeOf(regeneratedMessage)),
         regeneratedMessage,
         { syncStatus: 'synced' as const }
       );
-      
+
       // Update in local database
       await this.dbService.updateMessage(messageWithSync);
-      
+
       // Update cache
       if (this.conversationCaches.has(conversationId)) {
         const cache = this.conversationCaches.get(conversationId)!;
@@ -512,7 +512,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           cache.next([...current]);
         }
       }
-      
+
       return messageWithSync;
     } catch (error) {
       console.error('Failed to regenerate message:', error);
