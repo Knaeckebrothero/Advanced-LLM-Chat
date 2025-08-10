@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy, Input, NgZone } from '@angular/core';
+import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy, Input, NgZone, Renderer2 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -15,6 +15,7 @@ import { RecordingConfig } from '../../data/objects/recording';
 import { ApiService } from '../../services/api.service';
 import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
+import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 
 
 /**
@@ -79,7 +80,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     private deviceCapabilitiesService: DeviceCapabilitiesService,
     private voiceRecordingService: VoiceRecordingService,
     private fileHandlingService: FileHandlingService,
-    private apiService: ApiService
+    private apiService: ApiService,
+    private sanitizer: DomSanitizer,
+    private renderer: Renderer2
   ) {}
 
   // ViewChild to access the textarea element directly
@@ -93,8 +96,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // File previews array - now with Input to receive files from parent
   @Input() set externalFiles(files: FilePreview[]) {
-    if (files && files.length > 0) {
-      // Merge external files with existing ones
+    if (files) {
       this.filePreviews = [...files];
     }
   }
@@ -199,16 +201,10 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
     // Check if we have either text or files to send
     if (trimmedMessage || this.filePreviews.length > 0) {
-      // TODO: In the future, emit both message and files together
-      if (trimmedMessage) {
-        this.messageSent.emit(trimmedMessage);
-      }
-
-      // Clear the input and files after sending
+      this.messageSent.emit(trimmedMessage);
       this.messageText = '';
-      this.clearFilePreviews();
-
-      // Reset textarea height after sending
+      this.filePreviews = [];
+      this.filesSelected.emit(this.filePreviews);
       setTimeout(() => this.adjustTextareaHeight(), 0);
     }
   }
@@ -279,16 +275,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
       // Add to existing previews with pending status
       this.filePreviews = [...this.filePreviews, ...newPreviews];
-
-      // Start upload immediately for each file
-      await this.uploadFilesImmediately(newPreviews);
-
-      // Emit the file previews
       this.filesSelected.emit(this.filePreviews);
-
       console.log('Files selected and uploaded:', this.filePreviews);
-
-      // Reset the input so the same file can be selected again
+      await this.uploadFilesImmediately(newPreviews);
       input.value = '';
     }
   }
@@ -582,7 +571,6 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     }
   }
 
-  // Helper method to check if backend is available
   private async isBackendAvailable(): Promise<boolean> {
     try {
       // Simple check to see if backend is reachable
@@ -596,6 +584,31 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       console.warn('Backend not available:', error);
       return false;
     }
+  }
+
+  onAttachmentClick(event: MouseEvent, preview: FilePreview): void {
+    if (preview.type === 'image' && preview.preview) {
+      event.preventDefault();
+      this.openImagePopup(preview.preview);
+    }
+  }
+
+  createDownloadUrl(file: File): SafeUrl {
+    const objectUrl = URL.createObjectURL(file);
+    return this.sanitizer.bypassSecurityTrustUrl(objectUrl);
+  }
+
+  openImagePopup(imageUrl: string): void {
+    const overlay = this.renderer.createElement('div');
+    this.renderer.addClass(overlay, 'image-popup-overlay');
+    const img = this.renderer.createElement('img');
+    this.renderer.addClass(img, 'image-popup-content');
+    this.renderer.setAttribute(img, 'src', imageUrl);
+    this.renderer.appendChild(overlay, img);
+    this.renderer.appendChild(document.body, overlay);
+    this.renderer.listen(overlay, 'click', () => {
+      this.renderer.removeChild(document.body, overlay);
+    });
   }
 
   // Clean up resources when component is destroyed

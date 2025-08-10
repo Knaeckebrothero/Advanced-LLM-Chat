@@ -1,10 +1,9 @@
 // src/app/chat-ui/chat-ui-message/chat-ui-message.component.ts
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
 import { Message, VoiceContent } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
 import { ChatUiComponent } from '../chat-ui.component';
-import { FileType, FilePreviewUtil } from '../../data/objects/file-preview';
-
+import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -22,7 +21,7 @@ export class ChatUiMessageComponent implements OnChanges {
   backupContent!: string;
   formattedTextContent: SafeHtml = '';
 
-  constructor(private sanitizer: DomSanitizer, private chatUI: ChatUiComponent) { }
+  constructor(private sanitizer: DomSanitizer, private chatUI: ChatUiComponent,private renderer: Renderer2) { }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['message']) {
@@ -38,8 +37,8 @@ export class ChatUiMessageComponent implements OnChanges {
     }
   }
 
-  // Function to replace prompt relevant elements to format the message
-  protected formatText(text: string): string {
+  // FIX: Removed 'private' to make it accessible from the template
+  formatText(text: string): string {
     if (!text) return '';
     return text
       // First, convert line breaks to <br> tags to preserve formatting
@@ -67,17 +66,33 @@ export class ChatUiMessageComponent implements OnChanges {
     return FilePreviewUtil.getFileIcon(type);
   }
 
-  // Edit message button
-  editMessage() {
-    // Only allow editing text messages
-    if (!this.message.isText()) {
-      console.log('Cannot edit non-text messages');
-      return;
+  onAttachmentClick(event: MouseEvent, attachment: FilePreview): void {
+    if (attachment.type === 'image' && attachment.preview) {
+      event.preventDefault();
+      this.openImagePopup(attachment.preview);
     }
+  }
 
-    console.log('Started editing message:', this.message.id);
+  createDownloadUrl(file: File): SafeUrl {
+    const objectUrl = URL.createObjectURL(file);
+    return this.sanitizer.bypassSecurityTrustUrl(objectUrl);
+  }
 
-    // Backup the current content
+  openImagePopup(imageUrl: string): void {
+    const overlay = this.renderer.createElement('div');
+    this.renderer.addClass(overlay, 'image-popup-overlay');
+    const img = this.renderer.createElement('img');
+    this.renderer.addClass(img, 'image-popup-content');
+    this.renderer.setAttribute(img, 'src', imageUrl);
+    this.renderer.appendChild(overlay, img);
+    this.renderer.appendChild(document.body, overlay);
+    this.renderer.listen(overlay, 'click', () => {
+      this.renderer.removeChild(document.body, overlay);
+    });
+  }
+
+  editMessage() {
+    if (!this.message.isText()) return;
     this.backupContent = this.message.textContent || '';
 
     // Enable editing
