@@ -222,10 +222,16 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   async onMessageSent(message: string): Promise<void> {
     if (message.trim() || this.pendingFiles.length > 0) {
       try {
-        // Use ChatStateService for sending messages with files
-        await this.chatState.sendMessageWithFiles(message, this.pendingFiles);
-        // Clear pending files after sending
-        this.pendingFiles = [];
+        // ** THE FIX IS HERE **
+        // Re-introduce the logic to call the correct method based on whether files are present.
+        if (this.pendingFiles.length > 0) {
+          console.log('Sending message with files:', this.pendingFiles);
+          await this.chatState.sendMessageWithFiles(message, this.pendingFiles);
+          this.pendingFiles = []; // Clear pending files after sending
+        } else {
+          // This is for text-only messages and will trigger the AI response.
+          await this.chatState.sendMessage(message);
+        }
 
         console.log('User message sent:', message);
         this.shouldScrollToBottom = true;
@@ -253,8 +259,8 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   // Handle file attachment request (including voice messages)
   async onFileRequested(filePreviews: FilePreview[]): Promise<void> {
-    // ** THE FIX IS HERE **
-    // Replace the local array with the full, updated array from the child component.
+    // This logic is more complex than dev but should be fine.
+    // It replaces the local array with the full, updated array from the child component.
     this.pendingFiles = filePreviews;
 
     // Find a voice message that hasn't been marked as 'sent' yet.

@@ -33,12 +33,14 @@ export interface ChatState {
 export class ChatStateService implements OnDestroy {
   private destroy$ = new Subject<void>();
 
+  // State management
   private activeConversationId$ = new BehaviorSubject<string | null>(null);
   private isNewConversation$ = new BehaviorSubject<boolean>(false);
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
   private hasReachedEnd$ = new BehaviorSubject<boolean>(false);
 
+  // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
     switchMap(id => {
       if (id === null || id === '0') {
@@ -49,6 +51,7 @@ export class ChatStateService implements OnDestroy {
     shareReplay(1)
   );
 
+  // Messages for active conversation
   public messages$: Observable<Message[]> = this.activeConversationId$.pipe(
     switchMap(id => {
       if (id === null || id === '0') {
@@ -60,6 +63,7 @@ export class ChatStateService implements OnDestroy {
     shareReplay(1)
   );
 
+  // All conversations
   public conversations$ = this.conversationRepository.getAll().pipe(
     map(conversations => conversations.sort((a, b) => {
       const dateA = a.updatedAt || a.createdAt || new Date(0);
@@ -69,6 +73,7 @@ export class ChatStateService implements OnDestroy {
     shareReplay(1)
   );
 
+  // Sync status
   public isSyncing$ = combineLatest([
     this.conversationRepository.syncing$,
     this.messageRepository.syncing$
@@ -77,6 +82,7 @@ export class ChatStateService implements OnDestroy {
     shareReplay(1)
   );
 
+  // Complete chat state
   public state$: Observable<ChatState> = combineLatest([
     this.activeConversation$,
     this.messages$,
@@ -113,6 +119,7 @@ export class ChatStateService implements OnDestroy {
   }
 
   private async initializeService(): Promise<void> {
+    // Load initial conversation
     const conversations = await firstValueFrom(this.conversations$);
     if (conversations.length > 0) {
       await this.loadConversation(conversations[0].id);
@@ -122,22 +129,29 @@ export class ChatStateService implements OnDestroy {
   }
 
   private listenToAuthChanges(): void {
+    // Listen for user changes (logout/login)
     this.authService.currentUser$
       .pipe(
         takeUntil(this.destroy$),
-        filter(user => user !== null)
+        filter(user => user !== null) // Only react to actual user changes
       )
       .subscribe(user => {
+        // When user changes (after logout/login), reset to new conversation
         if (user.email.includes('guest')) {
+          console.log('Guest user detected, resetting chat state');
           this.resetState();
         }
       });
   }
 
+  /**
+   * Load a specific conversation
+   */
   async loadConversation(conversationId: string): Promise<void> {
     this.isLoading$.next(true);
     this.error$.next(null);
-    this.hasReachedEnd$.next(false);
+    this.hasReachedEnd$.next(false); // Reset when loading a conversation
+
     try {
       if (conversationId === '0') {
         this.isNewConversation$.next(true);
@@ -145,56 +159,126 @@ export class ChatStateService implements OnDestroy {
       } else {
         this.isNewConversation$.next(false);
         this.activeConversationId$.next(conversationId);
+
+        // Trigger sync for this conversation if online
         if (await this.isBackendAvailable()) {
           this.conversationRepository.syncConversation(conversationId).catch(console.error);
         }
       }
+
       this.uiState.setActiveConversation(conversationId);
     } catch (error) {
       this.error$.next('Failed to load conversation');
+      console.error('Failed to load conversation:', error);
     } finally {
       this.isLoading$.next(false);
     }
   }
 
+  /**
+   * Create a new conversation (not saved until first message)
+   */
   async createNewConversation(): Promise<void> {
     this.isNewConversation$.next(true);
     this.activeConversationId$.next('0');
     this.uiState.setActiveConversation('0');
   }
 
+  /**
+   * Send a text message
+   */
+  async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
+    // Create conversation if it's new
+    if (this.isNewConversation$.getValue()) {
+      await this.createConversationFromFirstMessage(content);
+    }
+
+    const conversationId = this.activeConversationId$.getValue()!;
+
+    // Create message
+    const message = Message.createText(
+      {
+        id: Math.floor(Date.now() / 1000),
+        conversationId,
+        roleName,
+        time: new Date()
+      },
+      content
+    );
+
+    // Mark that we're sending a message to prevent immediate re-sync
+    await this.conversationRepository.markMessageSent(conversationId);
+
+    // Use the new combined send and generate method
+    const aiMessage = await this.messageRepository.sendAndGenerate(message, true);
+
+    // Update conversation timestamp
+    const conversation = await firstValueFrom(this.activeConversation$);
+    if (conversation && conversation.id !== '0') {
+      conversation.updatedAt = new Date();
+      await this.conversationRepository.save(conversation);
+    }
+
+    // Handle guest limit if AI generation failed
+    if (!aiMessage && await this.isBackendAvailable()) {
+      // Check if it's a rate limit issue
+      const error = (message as any).syncError;
+      if (error && error.includes('429')) {
+        this.handleRateLimitError(error);
+      }
+    }
+  }
+
+  /**
+   * Send a message with file attachments
+   */
   async sendMessageWithFiles(
     content: string,
     files: FilePreview[],
     roleName: string = 'user'
   ): Promise<void> {
-    // 1. Handle new conversation creation
+    // Create conversation if needed
     if (this.isNewConversation$.getValue()) {
-      const title = content.length > 30 ? content.substring(0, 27) + '...' : content || 'New conversation';
+      const title = content.length > 30 ? content.substring(0, 27) + '...' : content || 'New conversation with files';
       await this.createConversationFromFirstMessage(title);
     }
+
     const conversationId = this.activeConversationId$.getValue()!;
 
-    // 2. Handle file uploads (if any)
-    if (await this.isBackendAvailable() && files.length > 0) {
+    // Handle file uploads
+    const backendAvailable = await this.isBackendAvailable();
+    if (backendAvailable && files.length > 0) {
+      // Check for pending files
       const pendingFiles = files.filter(f => f.uploadStatus === UploadStatus.PENDING);
+
       if (pendingFiles.length > 0) {
         try {
           const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
+
           pendingFiles.forEach((f, index) => {
             f.uploadStatus = UploadStatus.COMPLETED;
             f.id = uploadedFileIds[index] || `file-${Date.now()}-${Math.random()}`;
           });
         } catch (error) {
+          console.error('Error uploading files:', error);
           pendingFiles.forEach(f => {
             f.uploadStatus = UploadStatus.FAILED;
             f.error = 'Upload failed';
           });
         }
       }
+    } else if (!backendAvailable && files.length > 0) {
+      // Mark files for offline storage
+      files.forEach(f => {
+        if (f.uploadStatus !== UploadStatus.PENDING) {
+          f.uploadStatus = UploadStatus.PENDING;
+          f.id = f.id || `offline-${Date.now()}-${Math.random()}`;
+          f.error = 'Waiting for connection';
+        }
+      });
     }
 
-    // 3. Create the message object
+    // Create and save message
     const message = Message.createText(
       {
         id: Math.floor(Date.now() / 1000),
@@ -206,37 +290,37 @@ export class ChatStateService implements OnDestroy {
       files
     );
 
-    // 4. Send the message and generate a response
-    await this.conversationRepository.markMessageSent(conversationId);
-    const aiMessage = await this.messageRepository.sendAndGenerate(message, true);
+    // This now also handles the AI response generation
+    await this.messageRepository.sendAndGenerate(message, true);
 
-    // 5. Update conversation timestamp
+    // Update conversation
     const conversation = await firstValueFrom(this.activeConversation$);
     if (conversation && conversation.id !== '0') {
       conversation.updatedAt = new Date();
       await this.conversationRepository.save(conversation);
     }
-
-    // 6. Handle rate limit errors
-    if (!aiMessage && await this.isBackendAvailable()) {
-      const error = (message as any).syncError;
-      if (error && error.includes('429')) {
-        this.handleRateLimitError(error);
-      }
-    }
   }
 
+  /**
+   * Send a voice message
+   */
   async sendVoiceMessage(
     audioBlob: Blob,
     duration: number,
     mimeType: string = 'audio/webm',
     roleName: string = 'user'
   ): Promise<void> {
+    // Create conversation if needed
     if (this.isNewConversation$.getValue()) {
       await this.createConversationFromFirstMessage('Voice conversation');
     }
+
     const conversationId = this.activeConversationId$.getValue()!;
+
+    // Convert blob to base64
     const base64Audio = await this.blobToBase64(audioBlob);
+
+    // Create and save message
     const message = Message.createVoice(
       {
         id: Math.floor(Date.now() / 1000),
@@ -248,7 +332,10 @@ export class ChatStateService implements OnDestroy {
       duration,
       mimeType
     );
+
     await this.messageRepository.save(message);
+
+    // Update conversation
     const conversation = await firstValueFrom(this.activeConversation$);
     if (conversation && conversation.id !== '0') {
       conversation.updatedAt = new Date();
@@ -256,7 +343,11 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
+  /**
+   * Generate AI response
+   */
   async generateMessage(participant: string = 'Assistant'): Promise<void> {
+    // Check backend availability
     const backendAvailable = await this.isBackendAvailable();
     if (!backendAvailable) {
       const offlineMessage = Message.createText(
@@ -271,20 +362,28 @@ export class ChatStateService implements OnDestroy {
       await this.messageRepository.save(offlineMessage);
       return;
     }
+
     try {
       const messages = await firstValueFrom(this.messages$);
       const lastMessage = messages[messages.length - 1];
       const settings = await firstValueFrom(
-        this.settingsState.settings$.pipe(timeout(5000), catchError(() => of(null)))
+        this.settingsState.settings$.pipe(
+          timeout(5000), // 5 seconds timeout
+          catchError(() => of(null)) // fallback to null
+        )
       );
+
       if (!lastMessage || !settings) {
         throw new Error('No message or settings available');
       }
+
       const generatedMessage = await this.apiService.generateMessage(lastMessage, participant, settings);
       await this.messageRepository.save(generatedMessage);
+
       this.authService.setGuestLimitReached(false);
     } catch (error: any) {
       if (error.status === 429) {
+        console.error('Guest limit reached:', error);
         const detail = error.error?.detail;
         let resetTimeMessage = 'Please try again later.';
         if (detail && detail.includes('after')) {
@@ -297,6 +396,7 @@ export class ChatStateService implements OnDestroy {
         }
         this.authService.setGuestLimitReached(true, resetTimeMessage);
       } else {
+        console.error('Error generating message:', error);
         const errorMessage = Message.createText(
           {
             id: Math.floor(Date.now() / 1000),
@@ -312,23 +412,33 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
+  /**
+   * Update (patch) a message with conflict resolution
+   */
   async patchMessage(messageId: number, content: string, maxRetries: number = 3): Promise<void> {
     const messages = await firstValueFrom(this.messages$);
     const message = messages.find(m => m.id === messageId);
+
     if (!message || !message.isText()) {
       throw new Error('Message not found or not a text message');
     }
+
     const conversationId = this.activeConversationId$.getValue()!;
     let retryCount = 0;
     let success = false;
+
     while (retryCount < maxRetries && !success) {
       try {
+        // Update via API if online
         if (await this.isBackendAvailable()) {
           await this.apiService.patchMessage(conversationId, messageId, content, message.version);
           success = true;
         } else {
+          // Offline mode - just update locally
           success = true;
         }
+
+        // Create updated message with incremented version
         const updatedMessage = Message.createText(
           {
             id: message.id,
@@ -341,19 +451,32 @@ export class ChatStateService implements OnDestroy {
           content,
           message.content.attachments
         );
+
         await this.messageRepository.update(updatedMessage);
+
+        // Show success notification if we had retries
         if (retryCount > 0) {
           this.notificationService.showSuccess('Message updated successfully after resolving conflicts');
         }
+
       } catch (error: any) {
         if (error.status === 409) {
+          // Version conflict - refresh and retry
+          console.warn(`Version conflict for message ${messageId}, retrying...`);
           retryCount++;
+
           if (retryCount < maxRetries) {
-            this.notificationService.showWarning(`Version conflict detected. Refreshing and retrying... (Attempt ${retryCount}/${maxRetries})`);
+            this.notificationService.showWarning(
+              `Version conflict detected. Refreshing and retrying... (Attempt ${retryCount}/${maxRetries})`
+            );
+
+            // Refresh the conversation to get latest versions
             await this.syncEngine.syncConversation(conversationId);
             const refreshedMessages = await firstValueFrom(this.messages$);
             const refreshedMessage = refreshedMessages.find(m => m.id === messageId);
+
             if (refreshedMessage) {
+              // Update our local reference for next retry
               message.version = refreshedMessage.version;
             }
           } else {
@@ -369,23 +492,43 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
+  /**
+   * Delete a message
+   */
   async deleteMessage(messageId: number): Promise<void> {
     await this.messageRepository.delete(messageId);
   }
 
+  /**
+   * Regenerate a message
+   */
   async regenerateMessage(message: Message): Promise<void> {
     if (!message.id || !message.conversationId) {
       throw new Error('Message ID and conversation ID are required');
     }
+
+    // Check if it's an AI message
     if (message.roleName === 'user') {
       throw new Error('Can only regenerate AI messages');
     }
+
     this.isLoading$.next(true);
     this.error$.next(null);
+
     try {
-      await this.messageRepository.regenerateMessage(message.id, message.conversationId);
+      // Use the new regenerate endpoint
+      await this.messageRepository.regenerateMessage(
+        message.id,
+        message.conversationId
+      );
+
+      // The message repository will automatically update the cache and trigger
+      // the messages$ observable to emit the new value
+
+      // Show success notification
       this.notificationService.showSuccess('Message regenerated successfully');
     } catch (error) {
+      console.error('Error regenerating message:', error);
       this.error$.next('Failed to regenerate message');
       this.notificationService.showError('Failed to regenerate message');
       throw error;
@@ -394,35 +537,62 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
+  /**
+   * Rate a message (thumbs up or thumbs down) or remove rating
+   */
   async rateMessage(message: Message, rating: number | null): Promise<void> {
     if (!message.id || !message.conversationId) {
       throw new Error('Message ID and conversation ID are required');
     }
+
+    // Validate rating value (null is allowed to remove rating)
     if (rating !== null && rating !== 0 && rating !== 1) {
       throw new Error('Rating must be 0 (thumbs down), 1 (thumbs up), or null to remove rating');
     }
+
     try {
-      await this.messageRepository.rateMessage(message.id, message.conversationId, rating);
+      // Update the rating via repository
+      await this.messageRepository.rateMessage(
+        message.id,
+        message.conversationId,
+        rating
+      );
+
+      // The message repository will automatically update the cache and trigger
+      // the messages$ observable to emit the new value
+
+      // Show success notification
       const ratingText = rating === null ? 'rating removed' : (rating === 1 ? 'liked' : 'disliked');
       this.notificationService.showSuccess(`Message ${ratingText}`);
     } catch (error) {
+      console.error('Error rating message:', error);
       this.error$.next('Failed to rate message');
       this.notificationService.showError('Failed to rate message');
       throw error;
     }
   }
 
+  /**
+   * Update conversation (e.g., rename)
+   */
   async updateConversation(conversation: Conversation): Promise<void> {
     try {
+      // Use the new updateConversation method that calls the API
       await this.conversationRepository.updateConversation(conversation.id, conversation.name);
+      // The activeConversation$ will automatically update via the observable chain
     } catch (error) {
       console.error('Failed to update conversation:', error);
       throw error;
     }
   }
 
+  /**
+   * Delete a conversation
+   */
   async deleteConversation(conversationId: string): Promise<void> {
     await this.conversationRepository.delete(conversationId);
+
+    // If we deleted the active conversation, load a new one
     if (this.activeConversationId$.getValue() === conversationId) {
       const remaining = await firstValueFrom(this.conversations$);
       if (remaining.length > 0) {
@@ -433,6 +603,9 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
+  /**
+   * Force sync
+   */
   async syncNow(): Promise<void> {
     const conversationId = this.activeConversationId$.getValue();
     if (conversationId && conversationId !== '0') {
@@ -440,45 +613,80 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
+  /**
+   * Upload pending files
+   */
   async uploadPendingFiles(): Promise<void> {
     await this.messageRepository.uploadPendingFiles();
   }
 
+  /**
+   * Get active conversation ID
+   */
   getActiveConversationId(): string | null {
     return this.activeConversationId$.getValue();
   }
 
+  /**
+   * Load older messages for the active conversation
+   */
   async loadOlderMessages(beforeTime: Date, limit: number = 20): Promise<Message[]> {
     const conversationId = this.activeConversationId$.getValue();
     if (!conversationId || conversationId === '0') {
       return [];
     }
+
     const messages = await this.conversationRepository.loadOlderMessages(conversationId, beforeTime, limit);
+
+    // If we got fewer messages than requested, we've likely reached the beginning
     if (messages.length < limit) {
       this.hasReachedEnd$.next(true);
     }
+
     return messages;
   }
 
+  /**
+   * Helper: Create conversation from first message
+   */
   private async createConversationFromFirstMessage(title: string): Promise<void> {
     const backendAvailable = await this.isBackendAvailable();
     let conversation: Conversation;
+
     if (!backendAvailable) {
-      conversation = new Conversation(this.dbService.generateUUID(), 0, title, ['user', 'Assistant']);
+      // Create local-only conversation with proper UUID
+      conversation = new Conversation(
+        this.dbService.generateUUID(),
+        0,
+        title,
+        ['user', 'Assistant']
+      );
     } else {
+      // Try to create on server
       const newConvData = new Conversation('', 0, title, ['user', 'Assistant']);
       try {
         conversation = await this.apiService.createConversation(newConvData);
       } catch (error) {
-        conversation = new Conversation(this.dbService.generateUUID(), 0, title, ['user', 'Assistant']);
+        console.error('Failed to create conversation on server:', error);
+        // Fallback to local with UUID
+        conversation = new Conversation(
+          this.dbService.generateUUID(),
+          0,
+          title,
+          ['user', 'Assistant']
+        );
       }
     }
+
     await this.conversationRepository.save(conversation);
     this.isNewConversation$.next(false);
     this.activeConversationId$.next(conversation.id);
     this.uiState.setActiveConversation(conversation.id);
   }
 
+  /**
+   * Helper: Check backend availability
+   */
   private async isBackendAvailable(): Promise<boolean> {
     try {
       await lastValueFrom(
@@ -490,6 +698,9 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
+  /**
+   * Handle rate limit errors
+   */
   private handleRateLimitError(error: string): void {
     let resetTimeMessage = 'Please try again later.';
     if (error.includes('after')) {
@@ -507,6 +718,9 @@ export class ChatStateService implements OnDestroy {
     this.authService.setGuestLimitReached(true, resetTimeMessage);
   }
 
+  /**
+   * Helper: Convert blob to base64
+   */
   private blobToBase64(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -518,11 +732,19 @@ export class ChatStateService implements OnDestroy {
     });
   }
 
+  /**
+   * Reset all state - used during logout
+   */
   resetState(): void {
+    console.log('Resetting chat state...');
+    // Reset to new conversation state
     this.activeConversationId$.next('0');
     this.isNewConversation$.next(true);
     this.isLoading$.next(false);
     this.error$.next(null);
+
+    // Clear any existing conversation/messages by triggering the observables
+    // The observables will automatically emit empty arrays for conversation '0'
   }
 
   ngOnDestroy(): void {

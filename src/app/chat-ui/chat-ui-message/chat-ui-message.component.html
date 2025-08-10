@@ -1,3 +1,4 @@
+<!-- Message to be used within the Chat UI component -->
 <div class="message-display-container">
   <div class="message"
        [class.message-user]="message.roleName === 'user'"
@@ -8,7 +9,9 @@
     <span class="message-user-name">{{ message.roleName }}</span>
 
     <div class="message-body">
+      <!-- == TEXT MESSAGE == -->
       <ng-container *ngIf="message.isText()">
+        <!-- Attachments -->
         <div *ngIf="message.hasAttachments()" class="message-attachments">
           <a *ngFor="let attachment of message.attachments"
              [href]="attachment.type !== 'image' ? createDownloadUrl(attachment.file) : attachment.preview"
@@ -33,8 +36,10 @@
           </a>
         </div>
 
+        <!-- Display formatted message when not editing -->
         <div *ngIf="!editing && message.textContent" [innerHTML]="formattedTextContent"></div>
 
+        <!-- Edit mode - only for text messages -->
         <div *ngIf="editing"
              contenteditable="true"
              class="editable-message"
@@ -44,6 +49,7 @@
         </div>
       </ng-container>
 
+      <!-- == VOICE MESSAGE == -->
       <ng-container *ngIf="message.isVoice()">
         <div class="voice-message">
           <div class="voice-header">
@@ -63,13 +69,17 @@
     </div>
 
     <div class="message-footer">
+      <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
       <div *ngIf="!editing" class="message-actions">
+        <!-- Only show edit button for text messages -->
         <button *ngIf="isEditable" mat-icon-button (click)="editMessage()" aria-label="Edit message">
           <mat-icon>edit</mat-icon>
         </button>
+        <!-- Regenerate button - only for AI messages that are the last AI message -->
         <button *ngIf="canRegenerate" mat-icon-button (click)="regenerateMessage()" aria-label="Regenerate message">
           <mat-icon>refresh</mat-icon>
         </button>
+        <!-- Rating buttons - only for AI messages -->
         <button *ngIf="message.roleName !== 'user'" mat-icon-button [class.active-rating]="message.rating === 1" (click)="rateMessage(1)" aria-label="Thumbs up">
           <mat-icon>thumb_up</mat-icon>
         </button>
@@ -80,6 +90,7 @@
           <mat-icon>delete</mat-icon>
         </button>
       </div>
+      <!-- Edit mode actions -->
       <div *ngIf="editing" class="message-actions">
         <button mat-icon-button (click)="doneEditing()" aria-label="Done editing">
           <mat-icon>done</mat-icon>
