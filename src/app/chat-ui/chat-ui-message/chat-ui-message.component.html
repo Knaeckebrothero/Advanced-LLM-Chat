@@ -9,6 +9,27 @@
 
     <div class="message-body">
       <ng-container *ngIf="message.isText()">
+
+        <div *ngIf="message.hasAttachments()" class="message-attachments">
+          <div class="attachment-item" *ngFor="let attachment of message.attachments" [class.is-image]="attachment.type === 'image'">
+            <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
+              <img [src]="attachment.preview" [alt]="attachment.name">
+              <div class="attachment-info-overlay">
+                {{ attachment.name }}
+              </div>
+            </div>
+
+            <div class="attachment-icon" *ngIf="attachment.type !== 'image'">
+              <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
+            </div>
+
+            <div class="attachment-info" *ngIf="attachment.type !== 'image'">
+              <span class="attachment-name">{{ attachment.name }}</span>
+              <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
+            </div>
+          </div>
+        </div>
+
         <div *ngIf="!editing && message.textContent" [innerHTML]="formattedTextContent"></div>
 
         <div *ngIf="editing"
@@ -17,23 +38,6 @@
              #editableDiv
              [innerText]="message.textContent"
              (blur)="updateContent(editableDiv.innerText)">
-        </div>
-
-        <div *ngIf="message.hasAttachments()" class="message-attachments">
-          <div class="attachment-item" *ngFor="let attachment of message.attachments">
-            <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
-              <img [src]="attachment.preview" [alt]="attachment.name">
-            </div>
-
-            <div class="attachment-icon" *ngIf="attachment.type !== 'image' || !attachment.preview">
-              <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
-            </div>
-
-            <div class="attachment-info">
-              <span class="attachment-name">{{ attachment.name }}</span>
-              <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
-            </div>
-          </div>
         </div>
       </ng-container>
 
