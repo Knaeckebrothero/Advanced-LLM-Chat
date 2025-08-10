@@ -1,5 +1,4 @@
 <div class="input-field-container" [class.recording-mode]="isRecording">
-
   <canvas #waveformCanvas
           class="background-waveform-canvas"
           [class.hidden]="!isRecording"
@@ -8,7 +7,13 @@
   </canvas>
 
   <div class="file-preview-area" *ngIf="filePreviews.length > 0 && !isRecording">
-    <div class="file-preview-item" *ngFor="let preview of filePreviews" [class.is-image]="preview.type === 'image'">
+    <a *ngFor="let preview of filePreviews"
+       [href]="preview.type !== 'image' ? createDownloadUrl(preview.file) : preview.preview"
+       [download]="preview.type !== 'image' ? preview.name : null"
+       (click)="onAttachmentClick($event, preview)"
+       class="file-preview-item"
+       [class.is-image]="preview.type === 'image'">
+
       <div class="file-thumbnail" *ngIf="preview.type === 'image' && preview.preview">
         <img [src]="preview.preview" [alt]="preview.name">
         <div class="file-info-overlay">
@@ -23,16 +28,10 @@
       <div class="file-info" *ngIf="preview.type !== 'image'">
         <span class="file-name">{{ preview.name }}</span>
         <span class="file-size">{{ preview.sizeFormatted }}</span>
-
         <div class="upload-progress" *ngIf="preview.uploadStatus === 'uploading'">
-          <mat-progress-bar
-            mode="determinate"
-            [value]="preview.uploadProgress || 0"
-            color="primary">
-          </mat-progress-bar>
+          <mat-progress-bar mode="determinate" [value]="preview.uploadProgress || 0" color="primary"></mat-progress-bar>
           <span class="progress-text">{{ preview.uploadProgress || 0 }}%</span>
         </div>
-
         <div class="upload-status" *ngIf="preview.uploadStatus && preview.uploadStatus !== 'uploading'">
           <mat-icon *ngIf="preview.uploadStatus === 'completed'" class="status-completed">check_circle</mat-icon>
           <mat-icon *ngIf="preview.uploadStatus === 'failed'" class="status-failed">error</mat-icon>
@@ -44,23 +43,22 @@
 
       <button mat-icon-button
               class="remove-file-button"
-              (click)="removeFilePreview(preview.id)"
+              (click)="removeFilePreview(preview.id); $event.preventDefault()"
               aria-label="Remove file">
         <mat-icon>close</mat-icon>
       </button>
-    </div>
+    </a>
   </div>
 
   <div class="input-content-area" *ngIf="!isRecording">
-    <textarea
-      #messageTextarea
-      [(ngModel)]="messageText"
-      (input)="onTextareaInput()"
-      (keydown)="handleKeyPress($event)"
-      class="message-textarea"
-      placeholder="Type your message..."
-      rows="1"
-      aria-label="Message input">
+    <textarea #messageTextarea
+              [(ngModel)]="messageText"
+              (input)="onTextareaInput()"
+              (keydown)="handleKeyPress($event)"
+              class="message-textarea"
+              placeholder="Type your message..."
+              rows="1"
+              aria-label="Message input">
     </textarea>
   </div>
 
@@ -71,12 +69,10 @@
             aria-label="Cancel recording">
       <mat-icon>close</mat-icon>
     </button>
-
     <div class="recording-indicator">
       <span class="recording-dot"></span>
       <span class="recording-time">{{ recordingTime | date:'mm:ss' }}</span>
     </div>
-
     <button mat-icon-button
             class="send-voice-button"
             (click)="sendVoiceMessage()"
@@ -87,45 +83,31 @@
 
   <div class="action-buttons-bar" *ngIf="!isRecording">
     <div class="left-actions">
-      <button
-        *ngIf="hasCamera && isMobile"
-        mat-icon-button
-        class="action-button camera-button"
-        (click)="handleCameraClick()"
-        aria-label="Take photo"
-        matTooltip="Take photo">
+      <button *ngIf="hasCamera && isMobile"
+              mat-icon-button
+              class="action-button camera-button"
+              (click)="handleCameraClick()"
+              aria-label="Take photo"
+              matTooltip="Take photo">
         <mat-icon>photo_camera</mat-icon>
       </button>
-
-      <button
-        mat-icon-button
-        class="action-button attachment-button"
-        [matMenuTriggerFor]="attachmentMenu"
-        aria-label="Attach file"
-        matTooltip="Attach file">
+      <button mat-icon-button
+              class="action-button attachment-button"
+              [matMenuTriggerFor]="attachmentMenu"
+              aria-label="Attach file"
+              matTooltip="Attach file">
         <mat-icon>attach_file</mat-icon>
       </button>
-
       <mat-menu #attachmentMenu="matMenu" class="attachment-menu">
-        <button
-          *ngIf="hasCamera"
-          mat-menu-item
-          (click)="handleFileMenuClick('camera')">
+        <button *ngIf="hasCamera" mat-menu-item (click)="handleFileMenuClick('camera')">
           <mat-icon>photo_camera</mat-icon>
           <span>Take Photo</span>
         </button>
-
-        <button
-          mat-menu-item
-          (click)="handleFileMenuClick('file')">
+        <button mat-menu-item (click)="handleFileMenuClick('file')">
           <mat-icon>folder_open</mat-icon>
           <span>Choose File</span>
         </button>
-
-        <button
-          *ngIf="hasGeolocation"
-          mat-menu-item
-          (click)="handleFileMenuClick('location')">
+        <button *ngIf="hasGeolocation" mat-menu-item (click)="handleFileMenuClick('location')">
           <mat-icon>location_on</mat-icon>
           <span>Share Location</span>
         </button>

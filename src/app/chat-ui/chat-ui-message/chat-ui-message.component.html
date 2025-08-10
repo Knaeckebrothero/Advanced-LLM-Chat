@@ -9,25 +9,28 @@
 
     <div class="message-body">
       <ng-container *ngIf="message.isText()">
-
         <div *ngIf="message.hasAttachments()" class="message-attachments">
-          <div class="attachment-item" *ngFor="let attachment of message.attachments" [class.is-image]="attachment.type === 'image'">
+          <a *ngFor="let attachment of message.attachments"
+             [href]="attachment.type !== 'image' ? createDownloadUrl(attachment.file) : attachment.preview"
+             [download]="attachment.type !== 'image' ? attachment.name : null"
+             (click)="onAttachmentClick($event, attachment)"
+             class="attachment-item"
+             [class.is-image]="attachment.type === 'image'">
+
             <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
               <img [src]="attachment.preview" [alt]="attachment.name">
               <div class="attachment-info-overlay">
                 {{ attachment.name }}
               </div>
             </div>
-
             <div class="attachment-icon" *ngIf="attachment.type !== 'image'">
               <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
             </div>
-
             <div class="attachment-info" *ngIf="attachment.type !== 'image'">
               <span class="attachment-name">{{ attachment.name }}</span>
               <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
             </div>
-          </div>
+          </a>
         </div>
 
         <div *ngIf="!editing && message.textContent" [innerHTML]="formattedTextContent"></div>
@@ -61,52 +64,30 @@
 
     <div class="message-footer">
       <div *ngIf="!editing" class="message-actions">
-        <button *ngIf="isEditable"
-                mat-icon-button
-                (click)="editMessage()"
-                aria-label="Edit message">
+        <button *ngIf="isEditable" mat-icon-button (click)="editMessage()" aria-label="Edit message">
           <mat-icon>edit</mat-icon>
         </button>
-        <button *ngIf="canRegenerate"
-                mat-icon-button
-                (click)="regenerateMessage()"
-                aria-label="Regenerate message">
+        <button *ngIf="canRegenerate" mat-icon-button (click)="regenerateMessage()" aria-label="Regenerate message">
           <mat-icon>refresh</mat-icon>
         </button>
-        <button *ngIf="message.roleName !== 'user'"
-                mat-icon-button
-                [class.active-rating]="message.rating === 1"
-                (click)="rateMessage(1)"
-                aria-label="Thumbs up">
+        <button *ngIf="message.roleName !== 'user'" mat-icon-button [class.active-rating]="message.rating === 1" (click)="rateMessage(1)" aria-label="Thumbs up">
           <mat-icon>thumb_up</mat-icon>
         </button>
-        <button *ngIf="message.roleName !== 'user'"
-                mat-icon-button
-                [class.active-rating]="message.rating === 0"
-                (click)="rateMessage(0)"
-                aria-label="Thumbs down">
+        <button *ngIf="message.roleName !== 'user'" mat-icon-button [class.active-rating]="message.rating === 0" (click)="rateMessage(0)" aria-label="Thumbs down">
           <mat-icon>thumb_down</mat-icon>
         </button>
-        <button mat-icon-button
-                (click)="deleteMessage()"
-                aria-label="Delete message">
+        <button mat-icon-button (click)="deleteMessage()" aria-label="Delete message">
           <mat-icon>delete</mat-icon>
         </button>
       </div>
-
       <div *ngIf="editing" class="message-actions">
-        <button mat-icon-button
-                (click)="doneEditing()"
-                aria-label="Done editing">
+        <button mat-icon-button (click)="doneEditing()" aria-label="Done editing">
           <mat-icon>done</mat-icon>
         </button>
-        <button mat-icon-button
-                (click)="abortEditing()"
-                aria-label="Abort editing">
+        <button mat-icon-button (click)="abortEditing()" aria-label="Abort editing">
           <mat-icon>clear</mat-icon>
         </button>
       </div>
-
       <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
     </div>
   </div>
