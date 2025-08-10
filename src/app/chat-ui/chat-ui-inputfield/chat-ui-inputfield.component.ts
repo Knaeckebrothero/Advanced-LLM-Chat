@@ -16,7 +16,6 @@ import { ApiService } from '../../services/api.service';
 import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
-import {lastValueFrom} from "rxjs";
 
 
 /**
@@ -202,10 +201,15 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
     // Check if we have either text or files to send
     if (trimmedMessage || this.filePreviews.length > 0) {
-      this.messageSent.emit(trimmedMessage);
+      if (trimmedMessage) {
+        this.messageSent.emit(trimmedMessage);
+      }
+
+      // Clear the input and files after sending
       this.messageText = '';
-      this.filePreviews = [];
-      this.filesSelected.emit(this.filePreviews);
+      this.clearFilePreviews();
+
+      // Reset textarea height after sending
       setTimeout(() => this.adjustTextareaHeight(), 0);
     }
   }
@@ -276,9 +280,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
       // Add to existing previews with pending status
       this.filePreviews = [...this.filePreviews, ...newPreviews];
+      await this.uploadFilesImmediately(newPreviews);
       this.filesSelected.emit(this.filePreviews);
       console.log('Files selected and uploaded:', this.filePreviews);
-      await this.uploadFilesImmediately(newPreviews);
       input.value = '';
     }
   }

@@ -21,7 +21,11 @@ export class ChatUiMessageComponent implements OnChanges {
   backupContent!: string;
   formattedTextContent: SafeHtml = '';
 
-  constructor(private sanitizer: DomSanitizer, private chatUI: ChatUiComponent,private renderer: Renderer2) { }
+  constructor(
+    private sanitizer: DomSanitizer,
+    private chatUI: ChatUiComponent,
+    private renderer: Renderer2
+  ) { }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['message']) {
@@ -37,7 +41,7 @@ export class ChatUiMessageComponent implements OnChanges {
     }
   }
 
-  // FIX: Removed 'private' to make it accessible from the template
+  // Helper to format text content with replacements
   formatText(text: string): string {
     if (!text) return '';
     return text
@@ -91,8 +95,17 @@ export class ChatUiMessageComponent implements OnChanges {
     });
   }
 
+  // Edit message button
   editMessage() {
-    if (!this.message.isText()) return;
+    // Only allow editing text messages
+    if (!this.message.isText()) {
+      console.log('Cannot edit non-text messages');
+      return;
+    }
+
+    console.log('Started editing message:', this.message.id);
+
+    // Backup the current content
     this.backupContent = this.message.textContent || '';
 
     // Enable editing
@@ -107,7 +120,6 @@ export class ChatUiMessageComponent implements OnChanges {
   /*
   Method for editing the messages content
   */
-
   updateContent(newContent: string) {
     // Store the new content temporarily
     this.backupContent = newContent;
