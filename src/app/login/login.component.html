@@ -1,8 +1,8 @@
 <div class="login-container">
   <mat-card class="login-card">
     <mat-card-header>
-      <mat-card-title>Welcome to Advanced LLM Chat</mat-card-title>
-      <mat-card-subtitle>Login</mat-card-subtitle>
+      <mat-card-title>Login</mat-card-title>
+      <mat-card-subtitle>Please enter your email to continue</mat-card-subtitle>
     </mat-card-header>
 
     <mat-card-content>
@@ -30,7 +30,7 @@
 
         <button
           mat-raised-button
-          color="primary"
+          color="secondary"
           (click)="login()"
           [disabled]="loading || !email"
           class="full-width login-button"
@@ -38,16 +38,7 @@
           <span *ngIf="!loading">Login</span>
           <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
         </button>
-
-        <!-- Removed skip login button as requested -->
       </form>
     </mat-card-content>
-
-    <mat-card-footer>
-      <p class="login-hint">
-        <mat-icon>info</mat-icon>
-        <span>Please enter your email to login.</span>
-      </p>
-    </mat-card-footer>
   </mat-card>
 </div>
