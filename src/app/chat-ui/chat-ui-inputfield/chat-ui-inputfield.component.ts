@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy, Input, NgZone, Renderer2 } from '@angular/core';
+import { Component, EventEmitter, Output, ViewChild, ElementRef, AfterViewInit, OnInit, OnDestroy, Input, NgZone } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,6 +7,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import {FilePreview, FilePreviewUtil} from '../../data/objects/file-preview';
 import { DeviceCapabilitiesService } from '../services/device-capabilities.service';
 import { VoiceRecordingService } from './voice-recording.service';
@@ -16,6 +17,7 @@ import { ApiService } from '../../services/api.service';
 import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+import { ImagePreviewDialogComponent, ImagePreviewDialogData } from './image-preview-dialog/image-preview-dialog.component';
 
 
 /**
@@ -69,7 +71,8 @@ import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
     MatMenuModule,
     MatTooltipModule,
     MatChipsModule,
-    MatProgressBarModule
+    MatProgressBarModule,
+    MatDialogModule
   ],
   templateUrl: './chat-ui-inputfield.component.html',
   styleUrls: ['./chat-ui-inputfield.component.scss']
@@ -82,7 +85,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     private fileHandlingService: FileHandlingService,
     private apiService: ApiService,
     private sanitizer: DomSanitizer,
-    private renderer: Renderer2
+    private dialog: MatDialog
   ) {}
 
   // ViewChild to access the textarea element directly
@@ -641,15 +644,22 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   }
 
   openImagePopup(imageUrl: string): void {
-    const overlay = this.renderer.createElement('div');
-    this.renderer.addClass(overlay, 'image-popup-overlay');
-    const img = this.renderer.createElement('img');
-    this.renderer.addClass(img, 'image-popup-content');
-    this.renderer.setAttribute(img, 'src', imageUrl);
-    this.renderer.appendChild(overlay, img);
-    this.renderer.appendChild(document.body, overlay);
-    this.renderer.listen(overlay, 'click', () => {
-      this.renderer.removeChild(document.body, overlay);
+    // Get the file preview to extract more info
+    const preview = this.filePreviews.find(fp => fp.preview === imageUrl);
+    
+    const dialogData: ImagePreviewDialogData = {
+      imageUrl: imageUrl,
+      fileName: preview?.name || 'Image',
+      fileSize: preview?.sizeFormatted
+    };
+
+    this.dialog.open(ImagePreviewDialogComponent, {
+      data: dialogData,
+      panelClass: 'image-preview-dialog',
+      maxWidth: '95vw',
+      maxHeight: '95vh',
+      hasBackdrop: true,
+      backdropClass: 'image-preview-backdrop'
     });
   }
 
