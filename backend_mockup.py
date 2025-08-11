@@ -71,7 +71,20 @@ crud_logger.addHandler(crud_handler)
 
 def log_security_event(event_type: str, details: dict, request: Request = None):
   """
-  Log security-related events with context.
+  Logs a security event with details and optional request information. This
+  function creates a structured log entry containing the type of event, the
+  event details, and timestamp. If a request object is provided, it includes
+  information about the request such as HTTP method, URL path, client host,
+  and specific headers. All log entries are serialized to JSON format and
+  logged with a warning level.
+
+  :param event_type: Type of the security event.
+  :type event_type: str
+  :param details: A dictionary containing the details of the event.
+  :type details: dict
+  :param request: Optional HTTP request data associated with the event.
+  :type request: Request or None
+  :return: None
   """
   log_entry = {
     "event_type": event_type,
@@ -96,23 +109,63 @@ def log_security_event(event_type: str, details: dict, request: Request = None):
 
 class ErrorResponse(BaseModel):
   """
-  Represents an error response model for providing error details to clients.
+  Represents an error response model for handling error details.
+
+  This class is used to encapsulate error information, typically to be
+  used in API responses to provide a standard error structure.
+
+  :ivar error: The error description message that provides details
+               about the nature of the error.
+  :type error: str
   """
   error: str
 
 
 class MockLoginRequest(BaseModel):
+  """
+  Represents a mock login request.
+
+  This class is utilized for creating a mock representation of a login
+  request. It can be extended or used in testing environments to simulate
+  user login with essential credentials or tokenized data.
+
+  :ivar email: The email address of the user attempting to login.
+  :type email: str
+  """
   email: str
   # In real implementation, this might include IDP tokens, SAML response, etc.
 
 
 class GuestLoginRequest(BaseModel):
+  """
+  Represents a request for guest login.
+
+  This class is used to encapsulate the data required for a guest login request,
+  including any relevant details necessary for processing the request. Guests
+  are typically users who do not have registered accounts but need limited access
+  to the system or application.
+
+  :ivar ip_address: IP address of the guest initiating the login request.
+  :type ip_address: str
+  """
   ip_address: str
 
 
 class LoginResponse(BaseModel):
   """
-  Represents the response received upon a successful login attempt.
+  Represents the response after a successful login attempt.
+
+  This class models the structure of a typical login response, providing
+  details about the user, an accompanying message, and an optional token
+  for authentication. It serves as the return type for login operations
+  and ensures standardized output.
+
+  :ivar user: A dictionary containing the authenticated user's details.
+  :type user: dict
+  :ivar message: A message conveying information about the login operation.
+  :type message: str
+  :ivar token: An optional token for authenticating subsequent requests.
+  :type token: Optional[str]
   """
   user: dict
   message: str
@@ -122,6 +175,16 @@ class LoginResponse(BaseModel):
 class ConversationState(BaseModel):
   """
   Represents the state of a conversation.
+
+  This class is used to store and manage the state of a conversation,
+  including its unique identifier and a hash sum for state validation
+  or integrity purposes. This serves as a foundational structure
+  within a conversational application.
+
+  :ivar id: Unique identifier for the conversation.
+  :type id: str
+  :ivar hashsum: Hash value used for validation or state integrity checks.
+  :type hashsum: int
   """
   id: str  # Now using UUID
   hashsum: int
@@ -129,15 +192,35 @@ class ConversationState(BaseModel):
 
 class ApiConversationsCheck(BaseModel):
   """
-  Represents a model for checking the list of conversation states.
+  Represents the API response for checking the state of multiple conversations.
+
+  This class is used to encapsulate the details related to the state of
+  conversations fetched from the API. It extends from BaseModel and ensures
+  that conversations are managed in a structured and clear format.
+
+  :ivar conversations: A list containing the state of multiple conversations.
+  :type conversations: List[ConversationState]
   """
   conversations: List[ConversationState]
 
 
-# New content type models
 class FileReference(BaseModel):
   """
-  Reference to an uploaded file
+  Represents a reference to a file with its metadata.
+
+  The FileReference class acts as a model for storing and managing metadata
+  related to a file, such as its identifier, name, size, and MIME type.
+  This class is used to simplify the organization and retrieval of file
+  information in applications interacting with file systems or APIs.
+
+  :ivar id: Unique identifier for the file.
+  :type id: str
+  :ivar name: Name of the file.
+  :type name: str
+  :ivar size: Size of the file in bytes.
+  :type size: int
+  :ivar mimeType: MIME type of the file.
+  :type mimeType: str
   """
   id: str
   name: str
@@ -147,7 +230,15 @@ class FileReference(BaseModel):
 
 class TextContent(BaseModel):
   """
-  Text message content with optional attachments
+  Represents a text content model containing text and optional attachments.
+
+  This class is designed to encapsulate textual content and its associated
+  attachments, allowing for structured storage and processing.
+
+  :ivar content: Textual content to be stored or processed.
+  :type content: str
+  :ivar attachments: List of file references associated with the content.
+  :type attachments: Optional[List[FileReference]]
   """
   content: str
   attachments: Optional[List[FileReference]] = []
@@ -155,7 +246,24 @@ class TextContent(BaseModel):
 
 class VoiceContent(BaseModel):
   """
-  Voice message content
+  Represents the content of a voice message including its audio data,
+  metadata, and optional details such as transcript or waveform.
+
+  This class serves as a data model for encapsulating audio-related
+  information. It contains attributes like the base64-encoded audio data,
+  the duration of the audio, and its MIME type. Additional optional
+  attributes allow storage of the audio's transcript and waveform data.
+
+  :ivar audioData: Base64 encoded audio data representing the voice content.
+  :type audioData: str
+  :ivar duration: Duration of the audio in seconds.
+  :type duration: float
+  :ivar mimeType: MIME type of the audio file (e.g., "audio/wav").
+  :type mimeType: str
+  :ivar transcript: Optional text transcript of the audio content.
+  :type transcript: Optional[str]
+  :ivar waveform: Optional list representing the audio waveform data.
+  :type waveform: Optional[List[float]]
   """
   audioData: str  # Base64 encoded audio
   duration: float
@@ -166,8 +274,33 @@ class VoiceContent(BaseModel):
 
 class ApiMessageSend(BaseModel):
   """
-  Represents a message sent within a specific conversation.
-  Supports multiple content types through a discriminated union.
+  Represents a message being sent via the API.
+
+  This class is used to encapsulate all required and optional data for sending
+  a message. It supports different message types such as text and voice, allowing
+  for flexibility in content representation. Additional metadata includes
+  timestamps and versioning for better traceability and compatibility.
+
+  :ivar conversationId: Unique identifier for the conversation, implemented as a UUID.
+  :type conversationId: str
+  :ivar roleName: The role name of the sender in the conversation (e.g., user,
+      assistant).
+  :type roleName: str
+  :ivar type: The type of message being sent, restricted to "text" or "voice".
+  :type type: Literal["text", "voice"]
+  :ivar content: The content of the message. For legacy purposes, this can be a
+      string, while for enhanced functionality, it can be an object of TextContent
+      or VoiceContent.
+  :type content: Union[str, TextContent, VoiceContent]
+  :ivar time: The timestamp of when the message was created, expressed as an
+      integer.
+  :type time: int
+  :ivar version: Optional integer indicating the version of the message format
+      being used. Defaults to 1.
+  :type version: Optional[int]
+  :ivar lastModified: Optional integer indicating the timestamp of the last
+      modification to the message. If not specified, it defaults to None.
+  :type lastModified: Optional[int]
   """
   conversationId: str  # Now using UUID
   roleName: str
@@ -180,7 +313,30 @@ class ApiMessageSend(BaseModel):
 
 class ApiMessageGenerate(BaseModel):
   """
-  Represents a model for generating API messages.
+  Represents a message to be generated in an API context.
+
+  This model is used to encapsulate all the necessary information needed
+  to generate a message within the API. It includes details about the
+  conversation, the participant's role, and other optional configuration
+  settings for message generation.
+
+  :ivar conversationId: Unique identifier for the conversation.
+                         Formerly using UUID for representation.
+  :type conversationId: str
+  :ivar roleName: Name of the role for the entity involved in the
+                  conversation (e.g., "user" or "assistant").
+  :type roleName: str
+  :ivar time: Specifies the timestamp associated with the conversation.
+  :type time: int
+  :ivar temperature: Optional parameter for controlling randomness in
+                     message generation.
+  :type temperature: float, optional
+  :ivar top_p: Optional parameter for nucleus sampling, determining
+               the probability mass of tokens considered.
+  :type top_p: float, optional
+  :ivar systemPrompt: Optional system-provided prompt that guides the
+                      conversation context.
+  :type systemPrompt: str, optional
   """
   conversationId: str  # Now using UUID
   roleName: str
@@ -192,7 +348,38 @@ class ApiMessageGenerate(BaseModel):
 
 class ApiMessageSendAndGenerate(BaseModel):
   """
-  Combined request for sending a message and generating AI response.
+  Represents a message to be sent in a conversation, along with specific parameters
+  for generating a response.
+
+  This class is used to format and validate data for sending messages within a
+  conversation. It provides attributes to define the conversation details,
+  message type, and content, as well as options for response generation. The
+  provided data will be used by the system to manage, process, and optionally
+  generate responses within a dialogue environment.
+
+  :ivar conversationId: Unique identifier of the conversation.
+  :type conversationId: str
+  :ivar roleName: Role name for the sender of the message.
+  :type roleName: str
+  :ivar type: Type of the message (either "text" or "voice").
+  :type type: Literal["text", "voice"]
+  :ivar content: The content of the message, which may be a string, text content,
+      or voice content.
+  :type content: Union[str, TextContent, VoiceContent]
+  :ivar time: The timestamp of the message in seconds since the epoch.
+  :type time: int
+  :ivar version: (Optional) Version of the message format. Defaults to 1 if not
+      provided.
+  :type version: Optional[int]
+  :ivar lastModified: (Optional) Timestamp when the message was last modified, in
+      seconds since the epoch.
+  :type lastModified: Optional[int]
+  :ivar generateResponse: Boolean flag indicating whether to generate a response
+      for the sent message. Defaults to True if not provided.
+  :type generateResponse: bool
+  :ivar aiParticipant: Name of the AI participant associated with the message.
+      Defaults to "Assistant".
+  :type aiParticipant: str
   """
   conversationId: str
   roleName: str
@@ -207,7 +394,23 @@ class ApiMessageSendAndGenerate(BaseModel):
 
 class MessagePatch(BaseModel):
   """
-  Represents a model for updating message data within a conversation.
+  Represents a patch or update to a specific message within a conversation.
+
+  This class is designed to apply changes to existing messages. Each instance
+  represents a modification that can be identified, tracked, and validated.
+  It also includes support for optimistic locking to handle simultaneous
+  updates and ensure data consistency.
+
+  :ivar id: The unique identifier of the message.
+  :type id: int
+  :ivar conversationId: The identifier of the conversation to which the
+      message belongs. It uses a UUID format for unique identification.
+  :type conversationId: str
+  :ivar content: The updated content of the message.
+  :type content: str
+  :ivar version: The version number of the update used for optimistic
+      locking. Ensures that concurrent updates do not overwrite changes.
+  :type version: int
   """
   id: int
   conversationId: str  # Now using UUID
@@ -217,7 +420,35 @@ class MessagePatch(BaseModel):
 
 class MessageResponse(BaseModel):
   """
-  Represents a response message within a conversation context.
+  Represents a structured response message within a conversation.
+
+  This class models a message with associated metadata, including
+  conversation context, role assignment, content, timestamps, and
+  optional attributes like type, version, lastModified time, and rating.
+
+  :ivar id: Unique identifier for the message.
+  :type id: int
+  :ivar conversationId: Identifier of the associated conversation, typically
+      a UUID formatted string.
+  :type conversationId: str
+  :ivar roleName: Role indicating the sender's identity or purpose in the
+      conversation (e.g., "user", "assistant").
+  :type roleName: str
+  :ivar content: Actual message content or body.
+  :type content: str
+  :ivar time: UNIX epoch timestamp of when the message was created.
+  :type time: int
+  :ivar type: Optional type of the message for categorization, such as "text".
+      Defaults to "text" for backwards compatibility.
+  :type type: Optional[str]
+  :ivar version: Version of the message structure. Defaults to 1.
+  :type version: int
+  :ivar lastModified: Optional UNIX epoch timestamp of the last modification
+      made to the message.
+  :type lastModified: Optional[int]
+  :ivar rating: Optional user-provided rating of the message. 1 indicates
+      thumbs up, 0 indicates thumbs down, and None indicates unrated.
+  :type rating: Optional[int]
   """
   id: int
   conversationId: str  # Now using UUID
@@ -232,7 +463,16 @@ class MessageResponse(BaseModel):
 
 class SendAndGenerateResponse(BaseModel):
   """
-  Response containing both the saved user message and generated AI response.
+  Represents a model for sending and generating responses, combining both user and AI messages.
+
+  This class encapsulates a user message along with an optional AI message, providing a structure
+  to process and store conversations. It is primarily designed to handle and manage the interaction
+  between users and an AI system.
+
+  :ivar userMessage: The message sent by the user.
+  :type userMessage: MessageResponse
+  :ivar aiMessage: The message generated by the AI, if available.
+  :type aiMessage: Optional[MessageResponse]
   """
   userMessage: MessageResponse
   aiMessage: Optional[MessageResponse] = None
@@ -240,7 +480,32 @@ class SendAndGenerateResponse(BaseModel):
 
 class ConversationResponse(BaseModel):
   """
-  Encapsulates the response details of a conversation.
+  Represents the response of a conversation with its associated details.
+
+  This model encapsulates the details of a conversation including its unique
+  identifier, associated user ID, participants, timestamps, and versioning
+  information. It is designed to manage and model conversation-related data
+  within the system.
+
+  :ivar id: A unique identifier for the conversation.
+  :type id: str
+  :ivar userId: The ID of the user associated with this conversation.
+  :type userId: int
+  :ivar name: The name of the conversation.
+  :type name: str
+  :ivar participants: A list of participants involved in the conversation.
+  :type participants: List[str]
+  :ivar createdAt: The timestamp when the conversation was created.
+  :type createdAt: datetime
+  :ivar updatedAt: The timestamp when the conversation was last updated.
+  :type updatedAt: datetime
+  :ivar hashsum: A computed hash value representing the conversation data.
+  :type hashsum: int
+  :ivar version: The version number of the conversation data model.
+  :type version: int
+  :ivar lastModified: An optional timestamp when the conversation was last
+      modified.
+  :type lastModified: Optional[int]
   """
   id: str  # Now using UUID
   userId: int
@@ -254,7 +519,30 @@ class ConversationResponse(BaseModel):
 
 
 class Conversation(BaseModel):
-  id: str  # Now using UUID
+  """
+  Represents a conversation entity.
+
+  This class models a conversation instance, storing data such as its identifier,
+  the associated user who initiated or owns the conversation, the name of the
+  conversation, optional participants, and timestamps for when it was created
+  and last updated.
+
+  :ivar id: Unique identifier for the conversation.
+  :type id: str
+  :ivar userId: Identifier of the user associated with the conversation.
+  :type userId: int
+  :ivar name: Display name for the conversation.
+  :type name: str
+  :ivar participants: Optional string representing additional participants in
+      the conversation.
+  :type participants: Optional[str]
+  :ivar createdAt: Timestamp indicating when the conversation was created.
+  :type createdAt: datetime
+  :ivar updatedAt: Timestamp indicating the last time the conversation was
+      updated.
+  :type updatedAt: datetime
+  """
+  id: str
   userId: int
   name: str
   participants: Optional[str] = None
@@ -263,44 +551,108 @@ class Conversation(BaseModel):
 
 
 class ConversationCreateRequest(BaseModel):
+  """
+  Represents a request to create a new conversation.
+
+  This class is used to encapsulate the necessary data for creating a new
+  conversation, including the name of the conversation and the list of participants.
+
+  :ivar name: The name of the conversation to be created.
+  :type name: str
+  :ivar participants: A list of participants to be included in the conversation.
+  :type participants: List[str]
+  """
   name: str
   participants: List[str]
 
 
 class RateMessageRequest(BaseModel):
   """
-  Request body for rating a message.
+  Represents a request to rate a message in a conversation.
+
+  This request model is used to capture user feedback on a specific message within a
+  conversation. The feedback is stored as a rating value representing a "thumbs up,"
+  "thumbs down," or the removal of a rating. The purpose of this model is to provide a
+  standardized structure for transmitting rating data.
+
+  1 for thumbs up, 0 for thumbs down, None to remove rating
+
+  :ivar id: Unique identifier for the rate message request.
+  :type id: int
+  :ivar conversationId: Unique identifier for the conversation, typically in UUID format.
+  :type conversationId: str
+  :ivar rating: Feedback rating for the message, where 1 represents a thumbs up, 0 represents
+      a thumbs down, and None indicates the removal of the rating.
+  :type rating: Optional[int]
   """
   id: int
   conversationId: str  # UUID
-  rating: Optional[int] = Field(None, ge=0, le=1)  # 1 for thumbs up, 0 for thumbs down, None to remove rating
+  rating: Optional[int] = Field(None, ge=0, le=1)
 
 
 class RegenerateMessageRequest(BaseModel):
   """
-  Request body for regenerating a message.
+  Represents a request to regenerate a message within a specific conversation.
+
+  This class is a model that encapsulates the data required to request the
+  regeneration of a message. It contains the unique identifiers for the
+  message and the associated conversation.
+
+  :ivar id: Unique identifier for the message to be regenerated.
+  :type id: int
+  :ivar conversationId: Unique identifier for the conversation associated
+                        with the request.
+  :type conversationId: str
   """
   id: int
   conversationId: str  # UUID
 
-# **MODIFIED:** Simplified AppSettings to match frontend
+
 class AppSettings(BaseModel):
   """
-  Define the structure of the settings that the frontend can GET or PUT
+  Manages application settings such as theme and language preferences.
+
+  Provides storage for user-specified application configurations, enabling
+  customization of the application behavior and appearance.
+
+  :ivar theme: The theme preference of the user.
+  :type theme: str
+  :ivar language: The language preference of the user.
+  :type language: str
   """
   theme: str
   language: str
 
-# **ADDED:** New response model for settings to include timestamp
+
 class AppSettingsResponse(AppSettings):
-    """
-    Settings with sync metadata for frontend sync architecture
-    """
-    lastUpdated: int # Unix timestamp
+  """
+  Represents the response format for application settings, extending the
+  base application settings functionality.
+
+  This class incorporates additional metadata regarding the last update time
+  of the settings, stored as a Unix timestamp.
+
+  :ivar lastUpdated: Indicates the Unix timestamp of the last update to the
+      application settings.
+  :type lastUpdated: int
+  """
+  lastUpdated: int # Unix timestamp
 
 class ConversationWithDetails(Conversation):
   """
-  Conversation with additional metadata for sync
+  Represents a conversation with additional details about its state or metadata.
+
+  This class extends the base `Conversation` class, adding optional attributes
+  that provide more detailed information about the conversation, such as the
+  last modification timestamp, the count of messages within the conversation,
+  and a synchronization hash value typically used for data consistency.
+
+  :ivar lastModified: The timestamp indicating when the conversation was last modified.
+  :type lastModified: Optional[datetime]
+  :ivar messageCount: The number of messages included in the conversation.
+  :type messageCount: Optional[int]
+  :ivar syncHash: A hash value used for synchronization or data integrity checking.
+  :type syncHash: Optional[str]
   """
   lastModified: Optional[datetime] = None
   messageCount: Optional[int] = None
@@ -310,20 +662,16 @@ class ConversationWithDetails(Conversation):
 @contextmanager
 def get_db():
   """
-  Provides a context manager to handle SQLite database connections. This ensures
-  that the connection to the database is properly opened and closed after use,
-  reducing the risk of resource leakage or runtime database errors. The method
-  yields an SQLite connection object that can be used to interact with the
-  database.
+  Manages a context for database connection, ensuring proper cleanup of resources.
 
-  Parameters and return types are defined to clarify usage and expected output.
+  This function is used to provide a managed context for database interaction.
+  It opens a SQLite database connection and ensures it is properly closed after
+  use, even if an exception occurs during the interaction. The connection uses
+  a row factory to allow access to columns by name.
 
-  Yields:
-      sqlite3.Connection: The SQLite connection object initialized with the
-          given database path and custom row factory configuration.
+  :param DB_PATH: The file path to the SQLite database.
 
-  Raises:
-      None
+  :yield: A SQLite database connection object.
   """
   conn = sqlite3.connect(DB_PATH)  # Changed from 'chat.db' to DB_PATH
   conn.row_factory = sqlite3.Row
@@ -336,7 +684,17 @@ def get_db():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
   """
-  Manages the lifespan of the FastAPI application.
+  Manages the lifespan of the application by performing necessary asynchronous
+  tasks such as cleanup of expired sessions.
+
+  This function ensures that the application lifecycle includes running specific
+  background tasks that are necessary for maintaining the application's state or
+  resources.
+
+  :param app: FastAPI application instance to attach the lifespan context to.
+  :type app: FastAPI
+  :return: Async generator for managing application lifespan.
+  :rtype: AsyncGenerator
   """
   asyncio.create_task(cleanup_expired_sessions())
   yield
@@ -344,22 +702,49 @@ async def lifespan(app: FastAPI):
 
 def generate_session_key(length=32) -> str:
   """
-  Generate a secure, random session key.
+  Generates a securely random session key.
+
+  This function creates a session key using a cryptographic random
+  number generator. The key is returned in a URL-safe format and is
+  suitable for use in session management and other scenarios where a
+  secure, non-guessable token is required.
+
+  :param length: The desired length of the generated session key, where
+                 the length refers to the number of characters in the
+                 resulting string. Defaults to 32.
+  :type length: int
+
+  :return: A URL-safe, randomly generated session key.
+  :rtype: str
   """
   return secrets.token_urlsafe(length)
 
 
 def generate_conversation_id() -> str:
   """
-  Generate a unique conversation ID using UUID v4.
-  Returns a string representation of the UUID.
+  Generates a unique conversation identifier.
+
+  This function creates a unique identifier for a conversation using a UUID
+  (Universally Unique Identifier). It ensures the generated ID is globally
+  unique.
+
+  :returns: A unique string identifier for a conversation.
+  :rtype: str
   """
   return str(uuid.uuid4())
 
 
 def generate_csrf_token() -> str:
   """
-  Generate a secure CSRF token.
+  Generates a secure random CSRF token.
+
+  This function leverages the `secrets` module to generate a cryptographically
+  secure, URL-safe token that can be used as a CSRF (Cross-Site Request Forgery)
+  token in web applications. The generated token has high entropy and is suitable
+  for security-sensitive contexts to protect against CSRF attacks.
+
+  :return: A cryptographically secure, URL-safe token for CSRF protection
+  :rtype: str
   """
   return secrets.token_urlsafe(32)
 
@@ -367,11 +752,24 @@ def generate_csrf_token() -> str:
 def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False, regenerate_from=None) -> \
 tuple[str, str]:
   """
-  Creates a session for a given user with a specified duration in hours.
-  If regenerate_from is provided, deletes the old session first.
-  Returns tuple of (session_key, csrf_token).
+  Creates and stores a new user session in the database. Optionally regenerates a session
+  from an existing one by deleting the old session before creation.
+
+  :param user_id: The unique identifier of the user for whom the session is being created.
+  :type user_id: int
+  :param user_email: The email address associated with the user's account.
+  :type user_email: str
+  :param session_duration_hours: The duration in hours for which the session remains valid.
+      Defaults to 24 hours.
+  :type session_duration_hours: int
+  :param is_guest: Flag indicating whether the session is for a guest user. Defaults to False.
+  :type is_guest: bool
+  :param regenerate_from: The session key of an existing session to be regenerated. If provided,
+      the existing session will be deleted.
+  :type regenerate_from: str or None
+  :return: A tuple containing the new session key and the CSRF token associated with the session.
+  :rtype: tuple[str, str]
   """
-  # Delete old session if regenerating
   if regenerate_from:
     delete_session(regenerate_from)
 
@@ -397,8 +795,16 @@ tuple[str, str]:
 
 def validate_session(session_key: str) -> Optional[dict]:
   """
-  Validates a provided session key by checking the database.
-  Includes session timeout information.
+  Validates the session using the provided session key by checking its existence and expiration status
+  in the database. If validation succeeds, updates the last activity timestamp and calculates the
+  remaining time until expiry.
+
+  :param session_key: The session key used to identify the session in the database.
+  :type session_key: str
+
+  :return: A dictionary with session details if the session is valid, or None if the session does
+           not exist or is expired.
+  :rtype: Optional[dict]
   """
   if not session_key:
     return None
@@ -449,7 +855,15 @@ def validate_session(session_key: str) -> Optional[dict]:
 
 def delete_session(session_key: str):
   """
-  Deletes a session from the database.
+  Deletes a session from the database matching the supplied session key.
+
+  This function is used to remove a specific session record from the sessions table
+  in the database. It performs a deletion query using the provided session key and
+  commits the changes to ensure the session is successfully removed.
+
+  :param session_key: The key identifying the session to be deleted from the database.
+  :type session_key: str
+  :return: None
   """
   with get_db() as conn:
     cur = conn.cursor()
@@ -459,9 +873,20 @@ def delete_session(session_key: str):
 
 async def validate_csrf_token(request: Request) -> bool:
   """
-  Validates CSRF token using double-submit cookie pattern.
-  Compares token from header with token from cookie.
-  Returns True if valid, False otherwise.
+  Validates the CSRF token submitted via the HTTP request. This function
+  implements CSRF protection using the double-submit pattern, ensuring requests
+  are authorized and preventing cross-site request forgery attacks. Specifically,
+  it checks if the CSRF token provided in the request header matches the CSRF
+  token stored in the cookie. Additionally, it bypasses CSRF validation for
+  certain safe HTTP methods and specific authentication endpoints.
+
+  :param request: The incoming HTTP request object containing data related to
+      headers, method, URL, and cookies.
+  :type request: Request
+  :return: A boolean value indicating whether the CSRF token validation passed
+      or failed. Returns True if validation bypass conditions are met or if
+      tokens match; otherwise, returns False.
+  :rtype: bool
   """
   # Skip CSRF validation for safe methods
   if request.method in ["GET", "HEAD", "OPTIONS"]:
@@ -505,8 +930,16 @@ async def validate_csrf_token(request: Request) -> bool:
 
 async def get_current_user(request: Request) -> dict:
   """
-  Retrieves the current user based on the session information provided
-  in the request cookies.
+  Retrieves the current user's information based on the session cookie in the supplied request.
+  If the session cookie is missing or invalid, an HTTP 401 error is raised. This is typically
+  used for authentication purposes.
+
+  :param request: An instance of `Request` containing the client's HTTP request. This includes
+      necessary information like cookies for identifying the user's session.
+  :return: A dictionary containing user information retrieved from the validated session.
+  :rtype: dict
+  :raises HTTPException: If the session cookie is missing or the session is invalid/expired,
+      the function raises an HTTP error with status code 401 (Unauthorized).
   """
   session_key = request.cookies.get("session")
   if not session_key:
@@ -521,7 +954,13 @@ async def get_current_user(request: Request) -> dict:
 
 async def get_current_user_optional(request: Request) -> Optional[dict]:
   """
-  Attempts to retrieve the current user based on the provided request.
+  Asynchronously retrieves the currently authenticated user from the provided request object.
+  In case the user is not authenticated or an HTTP exception occurs, it returns None.
+
+  :param request: The request object used to fetch the current authenticated user.
+  :type request: Request
+  :return: A dictionary containing the current user's information if available, otherwise None.
+  :rtype: Optional[dict]
   """
   try:
     return await get_current_user(request)
@@ -531,7 +970,11 @@ async def get_current_user_optional(request: Request) -> Optional[dict]:
 
 async def cleanup_expired_sessions():
   """
-  Periodically cleans up expired sessions from the database.
+  Periodically cleans up expired sessions from the database. This function runs in
+  an infinite loop, purging sessions with expiration dates earlier than the
+  current time. It executes this cleanup process every hour.
+
+  :return: None
   """
   while True:
     try:
@@ -553,7 +996,21 @@ async def cleanup_expired_sessions():
 
 def migrate_to_uuid_conversations(conn):
   """
-  Migrate existing conversations from integer IDs to UUID-based IDs.
+  Migrates the schema and data from an SQLite database to support UUID-based conversation IDs.
+
+  This function checks if the schema of the `conversations` table already uses a UUID (`TEXT`)
+  for the `id` column. If not, it creates new tables (`conversations_new`, `messages_new`) to
+  replace the current tables, adding support for UUIDs in the conversation IDs. Existing data
+  is migrated to the new tables with appropriate transformations, including generating new UUIDs
+  and mapping old conversation IDs to the new UUID-based IDs.
+
+  Once migration is complete, the old tables are dropped, and the newly created tables
+  are renamed to match the original table names. Additionally, indexes are recreated to
+  maintain or improve query performance.
+
+  :param conn: An active SQLite database connection object. It is used to execute SQL statements.
+  :type conn: sqlite3.Connection
+  :return: None
   """
   cur = conn.cursor()
 
@@ -656,7 +1113,12 @@ def migrate_to_uuid_conversations(conn):
 
 def init_db():
   """
-  Initializes the database and sets up the required tables if they are not already created.
+  Initializes the database by creating necessary tables, indices, and triggers, as well as modifying
+  tables to add new columns if they are missing. Existing data migrations and structural changes are
+  also handled to enhance database schema integrity and functionality.
+
+  :raises Exception: If the database connection or operations fail.
+  :returns: None
   """
   with get_db() as conn:
     cur = conn.cursor()
@@ -843,7 +1305,16 @@ def init_db():
 
 def setup_development_certificates():
   """
-  Sets up self-signed SSL certificates for local development using the `trustme` library.
+  Sets up development SSL certificates for local use.
+
+  This function generates a certificate authority (CA) using `trustme`, issues a
+  server certificate for `localhost`, and saves the certificates and associated
+  keys to a directory named `devcerts`. If the directory already exists, it will
+  not be recreated.
+
+  :return: A tuple containing the file paths of the generated server certificate
+      (as `.pem` file) and private server key (as `.key` file).
+  :rtype: tuple[str, str]
   """
   ca = trustme.CA()
   server_cert = ca.issue_cert("localhost")
@@ -859,7 +1330,16 @@ def setup_development_certificates():
 
 def generate_hash(messages: List[sqlite3.Row]) -> int:
   """
-  Generates a hash value based on the content of the provided messages.
+  Generate a hash value based on the content of given messages. The hash value is
+  calculated using the first and last characters of each message's content, as well
+  as its length. A string representation of these hash components is also created
+  and logged.
+
+  :param messages: List of SQLite rows, where each row represents a message and
+                   contains a 'content' field.
+  :type messages: List[sqlite3.Row]
+  :return: An integer hash value computed from the messages' content.
+  :rtype: int
   """
   if not messages:
     return 0
@@ -885,14 +1365,39 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
 
 def generate_sha256_hash(content: str) -> str:
   """
-  Generate SHA-256 hash matching frontend implementation
+  Generates a SHA-256 hash for the given content. The function encodes the
+  provided string content using UTF-8 before calculating the hash and returns
+  the hexdigest representation of the computed SHA-256 hash value.
+
+  :param content: The input string to be hashed.
+  :type content: str
+  :return: The SHA-256 hash of the input string in hexadecimal format.
+  :rtype: str
   """
   return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 
 async def generate_llm_response(prompt: str, temperature: float, top_p: float, system_prompt: str, model: str) -> str:
   """
-  Generates a text response using a Large Language Model (LLM) via Replicate API.
+  Generates a response from a Large Language Model (LLM) using the specified parameters. This
+  function connects to and utilizes a specified LLM model through the Replicate API,
+  allowing users to customize the response generation process with additional
+  parameters like temperature, top_p, and a system-level prompt. The function
+  supports generating responses up to the limit of 1024 tokens in a single call.
+
+  Any errors during the response generation will result in a fallback message,
+  informing the user about the failure.
+
+  :param prompt: The main input text that the LLM will use to generate its response.
+  :param temperature: A parameter affecting randomness in responses. Higher values
+      translate to more creative and diverse outputs, while lower values produce
+      more deterministic completions.
+  :param top_p: Controls nucleus sampling for response generation. The LLM considers
+      the smallest subset of words whose cumulative probability exceeds `top_p`.
+  :param system_prompt: A system-wide prompt applied to the LLM setting additional
+      context or constraints for response generation.
+  :param model: The identifier of the LLM model to be used from the Replicate service.
+  :return: A synthesized text response generated by the LLM model.
   """
   try:
     # Use Meta's Llama model through Replicate
@@ -925,7 +1430,21 @@ async def generate_llm_response(prompt: str, temperature: float, top_p: float, s
 
 async def get_conversation_context(conversation_id: str, limit: int = 5) -> str:
   """
-  Retrieves the recent message history for a specific conversation.
+  Retrieve the context of a conversation based on a given conversation ID and
+  optional limit on the number of messages. The messages are fetched in
+  descending order of time and then reversed to construct the context in
+  correct chronological order.
+
+  The method builds a context string by iterating through the fetched messages
+  and combining their role names and contents. The resulting string represents
+  the ordered conversation history.
+
+  :param conversation_id: Unique identifier for the conversation.
+  :type conversation_id: str
+  :param limit: Maximum number of messages to include in the context. Defaults to 5.
+  :type limit: int
+  :return: A formatted string containing conversation history with role names and contents in chronological order. If an error occurs, an empty string is returned.
+  :rtype: str
   """
   try:
     with get_db() as conn:
@@ -955,8 +1474,19 @@ async def get_conversation_context(conversation_id: str, limit: int = 5) -> str:
 
 def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: bool = False) -> bool:
   """
-  Verifies that a user owns a specific conversation.
-  Returns True if the user owns the conversation or if it's a guest user.
+  Verifies whether the given user ID owns the specified conversation. This function allows guest users
+  to access any conversation, typically for offline mode functionality. For non-guest users, it checks
+  in the database if the user ID corresponds to the conversation's owner.
+
+  :param conversation_id: The unique identifier of the conversation
+  :type conversation_id: str
+  :param user_id: The unique identifier of the user
+  :type user_id: int
+  :param is_guest: Specifies if the user is a guest. Defaults to False.
+  :type is_guest: bool, optional
+  :return: True if the specified user owns the conversation or if user
+      is a guest, otherwise False
+  :rtype: bool
   """
   # Guest users can access any conversation (for offline mode)
   if is_guest:
@@ -977,6 +1507,21 @@ def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: 
 
 
 async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
+  """
+  Apply a rate limit mechanism for guest users based on their IP addresses. The function allows a
+  maximum number of requests for guest users within a specified time frame. If the limit is exceeded,
+  a 429 HTTP status is returned with details about when the user can retry.
+
+  :param request: The HTTP request object containing the request data and client information.
+  :type request: Request
+  :param current_user: An optional dictionary containing information about the current authenticated
+      user. Defaults to None if the user is not authenticated.
+  :type current_user: Optional[dict]
+  :return: None if no rate limit is applied or the user is not a guest.
+
+  :raises HTTPException: If the guest user exceeds the rate limit, a 429 Too Many Requests error is
+      raised, including a Retry-After header with the recommended wait time.
+  """
   if current_user and not current_user.get("is_guest"):
     return  # Not a guest, no rate limit
 
@@ -1045,7 +1590,15 @@ init_db()
 @app.get(app.openapi_url, include_in_schema=False)
 async def custom_openapi():
   """
-  Custom OpenAPI schema endpoint.
+  Generates a custom OpenAPI schema for the FastAPI app.
+
+  This function overrides the existing OpenAPI schema generation for the FastAPI
+  application. It utilizes the `get_openapi` utility to create a custom schema
+  using the app's metadata such as title, version, description, and registered
+  routes.
+
+  :return: The custom-generated OpenAPI schema as a dictionary.
+  :rtype: dict
   """
   return get_openapi(
     title=app.title,
@@ -1058,7 +1611,17 @@ async def custom_openapi():
 @app.get("/api/docs", include_in_schema=False)
 async def custom_swagger_ui_html(req: Request):
   """
-  Serves the Swagger UI HTML for API documentation.
+  Generates and serves a custom Swagger UI HTML interface for the API.
+
+  Provides a user interface to explore the API endpoints and their
+  documentation using the Swagger UI. This view is accessible at '/api/docs'
+  but is excluded from the schema.
+
+  :param req: The HTTP request object containing metadata about the
+      incoming request and connection-specific data.
+  :type req: Request
+  :return: The HTML response content for the Swagger UI.
+  :rtype: HTMLResponse
   """
   root_path = req.scope.get("root_path", "").rstrip("/")
   openapi_url = root_path + app.openapi_url
@@ -1070,6 +1633,20 @@ async def custom_swagger_ui_html(req: Request):
 
 @app.post("/api/auth/guest-login", response_model=LoginResponse)
 async def guest_login(request: GuestLoginRequest, req: Request, response: Response):
+  """
+  Handles guest login by verifying IP address rate limits, creating a guest session,
+  and managing cookies and headers for client authentication and CSRF protection.
+
+  :param request: The request object containing the guest's login details.
+  :type request: GuestLoginRequest
+  :param req: The incoming HTTP request object used to access request-related data.
+  :type req: Request
+  :param response: The HTTP response object for setting cookies and headers.
+  :type response: Response
+  :return: An object containing guest user information, a success message, and the session token.
+  :rtype: LoginResponse
+  :raises HTTPException: If the rate limit is exceeded based on the guest's IP address.
+  """
   ip_address = request.ip_address
 
   # If IP address is 'unknown', use a fallback
@@ -1156,7 +1733,19 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
 @app.post("/api/auth/mock-login", response_model=LoginResponse)
 async def mock_login(request: MockLoginRequest, req: Request, response: Response):
   """
-  Handles a mock login process for a user with provided request data.
+  Handles the mock login process for a user by creating or retrieving a user in the database,
+  generating a session, and setting appropriate cookies and headers for the client. This
+  endpoint is typically used for testing authentication workflows.
+
+  :param request: A validated request object containing mock login details, including the
+      user's email.
+  :type request: MockLoginRequest
+  :param req: The incoming HTTP request object that includes session cookies, if any.
+  :type req: Request
+  :param response: The outgoing response object to set cookies and headers for the client.
+  :type response: Response
+  :return: A response object containing user data and a success message.
+  :rtype: LoginResponse
   """
   print(f"Login attempt for: {request.email}")
 
@@ -1230,8 +1819,19 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
 @app.post("/api/auth/logout")
 async def logout(request: Request, response: Response):
   """
-  Handles user logout by deleting the session and clearing the session cookie.
-  Does not auto-create a guest session - let the frontend decide.
+  Logs out a user by invalidating the current session key, deleting associated
+  cookies, and logging a security event if a valid session exists.
+
+  The function retrieves the session key from the `request` cookies. If a valid
+  session is found, it logs the logout event before deleting the session. After
+  that, it deletes the `session` and `csrf_token` cookies from the response.
+
+  :param request: The incoming HTTP request containing user session cookies
+  :type request: Request
+  :param response: The HTTP response object to modify and send back to the client
+  :type response: Response
+  :return: A confirmation message indicating the successful logout
+  :rtype: dict
   """
   session_key = request.cookies.get("session")
   if session_key:
@@ -1266,8 +1866,24 @@ async def logout(request: Request, response: Response):
 @app.post("/api/auth/refresh-session")
 async def refresh_session(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
   """
-  Refreshes the current session by extending its expiration time.
-  Only works if the session has less than 1 hour remaining.
+  Refreshes the user session and updates session cookies and CSRF tokens. If the
+  session is far from expiry (greater than 1 hour), it does not create a new
+  session but instead provides a message indicating no refresh is required. If the
+  session is close to expiring or expired, a new session is created with a duration
+  that depends on the user's type (guest or regular user), and updated session
+  details are returned.
+
+  :param request: FastAPI Request object used to retrieve cookies from the client.
+  :type request: Request
+  :param response: FastAPI Response object used to set cookies and response headers.
+  :type response: Response
+  :param current_user: Dictionary containing information about the currently
+                       authenticated user, such as user ID, email, and session expiration.
+                       Passed as a dependency.
+  :type current_user: dict
+  :return: A dictionary containing a message about whether the session was refreshed and
+           the new session expiration time in seconds.
+  :rtype: dict
   """
   session_key = request.cookies.get("session")
   if not session_key:
@@ -1332,9 +1948,22 @@ async def refresh_session(request: Request, response: Response, current_user: di
 @app.get("/api/auth/me")
 async def get_me(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
   """
-  Retrieves the details of the currently authenticated user.
-  Includes session timeout information.
-  Also ensures CSRF cookie is set for existing sessions.
+  Handles the retrieval of the current authenticated user information along with session
+  and CSRF token management. Ensures that a proper csrf_token cookie is set and includes
+  the CSRF token as a custom header in the response. The endpoint returns user-specific
+  information such as user ID, email, and session expiry details.
+
+  :param request: FastAPI Request object; used to gather request-related data such as cookies.
+  :type request: Request
+  :param response: FastAPI Response object; used to customize HTTP response attributes like
+                   headers and cookies.
+  :type response: Response
+  :param current_user: Dictionary containing information about the currently authenticated user;
+                       includes user details and session attributes.
+  :type current_user: dict, retrieved via dependency injection
+  :return: JSON response with user information, including user ID, email, guest session
+           status, and session expiry details.
+  :rtype: dict
   """
   # Check if CSRF cookie exists
   csrf_cookie = request.cookies.get("csrf_token")
@@ -1374,7 +2003,18 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
   """
-  Handle CORS preflight requests for all endpoints.
+  Handles HTTP OPTIONS requests to support CORS preflight actions.
+
+  This function is used to respond to preflight requests with an HTTP status
+  code of 200 to indicate that the request is allowed. CORS (Cross-Origin
+  Resource Sharing) preflight requests are triggered by clients (browsers)
+  to verify permissions between the requesting domain and the resource's
+  domain.
+
+  :param rest_of_path: The variable path segment of the request route.
+  :type rest_of_path: str
+  :return: A response with HTTP status code 200 indicating successful preflight handling.
+  :rtype: Response
   """
   return Response(status_code=status.HTTP_200_OK)
 
@@ -1389,7 +2029,22 @@ async def preflight_handler(rest_of_path: str):
          tags=["Conversation"])
 async def get_conversations(response: Response, current_user: dict = Depends(get_current_user)):
   """
-  Get conversations for the authenticated user.
+  Retrieve a list of conversations for the authenticated user. Only authenticated
+  users who are not guests will have server-side conversations accessible. The
+  conversations are fetched, ordered by the updated timestamp, and corresponding
+  details such as participants and messages are processed before constructing
+  a response.
+
+  :param response: FastAPI Response object used to set custom HTTP response statuses.
+  :type response: Response
+  :param current_user: Information about the currently authenticated user, retrieved
+      using Depends on get_current_user. Contains keys like `user_id` and
+      `is_guest`.
+  :type current_user: dict
+  :return: A list of `ConversationResponse` objects representing the user's conversations,
+      or an empty list if no conversations are found. In case of an error, an
+      instance of `ErrorResponse` with the error details.
+  :rtype: List[ConversationResponse] or ErrorResponse
   """
   print("Get conversations for user called")
   user_id = current_user['user_id']
@@ -1461,7 +2116,32 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
          tags=["Conversation"])
 async def get_conversation(conversation_id: str, response: Response, current_user: dict = Depends(get_current_user)):
   """
-  Get a single conversation with metadata for sync
+  Fetches the details of a specific conversation for the authenticated user.
+
+  The function retrieves a conversation using the provided conversation ID, ensuring
+  that it belongs to the current authenticated user. It fetches associated attributes of
+  the conversation, such as the participant details, creation and last modification
+  timestamps, the number of messages, and optionally computes a SHA-256 hash of the
+  content of messages in the conversation. The function responds with the full
+  conversation details if successful.
+
+  :param conversation_id: The unique identifier of the conversation to fetch.
+  :type conversation_id: str
+  :param response: An instance to manipulate the HTTP response properties such as the status code.
+  :type response: Response
+  :param current_user: The dictionary containing the current authenticated user's information,
+      retrieved through dependency injection.
+  :type current_user: dict
+  :return: A detailed representation of the requested conversation, including metadata
+      such as message count and sync hash, if the conversation exists and belongs to the
+      current user.
+  :rtype: ConversationWithDetails
+
+  :raises status.HTTP_404_NOT_FOUND: If the conversation is not found or does not belong
+      to the authenticated user.
+  :raises status.HTTP_403_FORBIDDEN: If the user is unauthorized to access the resource.
+  :raises status.HTTP_500_INTERNAL_SERVER_ERROR: If unexpected errors occur during database
+      operations or processing.
   """
   user_id = current_user['user_id']
 
@@ -1515,6 +2195,22 @@ async def get_conversation(conversation_id: str, response: Response, current_use
 # **MODIFIED:** Updated settings endpoint to match new frontend logic
 @app.get("/api/settings", response_model=AppSettingsResponse)
 async def get_settings(current_user: dict = Depends(get_current_user)):
+  """
+  Retrieve application settings for the current user.
+
+  This endpoint handles retrieving user-specific application settings such as theme
+  and language preferences. If the user is a guest, default settings along with the
+  current timestamp are returned. If a regular user does not have any saved settings
+  in the database, the system falls back to default configuration. For users with
+  custom settings saved in the database, those settings are retrieved and returned,
+  with the updated_at field converted to a Unix timestamp.
+
+  :param current_user: Dictionary containing user authentication and role details
+                      (e.g., user_id, is_guest). Provided through dependency injection.
+  :type current_user: dict
+  :return: An object containing the user's theme, language, and the last updated timestamp.
+  :rtype: AppSettingsResponse
+  """
   user_id = current_user["user_id"]
 
   if current_user.get("is_guest"):
@@ -1552,9 +2248,25 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         lastUpdated=int(time.time())
       )
 
-# **MODIFIED:** Updated settings endpoint to match new frontend logic
+
 @app.put("/api/settings", response_model=AppSettingsResponse)
 async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
+  """
+  Updates user settings in the database with new preferences and returns the updated settings.
+
+  This endpoint is responsible for updating user-specific settings such as theme and language.
+  It checks if the user is a guest and, if so, restricts access to saving settings. The database
+  handles timestamp updates automatically. After updating or inserting the new settings, the
+  function retrieves the updated settings along with the last modified timestamp, which is
+  returned to the caller.
+
+  :param new_settings: New settings to be saved for the user.
+  :type new_settings: AppSettings
+  :param current_user: Dictionary containing current user details, including their ID and permissions.
+  :type current_user: dict
+  :return: An object containing the updated theme, language, and the timestamp of the last modification.
+  :rtype: AppSettingsResponse
+  """
   user_id = current_user["user_id"]
   if current_user.get("is_guest"):
     raise HTTPException(status_code=403, detail="Guests cannot save settings.")
@@ -1602,7 +2314,19 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
           tags=["Conversation"])
 async def create_conversation(req: ConversationCreateRequest, current_user: dict = Depends(get_current_user)):
   """
-  Creates a new conversation for the authenticated user.
+  Creates a new conversation and saves it into the database. The user must be authenticated
+  to create a new conversation. The conversation will include the specified participants and
+  other provided details. The function generates a unique conversation ID, saves the conversation
+  into the database, and then retrieves and returns the saved conversation details.
+
+  :param req: An object containing details required to create a conversation, including
+      name and participants.
+  :type req: ConversationCreateRequest
+  :param current_user: A dictionary holding authentication details of the current user,
+      injected via dependency.
+  :type current_user: dict
+  :return: The newly created conversation.
+  :rtype: Conversation
   """
   user_id = current_user['user_id']
   with get_db() as conn:
@@ -1634,7 +2358,22 @@ async def update_conversation(
   current_user: dict = Depends(get_current_user)
 ):
   """
-  Updates a conversation name for the authenticated user.
+  Handles the updating of a specific conversation for the currently authorized user.
+
+  This endpoint allows the user to update the name of a conversation if the
+  specified conversation belongs to the user. The request validates the
+  existence of the conversation and updates the record in the database.
+  Returns the updated conversation details on success.
+
+  :param conversation_id: Identifier of the conversation to be updated.
+  :type conversation_id: str
+  :param req: Data required for updating the conversation.
+  :type req: ConversationUpdateRequest
+  :param current_user: Dictionary containing details of the currently authorized user.
+  :type current_user: dict
+  :return: An instance of the updated conversation.
+  :rtype: Conversation
+  :raises HTTPException: If the conversation does not exist for the user.
   """
   user_id = current_user['user_id']
 
@@ -1674,8 +2413,13 @@ async def delete_conversation(
   current_user: dict = Depends(get_current_user)
 ):
   """
-  Deletes a conversation and all associated messages for the authenticated user.
-  Returns 200 OK on successful deletion, 204 No Content if conversation doesn't exist.
+  Deletes a conversation along with all its associated messages for the
+  current user. If the specified conversation does not exist or does not
+  belong to the user, a 204 No Content response is returned.
+
+  :param current_user: Dictionary containing details of the currently authorized user.
+  :param conversation_id: The unique identifier of the conversation to be deleted.
+  :type conversation_id: str
   """
   user_id = current_user['user_id']
 
@@ -1724,9 +2468,19 @@ async def get_conversation_messages(
   after_timestamp: Optional[int] = None
 ):
   """
-  Get messages for a specific conversation.
-  - If after_timestamp is provided, get messages newer than that timestamp (incremental sync)
-  - Otherwise, get messages before the given timestamp (pagination)
+  Fetches messages from a specific conversation based on the provided pagination
+  or timestamp criteria. This endpoint supports both incremental synchronization
+  and traditional pagination of conversation messages.
+
+  :param conversation_id: The unique identifier of the conversation to fetch messages from
+  :param timestamp: The reference timestamp used for paginated message retrieval
+  :param messages_count: The maximum number of messages to retrieve
+  :param response: An instance of FastAPI response used for setting headers and status codes
+  :param current_user: The user object of the current authenticated user
+      (includes user_id and other attributes as needed)
+  :param after_timestamp: Optional parameter used for incremental sync. When provided,
+      retrieves messages newer than the given timestamp
+  :return: A list of messages (formatted as dictionaries) from the requested conversation
   """
   print(f"Get conversation messages called - after_timestamp: {after_timestamp}")
 
@@ -1834,7 +2588,26 @@ async def get_conversation_messages(
 async def user_send_message(request_body: ApiMessageSend, response: Response,
                             current_user: dict = Depends(get_current_user)):
   """
-  Endpoint for a user to send a message.
+  Handles the sending of a message in a conversation. This endpoint processes the
+  provided request body to determine the type and content of the message, verifies
+  whether the current user has access to the specified conversation, and inserts
+  the message into the database.
+
+  :param request_body: The request payload containing details of the message, such
+      as `conversationId`, `content`, `roleName`, `time`, `type`, `version`, and
+      `lastModified`.
+  :type request_body: ApiMessageSend
+  :param response: The HTTP response object to set the response status code
+      and return any errors if they occur.
+  :type response: Response
+  :param current_user: The authenticated user information, typically obtained from
+      dependency injection in FastAPI.
+  :type current_user: dict
+  :return: A dictionary containing the `id` of the message if successfully created.
+  :rtype: Dict[str, int]
+  :raises HTTPException: Raises specific HTTP exceptions with appropriate status
+      codes for cases such as empty message content, access denial, or internal
+      server errors.
   """
   crud_logger.info(
     f"Message send called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -1913,7 +2686,19 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
 async def generate_message(request_body: ApiMessageGenerate, response: Response,
                            current_user: dict = Depends(get_current_user)):
   """
-  Endpoint to generate an AI response for a conversation.
+  Generates a message for a conversation based on the provided context, user role, and AI response generation.
+  This endpoint interacts with a database to store the generated message and ensures user access verification
+  for the conversation. Additionally, it handles errors related to conversation ID validation, user access
+  denial, or other server-side issues.
+
+  :param request_body: The request payload containing details of the conversation ID and role.
+  :type request_body: ApiMessageGenerate
+  :param response: FastAPI Response object to set response status codes.
+  :type response: Response
+  :param current_user: Details of the currently authenticated user.
+  :type current_user: dict
+  :return: A dictionary containing the generated message details if successful, or an error response structure.
+  :rtype: dict
   """
   crud_logger.info(
     f"Generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -1988,7 +2773,17 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
 async def patch_message(request_body: MessagePatch, response: Response,
                         current_user: dict = Depends(get_current_user)):
   """
-  Endpoint to update the content of an existing message.
+  Handles the patching of a message within a conversation. This endpoint allows authorized
+  users to update a specific message by its ID. It includes version control to ensure
+  data consistency during concurrent updates and verifies ownership of the conversation
+  before processing the request. Additionally, the method attempts to parse and return the
+  content type appropriately when applicable.
+
+  :param request_body: Contains the request data necessary for updating the message.
+  :param response: The HTTP response object to set status codes and return responses.
+  :param current_user: The current user making the patch request, obtained via dependency injection.
+  :return: A MessageResponse object representing the updated message, or an ErrorResponse
+           if the operation fails.
   """
   crud_logger.info(
     f"Patch message called - User: {current_user['user_id']}, Message: {request_body.id}, Conversation: {request_body.conversationId}")
@@ -2104,7 +2899,21 @@ async def patch_message(request_body: MessagePatch, response: Response,
 async def delete_message(conversation_id: str, message_id: int, response: Response,
                          current_user: dict = Depends(get_current_user)):
   """
-  Endpoint to delete a specific message.
+  Deletes a specific message within a conversation. The endpoint requires the conversation ID,
+  message ID, and the current authenticated user to verify access and execute the operation.
+  If successful, the message is deleted from the database.
+
+  :param conversation_id: Unique identifier of the conversation containing the message
+  :type conversation_id: str
+  :param message_id: Unique identifier of the message to be deleted
+  :type message_id: int
+  :param response: The response object to modify the HTTP response status
+  :param current_user: Dictionary object representing the current user, fetched via dependency injection
+  :return: None
+  :raises HTTP_400_BAD_REQUEST: If `conversation_id` or `message_id` is missing
+  :raises HTTP_403_FORBIDDEN: If the user does not have permission to delete the message in the conversation
+  :raises HTTP_404_NOT_FOUND: If the message does not exist in the database
+  :raises HTTP_500_INTERNAL_SERVER_ERROR: In case of unexpected server errors
   """
   crud_logger.info(
     f"Delete message called - User: {current_user['user_id']}, Message: {message_id}, Conversation: {conversation_id}")
@@ -2155,7 +2964,26 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
 async def rate_message(request_body: RateMessageRequest, response: Response,
                        current_user: dict = Depends(get_current_user)):
   """
-  Endpoint to rate a message (thumbs up or thumbs down) or remove rating.
+  Rate a message within a conversation. This endpoint allows users to rate a message
+  using a thumbs up (1), thumbs down (0), or remove their rating (null). It ensures the
+  user's ownership of the conversation before performing the operation.
+
+  :param request_body: The request payload containing the `id` of the message to rate,
+      the `conversationId` it belongs to, and the `rating` to apply.
+  :type request_body: RateMessageRequest
+  :param response: HTTP response object for assigning custom status codes and response
+      headers.
+  :type response: Response
+  :param current_user: Information of the currently authenticated user, obtained via
+      dependency injection.
+  :type current_user: dict
+  :return: A response containing the updated message record with the applied rating.
+  :rtype: MessageResponse
+  :raises HTTP_400_BAD_REQUEST: If the provided rating value is invalid.
+  :raises HTTP_403_FORBIDDEN: If the user does not have access to the specified
+      conversation.
+  :raises HTTP_404_NOT_FOUND: If the message to rate does not exist in the conversation.
+  :raises HTTP_500_INTERNAL_SERVER_ERROR: If an internal server error occurs.
   """
   crud_logger.info(
     f"Rate message called - User: {current_user['user_id']}, Message: {request_body.id}, Rating: {request_body.rating}")
@@ -2252,7 +3080,30 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
 async def regenerate_message(request_body: RegenerateMessageRequest, response: Response,
                              current_user: dict = Depends(get_current_user)):
   """
-  Endpoint to regenerate an AI message using the conversation history up to that point.
+  Handles the regeneration of an AI message within a conversation. The endpoint
+  verifies ownership of the conversation, ensures the message to regenerate
+  exists, and is an AI-generated message. It rebuilds the conversation context
+  and regenerates a response using an LLM model. If successful, the message is
+  updated with the new version and returned.
+
+  :param request_body: The details of the message to regenerate, including the
+      message ID and conversation ID.
+  :type request_body: RegenerateMessageRequest
+
+  :param response: The FastAPI Response object to send the HTTP response.
+  :type response: Response
+
+  :param current_user: The current authenticated user information, including
+      user ID and permissions.
+  :type current_user: dict
+
+  :return: Returns the updated message after regeneration if successful.
+  :rtype: MessageResponse
+
+  :raises HTTPException: 400 if the requested message is not an AI message.
+  :raises HTTPException: 403 if the user does not have access to the conversation.
+  :raises HTTPException: 404 if the specified message is not found.
+  :raises HTTPException: 500 if any internal server error occurs.
   """
   crud_logger.info(f"Regenerate message called - User: {current_user['user_id']}, Message: {request_body.id}")
 
@@ -2391,7 +3242,24 @@ async def send_and_generate_message(
   current_user: dict = Depends(get_current_user)
 ):
   """
-  Combined endpoint to send a user message and optionally generate an AI response.
+  Handles the processing and storage of user-generated messages while optionally
+  generating AI responses. This endpoint enables communication by allowing a user
+  to send a message to a specified conversation and receive an AI-generated
+  response based on the context of the conversation.
+
+  :param request_body: Data of the message request that includes conversation ID,
+      message type, content, role information, and other metadata.
+  :type request_body: ApiMessageSendAndGenerate
+  :param response: A fastapi Response object used to manipulate HTTP response
+      codes if an error or special condition is encountered.
+  :type response: Response
+  :param current_user: A dictionary representing the current user info fetched
+      using a dependency injection method. It includes user credentials like
+      user_id and guest state.
+  :type current_user: dict
+  :return: A SendAndGenerateResponse object containing user-generated message
+      data as well as an AI-generated response message data (if applicable).
+  :rtype: SendAndGenerateResponse
   """
   try:
     if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
@@ -2505,8 +3373,20 @@ async def upload_files(
   current_user: dict = Depends(get_current_user)
 ):
   """
-  Upload multiple files and save them to the ./files directory.
-  Returns their IDs for later reference.
+  Handles the upload of multiple files via a POST request. This endpoint validates
+  the files against a maximum allowed size, generates unique IDs for the files,
+  and saves them to a local directory. It returns a list of unique file identifiers
+  of successfully uploaded files. If no files are provided or a file exceeds the
+  maximum allowed size of 10 MB, an appropriate HTTP response is returned.
+
+  :param files: The list of files to be uploaded
+  :type files: List[UploadFile]
+  :param current_user: The currently authenticated user making the request
+  :type current_user: dict
+  :return: A list of unique file IDs representing the uploaded files
+  :rtype: List[str]
+  :raises HTTPException: Raised on validation errors like missing files, files
+      exceeding the size limit, or on internal server errors
   """
   print(f"File upload called with {len(files)} files")
 
@@ -2580,7 +3460,17 @@ app.add_middleware(
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
   """
-  Middleware to log HTTP requests and responses for CRUD operations.
+  Logging middleware for detailed request and response monitoring. This middleware logs the HTTP request
+  and response details for specified CRUD endpoints. It skips logging for OPTIONS requests and non-CRUD
+  endpoints. Additionally, it calculates and logs request body size for POST, PATCH, and PUT methods,
+  and measures the time taken to process each request.
+
+  :param request: The incoming HTTP request object.
+  :type request: Request
+  :param call_next: The function that receives the request and produces a response.
+  :type call_next: Callable
+  :return: The HTTP response object after processing the request.
+  :rtype: Response
   """
   # Skip logging for OPTIONS requests and non-CRUD endpoints
   if request.method == "OPTIONS" or (
@@ -2614,7 +3504,22 @@ async def logging_middleware(request: Request, call_next):
 @app.middleware("http")
 async def csrf_protection_middleware(request: Request, call_next):
   """
-  Middleware to enforce CSRF protection on state-changing requests.
+  Middleware to ensure CSRF protection for HTTP requests.
+
+  This middleware validates the presence and correctness of a CSRF token for
+  incoming requests, ensuring that requests requiring CSRF protection are
+  rejected with an appropriate error if the validation fails. It bypasses CSRF
+  checks for OPTIONS requests, which serve as CORS preflight requests. Additionally,
+  on failure, necessary CORS headers are added to the error response to comply
+  with cross-origin resource sharing policies.
+
+  :param request: The incoming HTTP request to process.
+  :type request: Request
+  :param call_next: The next function in the middleware chain to execute.
+  :type call_next: Callable[[Request], Awaitable[Response]]
+  :return: The HTTP response after processing the request, with CSRF
+           validation checks applied.
+  :rtype: Response
   """
   # Skip CSRF for OPTIONS requests (CORS preflight)
   if request.method == "OPTIONS":
@@ -2641,7 +3546,20 @@ async def csrf_protection_middleware(request: Request, call_next):
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
   """
-  Middleware to add security headers to all responses.
+  Middleware to enhance security by adding various HTTP security headers to the response.
+
+  This middleware dynamically generates a Content Security Policy (CSP) header with
+  a nonce for each request and adjusts the CSP policy based on whether the environment
+  is in development or production mode. Additionally, it sets headers to prevent MIME
+  type sniffing, enable XSS protection, enforce HTTPS in production, prevent clickjacking,
+  and configure permissions policies.
+
+  :param request: The incoming HTTP request object.
+  :type request: Request
+  :param call_next: The next middleware or route handler in the chain.
+  :type call_next: Callable
+  :return: The modified HTTP response with added security headers.
+  :rtype: Response
   """
   # Generate nonce for this request
   csp_nonce = secrets.token_urlsafe(16)
