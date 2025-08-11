@@ -994,123 +994,6 @@ async def cleanup_expired_sessions():
     await asyncio.sleep(3600)
 
 
-def migrate_to_uuid_conversations(conn):
-  """
-  Migrates the schema and data from an SQLite database to support UUID-based conversation IDs.
-
-  This function checks if the schema of the `conversations` table already uses a UUID (`TEXT`)
-  for the `id` column. If not, it creates new tables (`conversations_new`, `messages_new`) to
-  replace the current tables, adding support for UUIDs in the conversation IDs. Existing data
-  is migrated to the new tables with appropriate transformations, including generating new UUIDs
-  and mapping old conversation IDs to the new UUID-based IDs.
-
-  Once migration is complete, the old tables are dropped, and the newly created tables
-  are renamed to match the original table names. Additionally, indexes are recreated to
-  maintain or improve query performance.
-
-  :param conn: An active SQLite database connection object. It is used to execute SQL statements.
-  :type conn: sqlite3.Connection
-  :return: None
-  """
-  cur = conn.cursor()
-
-  # Check if we already have UUID-based conversations
-  cur.execute("PRAGMA table_info(conversations)")
-  columns = cur.fetchall()
-  id_column = next((col for col in columns if col[1] == 'id'), None)
-
-  # If ID column is already TEXT, migration is done
-  if id_column and id_column[2] == 'TEXT':
-    return
-
-  print("Migrating conversations to UUID-based IDs...")
-
-  # Create new tables with UUID support
-  cur.execute('''
-              CREATE TABLE IF NOT EXISTS conversations_new (
-                                                             id TEXT PRIMARY KEY,
-                                                             userId INTEGER NOT NULL,
-                                                             name TEXT NOT NULL,
-                                                             participants TEXT,
-                                                             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                             updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                             version INTEGER DEFAULT 1,
-                                                             lastModified INTEGER,
-                                                             FOREIGN KEY(userId) REFERENCES users(id)
-                )
-              ''')
-
-  cur.execute('''
-              CREATE TABLE IF NOT EXISTS messages_new (
-                                                        id INTEGER PRIMARY KEY,
-                                                        conversationId TEXT NOT NULL,
-                                                        roleName TEXT NOT NULL,
-                                                        content TEXT NOT NULL,
-                                                        time INTEGER NOT NULL,
-                                                        type TEXT DEFAULT 'text',
-                                                        version INTEGER DEFAULT 1,
-                                                        lastModified INTEGER,
-                                                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                        FOREIGN KEY(conversationId) REFERENCES conversations_new(id)
-                )
-              ''')
-
-  # Migrate existing conversations
-  cur.execute("SELECT * FROM conversations")
-  old_conversations = cur.fetchall()
-
-  id_mapping = {}  # old_id -> new_uuid
-
-  for conv in old_conversations:
-    new_id = generate_conversation_id()
-    id_mapping[conv['id']] = new_id
-
-    cur.execute('''
-                INSERT INTO conversations_new (id, userId, name, participants, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ''', (new_id, conv['userId'], conv['name'], conv['participants'],
-                      conv['createdAt'], conv['updatedAt']))
-
-  # Migrate messages
-  cur.execute("SELECT * FROM messages")
-  old_messages = cur.fetchall()
-
-  for msg in old_messages:
-    old_conv_id = msg['conversationId']
-    new_conv_id = id_mapping.get(old_conv_id)
-
-    if new_conv_id:
-      # Handle sqlite3.Row objects which don't have .get() method
-      msg_type = msg['type'] if 'type' in msg.keys() else 'text'
-      updated_at = msg['updated_at'] if 'updated_at' in msg.keys() else None
-
-      cur.execute('''
-                  INSERT INTO messages_new (id, conversationId, roleName, content, time, type, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)
-                  ''', (msg['id'], new_conv_id, msg['roleName'], msg['content'],
-                        msg['time'], msg_type, updated_at))
-
-  # Drop old tables and rename new ones
-  cur.execute("DROP TABLE IF EXISTS messages")
-  cur.execute("DROP TABLE IF EXISTS conversations")
-  cur.execute("ALTER TABLE conversations_new RENAME TO conversations")
-  cur.execute("ALTER TABLE messages_new RENAME TO messages")
-
-  # Recreate indexes
-  cur.execute('''
-              CREATE INDEX IF NOT EXISTS idx_conversation_time
-                ON messages(conversationId, time)
-              ''')
-
-  cur.execute('''
-              CREATE INDEX IF NOT EXISTS idx_conversations_user
-                ON conversations(userId)
-              ''')
-
-  conn.commit()
-  print("Migration to UUID-based conversations completed!")
-
-
 def init_db():
   """
   Initializes the database by creating necessary tables, indices, and triggers, as well as modifying
@@ -1298,9 +1181,6 @@ def init_db():
                 ''')
 
     conn.commit()
-
-    # Migrate existing data to UUID-based conversations
-    migrate_to_uuid_conversations(conn)
 
 
 def setup_development_certificates():
