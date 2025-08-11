@@ -1,0 +1,34 @@
+<div class="dialog-container" (click)="onBackdropClick($event)">
+  <div class="dialog-content">
+    <!-- Header with file info and close button -->
+    <div class="dialog-header">
+      <div class="file-info">
+        <span class="file-name">{{ data.fileName }}</span>
+        <span class="file-size" *ngIf="data.fileSize">{{ data.fileSize }}</span>
+      </div>
+      <div class="header-actions">
+        <button mat-icon-button 
+                class="download-button"
+                (click)="downloadImage()"
+                aria-label="Download image"
+                matTooltip="Download">
+          <mat-icon>download</mat-icon>
+        </button>
+        <button mat-icon-button 
+                class="close-button"
+                (click)="close()"
+                aria-label="Close dialog">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Image display -->
+    <div class="image-container">
+      <img [src]="data.imageUrl" 
+           [alt]="data.fileName"
+           class="preview-image"
+           (click)="onImageClick($event)">
+    </div>
+  </div>
+</div>

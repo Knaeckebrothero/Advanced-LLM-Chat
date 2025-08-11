@@ -143,3 +143,17 @@ body.theme-initialized {
   from { transform: scale(0.9); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+// --- Angular Material Dialog Custom Styles for Image Preview ---
+.image-preview-dialog {
+  .mat-mdc-dialog-container {
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+}
+
+.image-preview-backdrop {
+  background-color: rgba(0, 0, 0, 0.85) !important;
+}
