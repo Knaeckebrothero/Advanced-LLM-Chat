@@ -1,91 +1,25 @@
 // login.component.scss
-@use '@angular/material' as mat;
 
-// Define a modern white-blue palette for the login component
-$login-primary: mat.m2-define-palette((
-  50: #f8fbff,   // Very light blue-white
-  100: #e8f4ff,  // Soft blue-white
-  200: #cce7ff,  // Light blue
-  300: #99d5ff,  // Medium light blue
-  400: #66c2ff,  // Bright blue
-  500: #3399ff,  // Main blue
-  600: #0077ff,  // Vivid blue
-  700: #0066e6,  // Deep blue
-  800: #0052cc,  // Darker blue
-  900: #003d99,  // Darkest blue
-  contrast: (
-    50: #1a1a1a,
-    100: #1a1a1a,
-    200: #1a1a1a,
-    300: #1a1a1a,
-    400: #ffffff,
-    500: #ffffff,
-    600: #ffffff,
-    700: #ffffff,
-    800: #ffffff,
-    900: #ffffff,
-  )
-));
-
-// Create a custom light theme for the login component
-$login-theme: mat.m2-define-light-theme((
-  color: (
-    primary: $login-primary,
-    accent: $login-primary,
-    warn: mat.m2-define-palette(mat.$m2-red-palette),
-  )
-));
-
-// Modern white-blue color variables
-$primary-blue: #3399ff;
-$primary-blue-hover: #0077ff;
-$accent-blue: #66c2ff;
-$soft-blue: #e8f4ff;
-$background-white-blue: #f8fbff;
-$card-background: #ffffff;
-$text-primary: #1a1a1a;
-$text-secondary: #6b7280;
-$text-on-primary: #ffffff;
-$border-color: #e5e7eb;
-$shadow-color: rgba(51, 153, 255, 0.15);
-$error-color: #ef4444;
-$error-background: #fef2f2;
-
+// Modern white-blue color variables have been replaced with theme variables.
 :host {
   // Override Material Design CSS custom properties for modern white-blue theming
-  --mdc-theme-primary: #{$primary-blue};
-  --mdc-theme-secondary: #{$accent-blue};
-  --mat-form-field-focus-label-color: #{$primary-blue};
-  --mdc-outlined-text-field-focus-outline-color: #{$primary-blue};
-  --mdc-outlined-text-field-outline-color: #{$border-color};
+  --mdc-theme-primary: var(--theme-primary);
+  --mdc-theme-secondary: var(--theme-secondary);
+  --mat-form-field-focus-label-color: var(--theme-primary);
+  --mdc-outlined-text-field-focus-outline-color: var(--theme-primary);
+  --mdc-outlined-text-field-outline-color: var(--theme-border);
 
   // Custom button color variables
-  --mdc-protected-button-container-color: #{$primary-blue};
-  --mdc-protected-button-label-text-color: #{$text-on-primary};
-
-  // Apply the custom theme to Material components within this component
-  @include mat.button-theme($login-theme);
-  @include mat.form-field-theme($login-theme);
-  @include mat.input-theme($login-theme);
-  @include mat.card-theme($login-theme);
-  @include mat.all-component-themes($login-theme);
+  --mdc-protected-button-container-color: var(--theme-primary);
+  --mdc-protected-button-label-text-color: var(--theme-primary-contrast);
 }
-input{
-
-}
-
-.mat-card-title
-{
-
-}
-
 
 .login-container {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, $background-white-blue 0%, $soft-blue 100%);
+  background: var(--theme-background);
   padding: 24px;
   box-sizing: border-box;
   position: relative;
@@ -98,23 +32,23 @@ input{
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 50%, rgba(51, 153, 255, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(102, 194, 255, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 40% 80%, rgba(51, 153, 255, 0.05) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 50%, rgba(var(--theme-primary-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(var(--theme-secondary-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 40% 80%, rgba(var(--theme-primary-rgb), 0.05) 0%, transparent 50%);
     pointer-events: none;
   }
 }
 
 .login-card {
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--theme-surface);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--theme-border);
   max-width: 440px;
   width: 100%;
   padding: 40px;
   border-radius: 20px;
   box-shadow:
-    0 20px 60px rgba(51, 153, 255, 0.15),
+    0 20px 60px rgba(var(--theme-primary-rgb), 0.15),
     0 8px 32px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
   text-align: center;
@@ -125,7 +59,7 @@ input{
   &:hover {
     transform: translateY(-2px);
     box-shadow:
-      0 25px 70px rgba(51, 153, 255, 0.2),
+      0 25px 70px rgba(var(--theme-primary-rgb), 0.2),
       0 12px 40px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.9);
   }
@@ -133,7 +67,7 @@ input{
 
 .mat-card-header {
   padding-bottom: 32px;
-  border-bottom: 1px solid rgba(51, 153, 255, 0.1);
+  border-bottom: 1px solid rgba(var(--theme-primary-rgb), 0.1);
   margin-bottom: 32px;
   display: block;
   position: relative;
@@ -146,29 +80,25 @@ input{
     transform: translateX(-50%);
     width: 60px;
     height: 2px;
-    background: linear-gradient(90deg, $primary-blue, $accent-blue);
+    background: linear-gradient(90deg, var(--theme-primary), var(--theme-secondary));
     border-radius: 2px;
   }
 }
 
 .mat-card-title {
-  font-size: 2.2em;
-  font-weight: 600;
-  color: $text-primary;
-  margin-bottom: 12px;
-  background: linear-gradient(135deg, $text-primary 0%, #4a5568 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--theme-text);
+  margin-bottom: 8px;
   letter-spacing: -0.02em;
 }
 
 .mat-card-subtitle {
-  font-size: 5em;
-  color: $text-secondary;
-  margin-bottom: 0;
-  font-weight: 800;
+  font-size: 1rem;
+  color: var(--theme-text-secondary);
+  font-weight: 400;
   line-height: 1.5;
+  margin-bottom: 0;
 }
 
 
@@ -189,64 +119,64 @@ input{
 
   .mat-mdc-text-field-wrapper {
     border-radius: 12px;
-    background: rgba(248, 251, 255, 0.8);
+    background: var(--theme-input-bg);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
     &:hover {
-      background: rgba(248, 251, 255, 1);
+      background: var(--theme-input-bg);
     }
   }
 
   // Modern outline styling
   &.mat-form-field-appearance-outline {
     .mat-mdc-form-field-outline {
-      color: $border-color;
+      color: var(--theme-border);
 
       .mat-mdc-form-field-outline-thick {
-        color: $primary-blue;
+        color: var(--theme-primary);
       }
     }
 
     &.mat-focused {
       .mat-mdc-form-field-outline-thick {
-        color: $primary-blue;
-        box-shadow: 0 0 0 3px rgba(51, 153, 255, 0.1);
+        color: var(--theme-primary);
+        box-shadow: 0 0 0 3px rgba(var(--theme-primary-rgb), 0.1);
       }
 
       .mat-mdc-text-field-wrapper {
-        background: rgba(248, 251, 255, 1);
-        box-shadow: inset 0 2px 4px rgba(51, 153, 255, 0.05);
+        background: var(--theme-input-bg);
+        box-shadow: inset 0 2px 4px rgba(var(--theme-primary-rgb), 0.05);
       }
     }
   }
 
   // Enhanced label styling
   .mat-mdc-floating-label {
-    color: $text-secondary;
+    color: var(--theme-text-secondary);
     font-weight: 500;
 
     &.mdc-floating-label--float-above {
-      color: $primary-blue;
+      color: var(--theme-primary);
       font-weight: 600;
     }
   }
 
   // Modern input element styling
   .mat-mdc-input-element {
-    color: $text-primary;
+    color: var(--theme-text);
     font-weight: 500;
     font-size: 1.05em;
 
     &::placeholder {
-      color: $text-secondary;
+      color: var(--theme-text-secondary);
       font-weight: 400;
     }
 
     // All placeholder vendor prefixes
-    &::-webkit-input-placeholder { color: $text-secondary; font-weight: 400; }
-    &::-moz-placeholder { color: $text-secondary; opacity: 1; font-weight: 400; }
-    &:-ms-input-placeholder { color: $text-secondary; font-weight: 400; }
-    &::-ms-input-placeholder { color: $text-secondary; font-weight: 400; }
+    &::-webkit-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
+    &::-moz-placeholder { color: var(--theme-text-secondary); opacity: 1; font-weight: 400; }
+    &:-ms-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
+    &::-ms-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
   }
 }
 
@@ -264,9 +194,9 @@ input{
     overflow: hidden;
 
     // Modern gradient background
-    background: linear-gradient(135deg, $primary-blue 0%, $primary-blue-hover 100%);
+    background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-secondary) 100%);
     box-shadow:
-      0 8px 32px rgba(51, 153, 255, 0.3),
+      0 8px 32px rgba(var(--theme-primary-rgb), 0.3),
       0 4px 16px rgba(0, 0, 0, 0.1);
 
     // Animated gradient overlay
@@ -282,10 +212,10 @@ input{
     }
 
     &:hover:not([disabled]) {
-      background: linear-gradient(135deg, $primary-blue-hover 0%, #0066e6 100%);
+      background: linear-gradient(135deg, var(--theme-secondary) 0%, var(--theme-primary) 100%);
       transform: translateY(-2px);
       box-shadow:
-        0 12px 40px rgba(51, 153, 255, 0.4),
+        0 12px 40px rgba(var(--theme-primary-rgb), 0.4),
         0 6px 20px rgba(0, 0, 0, 0.15);
 
       &::before {
@@ -307,7 +237,7 @@ input{
     // Modern spinner styling
     mat-spinner {
       ::ng-deep circle {
-        stroke: $text-on-primary !important;
+        stroke: var(--theme-primary-contrast) !important;
         stroke-width: 3;
       }
     }
@@ -319,10 +249,10 @@ input{
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  color: $error-color;
+  color: var(--theme-accent-danger);
   margin-top: 20px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, $error-background 0%, #fef7f7 100%);
+  background: linear-gradient(135deg, var(--theme-accent-danger-bg) 0%, #fef7f7 100%);
   border-radius: 12px;
   font-size: 0.95em;
   text-align: left;
@@ -332,7 +262,7 @@ input{
 
   mat-icon {
     margin-right: 12px;
-    color: $error-color;
+    color: var(--theme-accent-danger);
     font-size: 1.2em;
   }
 }
@@ -348,40 +278,20 @@ input{
   }
 }
 
-.mat-card-footer {
-  padding-top: 32px;
-  margin-top: 32px;
-  border-top: 1px solid rgba(51, 153, 255, 0.1);
-}
-
-.login-hint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.95em;
-  color: $text-secondary;
-  padding: 16px 20px;
-  background: rgba(248, 251, 255, 0.6);
-  border-radius: 12px;
-  border: 1px solid rgba(51, 153, 255, 0.1);
-
-  mat-icon {
-    margin-right: 12px;
-    font-size: 1.2em;
-    color: $accent-blue;
-  }
+.mat-card-footer, .login-hint {
+  display: none;
 }
 
 // Modern enhancements using component theming
 ::ng-deep {
   // Custom ripple effect
   .mat-ripple-element {
-    background-color: rgba(51, 153, 255, 0.15) !important;
+    background-color: rgba(var(--theme-primary-rgb), 0.15) !important;
   }
 
   // Modern focus indicators
   .cdk-focused {
-    outline: 2px solid $accent-blue;
+    outline: 2px solid var(--theme-secondary);
     outline-offset: 2px;
     border-radius: 8px;
   }
@@ -389,7 +299,7 @@ input{
   // Enhanced Material button focus
   .mat-mdc-raised-button {
     &:focus-visible {
-      outline: 2px solid $accent-blue;
+      outline: 2px solid var(--theme-secondary);
       outline-offset: 2px;
     }
   }
@@ -406,7 +316,7 @@ input{
 
 .skip-button {
   margin-top: 16px;
-  background-color: $accent-blue;
+  background-color: var(--theme-secondary);
   color: white;
   border-radius: 12px;
 
