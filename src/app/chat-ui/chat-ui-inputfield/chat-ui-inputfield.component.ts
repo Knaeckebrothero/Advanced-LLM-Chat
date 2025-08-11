@@ -130,6 +130,10 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     return this.messageText.trim().length > 0 || this.filePreviews.length > 0;
   }
 
+  // Track created blob URLs for proper cleanup
+  private downloadUrls: Map<string, SafeUrl> = new Map();
+  private rawDownloadUrls: Map<string, string> = new Map();
+
   // Subscription to recording state
   private recordingStateSubscription: any;
 
@@ -289,12 +293,31 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Remove a file preview
   removeFilePreview(fileId: string): void {
+    // Find the file being removed
+    const preview = this.filePreviews.find(fp => fp.id === fileId);
+    if (preview && preview.file) {
+      const key = `${preview.file.name}_${preview.file.size}_${preview.file.lastModified}`;
+      
+      // Revoke the download URL if it exists
+      const rawUrl = this.rawDownloadUrls.get(key);
+      if (rawUrl) {
+        URL.revokeObjectURL(rawUrl);
+        this.downloadUrls.delete(key);
+        this.rawDownloadUrls.delete(key);
+      }
+    }
+    
     this.filePreviews = this.filePreviews.filter(fp => fp.id !== fileId);
     this.filesSelected.emit(this.filePreviews);
   }
 
   // Clear all file previews
   clearFilePreviews(): void {
+    // Revoke all download URLs
+    this.rawDownloadUrls.forEach(url => URL.revokeObjectURL(url));
+    this.downloadUrls.clear();
+    this.rawDownloadUrls.clear();
+    
     this.filePreviews = [];
     this.filesSelected.emit(this.filePreviews);
   }
@@ -598,8 +621,23 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   }
 
   createDownloadUrl(file: File): SafeUrl {
+    // Create unique key for this file
+    const key = `${file.name}_${file.size}_${file.lastModified}`;
+    
+    // Return cached URL if exists
+    if (this.downloadUrls.has(key)) {
+      return this.downloadUrls.get(key)!;
+    }
+    
+    // Create new URL and cache it
     const objectUrl = URL.createObjectURL(file);
-    return this.sanitizer.bypassSecurityTrustUrl(objectUrl);
+    const safeUrl = this.sanitizer.bypassSecurityTrustUrl(objectUrl);
+    
+    // Store both raw and safe URLs
+    this.downloadUrls.set(key, safeUrl);
+    this.rawDownloadUrls.set(key, objectUrl);
+    
+    return safeUrl;
   }
 
   openImagePopup(imageUrl: string): void {
@@ -630,7 +668,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       this.voiceRecordingService.cancelRecording();
     }
 
-    // Revoke any object URLs to free memory
+    // Revoke all download URLs
+    this.rawDownloadUrls.forEach(url => URL.revokeObjectURL(url));
+    this.downloadUrls.clear();
+    this.rawDownloadUrls.clear();
+
+    // Revoke any preview URLs to free memory
     this.filePreviews.forEach(preview => {
       if (preview.preview && preview.preview.startsWith('blob:')) {
         URL.revokeObjectURL(preview.preview);
