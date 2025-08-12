@@ -363,13 +363,6 @@ export class ApiService {
     }
   }
 
-  // TODO: Implement get all conversations
-  async getAllConversations(userId: number): Promise<Conversation[]> {
-    const endpoint = `${this.baseUrl}/api/conversations/user/${userId}`;
-    // ... implement API call
-    return [];
-  }
-
   // Method for file upload
   async uploadFiles(files: FilePreview[]): Promise<string[]> {
     const endpoint = `${this.baseUrl}/api/files/upload`;
@@ -412,7 +405,7 @@ export class ApiService {
     }
   }
 
-  // TODO: Implement create conversation
+  // Create a new conversation
   async createConversation(conversation: Conversation): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/create`;
     const body = { name: conversation.name, participants: conversation.participants };

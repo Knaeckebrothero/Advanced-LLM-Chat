@@ -1511,7 +1511,12 @@ async def custom_swagger_ui_html(req: Request):
   )
 
 
-@app.post("/api/auth/guest-login", response_model=LoginResponse)
+@app.post("/api/auth/guest-login", 
+          response_model=LoginResponse, 
+          tags=["Auth"],
+          summary="Guest Login",
+          description="Creates a guest session for anonymous users with rate limiting based on IP address",
+          operation_id="guestLogin")
 async def guest_login(request: GuestLoginRequest, req: Request, response: Response):
   """
   Handles guest login by verifying IP address rate limits, creating a guest session,
@@ -1610,7 +1615,12 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
   )
 
 
-@app.post("/api/auth/mock-login", response_model=LoginResponse)
+@app.post("/api/auth/mock-login", 
+          response_model=LoginResponse, 
+          tags=["Auth"],
+          summary="Mock Login",
+          description="Mock authentication for testing purposes - creates or retrieves a test user",
+          operation_id="mockLogin")
 async def mock_login(request: MockLoginRequest, req: Request, response: Response):
   """
   Handles the mock login process for a user by creating or retrieving a user in the database,
@@ -1696,7 +1706,11 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
   )
 
 
-@app.post("/api/auth/logout")
+@app.post("/api/auth/logout", 
+          tags=["Auth"],
+          summary="Logout",
+          description="Invalidates the current session and clears authentication cookies",
+          operation_id="logout")
 async def logout(request: Request, response: Response):
   """
   Logs out a user by invalidating the current session key, deleting associated
@@ -1743,7 +1757,11 @@ async def logout(request: Request, response: Response):
   return {"message": "Logged out successfully"}
 
 
-@app.post("/api/auth/refresh-session")
+@app.post("/api/auth/refresh-session", 
+          tags=["Auth"],
+          summary="Refresh Session",
+          description="Refreshes the user session if it's close to expiry (within 1 hour)",
+          operation_id="refreshSession")
 async def refresh_session(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
   """
   Refreshes the user session and updates session cookies and CSRF tokens. If the
@@ -1825,7 +1843,11 @@ async def refresh_session(request: Request, response: Response, current_user: di
   }
 
 
-@app.get("/api/auth/me")
+@app.get("/api/auth/me", 
+         tags=["Auth"],
+         summary="Get Current User",
+         description="Returns information about the currently authenticated user",
+         operation_id="getCurrentUser")
 async def get_me(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
   """
   Handles the retrieval of the current authenticated user information along with session
@@ -2073,7 +2095,12 @@ async def get_conversation(conversation_id: str, response: Response, current_use
 
 
 # **MODIFIED:** Updated settings endpoint to match new frontend logic
-@app.get("/api/settings", response_model=AppSettingsResponse)
+@app.get("/api/settings", 
+         response_model=AppSettingsResponse, 
+         tags=["Settings"],
+         summary="Get User Settings",
+         description="Retrieve application settings for the current user",
+         operation_id="getUserSettings")
 async def get_settings(current_user: dict = Depends(get_current_user)):
   """
   Retrieve application settings for the current user.
@@ -2129,7 +2156,12 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
       )
 
 
-@app.put("/api/settings", response_model=AppSettingsResponse)
+@app.put("/api/settings", 
+         response_model=AppSettingsResponse, 
+         tags=["Settings"],
+         summary="Update User Settings",
+         description="Update application settings for the current user",
+         operation_id="updateUserSettings")
 async def update_settings(new_settings: AppSettings, current_user: dict = Depends(get_current_user)):
   """
   Updates user settings in the database with new preferences and returns the updated settings.
@@ -3464,8 +3496,24 @@ async def add_security_headers(request: Request, call_next):
   # For Angular compatibility, we need a more permissive policy in development
   # In production, consider migrating away from unsafe-inline and unsafe-eval
   is_dev = os.getenv("USE_DEV_CERTS", "False").lower() == "true"
-
-  if is_dev:
+  
+  # Check if this is a Swagger UI request
+  is_swagger_ui = request.url.path == "/api/docs"
+  
+  if is_swagger_ui:
+    # Special CSP for Swagger UI to allow CDN resources
+    csp_directives = [
+      "default-src 'self' https://cdn.jsdelivr.net https://fastapi.tiangolo.com",
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+      "img-src 'self' data: blob: https://fastapi.tiangolo.com",
+      "font-src 'self' data: https://cdn.jsdelivr.net",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ]
+  elif is_dev:
     # Development CSP - more permissive for Angular CLI
     csp_directives = [
       "default-src 'self'",
