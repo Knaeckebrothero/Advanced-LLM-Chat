@@ -455,23 +455,4 @@ export class ApiService {
     }
   }
 
-  // TODO: Implement update conversation
-  async updateConversation(conversation: Conversation): Promise<void> {
-    const endpoint = `${this.baseUrl}/api/conversation/update`;
-    const body = {
-      id: conversation.id,
-      name: conversation.name,
-      participants: conversation.participants,
-      version: conversation.version
-    };
-
-    try {
-      await lastValueFrom(
-        this.http.put(endpoint, body, this.getHttpOptions())
-      );
-    } catch (error) {
-      console.error('Error updating conversation:', error);
-      throw error;
-    }
-  }
 }
