@@ -7,13 +7,13 @@
           [class.highlighted]="(activeConversationId$ | async) === '0'"
           (click)="createNewConversation()">
     <mat-icon>add</mat-icon>
-    New Chat
+    {{ 'New Chat' | translate }}
   </button>
 
   <div class="conversation-list">
-    <ng-container *ngFor="let label of ['Heute', 'Letzte 7 Tage', 'Diesen Monat', 'Älter']">
+    <ng-container *ngFor="let label of ['Today', 'Last 7 Days', 'This Month', 'Older']">
       <ng-container *ngIf="groupedConversations[label]?.length">
-        <div class="group-label">{{ label }}</div>
+        <div class="group-label">{{ label | translate }}</div>
         <app-conversation
           *ngFor="let conv of groupedConversations[label]"
           [conversation]="conv"
@@ -26,10 +26,10 @@
 
   <div class="sidebar-navigation-main-links">
     <button class="nav-button" (click)="navigateTo('/')" [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      Chat
+      {{ 'Chat' | translate }}
     </button>
     <button class="nav-button" (click)="navigateTo('/metrics')" [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      Metrics
+      {{ 'Metrics' | translate }}
     </button>
   </div>
 

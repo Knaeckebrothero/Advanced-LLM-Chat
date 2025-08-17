@@ -12,6 +12,7 @@ import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
 import { Observable, Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
+import {TranslateModule, TranslatePipe, TranslateService} from '@ngx-translate/core';
 
 
 @Component({
@@ -25,6 +26,7 @@ import { takeUntil } from 'rxjs/operators';
     ConversationComponent,
     MatIcon,
     MatDialogModule,
+    TranslateModule
   ]
 })
 export class SidebarComponent implements OnInit, OnDestroy {
@@ -42,7 +44,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
     private uiState: UIStateService,
     public router: Router,
     private dialog: MatDialog,
-    private authService: AuthService
+    private authService: AuthService,
+    private translate: TranslateService
   ) {}
 
   getUserName(): string {
@@ -101,10 +104,10 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   groupConversationsByDate(conversations: Conversation[]): { [key: string]: Conversation[] } {
     const groups: { [key: string]: Conversation[] } = {
-      'Heute': [],
-      'Letzte 7 Tage': [],
-      'Diesen Monat': [],
-      'Älter': [],
+      'Today': [],
+      'Last 7 Days': [],
+      'This Month': [],
+      'Older': [],
     };
 
     const now = new Date();
@@ -118,17 +121,17 @@ export class SidebarComponent implements OnInit, OnDestroy {
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
       if (updated.getTime() === now.getTime()) {
-        groups['Heute'].push(conv);
+        groups['Today'].push(conv);
       } else if (diffDays > 0 && diffDays < 7) {
-        groups['Letzte 7 Tage'].push(conv);
+        groups['Last 7 Days'].push(conv);
       } else if (
         updated.getMonth() === now.getMonth() &&
         updated.getFullYear() === now.getFullYear() &&
         updated.getTime() < now.getTime()
       ) {
-        groups['Diesen Monat'].push(conv);
+        groups['This Month'].push(conv);
       } else {
-        groups['Älter'].push(conv);
+        groups['Older'].push(conv);
       }
     }
 

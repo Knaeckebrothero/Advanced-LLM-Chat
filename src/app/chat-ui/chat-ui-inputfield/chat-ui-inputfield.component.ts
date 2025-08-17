@@ -18,6 +18,7 @@ import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { ImagePreviewDialogComponent, ImagePreviewDialogData } from './image-preview-dialog/image-preview-dialog.component';
+import {TranslateModule, TranslatePipe} from "@ngx-translate/core";
 
 
 /**
@@ -72,7 +73,8 @@ import { ImagePreviewDialogComponent, ImagePreviewDialogData } from './image-pre
     MatTooltipModule,
     MatChipsModule,
     MatProgressBarModule,
-    MatDialogModule
+    MatDialogModule,
+    TranslateModule
   ],
   templateUrl: './chat-ui-inputfield.component.html',
   styleUrls: ['./chat-ui-inputfield.component.scss']
@@ -300,7 +302,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     const preview = this.filePreviews.find(fp => fp.id === fileId);
     if (preview && preview.file) {
       const key = `${preview.file.name}_${preview.file.size}_${preview.file.lastModified}`;
-      
+
       // Revoke the download URL if it exists
       const rawUrl = this.rawDownloadUrls.get(key);
       if (rawUrl) {
@@ -309,7 +311,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
         this.rawDownloadUrls.delete(key);
       }
     }
-    
+
     this.filePreviews = this.filePreviews.filter(fp => fp.id !== fileId);
     this.filesSelected.emit(this.filePreviews);
   }
@@ -320,7 +322,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     this.rawDownloadUrls.forEach(url => URL.revokeObjectURL(url));
     this.downloadUrls.clear();
     this.rawDownloadUrls.clear();
-    
+
     this.filePreviews = [];
     this.filesSelected.emit(this.filePreviews);
   }
@@ -626,27 +628,27 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   createDownloadUrl(file: File): SafeUrl {
     // Create unique key for this file
     const key = `${file.name}_${file.size}_${file.lastModified}`;
-    
+
     // Return cached URL if exists
     if (this.downloadUrls.has(key)) {
       return this.downloadUrls.get(key)!;
     }
-    
+
     // Create new URL and cache it
     const objectUrl = URL.createObjectURL(file);
     const safeUrl = this.sanitizer.bypassSecurityTrustUrl(objectUrl);
-    
+
     // Store both raw and safe URLs
     this.downloadUrls.set(key, safeUrl);
     this.rawDownloadUrls.set(key, objectUrl);
-    
+
     return safeUrl;
   }
 
   openImagePopup(imageUrl: string): void {
     // Get the file preview to extract more info
     const preview = this.filePreviews.find(fp => fp.preview === imageUrl);
-    
+
     const dialogData: ImagePreviewDialogData = {
       imageUrl: imageUrl,
       fileName: preview?.name || 'Image',

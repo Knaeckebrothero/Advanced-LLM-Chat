@@ -1,8 +1,8 @@
 <div class="settings-container" *ngIf="settings$ | async as settings">
-  <h2>Settings</h2>
+  <h2>{{ 'Settings' | translate }}</h2>
 
   <div class="setting-option">
-    <label>Theme</label>
+    <label>{{ 'Theme' | translate }}</label>
     <div class="options-group">
       <button
         *ngFor="let option of themeOptions"
@@ -12,13 +12,13 @@
         [attr.aria-pressed]="settings.theme === option.value"
       >
         <mat-icon>{{ option.icon }}</mat-icon>
-        <span>{{ option.label }}</span>
+        <span>{{ option.label | translate }}</span>
       </button>
     </div>
   </div>
 
   <div class="setting-option">
-    <label>Language</label>
+    <label>{{ 'Language' | translate }}</label>
     <div class="options-group">
       <button
         *ngFor="let option of languageOptions"
@@ -33,6 +33,6 @@
   </div>
 
   <div class="button-row">
-    <button class="done-button" (click)="close()">Done</button>
+    <button class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
   </div>
 </div>

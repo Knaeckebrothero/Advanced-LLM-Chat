@@ -1,25 +1,25 @@
 <div class="login-container">
   <mat-card class="login-card">
     <mat-card-header>
-      <mat-card-title>Login</mat-card-title>
-      <mat-card-subtitle>Please enter your email to continue</mat-card-subtitle>
+      <mat-card-title>{{ 'Login' | translate }}</mat-card-title>
+      <mat-card-subtitle>{{ 'Please enter your email to continue' | translate }}</mat-card-subtitle>
     </mat-card-header>
 
     <mat-card-content>
       <form>
         <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Email</mat-label>
+          <mat-label>{{ 'Email' | translate }}</mat-label>
           <input matInput
                  type="email"
                  [(ngModel)]="email"
                  name="email"
-                 placeholder="Enter your email"
+                 [placeholder]="'Email' | translate"
                  (keyup.enter)="login()"
                  [disabled]="loading"
                  required
           >
           <mat-error *ngIf="!email">
-            Email is required
+            {{ 'Email is required' | translate }}
           </mat-error>
         </mat-form-field>
 
@@ -35,7 +35,7 @@
           [disabled]="loading || !email"
           class="full-width login-button"
         >
-          <span *ngIf="!loading">Login</span>
+          <span *ngIf="!loading">{{ 'Login' | translate }}</span>
           <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
         </button>
       </form>

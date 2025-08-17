@@ -6,6 +6,7 @@ import { ChatService } from './services/chat.service';
 import { ThemeService } from './services/theme.service';
 import { UIStateService } from './services/ui-state.service';
 import { AuthService } from './auth/auth.service';
+import { TranslateService } from '@ngx-translate/core';
 
 @Component({
   selector: 'app-root',
@@ -24,7 +25,8 @@ export class AppComponent implements OnInit, OnDestroy {
     private router: Router,
     private chatService: ChatService,
     private themeService: ThemeService, // Injected the service
-    private authService: AuthService
+    private authService: AuthService,
+    private translate: TranslateService
   ) {
     // Bind the handler so we can remove it later
     this.visibilityChangeHandler = () => {

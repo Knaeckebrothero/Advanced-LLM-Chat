@@ -4,6 +4,7 @@ import { SettingsRepository } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
 import { AppSettings } from '../models/settings.model';
 import { Language, Theme } from '../models/enum';
+import { TranslateService } from '@ngx-translate/core';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: Theme.Auto,
@@ -18,7 +19,8 @@ export class SettingsStateService {
 
   constructor(
     private repository: SettingsRepository,
-    private themeService: ThemeService
+    private themeService: ThemeService,
+    private translate: TranslateService
   ) {
     this.loadInitialSettings();
   }
@@ -28,10 +30,12 @@ export class SettingsStateService {
       const settings = await this.repository.getSettings();
       this.settingsSubject.next(settings);
       this.themeService.setTheme(settings.theme);
+      this.translate.use(settings.language); // ADD THIS LINE
     } catch (error) {
       console.error('Failed to load initial settings:', error);
       this.settingsSubject.next(DEFAULT_SETTINGS);
       this.themeService.setTheme(DEFAULT_SETTINGS.theme);
+      this.translate.use(DEFAULT_SETTINGS.language); // ADD THIS LINE
     }
   }
 
@@ -47,6 +51,10 @@ export class SettingsStateService {
 
     if (newSettings.theme) {
       this.themeService.setTheme(newSettings.theme);
+    }
+
+    if (newSettings.language) {
+      this.translate.use(newSettings.language);
     }
 
     await this.repository.saveSettings(updatedSettings);
