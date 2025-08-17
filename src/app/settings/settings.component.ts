@@ -6,11 +6,13 @@ import { SettingsStateService } from '../services/settings-state.service';
 import { AppSettings } from '../models/settings.model';
 import { Language, Theme } from '../models/enum';
 import { Observable } from 'rxjs';
+import {TranslateModule, TranslatePipe, TranslateService} from '@ngx-translate/core';
+
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, MatIconModule],
+  imports: [CommonModule, MatIconModule, TranslateModule],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss'],
 })
@@ -30,7 +32,8 @@ export class SettingsComponent {
 
   constructor(
     private settingsState: SettingsStateService,
-    private dialogRef: MatDialogRef<SettingsComponent>
+    private dialogRef: MatDialogRef<SettingsComponent>,
+    private translate: TranslateService
   ) {
     this.settings$ = this.settingsState.settings$;
   }

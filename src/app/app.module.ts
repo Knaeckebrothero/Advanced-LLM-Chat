@@ -31,12 +31,14 @@ import {BrowserModule} from '@angular/platform-browser';
 import {AppComponent} from './app.component';
 import {ServiceWorkerModule} from '@angular/service-worker';
 import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
-import {provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS} from '@angular/common/http';
+import {provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS, HttpClient} from '@angular/common/http';
 import {FormsModule, ReactiveFormsModule} from '@angular/forms';
 import {RouterModule, Routes} from '@angular/router';
 import {SidebarComponent} from "./sidebar/sidebar.component";
 import {CommonModule} from '@angular/common';
 import {AuthInterceptor} from './auth/auth.interceptor';
+import {TranslateLoader, TranslateModule} from "@ngx-translate/core";
+import {TranslateHttpLoader} from "@ngx-translate/http-loader";
 
 
 // Routes
@@ -47,6 +49,10 @@ const routes: Routes = [
   {path: 'settings', component: SettingsComponent, canActivate: [AuthGuard]},
   {path: 'auth/callback', component: AuthCallbackComponent},
 ];
+
+export function HttpLoaderFactory(http: HttpClient) {
+  return new TranslateHttpLoader(http, './assets/i18n/', '.json');
+}
 
 @NgModule({
   declarations: [
@@ -80,7 +86,17 @@ const routes: Routes = [
         enabled: !isDevMode(),
         registrationStrategy: 'registerWhenStable:30000'
       }),
-    BrowserAnimationsModule, SidebarComponent, SidebarComponent, ConversationComponent
+    BrowserAnimationsModule,
+    SidebarComponent,
+    ConversationComponent,
+    SettingsComponent,
+    TranslateModule.forRoot({
+      loader: {
+        provide: TranslateLoader,
+        useFactory: HttpLoaderFactory,
+        deps: [HttpClient]
+      }
+    })
   ],
   providers: [
     provideHttpClient(withInterceptorsFromDi()),
