@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1754986073371,
+  "timestamp": 1755458702415,
   "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
@@ -13,7 +13,7 @@
       "urls": [
         "/Advanced-LLM-Chat/favicon.ico",
         "/Advanced-LLM-Chat/index.html",
-        "/Advanced-LLM-Chat/main-V472DEVT.js",
+        "/Advanced-LLM-Chat/main-VROMG2OH.js",
         "/Advanced-LLM-Chat/manifest.webmanifest",
         "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js",
         "/Advanced-LLM-Chat/styles-MGAYDOMJ.css"
@@ -30,6 +30,8 @@
       "urls": [
         "/Advanced-LLM-Chat/assets/background/dark-mode-bg.svg",
         "/Advanced-LLM-Chat/assets/background/light-mode-bg.svg",
+        "/Advanced-LLM-Chat/assets/i18n/de.json",
+        "/Advanced-LLM-Chat/assets/i18n/en.json",
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-144-144.png",
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-192-192.png",
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-48-48.png",
@@ -47,6 +49,8 @@
   "hashTable": {
     "/Advanced-LLM-Chat/assets/background/dark-mode-bg.svg": "4e968e5cfb1e6fb995b6b9463b86af8219f378ed",
     "/Advanced-LLM-Chat/assets/background/light-mode-bg.svg": "ee2c13835257adab2b72ad39a07a5fb0cf3e47de",
+    "/Advanced-LLM-Chat/assets/i18n/de.json": "3448af58bc8921759410c546233045fe140e7589",
+    "/Advanced-LLM-Chat/assets/i18n/en.json": "580624a4b4d83af33856975dc21fd1fcb8b44adc",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-144-144.png": "313ccfeb19f50c2fe91c67b86f736473978e4c69",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-192-192.png": "08ed5b826739b5829a60c015e200ec6e31377cc1",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-48-48.png": "4e83611b2b50073931a9ef6719cffbdc4a911e1d",
@@ -57,8 +61,8 @@
     "/Advanced-LLM-Chat/assets/icons/fra_uas_logo_white.png": "cb9faa8844b86535e5341ac5156710e29578b3c4",
     "/Advanced-LLM-Chat/assets/icons/light-mode-robot.svg": "67e6ced3db641c3ccb0c902e18717ebad4410dfa",
     "/Advanced-LLM-Chat/favicon.ico": "22f6a4a3bcaafafb0254e0f2fa4ceb89e505e8b2",
-    "/Advanced-LLM-Chat/index.html": "d303317671c7de8c61dd9d0342e1452f6757121b",
-    "/Advanced-LLM-Chat/main-V472DEVT.js": "7a9d475c6b9f219f293d0e60234768321216cf8f",
+    "/Advanced-LLM-Chat/index.html": "33123fa846f280bde218ce449acfb3f53f57d345",
+    "/Advanced-LLM-Chat/main-VROMG2OH.js": "5eeaa5c36479b8c899c823bb8459690d69332db9",
     "/Advanced-LLM-Chat/manifest.webmanifest": "a81d65b6133d5367d68f9d650c1117eae6c0de62",
     "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js": "f49b49a155bc7d192db62a4c15d0a612b460a667",
     "/Advanced-LLM-Chat/styles-MGAYDOMJ.css": "c11ac593cc3b0cfcf0fbf864cc9645b46e4630f9"
