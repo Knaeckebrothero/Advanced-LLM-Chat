@@ -1,23 +1,24 @@
 <div class="chat-ui-container">
-  <!-- Chat UI Header -->
+  <div class="top-right-logo">
+    <img [src]="isDarkMode ? 'assets/icons/fra_uas_logo_white.png' : 'assets/icons/fra_logo_svg.svg'"
+         alt="Frankfurt University of Applied Sciences Logo" />
+  </div>
+
   <div class="message-container" #messageContainer (scroll)="onScroll($event)">
-    <!-- Loading spinner for older messages -->
     <div class="loading-older-messages" *ngIf="isLoadingOlderMessages">
       <mat-spinner diameter="30"></mat-spinner>
       <span>Loading older messages...</span>
     </div>
-    <!-- End of conversation indicator -->
     <div class="end-of-conversation" *ngIf="(hasReachedEnd$ | async) && !isLoadingOlderMessages">
       <span>Beginning of conversation</span>
     </div>
-    <app-chat-ui-message *ngFor="let message of messages | async; let i = index" 
+    <app-chat-ui-message *ngFor="let message of messages | async; let i = index"
                          [message]="message"
                          [isLastAiMessage]="isLastAiMessage(message, i)"></app-chat-ui-message>
   </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
     <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>
   </div>
-  <!-- Input field for sending messages -->
   <app-chat-ui-inputfield
     [externalFiles]="pendingFiles"
     [isMobile]="isMobileDevice()"

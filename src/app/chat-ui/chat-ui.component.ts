@@ -7,6 +7,7 @@ import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
 import { RecordingResult } from '../data/objects/recording';
 import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
+import { ThemeService } from '../services/theme.service'; // Import ThemeService
 
 
 @Component({
@@ -24,6 +25,7 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   userName: string = 'user';
   aiName: string = 'Assistant';
   pendingFiles: FilePreview[] = [];
+  isDarkMode: boolean = false; // Add this property
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
@@ -45,15 +47,22 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   private guestLimitSubscription!: Subscription;
   private guestLimitResetTimeSubscription!: Subscription;
   private destroy$ = new Subscription();
+  private themeSubscription!: Subscription; // Add this property
 
   // Constructor - now using state services
   constructor(
-    private chatState: ChatStateService,
-    private uiState: UIStateService,
-    private authService: AuthService
+      private chatState: ChatStateService,
+      private uiState: UIStateService,
+      private authService: AuthService,
+      private themeService: ThemeService // Inject ThemeService
   ) {}
 
   ngOnInit() {
+    // Add this block to subscribe to theme changes
+    this.themeSubscription = this.themeService.theme$.subscribe(() => {
+      this.isDarkMode = this.themeService.getCurrentEffectiveTheme() === 'dark';
+    });
+
     this.guestLimitSubscription = this.authService.guestLimitReached$.subscribe(isReached => {
       this.showGuestLimitWarning = isReached;
     });
@@ -63,25 +72,25 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
     // Subscribe to messages to track array for scroll logic
     this.destroy$.add(
-      this.messages$.subscribe(messages => {
-        const previousLength = this.currentMessages.length;
-        this.currentMessages = messages || [];
+        this.messages$.subscribe(messages => {
+          const previousLength = this.currentMessages.length;
+          this.currentMessages = messages || [];
 
-        // When switching conversations or loading initial messages, scroll to bottom
-        if (previousLength === 0 && this.currentMessages.length > 0) {
-          this.shouldScrollToBottom = true;
-          // Use setTimeout to ensure DOM has updated
-          setTimeout(() => this.scrollToBottom(), 100);
-        }
-      })
+          // When switching conversations or loading initial messages, scroll to bottom
+          if (previousLength === 0 && this.currentMessages.length > 0) {
+            this.shouldScrollToBottom = true;
+            // Use setTimeout to ensure DOM has updated
+            setTimeout(() => this.scrollToBottom(), 100);
+          }
+        })
     );
 
     // Subscribe to active conversation changes
     this.destroy$.add(
-      this.chatState.activeConversation$.subscribe(() => {
-        // Reset scroll state when conversation changes
-        this.shouldScrollToBottom = true;
-      })
+        this.chatState.activeConversation$.subscribe(() => {
+          // Reset scroll state when conversation changes
+          this.shouldScrollToBottom = true;
+        })
     );
   }
 
@@ -157,6 +166,12 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.destroy$.unsubscribe();
+
+    // Add this block to unsubscribe from theme changes
+    if (this.themeSubscription) {
+      this.themeSubscription.unsubscribe();
+    }
+
     if (this.guestLimitSubscription) {
       this.guestLimitSubscription.unsubscribe();
     }
@@ -265,10 +280,10 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
     // Find a voice message that hasn't been marked as 'sent' yet.
     const voiceFile = this.pendingFiles.find(
-      (fp) =>
-        fp.mimeType.startsWith('audio/') &&
-        fp.name.includes('Voice message') &&
-        !(fp as any).isSent
+        (fp) =>
+            fp.mimeType.startsWith('audio/') &&
+            fp.name.includes('Voice message') &&
+            !(fp as any).isSent
     );
 
     if (voiceFile) {
@@ -285,9 +300,9 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         }
 
         await this.chatState.sendVoiceMessage(
-          voiceFile.file,
-          duration,
-          voiceFile.mimeType
+            voiceFile.file,
+            duration,
+            voiceFile.mimeType
         );
 
         // After successfully sending, permanently remove it from the pending list.
