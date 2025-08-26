@@ -10,7 +10,7 @@
       <span>Loading older messages...</span>
     </div>
     <div class="end-of-conversation" *ngIf="(hasReachedEnd$ | async) && !isLoadingOlderMessages">
-      <span>Beginning of conversation</span>
+      <span></span>
     </div>
     <app-chat-ui-message *ngFor="let message of messages | async; let i = index"
                          [message]="message"
