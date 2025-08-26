@@ -6,24 +6,24 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  // Make the container transparent to reveal the parent's background
   background-color: transparent;
-  position: relative; // Added for positioning context
+  position: relative;
 }
 
-// Styles for the logo container
+// Stile für den Logo-Container
 .top-right-logo {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
+  top: 1.5rem;
+  right: 1.5rem;
   width: 200px;
   height: 55px;
-  z-index: 10;
+  z-index: 1; // Logo in den Hintergrund
+  opacity: 0.5; // Logo leicht transparent machen
 
   img {
     width: 100%;
     height: 100%;
-    object-fit: contain; // HIER DIE ÄNDERUNG HINZUFÜGEN
+    object-fit: contain;
   }
 }
 
@@ -32,8 +32,10 @@
   width: auto;
   overflow-y: scroll;
   padding: 2%;
+  padding-top: 6rem; // Abstand oben für das Logo
   padding-bottom: 1%;
-  padding-top: 1%;
+  position: relative; // Notwendig für z-index
+  z-index: 2; // Nachrichten in den Vordergrund
 
   &::-webkit-scrollbar {
     width: 10px;
@@ -56,6 +58,8 @@
   padding: 20px;
   gap: 10px;
   color: var(--theme-text-secondary);
+  position: relative; // Sicherstellen, dass es über dem Logo ist
+  z-index: 2;
 
   mat-spinner {
     margin-right: 8px;
@@ -78,6 +82,8 @@
   text-align: center;
   border-top: 1px solid var(--theme-primary);
   border-bottom: 1px solid var(--theme-primary);
+  position: relative; // Notwendig für z-index
+  z-index: 2; // Warnung in den Vordergrund
 
   a {
     color: var(--theme-text-accent);
@@ -86,6 +92,13 @@
   }
 }
 
+// Das Eingabefeld muss ebenfalls im Vordergrund sein
+app-chat-ui-inputfield {
+  position: relative;
+  z-index: 2;
+}
+
+// Stile für den Input-Bereich (wieder hinzugefügt)
 .input-container {
   width: 100%;
   min-height: fit-content;
@@ -149,7 +162,17 @@
   }
 }
 
+// Media Query für mobile Geräte
 @media (max-width: 768px) {
+  .top-right-logo {
+    width: 150px;
+    height: 45px;
+    top: 1rem;
+    right: 1rem;
+  }
+  .message-container {
+    padding-top: 5rem;
+  }
   .input-container {
     padding: 8px;
     gap: 8px;
