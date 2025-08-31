@@ -15,7 +15,7 @@ import { TranslateService } from '@ngx-translate/core';
   standalone: false
 })
 export class AppComponent implements OnInit, OnDestroy {
-  title = 'Advanced LLM Chat';
+  title = 'Fessi';
   showMenuIcon: boolean = false; // Initialize to false to prevent showing on load
   private subscriptions = new Subscription();
   private readonly visibilityChangeHandler: () => void;

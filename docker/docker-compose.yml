@@ -5,8 +5,8 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile
-    image: advanced-llm-chat-frontend:latest
-    container_name: advanced-llm-chat-frontend
+    image: fessi-frontend:latest
+    container_name: fessi-frontend
     ports:
       - "8080:80"
     restart: unless-stopped
@@ -21,8 +21,8 @@ services:
     build:
       context: ../
       dockerfile: docker/backend.Dockerfile
-    image: advanced-llm-chat-backend:latest
-    container_name: advanced-llm-chat-backend
+    image: fessi-backend:latest
+    container_name: fessi-backend
     ports:
       - "8443:8443"
     restart: unless-stopped

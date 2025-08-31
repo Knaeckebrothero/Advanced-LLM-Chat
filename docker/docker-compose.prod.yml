@@ -2,8 +2,8 @@ version: '3.8'
 
 services:
   frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/advanced-llm-chat}-frontend:${TAG:-develop-latest}
-    container_name: advanced-llm-chat-frontend
+    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-frontend:${TAG:-develop-latest}
+    container_name: fessi-frontend
     ports:
       - "${FRONTEND_PORT:-8080}:80"
     restart: unless-stopped
@@ -15,8 +15,8 @@ services:
       - app-network
 
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/advanced-llm-chat}-backend:${TAG:-develop-latest}
-    container_name: advanced-llm-chat-backend
+    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-backend:${TAG:-develop-latest}
+    container_name: fessi-backend
     ports:
       - "${BACKEND_PORT:-8443}:8443"
     restart: unless-stopped

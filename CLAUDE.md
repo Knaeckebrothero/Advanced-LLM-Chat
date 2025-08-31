@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an Angular 19.2.2 application with a FastAPI backend for an advanced LLM chat interface. The project uses a microservices architecture with separate frontend and backend containers, supports multiple LLM models, and includes offline-first capabilities with IndexedDB.
+Angular 19.2.2 application with FastAPI backend for an advanced LLM chat interface. The project uses a microservices architecture with separate frontend and backend containers, supports multiple LLM models, and includes offline-first capabilities with IndexedDB. The app supports internationalization with German and English translations via ngx-translate.
 
 ## Essential Commands
 
 ### Frontend Development
 ```bash
-npm start          # Start development server (http://localhost:4200)
-npm run build      # Production build (outputs to dist/advanced-llm-chat/browser/)
+npm start          # Start development server with SSL (https://localhost:4200)
+npm run build      # Production build (outputs to dist/fessi/browser/)
 npm test           # Run unit tests with Karma/Jasmine
 npm run watch      # Build with watch mode for development
 ng test --include='**/specific.spec.ts'  # Run specific test file
@@ -47,8 +47,8 @@ docker-compose up -d --build              # Build and run locally
 docker-compose -f docker-compose.prod.yml up -d  # Use pre-built images from ghcr.io
 
 # Manual Docker commands
-docker build -f docker/Dockerfile -t advanced-llm-chat:latest .
-docker run -d -p 8080:80 -p 8443:443 advanced-llm-chat:latest
+docker build -f docker/Dockerfile -t fessi:latest .
+docker run -d -p 8080:80 -p 8443:443 fessi:latest
 ```
 
 ## Architecture Overview
@@ -125,7 +125,7 @@ The project follows Git Flow:
 4. **Authentication**: All API calls require session authentication via `AuthInterceptor`
 5. **Environment Variables**: Use Angular environments for configuration, not process.env
 6. **SSL Required**: Both frontend and backend require HTTPS - certificates auto-generated in development
-7. **Build Output**: Production builds output to `dist/advanced-llm-chat/browser/` (Angular 17+ pattern)
+7. **Build Output**: Production builds output to `dist/fessi/browser/` (Angular 19+ pattern)
 8. **No Linting**: Project relies on TypeScript strict mode only - no ESLint/TSLint configured
 9. **Message Type Safety**: Use Message factory methods (createText, createVoice) for type-safe message creation
 10. **Offline Support**: ChatService handles offline scenarios with local-only conversations and pending file uploads
@@ -134,6 +134,8 @@ The project follows Git Flow:
 13. **HTTP Options**: Use `ApiService.getHttpOptions()` for consistent headers with credentials
 14. **Error Handling**: API errors return `ErrorResponse` model with error message
 15. **State Services**: Prefer injecting state services over direct repository access
+16. **Internationalization**: Use ngx-translate for i18n - translations in `src/assets/i18n/` (de.json, en.json)
+17. **Angular SSL Config**: Dev server uses SSL with certs from `devcerts/` folder (see angular.json)
 
 ## Testing Approach
 
