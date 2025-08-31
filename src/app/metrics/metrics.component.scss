@@ -4,19 +4,32 @@
   width: 100%;
   height: 100%;
   display: flex;
-
-  // Add these two lines to center the content
-  justify-content: center; // Centers vertically
-  align-items: center;     // Centers horizontally
+  justify-content: center; // Centers horizontally in the container
+  align-items: center;     // Centers vertically in the container
 
   p {
-    // Add this new block for the text
-    text-align: center; // Center the text if it wraps to multiple lines
-
-
-
-    color: var(--theme-text); // Use the theme's text color
-    font-size: 2.2rem;
+    text-align: center;
+    color: var(--theme-text);
     opacity: 0.8;
+
+    // 1. Set a base font-size for desktop and a lighter weight
+    font-size: 2.2rem;
+    font-weight: 300; // A lighter weight often looks better for large text
+
+    // 2. Improve spacing between lines when text wraps
+    line-height: 1.4;
+
+    // 3. Add padding and max-width for better readability on all screens
+    max-width: 600px;
+    padding: 0 24px; // Prevents text from touching the screen edges
+
+    // 4. Use Media Queries to adjust font size on smaller screens
+    @media (max-width: 768px) {
+      font-size: 1.6rem; // Adjust font size for tablets and smaller devices
+    }
+
+    @media (max-width: 480px) {
+      font-size: 1.3rem; // Further reduce font size for mobile phones
+    }
   }
 }
