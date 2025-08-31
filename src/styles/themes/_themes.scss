@@ -58,6 +58,7 @@
     --theme-text-accent: #{map.get($theme-map, 'text-accent')};
     --theme-primary-contrast: #{map.get($theme-map, 'primary-contrast')};
     --theme-primary-contrast-rgb: #{map.get($theme-map, 'primary-contrast-rgb')};
+    --theme-logo-bg: #{map.get($theme-map, 'logo-bg')};
 
     // Apply base background and text color to the body
     background-color: var(--theme-background);

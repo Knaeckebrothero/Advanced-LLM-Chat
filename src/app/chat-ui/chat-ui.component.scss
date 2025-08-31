@@ -17,6 +17,24 @@
   padding: 2%;
   padding-bottom: 1%;
   padding-top: 1%;
+  position: relative;
+  
+  // Add university logo background
+  &::before {
+    content: '';
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    width: 150px;
+    height: 150px;
+    background-image: var(--theme-logo-bg);
+    background-repeat: no-repeat;
+    background-size: contain;
+    background-position: center;
+    opacity: 0.15;
+    pointer-events: none;
+    z-index: 0;
+  }
 
   &::-webkit-scrollbar {
     width: 10px;
@@ -28,6 +46,12 @@
 
   .message {
     width: 100%;
+  }
+  
+  // Ensure messages appear above the logo
+  app-chat-ui-message {
+    position: relative;
+    z-index: 1;
   }
 }
 

@@ -43,7 +43,8 @@ $light-theme: (
   'text-accent': $light-primary,
   'primary-contrast': $light-primary-contrast,
   'primary-contrast-rgb': $light-primary-contrast-rgb,
-  'background-image': url('/assets/background/light-mode-bg.svg')
+  'background-image': url('/assets/background/light-mode-bg.svg'),
+  'logo-bg': url('/assets/icons/fra_uas_logo.png')
 );
 
 $dark-theme: (
@@ -61,7 +62,8 @@ $dark-theme: (
   'text-accent': $dark-secondary,
   'primary-contrast': $dark-primary-contrast,
   'primary-contrast-rgb': $dark-primary-contrast-rgb,
-  'background-image': url('/assets/background/dark-mode-bg.svg')
+  'background-image': url('/assets/background/dark-mode-bg.svg'),
+  'logo-bg': url('/assets/icons/fra_uas_logo_white.png')
 );
 
 // Central map of all themes
