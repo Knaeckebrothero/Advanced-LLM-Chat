@@ -49,7 +49,9 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   private destroy$ = new Subscription();
   private themeSubscription!: Subscription; // Add this property
 
-  // Constructor - now using state services
+  // Add this property to hold the current state
+  private hasReachedEnd = false;
+
   constructor(
       private chatState: ChatStateService,
       private uiState: UIStateService,
@@ -70,7 +72,13 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
       this.guestLimitWarningMessage = message;
     });
 
-    // Subscribe to messages to track array for scroll logic
+    // Subscribe to the hasReachedEnd$ observable to keep our local property in sync
+    this.destroy$.add(
+        this.hasReachedEnd$.subscribe(value => {
+          this.hasReachedEnd = value;
+        })
+    );
+
     this.destroy$.add(
         this.messages$.subscribe(messages => {
           const previousLength = this.currentMessages.length;
@@ -96,13 +104,12 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
 
   // Handle scroll events to load older messages
   onScroll(event: Event): void {
-    // Ignore scroll events during restoration
     if (this.isRestoringScroll) return;
 
     const element = event.target as HTMLElement;
 
-    // Check if user scrolled to top
-    if (element.scrollTop < 100 && !this.isLoadingMessages && this.currentMessages.length > 0) {
+    // Use the component's 'hasReachedEnd' property here
+    if (element.scrollTop < 100 && !this.isLoadingMessages && this.currentMessages.length > 0 && !this.hasReachedEnd) {
       this.loadOlderMessages();
     }
   }
