@@ -1,10 +1,19 @@
-# Advanced LLM Chat
+# Fessi Chat Bot
 
-A sophisticated, Angular-based progressive web application for interacting with large language models (LLMs). Features voice recording, file uploads, offline-first architecture, internationalization, and a modern responsive interface with real-time updates and comprehensive state management.
+**An intelligent waste disposal assistant for university campuses**
+
+Fessi is a Progressive Web Application (PWA) designed to help campus users identify appropriate disposal methods and locations for various types of waste. Built with Angular 19.2.2 and FastAPI, this chatbot uses a Retrieval-Augmented Generation (RAG) architecture to provide contextually appropriate responses to waste disposal queries.
+
+Developed during the 2025 Summer Semester at Frankfurt University of Applied Sciences (FRA UAS) as a continuation and modernization of the "Müll-Meister" project, Fessi represents a complete redesign using modern web development practices to address the operational challenges of campus waste management.
 
 ## Table of Contents
 
+- [Project Background](#project-background)
 - [Features](#features)
+  - [Waste Disposal Assistance](#waste-disposal-assistance)
+  - [Core Chat Features](#core-chat-features)
+  - [Technical Features](#technical-features)
+- [Use Cases](#use-cases)
 - [Docker Deployment](#docker-deployment)
   - [Prerequisites for Docker Deployment](#prerequisites-for-docker-deployment)
   - [Quick Start with Docker](#quick-start-with-docker)
@@ -18,42 +27,52 @@ A sophisticated, Angular-based progressive web application for interacting with 
 - [Development](#development)
 - [Usage](#usage)
 - [Architecture](#architecture)
+- [API Endpoints](#api-endpoints)
 - [Troubleshooting](#troubleshooting)
-  - [CORS Issues](#cors-issues)
-  - [Certificate Issues](#certificate-issues)
-  - [Database Connection Issues](#database-connection-issues)
-  - [Backend Connection Issues](#backend-connection-issues)
-  - [Docker Deployment Issues](#docker-deployment-issues)
 - [Contributing](#contributing)
   - [Git Workflow](#git-workflow)
   - [Branch Structure](#branch-structure)
-  - [Automated Docker Builds](#automated-docker-builds)
-  - [Contribution Process](#contribution-process)
+  - [Future Development Roadmap](#future-development-roadmap)
+- [Development Team](#development-team)
 - [License](#license)
-- [Contact](#contact)
+- [Acknowledgments](#acknowledgments)
+
+## Project Background
+
+The effective management of waste disposal on university campuses presents significant operational challenges. With diverse waste categories ranging from everyday recyclables to hazardous laboratory materials, proper segregation requires accessible and accurate information. Fessi addresses this challenge by providing an intelligent assistant that helps users identify appropriate disposal methods and locations.
+
+This project represents a continuation of work initiated in the previous semester with "Müll-Meister," which faced significant limitations including 58-second initialization times and monolithic backend structure. The Fessi frontend was completely redesigned from scratch using modern web development practices, implementing a microservices architecture with containerized deployment.
 
 ## Features
 
+### Waste Disposal Assistance
+- **Intelligent Query Processing**: RAG-based responses for waste disposal questions
+- **Multi-category Support**: Guidance for recyclables, hazardous materials, electronics, and general waste
+- **Location Guidance**: Information about nearest appropriate disposal locations on campus
+- **Visual Identification**: Upload images of waste items for classification assistance
+- **Voice Queries**: Ask disposal questions using voice input
+- **Offline Functionality**: Access previous queries and basic guidance without internet
+
 ### Core Chat Features
-- Real-time chat interface with multiple LLM model support
+- Real-time chat interface optimized for waste disposal queries
 - Message persistence with offline-first architecture via IndexedDB
-- Streaming LLM responses with real-time updates
+- Streaming LLM responses with contextually appropriate disposal information
 - Message editing, deletion, and regeneration capabilities
 - Session-based authentication with guest login support
 
 ### Voice & Audio
-- **Voice Recording**: Hold-to-record and tap-to-record modes
+- **Voice Recording**: Ask waste disposal questions via voice input
 - **Audio Visualization**: Real-time waveform display during recording
-- **Voice Messages**: Audio messages with duration tracking and optional transcripts
-- **Offline Audio**: Base64 storage for offline voice message access
+- **Voice Messages**: Record disposal queries with automatic transcription
+- **Offline Audio**: Access recorded queries even without internet connection
 
 ### File Management
-- **Drag & Drop**: Direct file upload via drag and drop
-- **Camera Integration**: Take photos directly from mobile/desktop cameras
-- **Image Preview**: Full-screen image preview with popup dialogs
-- **File Validation**: Type checking and 10MB size limit
-- **Offline Queue**: Automatic file upload when connection restored
-- **Multiple Formats**: Support for images, documents, and various file types
+- **Waste Item Photography**: Take photos of unknown waste items for identification
+- **Camera Integration**: Direct camera access for immediate waste classification
+- **Image Preview**: Review uploaded waste item images
+- **Drag & Drop**: Easy upload of waste item photos
+- **Offline Queue**: Photos saved locally and processed when connection restored
+- **Multiple Formats**: Support for various image formats for waste identification
 
 ### User Interface
 - **Responsive Design**: Adaptive layouts for desktop, tablet, and mobile
@@ -64,18 +83,30 @@ A sophisticated, Angular-based progressive web application for interacting with 
 - **Progressive Web App (PWA)**: Installable with offline capabilities
 
 ### Technical Features
+- **Progressive Web App (PWA)**: Installable on mobile devices for on-the-go waste queries
 - **Microservices Architecture**: Dockerized frontend (Angular/nginx) and backend (FastAPI)
+- **RAG Architecture**: Retrieval-Augmented Generation for accurate waste disposal information
 - **State Management**: Reactive state with RxJS observables
 - **Repository Pattern**: Clean separation of data access layers
 - **Offline-First**: IndexedDB with background synchronization
-- **WebSocket Support**: Real-time streaming responses
-- **Self-Signed SSL**: Automatic certificate generation for development
+- **Multi-team Development**: Coordinated development across frontend, backend, design, and data teams
+- **FRA UAS Integration**: Designed for university campus deployment
+
+## Use Cases
+
+### Campus Scenarios
+- **Laboratory Waste**: Identify proper disposal for chemical containers and lab equipment
+- **Electronic Waste**: Find e-waste collection points for old devices
+- **Cafeteria Waste**: Sort food packaging and organic waste correctly
+- **Office Materials**: Dispose of paper, batteries, and office supplies appropriately
+- **Special Events**: Handle event-specific waste during campus activities
+- **Visitor Assistance**: Help campus visitors understand waste disposal rules
 
 ## Docker Deployment
 
-The application is available as pre-built Docker containers from GitHub Container Registry. The application consists of two containers:
-- **Frontend**: Angular application served by nginx
-- **Backend**: Python FastAPI with SQLite database and LLM integration
+Fessi is deployed as containerized microservices for easy campus-wide deployment. The application consists of two containers:
+- **Frontend**: Angular-based Fessi interface served by nginx
+- **Backend**: Python FastAPI with waste disposal knowledge base and LLM integration
 
 ### Prerequisites for Docker Deployment
 
@@ -88,9 +119,9 @@ The application is available as pre-built Docker containers from GitHub Containe
 # Create a .env file with your Replicate API token
 echo "REPLICATE_API_TOKEN=your_replicate_api_token_here" > .env
 
-# Pull and run the latest images
-docker pull ghcr.io/Knaeckebrothero/Advanced-LLM-Chat-frontend:develop-latest
-docker pull ghcr.io/Knaeckebrothero/Advanced-LLM-Chat-backend:develop-latest
+# Pull and run the latest Fessi images
+docker pull ghcr.io/fra-uas/fessi-chatbot-frontend:develop-latest
+docker pull ghcr.io/fra-uas/fessi-chatbot-backend:develop-latest
 
 # Run with docker-compose (recommended)
 wget https://raw.githubusercontent.com/Knaeckebrothero/Advanced-LLM-Chat/develop/docker/docker-compose.prod.yml
@@ -108,8 +139,8 @@ Access the application:
 For easier container management, clone the repository and use Docker Compose:
 
 ```bash
-git clone https://github.com/Knaeckebrothero/Advanced-LLM-Chat.git
-cd Advanced-LLM-Chat/docker
+git clone https://github.com/fra-uas/fessi-chatbot.git
+cd fessi-chatbot/docker
 
 # Create .env file
 echo "REPLICATE_API_TOKEN=your_replicate_api_token_here" > .env
@@ -123,23 +154,23 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ### Available Image Tags
 
-- `ghcr.io/Knaeckebrothero/Advanced-LLM-Chat-frontend:develop-latest` - Latest frontend from develop branch
-- `ghcr.io/Knaeckebrothero/Advanced-LLM-Chat-backend:develop-latest` - Latest backend from develop branch
-- `ghcr.io/Knaeckebrothero/Advanced-LLM-Chat-frontend:main-latest` - Latest frontend from main branch (production)
-- `ghcr.io/Knaeckebrothero/Advanced-LLM-Chat-backend:main-latest` - Latest backend from main branch (production)
-- `ghcr.io/Knaeckebrothero/Advanced-LLM-Chat-{frontend|backend}:sha-<commit>` - Specific commit builds
+- `ghcr.io/fra-uas/fessi-chatbot-frontend:develop-latest` - Latest Fessi frontend from develop branch
+- `ghcr.io/fra-uas/fessi-chatbot-backend:develop-latest` - Latest Fessi backend from develop branch
+- `ghcr.io/fra-uas/fessi-chatbot-frontend:main-latest` - Latest Fessi frontend from main branch (production)
+- `ghcr.io/fra-uas/fessi-chatbot-backend:main-latest` - Latest Fessi backend from main branch (production)
+- `ghcr.io/fra-uas/fessi-chatbot-{frontend|backend}:sha-<commit>` - Specific commit builds
 
 ### Building Your Own Images
 
 If you need to build the image locally with custom configurations:
 
 ```bash
-# Clone the repository
-git clone https://github.com/Knaeckebrothero/Advanced-LLM-Chat.git
-cd Advanced-LLM-Chat
+# Clone the Fessi repository
+git clone https://github.com/fra-uas/fessi-chatbot.git
+cd fessi-chatbot
 
-# Build the image
-docker build -f docker/Dockerfile -t my-custom-llm-chat:latest .
+# Build the Fessi image
+docker build -f docker/Dockerfile -t fessi-custom:latest .
 
 # Run your custom build
 docker run -d -p 8080:80 my-custom-llm-chat:latest
@@ -217,8 +248,8 @@ uvicorn backend_mockup:app --reload --host localhost --port 8443 --ssl-keyfile d
 #### 1. Install Dependencies
 
 ```bash
-# Navigate to the project directory
-cd Advanced-LLM-Chat
+# Navigate to the Fessi project directory
+cd fessi-chatbot
 
 # Install required packages
 npm install
@@ -260,7 +291,7 @@ The project is structured with the following key components:
 ng build --configuration production
 ```
 
-The build artifacts will be stored in the `dist/advanced-llm-chat/browser/` directory (Angular 17+ structure).
+The build artifacts will be stored in the `dist/fessi-chatbot/browser/` directory (Angular 19+ structure).
 
 ### Running Tests
 
@@ -296,35 +327,35 @@ docker-compose -f docker-compose.prod.yml up -d     # Use pre-built images
 
 ## Usage
 
-### Chat Interface
+### Waste Disposal Queries
 
-#### Text Messages
-- Type messages in the input field and press Enter or click Send
-- Messages are automatically saved to IndexedDB and synced with backend
-- Edit or delete messages using the message menu
-- Regenerate AI responses with the regenerate button
+#### Text Queries
+- Type your waste disposal question (e.g., "Where do I dispose of batteries?")
+- Receive immediate guidance on proper disposal methods and locations
+- All queries are saved for offline reference
+- Edit or refine your questions for better responses
 
-#### Voice Recording
+#### Voice Queries
+- **Ask Verbally**: "How do I dispose of chemical waste from the lab?"
 - **Hold-to-Record**: Press and hold the microphone button
 - **Tap-to-Record**: Single tap to start, tap again to stop
-- Real-time audio waveform visualization during recording
-- Voice messages include duration and optional transcripts
-- Audio stored as base64 for offline playback
+- Voice queries are transcribed and processed for waste guidance
+- Previous voice queries available offline
 
-#### File Uploads
-- **Drag & Drop**: Drop files directly onto the chat interface
-- **File Button**: Click to select files from your device
-- **Camera**: Take photos directly (mobile and desktop)
-- **Image Preview**: Click images to view full-screen
-- Files are queued when offline and uploaded when connected
+#### Visual Waste Identification
+- **Take Photo**: Capture unknown waste items with your camera
+- **Upload Image**: Select existing photos of waste items
+- **Drag & Drop**: Drop waste item images for quick identification
+- **Get Classification**: Receive disposal guidance based on visual analysis
+- Images are processed when connection is available
 - Maximum file size: 10MB
 
 ### Navigation
 
 Use the bottom status bar to navigate between:
-- **Chat**: Main conversation interface
-- **Metrics**: Analytics and usage statistics
-- **Settings**: User preferences and configuration
+- **Chat**: Main waste disposal query interface
+- **Metrics**: Campus waste disposal statistics and trends
+- **Settings**: Language preferences and notification settings
 
 ### Conversation Management
 - **Sidebar**: Access all conversations, grouped by date
@@ -339,21 +370,21 @@ Use the bottom status bar to navigate between:
 
 ## Architecture
 
-The application follows a modern microservices architecture with clean separation of concerns:
+Fessi follows a modern microservices architecture optimized for campus-wide deployment and offline functionality:
 
 ### System Architecture
 ```
 ┌─────────────────────────┐         ┌─────────────────────────┐
-│   Angular PWA           │         │   FastAPI Backend       │
-│   (Frontend)            │ <-----> │   (Python)              │
+│   Fessi Frontend        │         │   Waste Backend         │
+│   (Angular PWA)         │ <-----> │   (FastAPI + RAG)       │
 │                         │  HTTPS  │                         │
 │  - Angular 19.2.2       │         │  - FastAPI              │
 │  - TypeScript (strict)  │         │  - SQLite DB            │
-│  - IndexedDB            │         │  - Replicate API        │
-│  - Service Worker       │         │  - Session Auth         │
-│  - NGX-Translate i18n   │         │  - WebSockets           │
-│  - Angular Material     │         │  - File Handling        │
-│  - nginx (Docker)       │         │  - UUID-based IDs       │
+│  - IndexedDB            │         │  - RAG Pipeline         │
+│  - Service Worker       │         │  - Waste Knowledge Base │
+│  - NGX-Translate i18n   │         │  - LLM Integration      │
+│  - Angular Material     │         │  - Session Auth         │
+│  - FRA UAS Branding     │         │  - UUID-based IDs       │
 └─────────────────────────┘         └─────────────────────────┘
         Port 8080                         Port 8443
 ```
@@ -385,17 +416,17 @@ The application follows a modern microservices architecture with clean separatio
 ```
 src/app/
 ├── components/
-│   ├── chat-ui/           # Main chat interface
-│   │   ├── chat-ui-inputfield/  # Text/voice input with visualization
-│   │   └── chat-ui-message/     # Message rendering with markdown
-│   ├── sidebar/           # Conversation list with search
-│   ├── auth/              # Login components and guards
-│   ├── settings/          # User configuration
-│   ├── metrics/           # Analytics dashboard
+│   ├── chat-ui/           # Waste query interface
+│   │   ├── chat-ui-inputfield/  # Text/voice/image input for waste queries
+│   │   └── chat-ui-message/     # Disposal guidance rendering
+│   ├── sidebar/           # Query history and categories
+│   ├── auth/              # Campus user authentication
+│   ├── settings/          # Language and preferences
+│   ├── metrics/           # Waste disposal analytics
 │   └── status-bar/        # Connection status and navigation
-├── services/              # Business logic and state management
+├── services/              # Waste query processing and state
 ├── repositories/          # Data access layer
-├── data/objects/          # Data models and factories
+├── data/objects/          # Waste category models
 └── interceptors/          # HTTP interceptors for auth
 
 ```
@@ -435,7 +466,7 @@ Component → State Service → Repository → API Service → Backend
 
 ## API Endpoints
 
-The backend provides comprehensive REST API endpoints (all require session authentication except auth endpoints):
+The Fessi backend provides REST API endpoints optimized for waste disposal queries (all require session authentication except auth endpoints):
 
 ### Authentication
 - `POST /api/auth/mock-login` - Mock login for development
@@ -449,26 +480,26 @@ The backend provides comprehensive REST API endpoints (all require session authe
 - `GET /api/conversation/messages/{id}/{timestamp}/{count}` - Get paginated messages
 - `DELETE /api/conversation/{id}` - Delete conversation
 
-### Messages
-- `POST /api/message/send` - Send a new message
-- `POST /api/message/generate` - Generate AI response
-- `POST /api/message/send-and-generate` - Combined endpoint for better performance
-- `PATCH /api/message/patch` - Update existing message
-- `DELETE /api/message/delete/{conversation_id}/{message_id}` - Delete message
-- `POST /api/message/rate` - Rate message quality
-- `POST /api/message/regenerate` - Regenerate AI response
+### Waste Queries
+- `POST /api/message/send` - Submit waste disposal query
+- `POST /api/message/generate` - Generate disposal guidance via RAG
+- `POST /api/message/send-and-generate` - Combined query and response
+- `PATCH /api/message/patch` - Update/refine query
+- `DELETE /api/message/delete/{conversation_id}/{message_id}` - Delete query
+- `POST /api/message/rate` - Rate guidance quality
+- `POST /api/message/regenerate` - Get alternative disposal guidance
 
 ### Settings & Configuration
 - `GET /api/settings` - Get user settings
 - `PUT /api/settings` - Update user settings
 - `GET /api/llms` - List available LLM models
 
-### File Management
-- `POST /api/files/upload` - Upload files (images, documents)
-- `GET /api/files/{file_id}` - Retrieve uploaded file
+### Waste Image Processing
+- `POST /api/files/upload` - Upload waste item images for identification
+- `GET /api/files/{file_id}` - Retrieve uploaded waste images
 
 ### WebSocket
-- `WS /ws` - WebSocket connection for streaming responses
+- `WS /ws` - WebSocket connection for streaming waste disposal guidance
 
 ## Troubleshooting
 
@@ -518,9 +549,9 @@ If the frontend cannot connect to the backend:
    - Check backend logs for API errors: `docker logs advanced-llm-chat-backend`
 
 2. **Database persistence**:
-   - SQLite database is stored in `./docker/data/`
+   - SQLite database stores waste disposal queries in `./docker/data/`
    - Ensure proper permissions: `chmod 755 ./docker/data`
-   - Backup this directory to preserve chat history
+   - Backup this directory to preserve query history and waste knowledge base
 
 3. **Port conflicts**:
    - Frontend runs on port 8080, backend on 8443
@@ -584,8 +615,8 @@ When changes are pushed to `develop` or `main` branches, GitHub Actions automati
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/Knaeckebrothero/Advanced-LLM-Chat.git
-   cd Advanced-LLM-Chat
+   git clone https://github.com/fra-uas/fessi-chatbot.git
+   cd fessi-chatbot
    ```
 
 2. **Set up your development environment**
@@ -642,17 +673,60 @@ When changes are pushed to `develop` or `main` branches, GitHub Actions automati
    git branch -d feature/your-feature-name
    ```
 
+### Future Development Roadmap
+
+#### Immediate Enhancements
+- Backend integration with campus waste management systems
+- GPS implementation for nearest waste bin navigation
+- QR code scanning for bin identification
+- Enhanced multi-language support beyond English and German
+
+#### Long-term Goals
+- Integration with university facility management
+- Real-time waste bin capacity monitoring
+- Gamification of proper waste disposal
+- Campus-wide waste reduction analytics
+
 **Important Notes:**
-- Never create branches directly from `main`
-- Never merge the `develop` branch into `main` directly
-- Always use a `release` branch for new releases
-- For critical production bugs, create a `hotfix` branch from `main`
+- This is an ongoing university project with planned semester updates
+- New teams should refer to the comprehensive handover documentation
+- The mockup backend may be replaced with production systems
+- Always coordinate with the FRA UAS IT department for deployment
+
+## Development Team
+
+### 2025 Summer Semester Team
+Fessi was developed as a collaborative effort across multiple specialized teams:
+
+- **Frontend Team**: Angular PWA development and UI implementation
+- **Backend Team**: API development and system integration
+- **Design Team**: User interface and experience design
+- **Data Preparation Team**: Waste categorization and knowledge base
+- **Pipeline Team**: RAG architecture and LLM integration
+
+### Project Context
+Developed at Frankfurt University of Applied Sciences (FRA UAS) as part of the campus sustainability initiative. The project demonstrates the application of modern web technologies to solve real-world environmental challenges.
 
 ## License
 
 This project is licensed under the terms of the MIT License. See the [LICENSE](LICENSE.txt) file for details.
 
-## Contact
+## Acknowledgments
 
-[Github](https://github.com/Knaeckebrothero) <br>
-[Mail](mailto:OverlyGenericAddress@pm.me) <br>
+- **Frankfurt University of Applied Sciences** for supporting this sustainability initiative
+- **Previous Semester Team** for the foundational "Müll-Meister" work
+- **Design Team** for creating an intuitive user interface
+- **All Team Members** who contributed to making campus waste disposal more accessible
+- **Campus Community** for providing feedback and use cases
+
+### Documentation
+For detailed technical documentation and handover materials, refer to:
+- [Frontend Documentation](Documentation_Project_DS.pdf)
+- [Project Handover Guide](CLAUDE.md)
+- [Git Flow Documentation](GitFlow.pdf)
+
+### Contact
+For questions about the Fessi project or campus deployment:
+- **Project Repository**: [GitHub - Fessi Chatbot](https://github.com/fra-uas/fessi-chatbot)
+- **University**: Frankfurt University of Applied Sciences
+- **Department**: Computer Science and Engineering
