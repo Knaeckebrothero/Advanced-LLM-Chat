@@ -10,10 +10,10 @@ import { MatDialogModule } from '@angular/material/dialog';
 import { AuthService } from '../auth/auth.service';
 import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs'; // Import Subscription
 import { takeUntil } from 'rxjs/operators';
 import {TranslateModule, TranslatePipe, TranslateService} from '@ngx-translate/core';
-
+import { ThemeService } from '../services/theme.service'; // <-- IMPORT THEME SERVICE
 
 @Component({
   selector: 'app-sidebar',
@@ -37,6 +37,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
   activeConversationId$: Observable<string | null> = this.uiState.activeConversationId$;
   isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
 
+  isDarkMode: boolean = false; // <-- ADD THIS PROPERTY
+  private themeSubscription!: Subscription; // <-- ADD THIS PROPERTY
   private destroy$ = new Subject<void>();
 
   constructor(
@@ -45,9 +47,11 @@ export class SidebarComponent implements OnInit, OnDestroy {
     public router: Router,
     private dialog: MatDialog,
     private authService: AuthService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private themeService: ThemeService // <-- INJECT THEME SERVICE
   ) {}
 
+  // ... (getUserName, getUserInitials, handleUserClick, openSettings methods remain the same)
   getUserName(): string {
     const user = this.authService.getCurrentUser();
     if (user) {
@@ -85,8 +89,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   openSettings(): void {
     const dialogRef = this.dialog.open(SettingsComponent, {
-      panelClass: 'settings-dialog-panel', // Apply custom class for responsive styling
-      backdropClass: 'custom-backdrop' // Optional: for custom backdrop styles
+      panelClass: 'settings-dialog-panel',
+      backdropClass: 'custom-backdrop'
     });
 
     dialogRef.afterClosed().subscribe(() => {
@@ -94,7 +98,13 @@ export class SidebarComponent implements OnInit, OnDestroy {
     });
   }
 
+
   ngOnInit(): void {
+    // Subscribe to theme changes
+    this.themeSubscription = this.themeService.theme$.subscribe(() => {
+      this.isDarkMode = this.themeService.getCurrentEffectiveTheme() === 'dark';
+    });
+
     this.conversations$
       .pipe(takeUntil(this.destroy$))
       .subscribe(conversations => {
@@ -102,6 +112,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
       });
   }
 
+  // ... (groupConversationsByDate, onSelectConversation, createNewConversation, navigateTo methods remain the same)
   groupConversationsByDate(conversations: Conversation[]): { [key: string]: Conversation[] } {
     const groups: { [key: string]: Conversation[] } = {
       'Today': [],
@@ -163,5 +174,10 @@ export class SidebarComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+
+    // Unsubscribe from theme changes
+    if (this.themeSubscription) {
+      this.themeSubscription.unsubscribe();
+    }
   }
 }

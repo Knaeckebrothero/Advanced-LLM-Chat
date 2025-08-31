@@ -1,6 +1,12 @@
 <div class="sidebar">
-  <div class="logo">
-    <img ngSrc="assets/icons/light-mode-robot.svg" alt="Logo" height="144" width="349"/>
+  <div class="logo"  [class.dark-theme]="isDarkMode">
+
+
+    <img [ngSrc]="isDarkMode ? 'assets/icons/robot_dark_new.svg' : 'assets/icons/robo_light_modev2.svg'" alt="Logo" height="70" width="70"/>
+    <div class="logo-text">
+      <span>Recycling</span>
+      <span>Bot</span>
+    </div>
   </div>
 
   <button class="new-conversation-button"
@@ -29,7 +35,7 @@
       {{ 'Chat' | translate }}
     </button>
     <button class="nav-button" (click)="navigateTo('/metrics')" [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      {{ 'Metrics' | translate }}
+      {{ 'Placeholder Component' | translate }}
     </button>
   </div>
 

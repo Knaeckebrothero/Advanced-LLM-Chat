@@ -23,16 +23,45 @@
   }
 }
 
+/* src/app/sidebar/sidebar.component.scss */
+
+/* src/app/sidebar/sidebar.component.scss */
+
 .logo {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 1rem;
 
+  background-color: var(--theme-primary);
+  padding: 0.75rem;
+  border-radius: 12px;
+  transition: background-color 0.3s ease;
+
   img {
     height: 70px;
-    width: auto;
-    border-radius: 4px;
+    width: 70px;
+    object-fit: contain;
+    flex-shrink: 0;
+    // REMOVE THIS LINE: filter: brightness(0) invert(1);
+  }
+
+  .logo-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: var(--theme-primary-contrast);
+    line-height: 1.2;
+
+    span:first-child {
+      font-weight: 700;
+      font-size: 1.4rem;
+    }
+
+    span:last-child {
+      font-weight: 700;
+      font-size: 1.4rem;
+    }
   }
 }
 
