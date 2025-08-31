@@ -15,8 +15,8 @@
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
-  width: 200px;
-  height: 55px;
+  width: 12vw;
+
   z-index: 1; // Logo in den Hintergrund
   opacity: 0.5; // Logo leicht transparent machen
 
@@ -165,8 +165,8 @@ app-chat-ui-inputfield {
 // Media Query für mobile Geräte
 @media (max-width: 768px) {
   .top-right-logo {
-    width: 150px;
-    height: 45px;
+    width: 200px;
+    height: 60px;
     top: 1rem;
     right: 1rem;
   }
