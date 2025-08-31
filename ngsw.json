@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1755458702415,
+  "timestamp": 1756653523433,
   "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
@@ -13,7 +13,7 @@
       "urls": [
         "/Advanced-LLM-Chat/favicon.ico",
         "/Advanced-LLM-Chat/index.html",
-        "/Advanced-LLM-Chat/main-VROMG2OH.js",
+        "/Advanced-LLM-Chat/main-WPN2HMSV.js",
         "/Advanced-LLM-Chat/manifest.webmanifest",
         "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js",
         "/Advanced-LLM-Chat/styles-MGAYDOMJ.css"
@@ -38,9 +38,17 @@
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-512-512.png",
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-72-72.png",
         "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-96-96.png",
+        "/Advanced-LLM-Chat/assets/icons/fra_logo_svg.svg",
         "/Advanced-LLM-Chat/assets/icons/fra_uas_logo.png",
+        "/Advanced-LLM-Chat/assets/icons/fra_uas_logo2.png",
         "/Advanced-LLM-Chat/assets/icons/fra_uas_logo_white.png",
-        "/Advanced-LLM-Chat/assets/icons/light-mode-robot.svg"
+        "/Advanced-LLM-Chat/assets/icons/light-mode-robot.svg",
+        "/Advanced-LLM-Chat/assets/icons/logo-recyclingbot.png",
+        "/Advanced-LLM-Chat/assets/icons/robo_light_modev2.svg",
+        "/Advanced-LLM-Chat/assets/icons/robot.svg",
+        "/Advanced-LLM-Chat/assets/icons/robot_dark.svg",
+        "/Advanced-LLM-Chat/assets/icons/robot_dark_new.svg",
+        "/Advanced-LLM-Chat/assets/icons/robot_light_new.svg"
       ],
       "patterns": []
     }
@@ -57,12 +65,20 @@
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-512-512.png": "12bbc09372f4ed79458361e6887c8700e4caa61f",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-72-72.png": "a337715d48ff4708860e9fdcb91358117ad83680",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-96-96.png": "785ff6437f1e82e4eeff8f931de2ef3e2f3af12e",
+    "/Advanced-LLM-Chat/assets/icons/fra_logo_svg.svg": "462bc4b9c0c7f8a51fd92ca6d649d2e4def40ead",
     "/Advanced-LLM-Chat/assets/icons/fra_uas_logo.png": "cc94ce6aee554cebf5625887c57515cfb046865d",
+    "/Advanced-LLM-Chat/assets/icons/fra_uas_logo2.png": "5bd0bacf68a4cac70b6eae71577dcdc8f8028e95",
     "/Advanced-LLM-Chat/assets/icons/fra_uas_logo_white.png": "cb9faa8844b86535e5341ac5156710e29578b3c4",
     "/Advanced-LLM-Chat/assets/icons/light-mode-robot.svg": "67e6ced3db641c3ccb0c902e18717ebad4410dfa",
+    "/Advanced-LLM-Chat/assets/icons/logo-recyclingbot.png": "f3d4e78dcf32806a1c02253446505c4f75a09508",
+    "/Advanced-LLM-Chat/assets/icons/robo_light_modev2.svg": "11c02cc1ad46d02cfa90cce3f47d735765d492cb",
+    "/Advanced-LLM-Chat/assets/icons/robot.svg": "9b34b6a82917ef83f9798e2f2ad4507884f01837",
+    "/Advanced-LLM-Chat/assets/icons/robot_dark.svg": "d92bcf0d5c3bc1891457b08e6a28e8f7c3876bc6",
+    "/Advanced-LLM-Chat/assets/icons/robot_dark_new.svg": "5b89726af6c1c493a4925ad5bf191ee160f704de",
+    "/Advanced-LLM-Chat/assets/icons/robot_light_new.svg": "c7793c435168b851247bb6030d10552b2ef7fb25",
     "/Advanced-LLM-Chat/favicon.ico": "22f6a4a3bcaafafb0254e0f2fa4ceb89e505e8b2",
-    "/Advanced-LLM-Chat/index.html": "33123fa846f280bde218ce449acfb3f53f57d345",
-    "/Advanced-LLM-Chat/main-VROMG2OH.js": "5eeaa5c36479b8c899c823bb8459690d69332db9",
+    "/Advanced-LLM-Chat/index.html": "8fefe23a38cabe57262581c9393a16c9dde3b2e6",
+    "/Advanced-LLM-Chat/main-WPN2HMSV.js": "28382c6edee77021458764b426b9b13eb82ee0fd",
     "/Advanced-LLM-Chat/manifest.webmanifest": "a81d65b6133d5367d68f9d650c1117eae6c0de62",
     "/Advanced-LLM-Chat/polyfills-FFHMD2TL.js": "f49b49a155bc7d192db62a4c15d0a612b460a667",
     "/Advanced-LLM-Chat/styles-MGAYDOMJ.css": "c11ac593cc3b0cfcf0fbf864cc9645b46e4630f9"
