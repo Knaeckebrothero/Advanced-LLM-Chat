@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "Advanced-LLM-Chat": {
+    "Fessi": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -18,7 +18,7 @@
           "builder": "@angular-devkit/build-angular:application",
           "options": {
             "outputPath": {
-              "base": "dist/advanced-llm-chat"
+              "base": "dist/fessi"
             },
             "index": "src/index.html",
             "polyfills": [
@@ -77,10 +77,10 @@
           },
           "configurations": {
             "production": {
-              "buildTarget": "Advanced-LLM-Chat:build:production"
+              "buildTarget": "Fessi:build:production"
             },
             "development": {
-              "buildTarget": "Advanced-LLM-Chat:build:development"
+              "buildTarget": "Fessi:build:development"
             }
           },
           "defaultConfiguration": "development"
@@ -88,7 +88,7 @@
         "extract-i18n": {
           "builder": "@angular-devkit/build-angular:extract-i18n",
           "options": {
-            "buildTarget": "Advanced-LLM-Chat:build"
+            "buildTarget": "Fessi:build"
           }
         },
         "test": {
