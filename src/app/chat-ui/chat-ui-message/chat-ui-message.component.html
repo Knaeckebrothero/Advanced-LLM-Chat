@@ -1,38 +1,105 @@
 <!-- Message to be used within the Chat UI component -->
 <div class="message-display-container">
-    <div class="message" [class.message-user]="message.role === 'user'" [class.message-not-user]="message.role !== 'user'" [class.message-system]="message.role === 'system'">
-        <span class="message-user-name">{{ message.role }}</span>
+  <div class="message"
+       [class.message-user]="message.roleName === 'user'"
+       [class.message-not-user]="message.roleName !== 'user'"
+       [class.message-system]="message.roleName === 'system'"
+       [class.message-voice]="message.isVoice()">
 
-        <div class="message-body">
-            <div *ngIf="!editing" [innerHTML]="formatMessage(message.content)"></div>
-            <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv 
-                [innerText]="message.content!" 
-                (blur)="updateContent(editableDiv.innerText)">
+    <span class="message-user-name">{{ message.roleName }}</span>
+
+    <div class="message-body">
+      <!-- == TEXT MESSAGE == -->
+      <ng-container *ngIf="message.isText()">
+        <!-- Attachments -->
+        <div *ngIf="message.hasAttachments()" class="message-attachments">
+          <a *ngFor="let attachment of message.attachments"
+             [href]="attachment.type !== 'image' ? createDownloadUrl(attachment.file) : attachment.preview"
+             [download]="attachment.type !== 'image' ? attachment.name : null"
+             (click)="onAttachmentClick($event, attachment)"
+             class="attachment-item"
+             [class.is-image]="attachment.type === 'image'">
+
+            <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
+              <img [src]="attachment.preview" [alt]="attachment.name">
+              <div class="attachment-info-overlay">
+                {{ attachment.name }}
+              </div>
             </div>
+            <div class="attachment-icon" *ngIf="attachment.type !== 'image'">
+              <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
+            </div>
+            <div class="attachment-info" *ngIf="attachment.type !== 'image'">
+              <span class="attachment-name">{{ attachment.name }}</span>
+              <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
+            </div>
+          </a>
         </div>
-        
-        <div class="message-footer">
-            <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
-            <div *ngIf="!editing" class="message-actions">
-                <button mat-icon-button (click)="editMessage()" aria-label="Edit message">
-                    <mat-icon>edit</mat-icon>
-                </button>
-                <button mat-icon-button (click)="insertMessageAbove()" aria-label="Insert message">
-                    <mat-icon>add</mat-icon>
-                </button>
-                <button mat-icon-button (click)="deleteMessage()" aria-label="Regenerate message">
-                    <mat-icon>delete</mat-icon>
-                </button>
-            </div>
-            <div *ngIf="editing" class="message-actions">
-                <button mat-icon-button (click)="doneEditing()" aria-label="Done editing">
-                    <mat-icon>done</mat-icon>
-                </button>
-                <button mat-icon-button (click)="abortEditing()" aria-label="Abort editing">
-                    <mat-icon>clear</mat-icon>
-                </button>
-            </div>
-            <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
+
+        <!-- Display formatted message when not editing -->
+        <div *ngIf="!editing && message.textContent" [innerHTML]="formattedTextContent"></div>
+
+        <!-- Edit mode - only for text messages -->
+        <div *ngIf="editing"
+             contenteditable="true"
+             class="editable-message"
+             #editableDiv
+             [innerText]="message.textContent"
+             (blur)="updateContent(editableDiv.innerText)">
         </div>
+      </ng-container>
+
+      <!-- == VOICE MESSAGE == -->
+      <ng-container *ngIf="message.isVoice()">
+        <div class="voice-message">
+          <div class="voice-header">
+            <mat-icon class="voice-icon">mic</mat-icon>
+            <span class="voice-duration">Voice message ({{ formatDuration(message.content.duration) }})</span>
+          </div>
+          <div *ngIf="message.content.transcript" class="voice-transcript">
+            <em [innerHTML]="formatText(message.content.transcript)"></em>
+          </div>
+          <div class="voice-player">
+            <audio controls class="voice-audio-player" [src]="getVoiceMessageUrl(message)">
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        </div>
+      </ng-container>
     </div>
+
+    <div class="message-footer">
+      <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
+      <div *ngIf="!editing" class="message-actions">
+        <!-- Only show edit button for text messages -->
+        <button *ngIf="isEditable" mat-icon-button (click)="editMessage()" aria-label="Edit message">
+          <mat-icon>edit</mat-icon>
+        </button>
+        <!-- Regenerate button - only for AI messages that are the last AI message -->
+        <button *ngIf="canRegenerate" mat-icon-button (click)="regenerateMessage()" aria-label="Regenerate message">
+          <mat-icon>refresh</mat-icon>
+        </button>
+        <!-- Rating buttons - only for AI messages -->
+        <button *ngIf="message.roleName !== 'user'" mat-icon-button [class.active-rating]="message.rating === 1" (click)="rateMessage(1)" aria-label="Thumbs up">
+          <mat-icon>thumb_up</mat-icon>
+        </button>
+        <button *ngIf="message.roleName !== 'user'" mat-icon-button [class.active-rating]="message.rating === 0" (click)="rateMessage(0)" aria-label="Thumbs down">
+          <mat-icon>thumb_down</mat-icon>
+        </button>
+        <button mat-icon-button (click)="deleteMessage()" aria-label="Delete message">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </div>
+      <!-- Edit mode actions -->
+      <div *ngIf="editing" class="message-actions">
+        <button mat-icon-button (click)="doneEditing()" aria-label="Done editing">
+          <mat-icon>done</mat-icon>
+        </button>
+        <button mat-icon-button (click)="abortEditing()" aria-label="Abort editing">
+          <mat-icon>clear</mat-icon>
+        </button>
+      </div>
+      <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
+    </div>
+  </div>
 </div>

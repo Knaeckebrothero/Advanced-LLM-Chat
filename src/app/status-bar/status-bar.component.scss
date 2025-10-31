@@ -1,5 +1,5 @@
-@import '../../styles/variables';
-
+@use '../../styles/variables' as vars;
+@use "sass:color";
 
 .sidenav {
   position: fixed;
@@ -9,11 +9,11 @@
   margin: 2%;
   border-radius: 25px;
   z-index: 999;
-  background-color: $color-secondary;
+  background-color: vars.$color-secondary;
 }
 
 h3 {
-  color: $color-font-dark;
+  color: vars.$color-font-dark;
 }
 
 mat-list-item {
@@ -21,12 +21,12 @@ mat-list-item {
   width: calc(100% - 16px);
   border-radius: 12px;
   margin: 8px;
-  background-color: $color-primary;
+  background-color: vars.$color-primary;
   cursor: pointer;
 
   &:hover {
-    color: $color-primary;
-    background-color: lighten($color-secondary, 15%);
+    color: vars.$color-primary;
+    background-color: color.adjust(vars.$color-secondary, $lightness: 15%);
   }
 }
 

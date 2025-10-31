@@ -1,7 +1,7 @@
 // Color Palette - https://www.canva.com/colors/color-palette-generator/
-$color-primary: #8E9BAC; // Bali Hai
-$color-secondary: #99A5A6; // Edward
-$color-background: #474B51; // Abbey
+$color-primary: #2b89cc; // Bali Hai
+$color-secondary: #91C4E0; // Edward
+$color-background: #FFFFFF; // Abbey
 $color-font-light: #C9C6C1; // Cloud
 $color-font-dark: #343A40; // Charcoal
 
@@ -14,8 +14,12 @@ $color-neutral-100: #f8f9fa;
 $color-neutral-600: #6c757d;
 $color-neutral-900: #343a40;
 
-$color-primary-light: lighten($color-primary, 10%);
-$color-primary-dark: darken($color-primary, 10%);
+// Import Sass color module
+@use "sass:color";
+
+// Use color.adjust instead of lighten/darken
+$color-primary-light: color.adjust($color-primary, $lightness: 10%);
+$color-primary-dark: color.adjust($color-primary, $lightness: -10%);
 
 // Typography
 $font-family-base: 'Open Sans', sans-serif;
@@ -67,18 +71,18 @@ $custom-primary-palette: (
   700: $color-primary,
   800: $color-primary,
   900: $color-primary,
- contrast: (
-  50: $color-font-light,
-  100: $color-font-light,
-  200: $color-font-light,
-  300: $color-font-light,
-  400: $color-font-light,
-  500: $color-font-light,
-  600: $color-font-light,
-  700: $color-font-light,
-  800: $color-font-light,
-  900: $color-font-light,
- )
+  contrast: (
+    50: $color-font-light,
+    100: $color-font-light,
+    200: $color-font-light,
+    300: $color-font-light,
+    400: $color-font-light,
+    500: $color-font-light,
+    600: $color-font-light,
+    700: $color-font-light,
+    800: $color-font-light,
+    900: $color-font-light,
+  )
 );
 
 $custom-secondary-palette: (
@@ -92,18 +96,18 @@ $custom-secondary-palette: (
   700: $color-secondary,
   800: $color-secondary,
   900: $color-secondary,
- contrast: (
-  50: $color-font-light,
-  100: $color-font-light,
-  200: $color-font-light,
-  300: $color-font-light,
-  400: $color-font-light,
-  500: $color-font-light,
-  600: $color-font-light,
-  700: $color-font-light,
-  800: $color-font-light,
-  900: $color-font-light,
- )
+  contrast: (
+    50: $color-font-light,
+    100: $color-font-light,
+    200: $color-font-light,
+    300: $color-font-light,
+    400: $color-font-light,
+    500: $color-font-light,
+    600: $color-font-light,
+    700: $color-font-light,
+    800: $color-font-light,
+    900: $color-font-light,
+  )
 );
 
 $custom-warn-palette: (
@@ -117,16 +121,16 @@ $custom-warn-palette: (
   700: $color-accent-warning,
   800: $color-accent-warning,
   900: $color-accent-warning,
- contrast: (
-  50: $color-font-light,
-  100: $color-font-light,
-  200: $color-font-light,
-  300: $color-font-light,
-  400: $color-font-light,
-  500: $color-font-light,
-  600: $color-font-light,
-  700: $color-font-light,
-  800: $color-font-light,
-  900: $color-font-light,
- )
+  contrast: (
+    50: $color-font-light,
+    100: $color-font-light,
+    200: $color-font-light,
+    300: $color-font-light,
+    400: $color-font-light,
+    500: $color-font-light,
+    600: $color-font-light,
+    700: $color-font-light,
+    800: $color-font-light,
+    900: $color-font-light,
+  )
 );

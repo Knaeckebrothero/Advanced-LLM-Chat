@@ -1,65 +1,115 @@
 // Components
-import { ChatUiComponent } from './chat-ui/chat-ui.component';
-import { ChatUiMessageComponent } from './chat-ui/chat-ui-message/chat-ui-message.component';
-import { SettingsComponent } from './settings/settings.component';
-import { MetricsComponent } from './metrics/metrics.component';
-import { StatusBarComponent } from './status-bar/status-bar.component';
+import {ChatUiComponent} from './chat-ui/chat-ui.component';
+import {ChatUiMessageComponent} from './chat-ui/chat-ui-message/chat-ui-message.component';
+import {SettingsComponent} from './settings/settings.component';
+import {MetricsComponent} from './metrics/metrics.component';
+import {StatusBarComponent} from './status-bar/status-bar.component';
+import {AuthCallbackComponent} from './auth/auth-callback/auth-callback.component';
+import {AuthGuard} from './auth/auth.guard';
+import {LoginComponent} from './login/login.component';
+import { ChatUiInputfieldComponent } from './chat-ui/chat-ui-inputfield/chat-ui-inputfield.component';
+
+// Services
+import {AuthService} from './auth/auth.service';
+import {ConversationComponent} from './sidebar/conversation/conversation.component';
+
 
 // Angular Material
-import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatButtonModule } from '@angular/material/button';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatSidenavModule } from '@angular/material/sidenav';
-import { MatListModule } from '@angular/material/list';
+import {MatIconModule} from '@angular/material/icon';
+import {MatInputModule} from '@angular/material/input';
+import {MatButtonModule} from '@angular/material/button';
+import {MatFormFieldModule} from '@angular/material/form-field';
+import {MatSidenavModule} from '@angular/material/sidenav';
+import {MatListModule} from '@angular/material/list';
+import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
+import {MatCardModule} from '@angular/material/card';
+import { MatDialogModule } from '@angular/material/dialog';
 
 // Default
-import { NgModule, isDevMode } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
-import { AppComponent } from './app.component';
-import { ServiceWorkerModule } from '@angular/service-worker';
-import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { HttpClientModule } from '@angular/common/http';
-import { ReactiveFormsModule } from '@angular/forms';
-import { FormsModule } from '@angular/forms';
-import { RouterModule, Routes } from '@angular/router';
+import {inject, isDevMode, NgModule, provideAppInitializer} from '@angular/core';
+import {BrowserModule} from '@angular/platform-browser';
+import {AppComponent} from './app.component';
+import {ServiceWorkerModule} from '@angular/service-worker';
+import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
+import {provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS, HttpClient} from '@angular/common/http';
+import {FormsModule, ReactiveFormsModule} from '@angular/forms';
+import {RouterModule, Routes} from '@angular/router';
+import {SidebarComponent} from "./sidebar/sidebar.component";
+import {CommonModule} from '@angular/common';
+import {AuthInterceptor} from './auth/auth.interceptor';
+import {TranslateLoader, TranslateModule} from "@ngx-translate/core";
+import {TranslateHttpLoader} from "@ngx-translate/http-loader";
 
 
 // Routes
 const routes: Routes = [
-  { path: '', component: ChatUiComponent },
-  { path: 'metrics', component: MetricsComponent },
-  { path: 'settings', component: SettingsComponent }
+  {path: 'login', component: LoginComponent},
+  {path: '', component: ChatUiComponent, canActivate: [AuthGuard]},
+  {path: 'metrics', component: MetricsComponent, canActivate: [AuthGuard]},
+  {path: 'settings', component: SettingsComponent, canActivate: [AuthGuard]},
+  {path: 'auth/callback', component: AuthCallbackComponent},
 ];
+
+export function HttpLoaderFactory(http: HttpClient) {
+  return new TranslateHttpLoader(http, './assets/i18n/', '.json');
+}
 
 @NgModule({
   declarations: [
     AppComponent,
     ChatUiComponent,
     ChatUiMessageComponent,
-    SettingsComponent,
     MetricsComponent,
     StatusBarComponent,
+    AuthCallbackComponent,
+    LoginComponent,
   ],
+  bootstrap: [AppComponent],
   imports: [
     BrowserModule,
     MatIconModule,
     MatInputModule,
     FormsModule,
-    HttpClientModule,
     ReactiveFormsModule,
     MatButtonModule,
     MatFormFieldModule,
     MatSidenavModule,
     MatListModule,
+    MatProgressSpinnerModule,
+    MatCardModule,
+    MatDialogModule,
+    CommonModule,
+    ChatUiInputfieldComponent,
     RouterModule.forRoot(routes),
-    ServiceWorkerModule.register('ngsw-worker.js', {
-      enabled: !isDevMode(),
-      registrationStrategy: 'registerWhenStable:30000'
-    }),
-    BrowserAnimationsModule
+    ServiceWorkerModule.register(
+      'ngsw-worker.js', {
+        enabled: !isDevMode(),
+        registrationStrategy: 'registerWhenStable:30000'
+      }),
+    BrowserAnimationsModule,
+    SidebarComponent,
+    ConversationComponent,
+    SettingsComponent,
+    TranslateModule.forRoot({
+      loader: {
+        provide: TranslateLoader,
+        useFactory: HttpLoaderFactory,
+        deps: [HttpClient]
+      }
+    })
   ],
-  providers: [],
-  bootstrap: [AppComponent]
+  providers: [
+    provideHttpClient(withInterceptorsFromDi()),
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: AuthInterceptor,
+      multi: true
+    },
+    provideAppInitializer(() => {
+      const authService = inject(AuthService);
+      return authService.initializeAuth();
+    })
+  ]
 })
-export class AppModule { }
+export class AppModule {
+}

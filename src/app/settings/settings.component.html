@@ -1,8 +1,38 @@
-<div class="settings-ui">
-    <div class="upload-container">
-      <input type="file" (change)="onFileSelected($event)" accept=".json">
+<div class="settings-container" *ngIf="settings$ | async as settings">
+  <h2>{{ 'Settings' | translate }}</h2>
+
+  <div class="setting-option">
+    <label>{{ 'Theme' | translate }}</label>
+    <div class="options-group">
+      <button
+        *ngFor="let option of themeOptions"
+        class="option-button"
+        [class.active]="settings.theme === option.value"
+        (click)="updateTheme(option.value)"
+        [attr.aria-pressed]="settings.theme === option.value"
+      >
+        <mat-icon>{{ option.icon }}</mat-icon>
+        <span>{{ option.label | translate }}</span>
+      </button>
     </div>
-  
-    <button mat-raised-button color="primary" (click)="resetMessages()">Reset Conversation</button>
+  </div>
+
+  <div class="setting-option">
+    <label>{{ 'Language' | translate }}</label>
+    <div class="options-group">
+      <button
+        *ngFor="let option of languageOptions"
+        class="option-button"
+        [class.active]="settings.language === option.value"
+        (click)="updateLanguage(option.value)"
+        [attr.aria-pressed]="settings.language === option.value"
+      >
+        <span>{{ option.label }}</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="button-row">
+    <button class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
+  </div>
 </div>
-  

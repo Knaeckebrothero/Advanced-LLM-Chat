@@ -1,0 +1,39 @@
+<div class="conversation-container">
+  <button class="conversation-button" 
+          [class.active]="highlighted" 
+          (click)="onSelect()"
+          (mousedown)="onPressStart($event)"
+          (mouseup)="onPressEnd()"
+          (touchstart)="onPressStart($event)"
+          (touchend)="onPressEnd()">
+    <div class="conversation-content">
+      <span *ngIf="!editing">{{ conversation.name }}</span>
+      <input *ngIf="editing"
+             #editInput
+             class="edit-input"
+             [(ngModel)]="newName"
+             (blur)="finishEditing()"
+             (keyup.enter)="finishEditing()"
+             (keyup.escape)="cancelEditing()"
+             (click)="$event.stopPropagation()">
+    </div>
+  </button>
+  
+  <button mat-icon-button
+          class="options-button"
+          [matMenuTriggerFor]="menu"
+          (click)="onMenuClick($event)">
+    <mat-icon>more_vert</mat-icon>
+  </button>
+  
+  <mat-menu #menu="matMenu">
+    <button mat-menu-item (click)="onRename()">
+      <mat-icon>edit</mat-icon>
+      <span>Rename</span>
+    </button>
+    <button mat-menu-item (click)="deleteConversation()">
+      <mat-icon>delete</mat-icon>
+      <span>Delete</span>
+    </button>
+  </mat-menu>
+</div>

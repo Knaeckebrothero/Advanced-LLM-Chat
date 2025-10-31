@@ -1,0 +1,71 @@
+@use "sass:color";
+
+// Light Theme Colors
+$light-bg: #f3f9fd;
+$light-text: #1a1a1a;
+$light-surface: #ffffff;
+$light-primary: #1976d2;
+$light-primary-rgb: 25, 118, 210; // RGB for transparency
+$light-secondary: #2C8BCC;
+$light-border: #ccc;
+$light-link: #007bff;
+$light-msg-user-bg: #e6f0fc;
+$light-msg-assistant-bg: #d8ebff;
+$light-primary-contrast: #ffffff;
+$light-primary-contrast-rgb: 255, 255, 255;
+
+// Dark Theme Colors
+$dark-bg: #212529;
+$dark-text: #e9ecef;
+$dark-surface: #353535;
+$dark-primary: #5C287E;
+$dark-primary-rgb: 92, 40, 126; // RGB for transparency
+$dark-secondary: #A088D2;
+$dark-border: #495057;
+$dark-link: #A088D2;
+$dark-msg-bg: #353535;
+$dark-primary-contrast: #ffffff;
+$dark-primary-contrast-rgb: 255, 255, 255;
+
+// --- Theme Maps ---
+$light-theme: (
+  primary: $light-primary,
+  primary-rgb: $light-primary-rgb,
+  secondary: $light-secondary,
+  background: $light-bg,
+  surface: $light-surface,
+  text: $light-text,
+  border: $light-border,
+  link: $light-link,
+  'msg-user-bg': $light-msg-user-bg,
+  'msg-assistant-bg': $light-msg-assistant-bg,
+  'input-bg': $light-bg,
+  'text-accent': $light-primary,
+  'primary-contrast': $light-primary-contrast,
+  'primary-contrast-rgb': $light-primary-contrast-rgb,
+  'background-image': url('/assets/background/light-mode-bg.svg')
+);
+
+$dark-theme: (
+  primary: $dark-primary,
+  primary-rgb: $dark-primary-rgb,
+  secondary: $dark-secondary,
+  background: $dark-bg,
+  surface: $dark-surface,
+  text: $dark-text,
+  border: $dark-border,
+  link: $dark-link,
+  'msg-user-bg': $dark-msg-bg,
+  'msg-assistant-bg': $dark-msg-bg,
+  'input-bg': color.adjust($dark-surface, $lightness: 5%),
+  'text-accent': $dark-secondary,
+  'primary-contrast': $dark-primary-contrast,
+  'primary-contrast-rgb': $dark-primary-contrast-rgb,
+  'background-image': url('/assets/background/dark-mode-bg.svg')
+);
+
+// Central map of all themes
+$themes: (
+  light: $light-theme,
+  dark: $dark-theme
+);

@@ -1,0 +1,52 @@
+<div class="sidebar">
+  <div class="logo"  [class.dark-theme]="isDarkMode">
+
+
+    <img [ngSrc]="isDarkMode ? 'assets/icons/robot_dark_new.svg' : 'assets/icons/robo_light_modev2.svg'" alt="Logo" height="70" width="70"/>
+    <div class="logo-text">
+      <span>Recycling</span>
+      <span>Bot</span>
+    </div>
+  </div>
+
+  <button class="new-conversation-button"
+          [class.highlighted]="(activeConversationId$ | async) === '0'"
+          (click)="createNewConversation()">
+    <mat-icon>add</mat-icon>
+    {{ 'New Chat' | translate }}
+  </button>
+
+  <div class="conversation-list">
+    <ng-container *ngFor="let label of ['Today', 'Last 7 Days', 'This Month', 'Older']">
+      <ng-container *ngIf="groupedConversations[label]?.length">
+        <div class="group-label">{{ label | translate }}</div>
+        <app-conversation
+          *ngFor="let conv of groupedConversations[label]"
+          [conversation]="conv"
+          [highlighted]="(activeConversationId$ | async) === conv.id"
+          (selected)="onSelectConversation($event)">
+        </app-conversation>
+      </ng-container>
+    </ng-container>
+  </div>
+
+  <div class="sidebar-navigation-main-links">
+    <button class="nav-button" (click)="navigateTo('/')" [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
+      {{ 'Chat' | translate }}
+    </button>
+    <button class="nav-button" (click)="navigateTo('/metrics')" [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
+      {{ 'Placeholder Component' | translate }}
+    </button>
+  </div>
+
+  <!-- User profile section - now clickable for login/logout -->
+  <div class="user-with-settings">
+    <button class="user-button" (click)="handleUserClick()">
+      <div class="avatar">{{ getUserInitials() }}</div>
+      <div class="username">{{ getUserName() }}</div>
+    </button>
+    <button class="settings-icon-button" mat-icon-button (click)="openSettings()">
+      <mat-icon>settings</mat-icon>
+    </button>
+  </div>
+</div>

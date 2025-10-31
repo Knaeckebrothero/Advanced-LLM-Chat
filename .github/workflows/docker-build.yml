@@ -1,0 +1,303 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Verify Docker directory and files
+        run: |
+          echo "Current directory:"
+          pwd
+          echo ""
+          echo "Repository structure:"
+          ls -la
+          echo ""
+
+          if [ ! -d "docker" ]; then
+            echo "Error: docker directory not found!"
+            echo "Please ensure the docker directory exists with Dockerfile and nginx.conf"
+            exit 1
+          fi
+
+          echo "Docker directory contents:"
+          ls -la docker/
+          echo ""
+
+          if [ ! -f "docker/Dockerfile" ]; then
+            echo "Error: docker/Dockerfile not found!"
+            exit 1
+          fi
+
+          if [ ! -f "docker/nginx.conf" ]; then
+            echo "Error: docker/nginx.conf not found!"
+            exit 1
+          fi
+
+          echo "✅ All required Docker files found"
+
+      - name: Log in to the Container registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,format=short,prefix=${{ github.event_name == 'pull_request' && 'pr-' || 'sha-' }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=develop-latest,enable=${{ github.ref == 'refs/heads/develop' && github.event_name != 'pull_request' }}
+
+      - name: Build and push Frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-and-push-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Verify Backend files
+        run: |
+          echo "Checking backend files..."
+
+          if [ ! -f "backend_mockup.py" ]; then
+            echo "Error: backend_mockup.py not found!"
+            exit 1
+          fi
+
+          if [ ! -f "requirements.txt" ]; then
+            echo "Warning: requirements.txt not found. Creating one..."
+            cat > requirements.txt << 'EOF'
+          fastapi==0.104.1
+          uvicorn[standard]==0.24.0
+          python-dotenv==1.0.0
+          replicate==0.22.0
+          trustme==1.1.0
+          pydantic==2.5.0
+          python-multipart==0.0.6
+          httpx==0.25.2
+          EOF
+          fi
+
+          if [ ! -f "docker/backend.Dockerfile" ]; then
+            echo "Error: docker/backend.Dockerfile not found!"
+            exit 1
+          fi
+
+          echo "✅ All required backend files found"
+
+      - name: Log in to the Container registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,format=short,prefix=${{ github.event_name == 'pull_request' && 'pr-' || 'sha-' }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=develop-latest,enable=${{ github.ref == 'refs/heads/develop' && github.event_name != 'pull_request' }}
+
+      - name: Build and push Backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/backend.Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  create-deployment-artifacts:
+    needs: [build-and-push-frontend, build-and-push-backend]
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Create deployment artifacts
+        run: |
+          echo "Creating deployment directory..."
+          mkdir -p deployment
+
+          # Create a complete docker-compose template
+          cat > deployment/docker-compose.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            frontend:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
+              container_name: fessi-frontend
+              ports:
+                - "8080:80"
+              restart: unless-stopped
+              environment:
+                - NODE_ENV=production
+              depends_on:
+                - backend
+              networks:
+                - app-network
+
+            backend:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
+              container_name: fessi-backend
+              ports:
+                - "8443:8443"
+              restart: unless-stopped
+              environment:
+                - USE_DEV_CERTS=True
+                - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN}
+              volumes:
+                - ./data:/app/data
+              networks:
+                - app-network
+
+          networks:
+            app-network:
+              driver: bridge
+          EOF
+
+          # Create deployment instructions
+          cat > deployment/README.md << 'EOF'
+          # Deployment Instructions
+
+          ## Prerequisites
+
+          1. Docker and Docker Compose installed
+          2. A Replicate API token (get one at https://replicate.com)
+
+          ## Quick Start
+
+          1. Create a `.env` file with your Replicate API token:
+          ```bash
+          echo "REPLICATE_API_TOKEN=your_token_here" > .env
+          ```
+
+          2. Pull and run the containers:
+          ```bash
+          docker-compose up -d
+          ```
+
+          ## Manual Docker Commands
+
+          ### Pull the latest images:
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
+          ```
+
+          ### Run individually:
+          ```bash
+          # Create a network
+          docker network create app-network
+
+          # Run backend
+          docker run -d \
+            --name fessi-backend \
+            --network app-network \
+            -p 8443:8443 \
+            -v $(pwd)/data:/app/data \
+            -e REPLICATE_API_TOKEN=your_token_here \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
+
+          # Run frontend
+          docker run -d \
+            --name fessi-frontend \
+            --network app-network \
+            -p 8080:80 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
+          ```
+
+          ## Access the Application
+
+          - Frontend: http://localhost:8080
+          - Backend API: https://localhost:8443/api/docs
+
+          ## Image Information
+
+          - Registry: ${{ env.REGISTRY }}
+          - Frontend Image: ${{ env.IMAGE_NAME }}-frontend
+          - Backend Image: ${{ env.IMAGE_NAME }}-backend
+          - Tags: develop-latest
+
+          ## Notes
+
+          - The backend uses self-signed certificates. You'll need to accept the certificate warning in your browser.
+          - SQLite database is persisted in the `./data` directory
+          - Make sure to set your REPLICATE_API_TOKEN for AI responses to work
+          EOF
+
+          # Create .env template
+          cat > deployment/.env.example << 'EOF'
+          # Copy this file to .env and fill in your values
+          REPLICATE_API_TOKEN=your_replicate_api_token_here
+
+          # Optional: Change ports if needed
+          FRONTEND_PORT=8080
+          BACKEND_PORT=8443
+          EOF
+
+          # List deployment directory contents for verification
+          echo "Deployment directory contents:"
+          ls -la deployment/
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts
+          path: deployment/
+          retention-days: 7
+

@@ -1,10 +1,11 @@
 import { Component, OnInit } from '@angular/core';
-import { ChatService } from '../chat/chat.service';
+import { ChatService } from '../services/chat.service';
 
 @Component({
-  selector: 'app-metrics',
-  templateUrl: './metrics.component.html',
-  styleUrls: ['./metrics.component.scss']
+    selector: 'app-metrics',
+    templateUrl: './metrics.component.html',
+    styleUrls: ['./metrics.component.scss'],
+    standalone: false
 })
 export class MetricsComponent implements OnInit {
 
@@ -17,11 +18,11 @@ export class MetricsComponent implements OnInit {
   }
 
   refreshSummary() {
-    this.summary = this.serviceChat.getSummary();
+    console.log("Refreshing summary");
   }
 
   updateSummary() {
-    this.serviceChat.setSummary(this.summary);
+    console.log("Updating summary");
   }
 
   onFileSelected(event: any) {

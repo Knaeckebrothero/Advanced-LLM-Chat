@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-frontend:${TAG:-develop-latest}
+    container_name: fessi-frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-backend:${TAG:-develop-latest}
+    container_name: fessi-backend
+    ports:
+      - "${BACKEND_PORT:-8443}:8443"
+    restart: unless-stopped
+    environment:
+      - USE_DEV_CERTS=True
+      - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+

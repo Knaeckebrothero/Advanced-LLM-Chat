@@ -1,0 +1,323 @@
+// login.component.scss
+
+// Modern white-blue color variables have been replaced with theme variables.
+:host {
+  // Override Material Design CSS custom properties for modern white-blue theming
+  --mdc-theme-primary: var(--theme-primary);
+  --mdc-theme-secondary: var(--theme-secondary);
+  --mat-form-field-focus-label-color: var(--theme-primary);
+  --mdc-outlined-text-field-focus-outline-color: var(--theme-primary);
+  --mdc-outlined-text-field-outline-color: var(--theme-border);
+
+  // Custom button color variables
+  --mdc-protected-button-container-color: var(--theme-primary);
+  --mdc-protected-button-label-text-color: var(--theme-primary-contrast);
+}
+
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--theme-background);
+  padding: 24px;
+  box-sizing: border-box;
+  position: relative;
+
+  // Add subtle animated background elements
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 20% 50%, rgba(var(--theme-primary-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(var(--theme-secondary-rgb), 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 40% 80%, rgba(var(--theme-primary-rgb), 0.05) 0%, transparent 50%);
+    pointer-events: none;
+  }
+}
+
+.login-card {
+  background: var(--theme-surface);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--theme-border);
+  max-width: 440px;
+  width: 100%;
+  padding: 40px;
+  border-radius: 20px;
+  box-shadow:
+    0 20px 60px rgba(var(--theme-primary-rgb), 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  text-align: center;
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 25px 70px rgba(var(--theme-primary-rgb), 0.2),
+      0 12px 40px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+}
+
+.mat-card-header {
+  padding-bottom: 32px;
+  border-bottom: 1px solid rgba(var(--theme-primary-rgb), 0.1);
+  margin-bottom: 32px;
+  display: block;
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--theme-primary), var(--theme-secondary));
+    border-radius: 2px;
+  }
+}
+
+.mat-card-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--theme-text);
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+
+.mat-card-subtitle {
+  font-size: 1rem;
+  color: var(--theme-text-secondary);
+  font-weight: 400;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+
+.mat-card-content {
+  form {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.full-width {
+  width: 100%;
+}
+
+// Enhanced Material form field styling using modern white-blue theme
+.mat-mdc-form-field {
+  margin-bottom: 20px;
+
+  .mat-mdc-text-field-wrapper {
+    border-radius: 12px;
+    background: var(--theme-input-bg);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &:hover {
+      background: var(--theme-input-bg);
+    }
+  }
+
+  // Modern outline styling
+  &.mat-form-field-appearance-outline {
+    .mat-mdc-form-field-outline {
+      color: var(--theme-border);
+
+      .mat-mdc-form-field-outline-thick {
+        color: var(--theme-primary);
+      }
+    }
+
+    &.mat-focused {
+      .mat-mdc-form-field-outline-thick {
+        color: var(--theme-primary);
+        box-shadow: 0 0 0 3px rgba(var(--theme-primary-rgb), 0.1);
+      }
+
+      .mat-mdc-text-field-wrapper {
+        background: var(--theme-input-bg);
+        box-shadow: inset 0 2px 4px rgba(var(--theme-primary-rgb), 0.05);
+      }
+    }
+  }
+
+  // Enhanced label styling
+  .mat-mdc-floating-label {
+    color: var(--theme-text-secondary);
+    font-weight: 500;
+
+    &.mdc-floating-label--float-above {
+      color: var(--theme-primary);
+      font-weight: 600;
+    }
+  }
+
+  // Modern input element styling
+  .mat-mdc-input-element {
+    color: var(--theme-text);
+    font-weight: 500;
+    font-size: 1.05em;
+
+    &::placeholder {
+      color: var(--theme-text-secondary);
+      font-weight: 400;
+    }
+
+    // All placeholder vendor prefixes
+    &::-webkit-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
+    &::-moz-placeholder { color: var(--theme-text-secondary); opacity: 1; font-weight: 400; }
+    &:-ms-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
+    &::-ms-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
+  }
+}
+
+// Modern gradient button styling
+.login-button {
+  &.mat-mdc-raised-button {
+    margin-top: 32px;
+    padding: 16px 0;
+    font-size: 1.1em;
+    font-weight: 600;
+    border-radius: 12px;
+    height: auto;
+    border: none;
+    position: relative;
+    overflow: hidden;
+
+    // Modern gradient background
+    background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-secondary) 100%);
+    box-shadow:
+      0 8px 32px rgba(var(--theme-primary-rgb), 0.3),
+      0 4px 16px rgba(0, 0, 0, 0.1);
+
+    // Animated gradient overlay
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    &:hover:not([disabled]) {
+      background: linear-gradient(135deg, var(--theme-secondary) 0%, var(--theme-primary) 100%);
+      transform: translateY(-2px);
+      box-shadow:
+        0 12px 40px rgba(var(--theme-primary-rgb), 0.4),
+        0 6px 20px rgba(0, 0, 0, 0.15);
+
+      &::before {
+        left: 100%;
+      }
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+
+    &:disabled {
+      background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+      color: #9ca3af;
+      box-shadow: none;
+      transform: none;
+    }
+
+    // Modern spinner styling
+    mat-spinner {
+      ::ng-deep circle {
+        stroke: var(--theme-primary-contrast) !important;
+        stroke-width: 3;
+      }
+    }
+  }
+}
+
+// Modern error message styling
+.error-message {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: var(--theme-accent-danger);
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--theme-accent-danger-bg) 0%, #fef7f7 100%);
+  border-radius: 12px;
+  font-size: 0.95em;
+  text-align: left;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1);
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  mat-icon {
+    margin-right: 12px;
+    color: var(--theme-accent-danger);
+    font-size: 1.2em;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mat-card-footer, .login-hint {
+  display: none;
+}
+
+// Modern enhancements using component theming
+::ng-deep {
+  // Custom ripple effect
+  .mat-ripple-element {
+    background-color: rgba(var(--theme-primary-rgb), 0.15) !important;
+  }
+
+  // Modern focus indicators
+  .cdk-focused {
+    outline: 2px solid var(--theme-secondary);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  // Enhanced Material button focus
+  .mat-mdc-raised-button {
+    &:focus-visible {
+      outline: 2px solid var(--theme-secondary);
+      outline-offset: 2px;
+    }
+  }
+
+  // Smooth transitions for form fields
+  .mat-mdc-form-field {
+    .mat-mdc-text-field-wrapper,
+    .mat-mdc-form-field-outline,
+    .mat-mdc-floating-label {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  }
+}
+
+.skip-button {
+  margin-top: 16px;
+  background-color: var(--theme-secondary);
+  color: white;
+  border-radius: 12px;
+
+}

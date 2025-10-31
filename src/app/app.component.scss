@@ -1,30 +1,128 @@
-@import 'src/styles/variables';
+@use 'src/styles/variables' as vars;
 
-.main-ui-container {
-  // Make the positioning of the mat-icon relative to this container
-  position: relative;
-  height: 100%;
+$burger-area-height: 60px;
+$burger-area-width: 60px;
+
+:host {
+  --sidebar-width: 260px;
+  --sidebar-state: 0;
+  --animation-duration: 0.3s;
+  --animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-container {
+  display: flex;
   width: 100%;
-  overflow: hidden;
+  height: 100dvh;
+  overflow: clip;
+  box-sizing: border-box;
+  position: relative;
+}
 
-  // Button styling
-  mat-icon {
-    height: auto;
-    width: auto;
-    // Position mat-icon absolutely on the top left
-    position: absolute; 
-    // Ensure it's on top of other components.
-    z-index: 998;
-    // Change the cursor to a pointer when hovering over the button
-    cursor: pointer;
-    color: $color-secondary;
-    font-size: 50px;
+.burger-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: $burger-area-width;
+  height: $burger-area-height;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1002;
+  box-sizing: border-box;
+}
+
+.burger-menu-button {
+  width: 30px;
+  height: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+
+  .burger-line {
+    width: 100%;
+    height: 3px;
+    // Use the standard text color for visibility against the surface color
+    background-color: var(--theme-text);
+    border-radius: 2px;
   }
 }
 
-// Hide the button on screens smaller than 768px wide
+.sidebar-element {
+  width: var(--sidebar-width);
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100dvh;
+  transform: translateX(calc((var(--sidebar-state) - 1) * 100%));
+  transition: transform var(--animation-duration) var(--animation-easing);
+  will-change: transform;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  // Use the theme's surface color to match the new design
+  background-color: var(--theme-surface);
+  padding-top: $burger-area-height;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: clip;
+
+  &.open {
+    --sidebar-state: 1;
+  }
+}
+
+.content-wrapper {
+  flex-grow: 1;
+  min-width: 0;
+  height: 100dvh;
+  position: relative;
+  isolation: isolate;
+  background-color: var(--theme-background);
+  transition: margin-left var(--animation-duration) var(--animation-easing);
+
+  // Apply the background image using a pseudo-element
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+
+    background-image: var(--theme-background-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.35;
+    transition: opacity 0.3s;
+    background-attachment: fixed;
+  }
+}
+
+// Media queries and other styles remain the same
+@media (min-width: 769px) {
+  .content-wrapper {
+    &.sidebar-open {
+      margin-left: var(--sidebar-width);
+    }
+  }
+}
+
 @media (max-width: 768px) {
-  //mat-icon {
-  //  display: none;
-  //}
+  :host {
+    --sidebar-width: min(85vw, calc(100vw - 60px));
+  }
+  .sidebar-element.open {
+    box-shadow: 3px 0px 15px rgba(0,0,0,0.2);
+  }
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
 }

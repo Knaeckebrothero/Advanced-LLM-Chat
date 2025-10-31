@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    image: fessi-frontend:latest
+    container_name: fessi-frontend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ../
+      dockerfile: docker/backend.Dockerfile
+    image: fessi-backend:latest
+    container_name: fessi-backend
+    ports:
+      - "8443:8443"
+    restart: unless-stopped
+    environment:
+      - USE_DEV_CERTS=True
+      - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+

@@ -1,3 +1,5 @@
+@use "sass:color";
+
 // Button styling
 @mixin button-style($background, $font-color) {
   // Make sure the buttons are easily clickable
@@ -9,7 +11,7 @@
   font-weight: bold;
   background-color: $background;
   color: $font-color;
-  
+
   //border: none;
   //padding: 10px 20px;
   //border-radius: $border-radius;
@@ -17,7 +19,7 @@
   // Hover effect
   cursor: pointer;
   &:hover {
-      background-color: lighten($background, 10%);
+      background-color: color.adjust($background, $lightness: 10%);
   }
 }
 
@@ -32,7 +34,7 @@
 // Adjusts the font size based on the screen width
 @mixin responsive-font($size-mobile, $size-desktop) {
     font-size: $size-mobile;
-    
+
     @media (min-width: $breakpoint-md) {
       font-size: $size-desktop;
     }

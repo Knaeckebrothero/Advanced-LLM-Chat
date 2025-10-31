@@ -1,0 +1,115 @@
+.conversation-container {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px; // Reduced margin for a tighter list
+  position: relative;
+  
+  &:hover {
+    .options-button {
+      opacity: 1;
+    }
+  }
+}
+
+button.conversation-button {
+  flex: 1;
+  text-align: left;
+  // Use a transparent background by default
+  background-color: transparent;
+  // Use theme's text color
+  color: var(--theme-text);
+  border: none; // Remove border
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &:hover {
+    // Use the theme's input background for hover
+    background-color: var(--theme-input-bg);
+  }
+
+  &.active {
+    // Use the primary theme color when active/highlighted
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+  }
+
+  div {
+    font-size: 14px;
+  }
+}
+
+button.delete-button {
+  // Make the button transparent by default
+  background-color: transparent;
+  border: none;
+  // Use the standard text color, with some opacity to make it less prominent
+  color: var(--theme-text);
+  opacity: 0.6;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: all 0.2s ease-in-out;
+
+  &:hover {
+    // On hover, use a subtle background and a stronger color for the icon
+    background-color: rgba(220, 53, 69, 0.1); // Using a fixed danger color for universal recognition
+    color: #dc3545;
+    opacity: 1;
+  }
+
+  .delete-icon {
+    font-size: 18px;
+    font-weight: bold;
+  }
+}
+
+.options-button {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  
+  mat-icon {
+    color: var(--theme-text);
+  }
+  
+  // Hide options button on mobile devices but keep it as anchor
+  @media (max-width: 767px) {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0 !important; // Ensure it's not visible even on hover
+  }
+}
+
+.conversation-content {
+  width: 100%;
+  text-align: left;
+  
+  .edit-input {
+    width: 100%;
+    background-color: var(--theme-input-bg);
+    color: var(--theme-text);
+    border: 1px solid var(--theme-primary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 14px;
+    outline: none;
+    
+    &:focus {
+      border-color: var(--theme-primary);
+      box-shadow: 0 0 0 1px var(--theme-primary);
+    }
+  }
+}

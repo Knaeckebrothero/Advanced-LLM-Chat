@@ -1,0 +1,62 @@
+import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
+import { SettingsRepository } from '../repositories/settings.repository';
+import { ThemeService } from './theme.service';
+import { AppSettings } from '../models/settings.model';
+import { Language, Theme } from '../models/enum';
+import { TranslateService } from '@ngx-translate/core';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  theme: Theme.Auto,
+  language: Language.English,
+  lastUpdated: 0,
+};
+
+@Injectable({ providedIn: 'root' })
+export class SettingsStateService {
+  private settingsSubject = new BehaviorSubject<AppSettings>(DEFAULT_SETTINGS);
+  public settings$ = this.settingsSubject.asObservable();
+
+  constructor(
+    private repository: SettingsRepository,
+    private themeService: ThemeService,
+    private translate: TranslateService
+  ) {
+    this.loadInitialSettings();
+  }
+
+  private async loadInitialSettings() {
+    try {
+      const settings = await this.repository.getSettings();
+      this.settingsSubject.next(settings);
+      this.themeService.setTheme(settings.theme);
+      this.translate.use(settings.language); // ADD THIS LINE
+    } catch (error) {
+      console.error('Failed to load initial settings:', error);
+      this.settingsSubject.next(DEFAULT_SETTINGS);
+      this.themeService.setTheme(DEFAULT_SETTINGS.theme);
+      this.translate.use(DEFAULT_SETTINGS.language); // ADD THIS LINE
+    }
+  }
+
+  async updateSettings(newSettings: Partial<AppSettings>) {
+    const currentSettings = this.settingsSubject.value;
+    const updatedSettings: AppSettings = {
+      ...currentSettings,
+      ...newSettings,
+      lastUpdated: Date.now(),
+    };
+
+    this.settingsSubject.next(updatedSettings);
+
+    if (newSettings.theme) {
+      this.themeService.setTheme(newSettings.theme);
+    }
+
+    if (newSettings.language) {
+      this.translate.use(newSettings.language);
+    }
+
+    await this.repository.saveSettings(updatedSettings);
+  }
+}

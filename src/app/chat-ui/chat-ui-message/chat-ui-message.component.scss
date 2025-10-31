@@ -1,5 +1,5 @@
-@import 'src/styles/variables';
-
+// src/app/chat-ui/chat-ui-message/chat-ui-message.component.scss
+@use 'src/styles/variables' as vars;
 
 // Ensure the message display container takes up the full width so that the messages are displayed in a column.
 .message-display-container {
@@ -12,7 +12,7 @@
 
 // Message component styles
 .message {
-  // 
+  //
   display: flex;
   // Aligns the message to the left or right side of the screen
   flex-direction: column;
@@ -25,9 +25,7 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   // Adds space between messages
   margin-bottom: 20px;
-  // Set the font color
-  color: $color-font-dark;
-  // 
+  color: var(--theme-text); // Use theme text color
   word-wrap: break-word;
   text-align: left;
   position: relative;
@@ -38,9 +36,8 @@
     align-self: flex-end;
     // Flattens the top left corner
     border-top-right-radius: 0;
-    // Secondary color background for messages of the user
-    background-color: $color-secondary;
-    // Hide the username
+    // Use the specific user message background from the theme
+    background-color: var(--theme-msg-user-bg);
     .message-user-name {
       display: none;
     }
@@ -52,17 +49,19 @@
     align-self: flex-start;
     // Flattens the top right corner
     border-top-left-radius: 0;
-    // Primary color background for messages of others
-    background-color: $color-primary;
+    // Use the specific assistant message background from the theme
+    background-color: var(--theme-msg-assistant-bg);
   }
 
   // Adjusts the messages for the system
   &.message-system {
     // Center the message
     align-self: center;
-    border-radius: 0px;
-    background-color: $color-secondary;
-    .message-user-name {
+    border-radius: 0;
+    // Use a neutral surface color for system messages
+    background-color: var(--theme-surface);
+    border: 1px solid var(--theme-border);
+    .message-user-name, .message-timestamp {
       display: none;
     }
 
@@ -73,13 +72,62 @@
       }
     }
   }
+
+  // --- Voice Message ---
+  &.message-voice {
+    .voice-message {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      .voice-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        .voice-icon { font-size: 1.2em; }
+        .voice-duration {
+          font-weight: 500;
+          color: var(--theme-text);
+        }
+      }
+
+      .voice-transcript {
+        padding: 8px;
+        // Use a subtle background for the transcript
+        background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
+        border-radius: 8px;
+        font-style: italic;
+        color: var(--theme-text);
+        opacity: 0.9;
+      }
+
+      .voice-player {
+        margin-top: 8px;
+
+        .voice-audio-player {
+          width: 100%;
+          height: 40px;
+          border-radius: 20px;
+          &::-webkit-media-controls-panel {
+            background-color: transparent;
+          }
+
+          &::-webkit-media-controls-play-button,
+          &::-webkit-media-controls-current-time-display,
+          &::-webkit-media-controls-time-remaining-display {
+            color: var(--theme-text);
+          }
+        }
+      }
+    }
+  }
 }
 
 // Message username
 .message-user-name {
   // Space between username and message text
   margin-bottom: 4px;
-  // Slightly smaller font for username 
+  // Slightly smaller font for username
   font-size: 0.80em;
 }
 
@@ -87,6 +135,156 @@
 .message-body {
   // Font size for message text content
   font-size: 1em;
+
+  // Preserve line breaks and spaces in messages
+  white-space: pre-wrap;
+
+  // Ensure text wraps properly at container edges
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+
+  // Prevent text from overflowing the message bubble
+  max-width: 100%;
+
+  // Attachments styling
+  .message-attachments {
+    margin-bottom: 12px;
+    display: flex;
+    flex-wrap: nowrap;      // <-- Changed from 'wrap' to 'nowrap'
+    gap: 8px;
+    overflow-x: auto;       // <-- Added for horizontal scrolling
+    overflow-y: hidden;     // <-- Added to hide vertical scrollbar
+    padding-bottom: 8px;    // <-- Added padding for scrollbar visibility
+
+    // Custom scrollbar styling
+    &::-webkit-scrollbar {
+      height: 4px;
+    }
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    &::-webkit-scrollbar-thumb {
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.2);
+      border-radius: 4px;
+    }
+  }
+
+    // Target the <a> tag to remove link styling
+    a.attachment-item {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .attachment-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
+      border: 1px solid rgba(var(--theme-primary-contrast-rgb), 0.1);
+      border-radius: 18px;
+      max-width: 250px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+
+      &:hover {
+        background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+      }
+
+      &.is-image {
+        width: 120px;
+        height: 120px;
+        padding: 0;
+        border-radius: 12px;
+        position: relative;
+        flex-shrink: 0; // Prevents the image from shrinking
+
+        .attachment-thumbnail {
+          width: 100%;
+          height: 100%;
+          border-radius: 12px;
+        }
+
+        .attachment-info, .attachment-icon {
+          display: none;
+        }
+
+        &:hover .attachment-info-overlay {
+          opacity: 1;
+        }
+      }
+    }
+
+  .attachment-thumbnail {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .attachment-info-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 4px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-bottom-left-radius: 11px;
+    border-bottom-right-radius: 11px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+
+  .attachment-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+    border-radius: 6px;
+    flex-shrink: 0;
+
+    mat-icon {
+      font-size: 20px;
+      color: var(--theme-text);
+      opacity: 0.8;
+    }
+  }
+
+  .attachment-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+
+    .attachment-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .attachment-size {
+      font-size: 11px;
+      opacity: 0.7;
+    }
+  }
 }
 
 // Message footer
@@ -111,7 +309,7 @@
   align-items: center;
   // This ensures the buttons are on the same level as the timestamp
   margin-bottom: -10px;
-  
+
   button {
     // Reduce the size of the icons
     mat-icon {
@@ -123,12 +321,33 @@
     &:not(:last-child) {
       margin-right: 3px;
     }
+
+    // Active rating style
+    &.active-rating {
+      mat-icon {
+        color: var(--theme-primary);
+      }
+    }
   }
 }
 
 // Display parts of the message in italic if wrapped in <em> tags
 em {
   font-style: italic;
+}
+
+// Editable message styling
+.editable-message {
+  outline: none;
+  border: 1px dashed rgba(var(--theme-primary-contrast-rgb), 0.3);
+  padding: 4px;
+  border-radius: 4px;
+  min-height: 1.5em;
+
+  &:focus {
+    border-color: var(--theme-primary);
+    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+  }
 }
 
 // Responsive adjustment, allowing the message to take more space on smaller screens
@@ -140,4 +359,3 @@ em {
     }
   }
 }
-

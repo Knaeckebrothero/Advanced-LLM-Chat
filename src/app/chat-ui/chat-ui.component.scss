@@ -1,129 +1,184 @@
-@import 'src/styles/variables';
-@import 'src/styles/mixins';
+@use 'src/styles/variables' as vars;
+@use 'src/styles/mixins' as mixins;
 
-// Chat component styles
 .chat-ui-container {
   height: 100%;
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-color: $color-background;
+  background-color: transparent;
+  position: relative;
+}
+
+// Stile für den Logo-Container
+.top-right-logo {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  width: 12vw;
+
+  z-index: 1; // Logo in den Hintergrund
+  opacity: 0.5; // Logo leicht transparent machen
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
 }
 
 .message-container {
   flex-grow: 1;
   width: auto;
-  // Make the container scrollable
   overflow-y: scroll;
-
   padding: 2%;
+  padding-top: 6rem; // Abstand oben für das Logo
   padding-bottom: 1%;
-  padding-top: 1%;
+  position: relative; // Notwendig für z-index
+  z-index: 2; // Nachrichten in den Vordergrund
 
-
-  ::-webkit-scrollbar {
+  &::-webkit-scrollbar {
     width: 10px;
   }
-  ::-webkit-scrollbar-thumb {
-    background: $color-primary;
+  &::-webkit-scrollbar-thumb {
+    background: var(--theme-primary);
     border-radius: 5px;
   }
-  .message{
+
+  .message {
     width: 100%;
   }
 }
 
+.loading-older-messages,
+.end-of-conversation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 10px;
+  color: var(--theme-text-secondary);
+  position: relative; // Sicherstellen, dass es über dem Logo ist
+  z-index: 2;
+
+  mat-spinner {
+    margin-right: 8px;
+  }
+
+  span {
+    font-size: 14px;
+  }
+}
+
+.end-of-conversation {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.guest-limit-warning {
+  background-color: var(--theme-input-bg);
+  color: var(--theme-text-accent);
+  padding: 10px;
+  text-align: center;
+  border-top: 1px solid var(--theme-primary);
+  border-bottom: 1px solid var(--theme-primary);
+  position: relative; // Notwendig für z-index
+  z-index: 2; // Warnung in den Vordergrund
+
+  a {
+    color: var(--theme-text-accent);
+    text-decoration: underline;
+    font-weight: bold;
+  }
+}
+
+// Das Eingabefeld muss ebenfalls im Vordergrund sein
+app-chat-ui-inputfield {
+  position: relative;
+  z-index: 2;
+}
+
+// Stile für den Input-Bereich (wieder hinzugefügt)
 .input-container {
   width: 100%;
   min-height: fit-content;
   height: fit-content;
   display: flex;
   flex-direction: row;
-  align-self: flex-end;
-
-  justify-content: space-between;
-  // Give some contrast with the chat UI background
-  background-color: $color-secondary;
-
-  mat-form-field {
-    flex-grow: 1;
-    // Space between input field and send button
-    margin-left: 5%;
-    margin-right: 3%;
-  }
+  align-items: flex-end;
+  padding: 12px;
+  gap: 12px;
+  box-sizing: border-box;
+  background-color: var(--theme-surface);
+  border-top: 1px solid var(--theme-border);
+  transition: background-color 0.3s;
 }
 
-.textfield-container{
-  height: 85%;
-  width: 85%;
-  margin: 5px;
+.textfield-container {
+  flex-grow: 1;
+  display: flex;
 }
 
 .chat-input {
   flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  align-self: flex-start;
-  font-size: 1.3em;
-  width: 100%;
-  height: 100%;
+  font-size: 1rem;
+  padding: 12px;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
-  //padding: 30px;
-  // border: 1px solid #ccc;
-  //border-radius: 5px;
-  resize: vertical; // Let the textarea resize vertically
-  background-color: $color-background;
-  color: $color-font-light;
+  resize: none;
+  background-color: var(--theme-input-bg);
+  color: var(--theme-text);
+  line-height: 1.5;
+  max-height: 200px;
 
-}
-
-.chat-input:focus {
-  //border-color: #66afe9;
-  outline: none;
+  &:focus {
+    border-color: var(--theme-primary);
+    outline: none;
+  }
 }
 
 .button-container {
   display: flex;
-  flex-direction: column;
-  align-self: flex-end;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
 
   button {
-    @include button-style ($color-primary, $color-font-dark);
-    min-width: 40px;
-    min-height: 40px;
-    align-self: center;
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+    border: none;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
 
-    &.generate-button {
-      width: 45px;
-      height: 45px;
-      border-radius: 100%;
+    &:hover {
+      background-color: var(--theme-secondary);
     }
   }
 }
 
-// Hide the button on screens smaller than 768px wide
-@media (min-width: 768px) {
-  .message-container { 
-    padding: 4%;
+// Media Query für mobile Geräte
+@media (max-width: 768px) {
+  .top-right-logo {
+    width: 200px;
+    height: 60px;
+    top: 1rem;
+    right: 1rem;
   }
-  
+  .message-container {
+    padding-top: 5rem;
+  }
   .input-container {
-    min-height: 13%;
+    padding: 8px;
+    gap: 8px;
   }
-
-  .button-container {
-    button {
-      @include button-style ($color-primary, $color-font-dark);
-
-      &.generate-button {
-        align-self: center;
-        min-width: 100px;
-        min-height: 100px;
-      }
-
-      &.send-button {
-        display: none;
-      }
-    }
+  .button-container button {
+    width: 40px;
+    height: 40px;
   }
 }

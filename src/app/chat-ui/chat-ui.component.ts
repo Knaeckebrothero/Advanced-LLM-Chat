@@ -1,32 +1,190 @@
-import { Component, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
-import { ChatService } from '../chat/chat.service';
-import { Message } from '../data/interfaces/message';
+import { Component, ViewChild, ElementRef, AfterViewChecked, OnInit, OnDestroy } from '@angular/core';
+import { Message } from '../data/objects/message';
+import { AuthService } from '../auth/auth.service';
+import { Subscription, Observable, combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
+import { RecordingResult } from '../data/objects/recording';
+import { ChatStateService } from '../services/chat-state.service';
+import { UIStateService } from '../services/ui-state.service';
+import { ThemeService } from '../services/theme.service'; // Import ThemeService
+
 
 @Component({
   selector: 'app-chat-ui',
   templateUrl: './chat-ui.component.html',
-  styleUrls: ['./chat-ui.component.scss']
+  styleUrls: ['./chat-ui.component.scss'],
+  standalone: false
 })
-export class ChatUiComponent implements AfterViewChecked {
-  
+export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
+
   // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
-  
+
   // Variables
-  userName: string = 'User';
+  userName: string = 'user';
   aiName: string = 'Assistant';
+  pendingFiles: FilePreview[] = [];
+  isDarkMode: boolean = false; // Add this property
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
 
-  // Messages are managed by the ChatService and are passed to this component via observable.
-  messages = this.chatService.messages;
-  
-  // Constructor
-  constructor(private chatService: ChatService) { 
-    const credentials = this.chatService.getConversationCredentials();
-    this.userName = credentials.user;
-    this.aiName = credentials.ai;
+  // Observable state from ChatStateService
+  messages$: Observable<Message[]> = this.chatState.messages$;
+  isLoading$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.isLoading));
+  error$: Observable<string | null> = this.chatState.state$.pipe(map(state => state.error));
+  hasReachedEnd$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.hasReachedEnd || false));
+
+  // For template compatibility - expose messages as non-observable
+  messages = this.chatState.messages$;
+
+  // Mobile state from UIStateService
+  isMobile$ = this.uiState.isMobile$;
+
+  showGuestLimitWarning = false;
+  guestLimitWarningMessage: string | null = null;
+  private guestLimitSubscription!: Subscription;
+  private guestLimitResetTimeSubscription!: Subscription;
+  private destroy$ = new Subscription();
+  private themeSubscription!: Subscription; // Add this property
+
+  // Add this property to hold the current state
+  private hasReachedEnd = false;
+
+  constructor(
+      private chatState: ChatStateService,
+      private uiState: UIStateService,
+      private authService: AuthService,
+      private themeService: ThemeService // Inject ThemeService
+  ) {}
+
+  ngOnInit() {
+    // Add this block to subscribe to theme changes
+    this.themeSubscription = this.themeService.theme$.subscribe(() => {
+      this.isDarkMode = this.themeService.getCurrentEffectiveTheme() === 'dark';
+    });
+
+    this.guestLimitSubscription = this.authService.guestLimitReached$.subscribe(isReached => {
+      this.showGuestLimitWarning = isReached;
+    });
+    this.guestLimitResetTimeSubscription = this.authService.guestLimitResetTime$.subscribe(message => {
+      this.guestLimitWarningMessage = message;
+    });
+
+    // Subscribe to the hasReachedEnd$ observable to keep our local property in sync
+    this.destroy$.add(
+        this.hasReachedEnd$.subscribe(value => {
+          this.hasReachedEnd = value;
+        })
+    );
+
+    this.destroy$.add(
+        this.messages$.subscribe(messages => {
+          const previousLength = this.currentMessages.length;
+          this.currentMessages = messages || [];
+
+          // When switching conversations or loading initial messages, scroll to bottom
+          if (previousLength === 0 && this.currentMessages.length > 0) {
+            this.shouldScrollToBottom = true;
+            // Use setTimeout to ensure DOM has updated
+            setTimeout(() => this.scrollToBottom(), 100);
+          }
+        })
+    );
+
+    // Subscribe to active conversation changes
+    this.destroy$.add(
+        this.chatState.activeConversation$.subscribe(() => {
+          // Reset scroll state when conversation changes
+          this.shouldScrollToBottom = true;
+        })
+    );
+  }
+
+  // Handle scroll events to load older messages
+  onScroll(event: Event): void {
+    if (this.isRestoringScroll) return;
+
+    const element = event.target as HTMLElement;
+
+    // Use the component's 'hasReachedEnd' property here
+    if (element.scrollTop < 100 && !this.isLoadingMessages && this.currentMessages.length > 0 && !this.hasReachedEnd) {
+      this.loadOlderMessages();
+    }
+  }
+
+  private async loadOlderMessages(): Promise<void> {
+    if (this.isLoadingMessages) return;
+
+    // Debounce rapid requests
+    const now = Date.now();
+    if (now - this.lastLoadTime < this.LOAD_DEBOUNCE_MS) {
+      return;
+    }
+    this.lastLoadTime = now;
+
+    const conversationId = this.chatState.getActiveConversationId();
+    if (!conversationId || conversationId === '0') return;
+
+    this.isLoadingMessages = true;
+    this.isLoadingOlderMessages = true;
+
+    try {
+      const oldestMessage = this.currentMessages[0];
+      if (!oldestMessage) return;
+
+      // Store scroll position before loading
+      const scrollContainer = this.messageContainer.nativeElement;
+      const scrollHeightBefore = scrollContainer.scrollHeight;
+      const scrollTopBefore = scrollContainer.scrollTop;
+
+      // Load older messages
+      const newMessages = await this.chatState.loadOlderMessages(oldestMessage.time, 20);
+
+      // If no new messages were loaded, we've reached the beginning
+      if (newMessages.length === 0) {
+        return;
+      }
+
+      // Use requestAnimationFrame for smoother scroll restoration
+      requestAnimationFrame(() => {
+        const scrollHeightAfter = scrollContainer.scrollHeight;
+        const scrollDiff = scrollHeightAfter - scrollHeightBefore;
+
+        // Restore scroll position by adding the height difference
+        scrollContainer.scrollTop = scrollTopBefore + scrollDiff;
+
+        // Allow new scroll events after a short delay
+        setTimeout(() => {
+          this.isRestoringScroll = false;
+        }, 100);
+      });
+
+      // Prevent scroll events during restoration
+      this.isRestoringScroll = true;
+    } catch (error) {
+      console.error('Error loading older messages:', error);
+    } finally {
+      this.isLoadingMessages = false;
+      this.isLoadingOlderMessages = false;
+    }
+  }
+
+  ngOnDestroy() {
+    this.destroy$.unsubscribe();
+
+    // Add this block to unsubscribe from theme changes
+    if (this.themeSubscription) {
+      this.themeSubscription.unsubscribe();
+    }
+
+    if (this.guestLimitSubscription) {
+      this.guestLimitSubscription.unsubscribe();
+    }
+    if (this.guestLimitResetTimeSubscription) {
+      this.guestLimitResetTimeSubscription.unsubscribe();
+    }
   }
 
   // Method to scroll to the bottom of the chat window.
@@ -36,65 +194,187 @@ export class ChatUiComponent implements AfterViewChecked {
     } catch(err) { }
   }
 
+  // Track if we should auto-scroll
+  private shouldScrollToBottom = true;
+  private lastMessageCount = 0;
+  private currentMessages: Message[] = [];
+  private wasNearBottom = true; // Track scroll position before updates
+
+  // Loading state for older messages
+  isLoadingOlderMessages = false;
+  private isLoadingMessages = false;
+  private isRestoringScroll = false;
+  private lastLoadTime = 0;
+  private readonly LOAD_DEBOUNCE_MS = 300;
+
+  // Check if user is near bottom of chat (within 100px)
+  private isNearBottom(): boolean {
+    if (!this.messageContainer) return true;
+    const element = this.messageContainer.nativeElement;
+    const threshold = 100;
+    return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
+  }
+
   // Use the AfterViewChecked lifecycle hook to trigger the scroll method.
   ngAfterViewChecked() {
-    this.scrollToBottom();
+    // Check if we're at a different message count
+    const currentMessageCount = this.currentMessages.length;
+
+    if (currentMessageCount !== this.lastMessageCount) {
+      // Messages changed, check if we should scroll
+      this.lastMessageCount = currentMessageCount;
+
+      // Only auto-scroll if user was already near the bottom OR we should force scroll
+      if (this.wasNearBottom || this.shouldScrollToBottom) {
+        this.scrollToBottom();
+        this.shouldScrollToBottom = false; // Reset flag after scrolling
+      }
+    }
+
+    // Always update the wasNearBottom status for next check
+    this.wasNearBottom = this.isNearBottom();
   }
 
-  // Utility function to detect mobile devices
+  // Utility function to detect mobile devices - now uses UIStateService
   isMobileDevice(): boolean {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return this.uiState.isMobile;
   }
 
-  // Function to handle Enter key in textarea
-  handleEnterKeyPress(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      if (this.isMobileDevice()) {
-        // It's a mobile device, allow line breaks on Enter
-        event.preventDefault(); // This line might be removed if you want to allow new lines
-      } else {
-        // It's not a mobile device, send the message
-        this.inputUserMessage();
-        event.preventDefault(); // Prevents new line even on desktop after sending message
+  // Handle message sent from the input component
+  async onMessageSent(message: string): Promise<void> {
+    if (message.trim() || this.pendingFiles.length > 0) {
+      try {
+        // ** THE FIX IS HERE **
+        // Re-introduce the logic to call the correct method based on whether files are present.
+        if (this.pendingFiles.length > 0) {
+          console.log('Sending message with files:', this.pendingFiles);
+          await this.chatState.sendMessageWithFiles(message, this.pendingFiles);
+          this.pendingFiles = []; // Clear pending files after sending
+        } else {
+          // This is for text-only messages and will trigger the AI response.
+          await this.chatState.sendMessage(message);
+        }
+
+        console.log('User message sent:', message);
+        this.shouldScrollToBottom = true;
+        this.wasNearBottom = true; // Force scroll for user's own messages
+
+      } catch (error) {
+        console.error('Error sending message:', error);
       }
     }
   }
 
-  // The inputUserMessage method is called when the user submits a new message.
-  inputUserMessage() {
-    // The inputField property is checked to ensure that it is not empty.
-    if (this.inputField !== '') {
-      // The ChatService is used to add a new usermessage to the history.
-      this.chatService.userInputMessage(this.inputField);
-
-      this.scrollToBottom();
-      
-      // The input field is cleared.
-      this.inputField = '';
+  // Generate a new message
+  async generateMessage(): Promise<void> {
+    try {
+      await this.chatState.generateMessage(this.aiName);
+    } catch (error) {
+      console.error('Error generating AI response:', error);
     }
   }
 
-  // Generate a new message
-  generateMessage() {
-    console.log('Generating message');
-    this.chatService.generateMessage();
+  // Handle audio recording request
+  onAudioRequested(): void {
+    console.log('Audio recording requested');
   }
 
-  // The inputSystemMessage method is called to add a new system message
-  inputSystemMessage(messageId: number) {
-    // The ChatService is used to add a new system message to the history.
-    this.chatService.systemAddMessage(messageId);
+  // Handle file attachment request (including voice messages)
+  async onFileRequested(filePreviews: FilePreview[]): Promise<void> {
+    // This logic is more complex than dev but should be fine.
+    // It replaces the local array with the full, updated array from the child component.
+    this.pendingFiles = filePreviews;
+
+    // Find a voice message that hasn't been marked as 'sent' yet.
+    const voiceFile = this.pendingFiles.find(
+        (fp) =>
+            fp.mimeType.startsWith('audio/') &&
+            fp.name.includes('Voice message') &&
+            !(fp as any).isSent
+    );
+
+    if (voiceFile) {
+      // Mark as sent immediately to prevent re-sending.
+      (voiceFile as any).isSent = true;
+
+      try {
+        const durationMatch = voiceFile.name.match(/\((\d+):(\d+)\)/);
+        let duration = 0;
+        if (durationMatch) {
+          const minutes = parseInt(durationMatch[1], 10);
+          const seconds = parseInt(durationMatch[2], 10);
+          duration = minutes * 60 + seconds;
+        }
+
+        await this.chatState.sendVoiceMessage(
+            voiceFile.file,
+            duration,
+            voiceFile.mimeType
+        );
+
+        // After successfully sending, permanently remove it from the pending list.
+        this.pendingFiles = this.pendingFiles.filter(fp => fp.id !== voiceFile.id);
+
+        this.shouldScrollToBottom = true;
+        this.wasNearBottom = true;
+      } catch (error) {
+        console.error('Error sending voice message:', error);
+        // Un-mark if sending failed, so it can be retried.
+        delete (voiceFile as any).isSent;
+      }
+    }
+  }
+
+  // SIMPLIFIED: Camera is now handled by the input component directly
+  onCameraRequested(): void {
+    console.log('Camera requested - handled by input component');
+  }
+
+  onLocationRequested(): void {
+    console.log('Location sharing requested');
   }
 
   // Method to delete a message
   deleteMessage(messageId: number) {
-    // Call the ChatService to delete the message
-    this.chatService.deleteMessage(messageId);
+    this.chatState.deleteMessage(messageId);
   }
 
   // Method to change a message
-  changeMessage(message: Message) {
-    // Call the ChatService to alter the message
-    this.chatService.alterMessage(message)
+  patchMessage(messageId: number, content: string) {
+    this.chatState.patchMessage(messageId, content);
+  }
+
+  // Method to regenerate a message
+  regenerateMessage(message: Message) {
+    this.chatState.regenerateMessage(message);
+  }
+
+  // Method to rate a message
+  rateMessage(message: Message, rating: number | null) {
+    try {
+      this.chatState.rateMessage(message, rating);
+    } catch (error) {
+      console.error('Failed to rate message:', error);
+    }
+  }
+
+  // Check if a message is the last AI message in the conversation
+  isLastAiMessage(message: Message, index: number): boolean {
+    if (message.roleName === 'user') {
+      return false;
+    }
+
+    const messages = this.currentMessages;
+    if (!messages || messages.length === 0) {
+      return false;
+    }
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].roleName !== 'user') {
+        return messages[i].id === message.id;
+      }
+    }
+
+    return false;
   }
 }

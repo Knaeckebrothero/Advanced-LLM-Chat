@@ -1,0 +1,214 @@
+.sidebar {
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-right: 1px solid var(--theme-border);
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--theme-border);
+    border-radius: 8px;
+  }
+}
+
+/* src/app/sidebar/sidebar.component.scss */
+
+/* src/app/sidebar/sidebar.component.scss */
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+
+  background-color: var(--theme-primary);
+  padding: 0.75rem;
+  border-radius: 12px;
+  transition: background-color 0.3s ease;
+
+  img {
+    height: 70px;
+    width: 70px;
+    object-fit: contain;
+    flex-shrink: 0;
+    // REMOVE THIS LINE: filter: brightness(0) invert(1);
+  }
+
+  .logo-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: var(--theme-primary-contrast);
+    line-height: 1.2;
+
+    span:first-child {
+      font-weight: 700;
+      font-size: 1.4rem;
+    }
+
+    span:last-child {
+      font-weight: 700;
+      font-size: 1.4rem;
+    }
+  }
+}
+
+.nav-button {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--theme-text);
+  text-align: left;
+  padding: 0.75rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 0.4rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+
+  &:hover {
+    background-color: var(--theme-input-bg);
+  }
+
+  &.selected {
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+    font-weight: bold;
+  }
+}
+
+.user-with-settings {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--theme-border);
+  gap: 8px;
+
+  .user-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    color: var(--theme-text);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    flex: 1;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      background-color: var(--theme-input-bg);
+    }
+
+    .avatar {
+      background-color: var(--theme-primary);
+      color: var(--theme-primary-contrast);
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      text-align: center;
+      line-height: 32px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .username {
+      font-size: 14px;
+      opacity: 0.9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: left;
+    }
+  }
+
+  .settings-icon-button {
+    color: var(--theme-text);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+
+    &:hover {
+      background-color: var(--theme-input-bg);
+    }
+
+    mat-icon {
+      font-size: 20px;
+    }
+  }
+}
+
+.group-label {
+  font-size: 0.75rem;
+  color: var(--theme-text);
+  opacity: 0.7;
+  margin: 1rem 0 0.5rem 0;
+  padding-left: 0.5rem;
+  font-weight: 600;
+}
+
+.conversation-list {
+  flex-grow: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-border) transparent;
+}
+
+.sidebar-navigation-main-links {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+}
+
+.new-conversation-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background-color: transparent;
+  border: 1px dashed var(--theme-text-accent);
+  color: var(--theme-text-accent);
+  text-align: center;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: rgba(var(--theme-primary-rgb), 0.2);
+    border-color: var(--theme-primary);
+    color: var(--theme-primary);
+  }
+
+  &.highlighted {
+    background-color: var(--theme-primary);
+    border-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+  }
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+}
