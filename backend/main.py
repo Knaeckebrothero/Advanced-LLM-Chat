@@ -19,8 +19,7 @@ from backend.security.auth import cleanup_expired_sessions
 from backend.utils.certificates import setup_development_certificates
 
 # Import API routers
-from backend.api import auth, docs
-# from backend.api import conversations, messages, settings, files  # TODO: Uncomment when implemented
+from backend.api import auth, docs, conversations, settings, files, messages
 
 # Import middleware
 from backend.middleware.middleware import (
@@ -80,12 +79,10 @@ app.middleware("http")(add_security_headers)
 
 # Register API routers
 app.include_router(auth.router)
-
-# TODO: Uncomment these when the endpoints are implemented
-# app.include_router(conversations.router)
-# app.include_router(messages.router)
-# app.include_router(settings.router)
-# app.include_router(files.router)
+app.include_router(conversations.router)
+app.include_router(messages.router)
+app.include_router(settings.router)
+app.include_router(files.router)
 
 # Register documentation routes (these need to be registered last as they use the app directly)
 docs.create_docs_routes(app)
