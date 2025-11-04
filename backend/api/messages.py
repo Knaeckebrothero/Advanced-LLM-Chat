@@ -312,7 +312,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
                         content_obj = json.loads(content)
                         if 'content' in content_obj:
                             content = content_obj['content']
-                except:
+                except (json.JSONDecodeError, KeyError, AttributeError):
                     pass  # Use content as-is if not JSON
 
                 crud_logger.info(
@@ -493,7 +493,7 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
                         content_obj = json.loads(content)
                         if 'content' in content_obj:
                             content = content_obj['content']
-                except:
+                except (json.JSONDecodeError, KeyError, AttributeError):
                     pass  # Use content as-is if not JSON
 
                 rating_text = "removed" if request_body.rating is None else str(request_body.rating)

@@ -5,7 +5,7 @@ import os
 import time
 import secrets
 from fastapi import Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from backend.security.csrf import validate_csrf_token
 from backend.security.logging import crud_logger
 from backend.config import CORS_ORIGINS

@@ -4,7 +4,7 @@ Authentication API endpoints.
 import os
 import secrets
 from datetime import datetime, timedelta, UTC
-from fastapi import APIRouter, Request, Response, HTTPException, Depends, status
+from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from backend.models.auth import MockLoginRequest, GuestLoginRequest, LoginResponse
 from backend.security.auth import (
     create_session, validate_session, delete_session, get_current_user

@@ -175,12 +175,15 @@ async def get_conversation(conversation_id: str, response: Response, current_use
             content_str = ''.join([msg['content'] for msg in messages if msg['content']])
             sync_hash = generate_sha256_hash(content_str) if content_str else None
 
+            # Parse participants (stored as JSON string)
+            participants = json.loads(conv_row['participants']) if conv_row['participants'] else []
+
             # Return conversation with details
             return ConversationWithDetails(
                 id=conv_row['id'],
                 userId=conv_row['userId'],
                 name=conv_row['name'],
-                participants=conv_row['participants'],
+                participants=participants,
                 createdAt=conv_row['createdAt'],
                 lastModified=conv_row['updatedAt'],
                 messageCount=message_count,
@@ -439,6 +442,9 @@ async def get_conversation_messages(
                         )
                         total_count = cur.fetchone()['count']
                         response.headers["X-Has-More-Messages"] = str(total_count > 0)
+                else:
+                    # For initial load, use the has_more flag
+                    response.headers["X-Has-More-Messages"] = str(has_more)
 
                 return messages_data
             else:

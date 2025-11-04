@@ -2,7 +2,6 @@
 Main FastAPI application setup.
 """
 import asyncio
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
