@@ -28,7 +28,6 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
     for message in messages:
         content = message['content']
         if not content:
-            hash_value += 0
             continue
 
         hash_value += ord(content[0])
