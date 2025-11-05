@@ -20,7 +20,9 @@ from backend.database.db import get_db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
 from backend.services.llm import get_conversation_context, generate_llm_response
+from backend.services.pipeline import generate_pipeline_response
 from backend.config import DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_SYSTEM_PROMPT
+from rag_pipeline_recycling import UserType
 
 router = APIRouter(prefix="/api/message", tags=["Message"])
 
@@ -765,16 +767,14 @@ async def send_and_generate_message(
 
         ai_message_response = None
         if request_body.generateResponse:
-            context = await get_conversation_context(request_body.conversationId, limit=6)
-
-            # ** THE FIX IS HERE **
-            # The backend now uses its own default values for the LLM.
-            ai_response_content = await generate_llm_response(
-                context,
-                DEFAULT_TEMPERATURE,
-                DEFAULT_TOP_P,
-                DEFAULT_SYSTEM_PROMPT,
-                DEFAULT_MODEL
+            # Use RAG pipeline for AI response generation
+            thread_id = f"{current_user['user_id']}:{request_body.conversationId}"
+            ai_response_content = await generate_pipeline_response(
+                conversation_id=request_body.conversationId,
+                user_id=thread_id,
+                user_type=UserType.STUDENT,
+                context_limit=6,
+                num_retrieval_results=10
             )
 
             ai_message_id = int(time.time() * 1000) + 1

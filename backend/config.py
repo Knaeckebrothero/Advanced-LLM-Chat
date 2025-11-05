@@ -33,3 +33,17 @@ PORT = int(os.getenv("PORT", "8000"))
 
 # Replicate API configuration
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+
+# RAG Pipeline configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH")
+CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME")
+CHROMA_EMBEDDING_MODEL = os.getenv("CHROMA_EMBEDDING_MODEL", "text-embedding-3-large")
+
+# Database URI for LangGraph checkpointing
+DB_URI = os.getenv("DB_URI")
+
+# Pipeline model configuration
+ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gpt-4o")
+NODE_MODEL = os.getenv("NODE_MODEL", "gpt-4o-mini")
+IMG_MODEL = os.getenv("IMG_MODEL", "gpt-4o")

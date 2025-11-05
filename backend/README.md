@@ -30,7 +30,8 @@ backend/
 │   └── hash.py           # Hash utilities
 ├── services/              # Business logic services
 │   ├── __init__.py
-│   └── llm.py            # LLM operations
+│   ├── llm.py            # LLM operations (legacy Replicate)
+│   └── pipeline.py       # RAG pipeline with OpenAI + ChromaDB
 ├── api/                   # API endpoints
 │   ├── __init__.py
 │   ├── auth.py           # Auth endpoints (✓ Complete)
@@ -67,6 +68,27 @@ All components have been successfully migrated from `backend_mockup.py`:
 - ✅ Middleware module (logging, CSRF, security headers)
 - ✅ Main FastAPI app setup with all routers registered
 
+## RAG Pipeline Integration
+
+The backend now includes an advanced AI reasoning pipeline using:
+- **OpenAI GPT-4** for language understanding and generation
+- **ChromaDB** for vector storage and retrieval
+- **LangGraph** for multi-step reasoning orchestration
+
+### Pipeline Features
+- Retrieval Augmented Generation (RAG) for contextual responses
+- Multi-step reasoning with intermediate nodes
+- Conversation history tracking with checkpointing
+- Configurable models for different reasoning stages
+
+### Pipeline Configuration
+The pipeline requires these environment variables (see `.env.example`):
+- `OPENAI_API_KEY`: OpenAI API key for GPT models and embeddings
+- `CHROMA_DB_PATH`: Path to ChromaDB database directory
+- `CHROMA_COLLECTION_NAME`: Name of the ChromaDB collection
+- `DB_URI`: SQLite URI for LangGraph checkpointing
+- `ANSWER_MODEL`, `NODE_MODEL`, `IMG_MODEL`: Model names for different pipeline stages
+
 ## How to Run
 
 1. Install dependencies:
@@ -74,7 +96,18 @@ All components have been successfully migrated from `backend_mockup.py`:
    pip install -r requirements.txt
    ```
 
-2. Run the backend:
+2. Configure environment variables:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your OPENAI_API_KEY and other settings
+   ```
+
+3. Extract ChromaDB database (if using provided data):
+   ```bash
+   unzip chromadb.zip -d ./chromadb
+   ```
+
+4. Run the backend:
    ```bash
    python backend/main.py
    ```
@@ -85,7 +118,7 @@ All components have been successfully migrated from `backend_mockup.py`:
    python main.py
    ```
 
-3. The server will start on the configured host/port (default: https://127.0.0.1:8000 in dev mode with SSL)
+5. The server will start on the configured host/port (default: https://127.0.0.1:8000 in dev mode with SSL)
 
 ## Migration from backend_mockup.py
 
