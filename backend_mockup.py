@@ -26,7 +26,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from langgraph.checkpoint.sqlite import SqliteSaver
+from pydantic import BaseModel, Field, SecretStr
+from rag_pipeline_recycling import OpenAIClient, ChromaRetriever, ChromaDBConfig, ChatMessage, Role, PipelineGraph, \
+  UserType
+from rag_pipeline_recycling.schemas.llm_client import OpenAIModels
+
+load_dotenv()
 
 # Default settings for LLM generation
 DEFAULT_MODEL = "openai/gpt-4o"
@@ -67,6 +73,24 @@ crud_handler.setFormatter(logging.Formatter(
   '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'
 ))
 crud_logger.addHandler(crud_handler)
+
+_OPENAI_CLIENT = OpenAIClient(api_key=os.getenv("OPENAI_API_KEY"))
+_CHROMA_RETRIEVER = ChromaRetriever(
+    ChromaDBConfig(
+        db_path=os.getenv("CHROMA_DB_PATH"),
+        collection_name=os.getenv("CHROMA_COLLECTION_NAME"),
+        embedding_model="text-embedding-3-large",
+    ),
+    openai_api_key=SecretStr(os.getenv("OPENAI_API_KEY")),
+)
+
+# Checkpointer wird pro Turn als Kontextmanager geöffnet (Datei/SQLite-Handle)
+_DB_URI = os.getenv("DB_URI")
+
+# Default-Modelle (du kannst das per Param überschreiben)
+ANSWER_MODEL: OpenAIModels = os.getenv("ANSWER_MODEL", "gpt-4o")
+NODE_MODEL: OpenAIModels = os.getenv("NODE_MODEL", "gpt-5-mini")
+IMG_MODEL: OpenAIModels = os.getenv("IMG_MODEL", "gpt-4o")
 
 
 def log_security_event(event_type: str, details: dict, request: Request = None):
@@ -1239,7 +1263,6 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
     hash_chars += content[0] + content[-1] + str(len(content))
 
   hash_value %= (2 ** 32)
-  print(f"Generated hashsum: {hash_value} string rep: {hash_chars}")
   return hash_value
 
 
@@ -1350,6 +1373,64 @@ async def get_conversation_context(conversation_id: str, limit: int = 5) -> str:
   except Exception as e:
     print(f"Error getting conversation context: {str(e)}")
     return ""
+
+async def get_conversation_context_update(conversation_id: str, limit: int = 5) -> List[ChatMessage]:
+  """
+  Liefert die letzten `limit` Nachrichten als Pydantic-`ChatMessage` in chronologischer Reihenfolge.
+  - mapped roleName -> 'user' | 'assistant' | 'system' (kleinbuchstabig)
+  - content wird aus JSON extrahiert, falls als Objekt gespeichert
+  """
+  try:
+    with get_db() as conn:
+      cur = conn.cursor()
+      cur.execute(
+        """
+        SELECT roleName, content, time
+        FROM messages
+        WHERE conversationId = ?
+        ORDER BY time DESC
+          LIMIT ?
+        """,
+        (conversation_id, limit)
+      )
+      rows = cur.fetchall()
+
+    # chronologisch (alt -> neu)
+    rows = list(reversed(rows))
+
+    result: List[ChatMessage] = []
+    for row in rows:
+      # --- Rolle robust auf kleinbuchstabige Strings normalisieren ---
+      rn = (row["roleName"] or "").strip().lower()
+      if rn in ("assistant", "ai", "bot"):
+        role_str = "assistant"
+      elif rn == "system":
+        role_str = "system"
+      else:
+        role_str = "user"  # Fallback
+
+      # --- Content extrahieren (unterstützt Text ODER JSON-Objekt mit 'content') ---
+      raw_content = row["content"] or ""
+      if isinstance(raw_content, str):
+        try:
+          maybe = json.loads(raw_content)
+          if isinstance(maybe, dict) and "content" in maybe:
+            text_content = str(maybe.get("content") or "")
+          else:
+            text_content = raw_content
+        except json.JSONDecodeError:
+          text_content = raw_content
+      else:
+        text_content = str(raw_content)
+
+      # Wichtig: Role per String übergeben -> Pydantic castet korrekt auf Enum/Literal
+      result.append(ChatMessage(role=role_str, content=text_content))
+
+    return result
+
+  except Exception as e:
+    print(f"Error getting conversation context: {str(e)}")
+    return []
 
 
 def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: bool = False) -> bool:
@@ -1511,8 +1592,8 @@ async def custom_swagger_ui_html(req: Request):
   )
 
 
-@app.post("/api/auth/guest-login", 
-          response_model=LoginResponse, 
+@app.post("/api/auth/guest-login",
+          response_model=LoginResponse,
           tags=["Auth"],
           summary="Guest Login",
           description="Creates a guest session for anonymous users with rate limiting based on IP address",
@@ -1615,8 +1696,8 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
   )
 
 
-@app.post("/api/auth/mock-login", 
-          response_model=LoginResponse, 
+@app.post("/api/auth/mock-login",
+          response_model=LoginResponse,
           tags=["Auth"],
           summary="Mock Login",
           description="Mock authentication for testing purposes - creates or retrieves a test user",
@@ -1706,7 +1787,7 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
   )
 
 
-@app.post("/api/auth/logout", 
+@app.post("/api/auth/logout",
           tags=["Auth"],
           summary="Logout",
           description="Invalidates the current session and clears authentication cookies",
@@ -1757,7 +1838,7 @@ async def logout(request: Request, response: Response):
   return {"message": "Logged out successfully"}
 
 
-@app.post("/api/auth/refresh-session", 
+@app.post("/api/auth/refresh-session",
           tags=["Auth"],
           summary="Refresh Session",
           description="Refreshes the user session if it's close to expiry (within 1 hour)",
@@ -1843,7 +1924,7 @@ async def refresh_session(request: Request, response: Response, current_user: di
   }
 
 
-@app.get("/api/auth/me", 
+@app.get("/api/auth/me",
          tags=["Auth"],
          summary="Get Current User",
          description="Returns information about the currently authenticated user",
@@ -2095,8 +2176,8 @@ async def get_conversation(conversation_id: str, response: Response, current_use
 
 
 # **MODIFIED:** Updated settings endpoint to match new frontend logic
-@app.get("/api/settings", 
-         response_model=AppSettingsResponse, 
+@app.get("/api/settings",
+         response_model=AppSettingsResponse,
          tags=["Settings"],
          summary="Get User Settings",
          description="Retrieve application settings for the current user",
@@ -2156,8 +2237,8 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
       )
 
 
-@app.put("/api/settings", 
-         response_model=AppSettingsResponse, 
+@app.put("/api/settings",
+         response_model=AppSettingsResponse,
          tags=["Settings"],
          summary="Update User Settings",
          description="Update application settings for the current user",
@@ -3179,10 +3260,15 @@ async def send_and_generate_message(
       response.status_code = status.HTTP_403_FORBIDDEN
       return ErrorResponse(error="Access denied to this conversation")
 
+    thread_id = f"{current_user['user_id']}:{request_body.conversationId}"
+
+    print(f"send_and_generate called for conversation {request_body.conversationId} by user {current_user['user_id']}")
+
     user_message_id = int(time.time() * 1000)
     content_str = ""
     message_type = request_body.type
     if message_type == 'text':
+      print("Processing text message: ", request_body.content)
       if isinstance(request_body.content, str):
         content_str = request_body.content
       elif isinstance(request_body.content, dict):
@@ -3194,6 +3280,8 @@ async def send_and_generate_message(
     elif message_type == 'voice':
       content_str = json.dumps(request_body.content) if isinstance(request_body.content, dict) else str(
         request_body.content)
+    else:
+      print(f"Unknown message type: {message_type}, defaulting to 'text'")
 
     with get_db() as conn:
       cur = conn.cursor()
@@ -3221,17 +3309,21 @@ async def send_and_generate_message(
 
     ai_message_response = None
     if request_body.generateResponse:
-      context = await get_conversation_context(request_body.conversationId, limit=6)
+      chat_messages = await get_conversation_context_update(request_body.conversationId, limit=6)
 
-      # ** THE FIX IS HERE **
-      # The backend now uses its own default values for the LLM.
-      ai_response_content = await generate_llm_response(
-        context,
-        DEFAULT_TEMPERATURE,
-        DEFAULT_TOP_P,
-        DEFAULT_SYSTEM_PROMPT,
-        DEFAULT_MODEL
-      )
+      with SqliteSaver.from_conn_string(os.getenv("DB_URI")) as checkpointer:
+        pipeline = PipelineGraph(checkpointer=checkpointer, llm_client=_OPENAI_CLIENT, retriever=_CHROMA_RETRIEVER)
+        result = pipeline.run_turn(
+          user_id=str(thread_id),
+          user_type=UserType.STUDENT,
+          chat_messages=chat_messages,
+          answer_model_name=ANSWER_MODEL,
+          node_model_name=NODE_MODEL,
+          img_model_name=IMG_MODEL,
+          num_retrieval_results=10,
+        )
+
+      ai_response_content = result.response.content
 
       ai_message_id = int(time.time() * 1000) + 1
       current_time = int(time.time())
@@ -3341,6 +3433,20 @@ async def upload_files(
 
       # Reset file position (not needed after saving, but good practice)
       await file.seek(0)
+
+      with get_db() as conn:
+
+        cur = conn.cursor()
+
+        cur.execute(
+          """
+          UPDATE files
+          SET path_url      = ?,
+              message_id      = ?,
+              file_type = ?
+          """,
+          (str(file_path), None, file.content_type)
+        )
 
     return file_ids
 
@@ -3496,10 +3602,10 @@ async def add_security_headers(request: Request, call_next):
   # For Angular compatibility, we need a more permissive policy in development
   # In production, consider migrating away from unsafe-inline and unsafe-eval
   is_dev = os.getenv("USE_DEV_CERTS", "False").lower() == "true"
-  
+
   # Check if this is a Swagger UI request
   is_swagger_ui = request.url.path == "/api/docs"
-  
+
   if is_swagger_ui:
     # Special CSP for Swagger UI to allow CDN resources
     csp_directives = [
