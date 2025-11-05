@@ -1,6 +1,6 @@
 # Define build argument for project folder name at the top level
-# Default to 'advanced-llm-chat' but can be overridden during build
-ARG PROJECT_FOLDER=advanced-llm-chat
+# Default to 'fessi' but can be overridden during build
+ARG PROJECT_FOLDER=fessi
 
 # Stage 1: Build the Angular application
 FROM node:18-alpine AS builder

@@ -180,7 +180,7 @@ jobs:
           services:
             frontend:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
-              container_name: advanced-llm-chat-frontend
+              container_name: fessi-frontend
               ports:
                 - "8080:80"
               restart: unless-stopped
@@ -193,7 +193,7 @@ jobs:
 
             backend:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
-              container_name: advanced-llm-chat-backend
+              container_name: fessi-backend
               ports:
                 - "8443:8443"
               restart: unless-stopped
@@ -246,7 +246,7 @@ jobs:
 
           # Run backend
           docker run -d \
-            --name advanced-llm-chat-backend \
+            --name fessi-backend \
             --network app-network \
             -p 8443:8443 \
             -v $(pwd)/data:/app/data \
@@ -255,7 +255,7 @@ jobs:
 
           # Run frontend
           docker run -d \
-            --name advanced-llm-chat-frontend \
+            --name fessi-frontend \
             --network app-network \
             -p 8080:80 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
