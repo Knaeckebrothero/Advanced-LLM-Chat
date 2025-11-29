@@ -184,7 +184,7 @@ Before you begin, ensure you have the following installed:
 
 - Node.js (v16.x or higher recommended)
 - npm (v8.x or higher)
-- Python 3.8+ (for backend mockup)
+- Python 3.8+ (for backend)
 - Angular CLI (`npm install -g @angular/cli`)
 - A Replicate API token (for LLM functionality) - get one at https://replicate.com
 
@@ -192,7 +192,7 @@ Before you begin, ensure you have the following installed:
 
 ### Backend Setup
 
-The project includes a Python FastAPI backend mockup for development purposes.
+The project uses a modular Python FastAPI backend with a clean architecture.
 
 #### 1. Create a Virtual Environment
 
@@ -229,16 +229,20 @@ DB_DIR=./data
 
 #### 4. Run the Backend
 
-The first time you run the backend, it will generate self-signed certificates for HTTPS:
+Use the `start_backend.py` entry point script to run the backend server:
 
 ```bash
-# First run the script to generate the certificates
-python backend_mockup.py
-```
+# Start the backend server (auto-generates SSL certificates on first run)
+python start_backend.py
 
-```bash
-# Start the backend server
-uvicorn backend_mockup:app --reload --host localhost --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
+# With auto-reload for development
+python start_backend.py --reload
+
+# Custom host/port
+python start_backend.py --host 0.0.0.0 --port 8443
+
+# Disable SSL (not recommended)
+python start_backend.py --no-ssl
 ```
 
 **Important:** You'll need to visit `https://localhost:8443` in your browser and accept the security exception for the self-signed certificate.
@@ -316,9 +320,8 @@ npm run watch          # Build with watch mode
 ng serve               # Alternative dev server command
 
 # Backend (Python)
-python backend_mockup.py    # First run generates SSL certificates
-uvicorn backend_mockup:app --reload --host localhost --port 8443 \
-  --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
+python start_backend.py           # Start backend server with SSL
+python start_backend.py --reload  # With auto-reload for development
 
 # Docker
 docker-compose up -d --build                        # Build and run locally
@@ -432,14 +435,41 @@ src/app/
 ```
 
 ### Backend Architecture
+
+The backend follows a modular architecture for maintainability and scalability:
+
 ```
-backend_mockup.py
-├── API Endpoints          # RESTful routes
-├── WebSocket Handlers     # Streaming responses
-├── Database Models        # SQLAlchemy models
-├── Authentication         # Session management
-├── File Storage           # Upload handling
-└── LLM Integration        # Replicate API client
+backend/
+├── main.py                # FastAPI application entry point
+├── config.py              # Configuration constants and settings
+├── api/                   # API route handlers
+│   ├── auth.py            # Authentication endpoints
+│   ├── conversations.py   # Conversation CRUD operations
+│   ├── messages.py        # Message handling and LLM generation
+│   ├── settings.py        # User settings endpoints
+│   ├── files.py           # File upload handling
+│   └── docs.py            # API documentation routes
+├── database/
+│   └── db.py              # SQLAlchemy models and database setup
+├── models/                # Pydantic request/response models
+│   ├── auth.py            # Authentication models
+│   ├── conversation.py    # Conversation models
+│   ├── message.py         # Message models
+│   ├── settings.py        # Settings models
+│   └── common.py          # Shared models
+├── services/
+│   └── llm.py             # LLM integration (Replicate API)
+├── security/
+│   ├── auth.py            # Session management and authentication
+│   ├── csrf.py            # CSRF protection
+│   └── logging.py         # Security logging
+├── middleware/
+│   └── middleware.py      # Request/response middleware
+└── utils/
+    ├── certificates.py    # SSL certificate generation
+    └── hash.py            # Password hashing utilities
+
+start_backend.py           # Entry point script for running the server
 ```
 
 ### Data Flow
@@ -507,7 +537,7 @@ The Fessi backend provides REST API endpoints optimized for waste disposal queri
 
 If you encounter CORS errors:
 1. Ensure the backend server is running
-2. Check that the CORS origins in `backend_mockup.py` include your frontend URL
+2. Check that the CORS origins in `backend/config.py` include your frontend URL
 3. Make sure you're using HTTPS for both frontend and backend
 
 ### Certificate Issues
@@ -690,7 +720,6 @@ When changes are pushed to `develop` or `main` branches, GitHub Actions automati
 **Important Notes:**
 - This is an ongoing university project with planned semester updates
 - New teams should refer to the comprehensive handover documentation
-- The mockup backend may be replaced with production systems
 - Always coordinate with the FRA UAS IT department for deployment
 
 ## Development Team
