@@ -1,6 +1,6 @@
 // src/app/chat-ui/chat-ui-message/chat-ui-message.component.ts
 import { Component, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
-import { Message, VoiceContent } from '../../data/objects/message';
+import { Message, VoiceContent, AgentContent, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
@@ -186,5 +186,41 @@ export class ChatUiMessageComponent implements OnChanges {
       // Otherwise, set the new rating
       this.chatUI.rateMessage(this.message, rating);
     }
+  }
+
+  // ===== Agent Message Helper Methods =====
+
+  // Get icon for agent step type
+  getStepIcon(type: AgentStepType): string {
+    const icons: Record<AgentStepType, string> = {
+      thought: 'psychology',
+      tool_call: 'build',
+      tool_result: 'check_circle',
+      observation: 'visibility',
+    };
+    return icons[type] || 'circle';
+  }
+
+  // Get status text for agent status
+  getStatusText(status: AgentStatus): string {
+    const texts: Record<AgentStatus, string> = {
+      thinking: 'Reasoning...',
+      responding: 'Generating response...',
+      complete: '',
+      error: 'An error occurred',
+    };
+    return texts[status];
+  }
+
+  // TrackBy function for agent steps
+  trackStep(index: number, step: AgentStep): string {
+    return step.id;
+  }
+
+  // Format agent final response (reuse formatText)
+  formatAgentResponse(response: string): SafeHtml {
+    if (!response) return '';
+    const formatted = this.formatText(response);
+    return this.sanitizer.bypassSecurityTrustHtml(formatted);
   }
 }

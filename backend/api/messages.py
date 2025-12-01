@@ -3,8 +3,11 @@ Message API endpoints.
 """
 import json
 import time
-from typing import Dict
+import asyncio
+import uuid
+from typing import Dict, AsyncGenerator
 from fastapi import APIRouter, Response, Depends, HTTPException, status
+from sse_starlette.sse import EventSourceResponse
 from backend.models.common import ErrorResponse
 from backend.models.message import (
     ApiMessageSend,
@@ -14,7 +17,9 @@ from backend.models.message import (
     MessageResponse,
     SendAndGenerateResponse,
     RateMessageRequest,
-    RegenerateMessageRequest
+    RegenerateMessageRequest,
+    StreamGenerateRequest,
+    AgentStep
 )
 from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
@@ -71,8 +76,21 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
                         'attachments': attachments
                     }
                     content_str = json.dumps(content_obj)
+            elif hasattr(request_body.content, 'content'):
+                # Handle TextContent model
+                content_str = request_body.content.content
         elif message_type == 'voice':
             if isinstance(request_body.content, dict):
+                content_str = json.dumps(request_body.content)
+            elif hasattr(request_body.content, 'model_dump'):
+                content_str = json.dumps(request_body.content.model_dump())
+            else:
+                content_str = str(request_body.content)
+        elif message_type == 'agent':
+            # Handle agent messages - serialize the full AgentContent
+            if hasattr(request_body.content, 'model_dump'):
+                content_str = json.dumps(request_body.content.model_dump())
+            elif isinstance(request_body.content, dict):
                 content_str = json.dumps(request_body.content)
             else:
                 content_str = str(request_body.content)
@@ -524,9 +542,22 @@ async def send_and_generate_message(
                 if attachments:
                     content_obj = {'content': content_str, 'attachments': attachments}
                     content_str = json.dumps(content_obj)
+            elif hasattr(request_body.content, 'content'):
+                content_str = request_body.content.content
         elif message_type == 'voice':
-            content_str = json.dumps(request_body.content) if isinstance(request_body.content, dict) else str(
-                request_body.content)
+            if isinstance(request_body.content, dict):
+                content_str = json.dumps(request_body.content)
+            elif hasattr(request_body.content, 'model_dump'):
+                content_str = json.dumps(request_body.content.model_dump())
+            else:
+                content_str = str(request_body.content)
+        elif message_type == 'agent':
+            if hasattr(request_body.content, 'model_dump'):
+                content_str = json.dumps(request_body.content.model_dump())
+            elif isinstance(request_body.content, dict):
+                content_str = json.dumps(request_body.content)
+            else:
+                content_str = str(request_body.content)
 
         db.create_message(
             message_id=user_message_id,
@@ -596,3 +627,143 @@ async def send_and_generate_message(
         print(f"Error in send_and_generate: {str(e)}")
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
+
+
+@router.post("/stream-generate",
+             responses={
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                 status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse,
+                                                          "description": "Internal server error"}
+             },
+             dependencies=[Depends(rate_limit_guest)])
+async def stream_generate(
+    request_body: StreamGenerateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Stream agent reasoning steps and final response using Server-Sent Events.
+
+    This endpoint returns an SSE stream with the following event types:
+    - step: An agent reasoning step (thought, tool_call, tool_result, observation)
+    - token: A token from the final response stream
+    - done: Signals completion with the final message ID
+    - error: An error occurred during processing
+    """
+    crud_logger.info(
+        f"Stream generate called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
+
+    # Verify ownership before starting stream
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
+                                          current_user.get("is_guest", False)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this conversation"
+        )
+
+    async def event_generator() -> AsyncGenerator[dict, None]:
+        """Generate SSE events for agent reasoning and response."""
+        message_id = int(time.time() * 1000)
+        steps = []
+        final_response = ""
+
+        try:
+            # Get conversation context
+            context = await get_conversation_context(request_body.conversationId, limit=6)
+
+            # Emit a "thinking" step to show the agent is processing
+            thinking_step = AgentStep(
+                id=str(uuid.uuid4()),
+                type="thought",
+                title="Analyzing request",
+                content="Processing your message and preparing response...",
+                timestamp=int(time.time() * 1000)
+            )
+            steps.append(thinking_step)
+            yield {
+                "event": "step",
+                "data": json.dumps(thinking_step.model_dump())
+            }
+
+            # Small delay to simulate thinking
+            await asyncio.sleep(0.1)
+
+            # Generate the LLM response
+            # In Phase 3, this will be replaced with actual LangGraph agent streaming
+            ai_response_content = await generate_llm_response(
+                context,
+                DEFAULT_TEMPERATURE,
+                DEFAULT_TOP_P,
+                DEFAULT_SYSTEM_PROMPT,
+                DEFAULT_MODEL
+            )
+
+            # Emit an observation step
+            observation_step = AgentStep(
+                id=str(uuid.uuid4()),
+                type="observation",
+                title="Response generated",
+                content="Successfully generated response from the language model.",
+                timestamp=int(time.time() * 1000),
+                duration=100  # Placeholder duration
+            )
+            steps.append(observation_step)
+            yield {
+                "event": "step",
+                "data": json.dumps(observation_step.model_dump())
+            }
+
+            # Stream the response tokens
+            # For now, we simulate token streaming by chunking the response
+            # In Phase 3, this will use actual LLM token streaming
+            chunk_size = 4  # Characters per "token"
+            for i in range(0, len(ai_response_content), chunk_size):
+                token = ai_response_content[i:i + chunk_size]
+                final_response += token
+                yield {
+                    "event": "token",
+                    "data": token
+                }
+                # Small delay to simulate streaming
+                await asyncio.sleep(0.01)
+
+            # Save the complete message to the database
+            current_time = int(time.time())
+
+            # Serialize agent content for storage
+            agent_content = {
+                "type": "agent",
+                "steps": [s.model_dump() for s in steps],
+                "finalResponse": final_response,
+                "status": "complete"
+            }
+
+            db.create_message(
+                message_id=message_id,
+                conversation_id=request_body.conversationId,
+                role_name=request_body.aiParticipant,
+                content=json.dumps(agent_content),
+                time=current_time,
+                msg_type='agent',
+                version=1,
+                last_modified=current_time
+            )
+
+            # Signal completion
+            yield {
+                "event": "done",
+                "data": json.dumps({
+                    "messageId": message_id,
+                    "conversationId": request_body.conversationId
+                })
+            }
+
+            crud_logger.info(f"Stream generate completed - Message ID: {message_id}")
+
+        except Exception as e:
+            crud_logger.error(f"Error in stream generate: {str(e)}", exc_info=True)
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": str(e)})
+            }
+
+    return EventSourceResponse(event_generator())

@@ -24,6 +24,7 @@ import {MatListModule} from '@angular/material/list';
 import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
 import {MatCardModule} from '@angular/material/card';
 import { MatDialogModule } from '@angular/material/dialog';
+import { MatExpansionModule } from '@angular/material/expansion';
 
 // Default
 import {inject, isDevMode, NgModule, provideAppInitializer} from '@angular/core';
@@ -78,6 +79,7 @@ export function HttpLoaderFactory(http: HttpClient) {
     MatProgressSpinnerModule,
     MatCardModule,
     MatDialogModule,
+    MatExpansionModule,
     CommonModule,
     ChatUiInputfieldComponent,
     RouterModule.forRoot(routes),

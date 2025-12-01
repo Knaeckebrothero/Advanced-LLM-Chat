@@ -350,6 +350,153 @@ em {
   }
 }
 
+// --- Agent Message ---
+.agent-message {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .agent-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    color: var(--theme-text);
+    opacity: 0.8;
+    font-size: 0.875rem;
+
+    mat-spinner {
+      ::ng-deep circle {
+        stroke: var(--theme-primary);
+      }
+    }
+  }
+
+  .agent-steps {
+    margin-bottom: 12px;
+
+    .agent-step {
+      margin-bottom: 4px;
+      background-color: transparent;
+
+      &.step-thought {
+        --step-color: #7c4dff;
+      }
+      &.step-tool_call {
+        --step-color: #ff9100;
+      }
+      &.step-tool_result {
+        --step-color: #00c853;
+      }
+      &.step-observation {
+        --step-color: #00b8d4;
+      }
+
+      ::ng-deep .mat-expansion-panel-header {
+        padding: 0 12px;
+        height: 40px;
+
+        .mat-expansion-panel-header-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+
+          mat-icon {
+            color: var(--step-color);
+            font-size: 18px;
+            height: 18px;
+            width: 18px;
+          }
+
+          .step-title {
+            font-weight: 500;
+            font-size: 0.875rem;
+          }
+        }
+
+        .mat-expansion-panel-header-description {
+          font-size: 0.75rem;
+          opacity: 0.7;
+        }
+      }
+
+      ::ng-deep .mat-expansion-panel-body {
+        padding: 0 12px 12px;
+      }
+
+      .step-content {
+        pre {
+          background: rgba(var(--theme-primary-contrast-rgb), 0.05);
+          padding: 12px;
+          border-radius: 4px;
+          overflow-x: auto;
+          font-size: 0.8125rem;
+          margin: 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        p {
+          margin: 0;
+          font-size: 0.875rem;
+          line-height: 1.5;
+        }
+
+        .step-metadata {
+          margin-top: 8px;
+
+          .metadata-json {
+            background: rgba(var(--theme-primary-contrast-rgb), 0.08);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            max-height: 200px;
+            overflow: auto;
+          }
+        }
+      }
+    }
+  }
+
+  .agent-response {
+    padding: 8px 0;
+    line-height: 1.6;
+    font-size: 1em;
+
+    .streaming-cursor {
+      display: inline-block;
+      margin-left: 2px;
+      animation: blink 1s infinite;
+      color: var(--theme-primary);
+      font-weight: bold;
+    }
+  }
+
+  // Blinking cursor animation
+  @keyframes blink {
+    0%, 50% {
+      opacity: 1;
+    }
+    51%, 100% {
+      opacity: 0;
+    }
+  }
+
+  .agent-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: rgba(244, 67, 54, 0.1);
+    color: #f44336;
+    border-radius: 4px;
+
+    mat-icon {
+      color: #f44336;
+    }
+  }
+}
+
 // Responsive adjustment, allowing the message to take more space on smaller screens
 @media (max-width: 768px) {
   .message {

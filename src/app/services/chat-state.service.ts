@@ -1,18 +1,19 @@
 // src/app/services/chat-state.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, from, of } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, from, of, Subscription } from 'rxjs';
 import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
 import { SyncEngineService } from '../repositories/sync-engine.service';
 import { Conversation } from '../data/objects/conversation';
-import { Message } from '../data/objects/message';
+import { Message, AgentContent, AgentStep } from '../data/objects/message';
 import { FilePreview, UploadStatus } from '../data/objects/file-preview';
 import { ApiService } from './api.service';
 import { AuthService } from '../auth/auth.service';
 import { SettingsStateService } from './settings-state.service';
 import { UIStateService } from './ui-state.service';
 import { NotificationService } from './notification.service';
+import { StreamingService, StreamEvent, DoneEventData, ErrorEventData } from './streaming.service';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { DBService } from '../data/db.service';
@@ -25,6 +26,8 @@ export interface ChatState {
   isLoading: boolean;
   error: string | null;
   hasReachedEnd?: boolean;
+  streamingMessage: Message<AgentContent> | null;
+  isStreaming: boolean;
 }
 
 @Injectable({
@@ -39,6 +42,11 @@ export class ChatStateService implements OnDestroy {
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
   private hasReachedEnd$ = new BehaviorSubject<boolean>(false);
+
+  // Streaming state
+  private streamingMessage$ = new BehaviorSubject<Message<AgentContent> | null>(null);
+  private isStreaming$ = new BehaviorSubject<boolean>(false);
+  private streamingSubscription: Subscription | null = null;
 
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
@@ -89,15 +97,19 @@ export class ChatStateService implements OnDestroy {
     this.isNewConversation$,
     this.isLoading$,
     this.error$,
-    this.hasReachedEnd$
+    this.hasReachedEnd$,
+    this.streamingMessage$,
+    this.isStreaming$
   ]).pipe(
-    map(([activeConversation, messages, isNewConversation, isLoading, error, hasReachedEnd]) => ({
+    map(([activeConversation, messages, isNewConversation, isLoading, error, hasReachedEnd, streamingMessage, isStreaming]) => ({
       activeConversation,
       messages,
       isNewConversation,
       isLoading,
       error,
-      hasReachedEnd
+      hasReachedEnd,
+      streamingMessage,
+      isStreaming
     })),
     shareReplay(1)
   );
@@ -111,6 +123,7 @@ export class ChatStateService implements OnDestroy {
     private settingsState: SettingsStateService,
     private uiState: UIStateService,
     private notificationService: NotificationService,
+    private streamingService: StreamingService,
     private http: HttpClient,
     private dbService: DBService
   ) {
@@ -341,6 +354,162 @@ export class ChatStateService implements OnDestroy {
       conversation.updatedAt = new Date();
       await this.conversationRepository.save(conversation);
     }
+  }
+
+  /**
+   * Send a message and stream the AI response using SSE
+   */
+  async sendAndStreamResponse(content: string, roleName: string = 'user'): Promise<void> {
+    // Create conversation if it's new
+    if (this.isNewConversation$.getValue()) {
+      await this.createConversationFromFirstMessage(content);
+    }
+
+    const conversationId = this.activeConversationId$.getValue()!;
+
+    // Create and save user message
+    const userMessage = Message.createText(
+      {
+        id: Math.floor(Date.now() / 1000),
+        conversationId,
+        roleName,
+        time: new Date()
+      },
+      content
+    );
+
+    // Mark that we're sending a message
+    await this.conversationRepository.markMessageSent(conversationId);
+
+    // Save user message to repository
+    await this.messageRepository.save(userMessage);
+
+    // Create placeholder agent message for streaming
+    const agentMessage = Message.createAgent(conversationId, [], '', 'thinking');
+    this.streamingMessage$.next(agentMessage);
+    this.isStreaming$.next(true);
+
+    // Cancel any existing streaming subscription
+    if (this.streamingSubscription) {
+      this.streamingSubscription.unsubscribe();
+    }
+
+    // Start streaming
+    this.streamingSubscription = this.streamingService
+      .streamAgentResponse(conversationId, 'Assistant')
+      .subscribe({
+        next: (event) => this.handleStreamEvent(event, agentMessage),
+        error: (error) => this.handleStreamError(error, agentMessage),
+        complete: () => this.handleStreamComplete(agentMessage)
+      });
+  }
+
+  /**
+   * Handle individual stream events
+   */
+  private handleStreamEvent(event: StreamEvent, message: Message<AgentContent>): void {
+    switch (event.type) {
+      case 'step':
+        // Add the new step to the message
+        message.content.steps.push(event.data as AgentStep);
+        message.content.status = 'thinking';
+        break;
+
+      case 'token':
+        // Append the token to the final response
+        message.content.finalResponse += event.data as string;
+        message.content.status = 'responding';
+        break;
+
+      case 'done':
+        // Mark as complete
+        message.content.status = 'complete';
+        const doneData = event.data as DoneEventData;
+        // Update message ID with the server-assigned ID
+        message.id = doneData.messageId;
+        break;
+
+      case 'error':
+        // Handle error
+        message.content.status = 'error';
+        message.content.error = (event.data as ErrorEventData).error;
+        break;
+    }
+
+    // Emit the updated message (create a new reference to trigger change detection)
+    this.streamingMessage$.next(message);
+  }
+
+  /**
+   * Handle stream errors
+   */
+  private async handleStreamError(error: any, message: Message<AgentContent>): Promise<void> {
+    console.error('Stream error:', error);
+
+    // Update message to show error state
+    message.content.status = 'error';
+    message.content.error = error.message || 'An error occurred during streaming';
+
+    // Save the error message to the repository
+    await this.messageRepository.save(message);
+
+    // Clean up streaming state
+    this.isStreaming$.next(false);
+    this.streamingMessage$.next(null);
+
+    this.notificationService.showError('Failed to generate response');
+  }
+
+  /**
+   * Handle stream completion
+   */
+  private async handleStreamComplete(message: Message<AgentContent>): Promise<void> {
+    // Only save if the message completed successfully
+    if (message.content.status === 'complete') {
+      // The message was already saved on the backend by the SSE endpoint,
+      // but we need to save it locally to IndexedDB
+      await this.messageRepository.save(message);
+
+      // Update conversation timestamp
+      const conversation = await firstValueFrom(this.activeConversation$);
+      if (conversation && conversation.id !== '0') {
+        conversation.updatedAt = new Date();
+        await this.conversationRepository.save(conversation);
+      }
+
+      this.notificationService.showSuccess('Response generated');
+    }
+
+    // Clean up streaming state
+    this.isStreaming$.next(false);
+    this.streamingMessage$.next(null);
+    this.streamingSubscription = null;
+  }
+
+  /**
+   * Cancel an ongoing streaming response
+   */
+  cancelStreaming(): void {
+    if (this.streamingSubscription) {
+      this.streamingSubscription.unsubscribe();
+      this.streamingSubscription = null;
+    }
+    this.isStreaming$.next(false);
+    this.streamingMessage$.next(null);
+  }
+
+  /**
+   * Get the current streaming message (for direct access)
+   */
+  getStreamingMessage(): Message<AgentContent> | null {
+    return this.streamingMessage$.getValue();
+  }
+
+  /**
+   * Check if streaming is currently in progress
+   */
+  isCurrentlyStreaming(): boolean {
+    return this.isStreaming$.getValue();
   }
 
   /**
@@ -750,5 +919,8 @@ export class ChatStateService implements OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+
+    // Cancel any ongoing streaming
+    this.cancelStreaming();
   }
 }

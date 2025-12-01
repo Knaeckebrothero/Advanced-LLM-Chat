@@ -66,6 +66,57 @@
           </div>
         </div>
       </ng-container>
+
+      <!-- == AGENT MESSAGE == -->
+      <ng-container *ngIf="message.isAgent()">
+        <div class="agent-message">
+          <!-- Status indicator while processing -->
+          <div class="agent-status" *ngIf="message.content.status !== 'complete'">
+            <mat-spinner diameter="16" *ngIf="message.content.status === 'thinking' || message.content.status === 'responding'"></mat-spinner>
+            <span>{{ getStatusText(message.content.status) }}</span>
+          </div>
+
+          <!-- Collapsible reasoning steps -->
+          <mat-accordion class="agent-steps" *ngIf="message.content.steps.length > 0">
+            <mat-expansion-panel *ngFor="let step of message.content.steps; trackBy: trackStep"
+                                 [expanded]="false"
+                                 class="agent-step"
+                                 [ngClass]="'step-' + step.type">
+              <mat-expansion-panel-header>
+                <mat-panel-title>
+                  <mat-icon>{{ getStepIcon(step.type) }}</mat-icon>
+                  <span class="step-title">{{ step.title }}</span>
+                </mat-panel-title>
+                <mat-panel-description *ngIf="step.duration">
+                  {{ step.duration }}ms
+                </mat-panel-description>
+              </mat-expansion-panel-header>
+
+              <div class="step-content">
+                <pre *ngIf="step.type === 'tool_call'">{{ step.content }}</pre>
+                <p *ngIf="step.type !== 'tool_call'">{{ step.content }}</p>
+
+                <!-- Tool-specific metadata display -->
+                <div class="step-metadata" *ngIf="step.metadata">
+                  <pre class="metadata-json">{{ step.metadata | json }}</pre>
+                </div>
+              </div>
+            </mat-expansion-panel>
+          </mat-accordion>
+
+          <!-- Final response with streaming cursor -->
+          <div class="agent-response" *ngIf="message.content.finalResponse || message.content.status === 'responding'">
+            <div [innerHTML]="formatAgentResponse(message.content.finalResponse)"></div>
+            <span class="streaming-cursor" *ngIf="message.content.status === 'responding'">▊</span>
+          </div>
+
+          <!-- Error display -->
+          <div class="agent-error" *ngIf="message.content.error">
+            <mat-icon>error</mat-icon>
+            <span>{{ message.content.error }}</span>
+          </div>
+        </div>
+      </ng-container>
     </div>
 
     <div class="message-footer">
