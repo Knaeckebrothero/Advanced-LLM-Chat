@@ -73,6 +73,64 @@ class VoiceContent(BaseModel):
     waveform: Optional[List[float]] = None
 
 
+class AgentStep(BaseModel):
+    """
+    Represents a single step in the agent's reasoning process.
+
+    This class encapsulates the details of an individual reasoning step,
+    including its type, title, content, and optional metadata like duration
+    for performance tracking or tool-specific data.
+
+    :ivar id: Unique identifier for this step.
+    :type id: str
+    :ivar type: Type of step (thought, tool_call, tool_result, observation).
+    :type type: Literal["thought", "tool_call", "tool_result", "observation"]
+    :ivar title: Brief title describing this step.
+    :type title: str
+    :ivar content: Detailed content of this step.
+    :type content: str
+    :ivar timestamp: Unix timestamp in milliseconds when this step occurred.
+    :type timestamp: int
+    :ivar duration: Optional duration in milliseconds for this step.
+    :type duration: Optional[int]
+    :ivar metadata: Optional tool-specific metadata (e.g., Neo4j query results).
+    :type metadata: Optional[dict]
+    """
+    id: str
+    type: Literal["thought", "tool_call", "tool_result", "observation"]
+    title: str
+    content: str
+    timestamp: int
+    duration: Optional[int] = None
+    metadata: Optional[dict] = None
+
+
+class AgentContent(BaseModel):
+    """
+    Represents the content of an agent message with reasoning steps and final response.
+
+    This class models the complete output of a reasoning agent, including all
+    intermediate steps (thoughts, tool calls, observations) and the final response
+    to the user's query.
+
+    :ivar type: Always "agent" for agent messages.
+    :type type: Literal["agent"]
+    :ivar steps: List of reasoning steps taken by the agent.
+    :type steps: List[AgentStep]
+    :ivar finalResponse: The final response text to display to the user.
+    :type finalResponse: str
+    :ivar status: Current status of the agent (thinking, responding, complete, error).
+    :type status: Literal["thinking", "responding", "complete", "error"]
+    :ivar error: Optional error message if status is "error".
+    :type error: Optional[str]
+    """
+    type: Literal["agent"] = "agent"
+    steps: List[AgentStep] = []
+    finalResponse: str = ""
+    status: Literal["thinking", "responding", "complete", "error"] = "complete"
+    error: Optional[str] = None
+
+
 class ApiMessageSend(BaseModel):
     """
     Represents a message being sent via the API.
@@ -105,8 +163,8 @@ class ApiMessageSend(BaseModel):
     """
     conversationId: str  # Now using UUID
     roleName: str
-    type: Literal["text", "voice"]
-    content: Union[str, TextContent, VoiceContent]  # Backwards compatible - str for legacy, objects for new types
+    type: Literal["text", "voice", "agent"]
+    content: Union[str, TextContent, VoiceContent, AgentContent]  # Backwards compatible - str for legacy, objects for new types
     time: int
     version: Optional[int] = 1
     lastModified: Optional[int] = None
@@ -184,8 +242,8 @@ class ApiMessageSendAndGenerate(BaseModel):
     """
     conversationId: str
     roleName: str
-    type: Literal["text", "voice"]
-    content: Union[str, TextContent, VoiceContent]
+    type: Literal["text", "voice", "agent"]
+    content: Union[str, TextContent, VoiceContent, AgentContent]
     time: int
     version: Optional[int] = 1
     lastModified: Optional[int] = None
@@ -235,11 +293,12 @@ class MessageResponse(BaseModel):
     :ivar roleName: Role indicating the sender's identity or purpose in the
         conversation (e.g., "user", "assistant").
     :type roleName: str
-    :ivar content: Actual message content or body.
-    :type content: str
+    :ivar content: Actual message content or body. Can be string for text/voice
+        or AgentContent for agent messages.
+    :type content: Union[str, AgentContent]
     :ivar time: UNIX epoch timestamp of when the message was created.
     :type time: int
-    :ivar type: Optional type of the message for categorization, such as "text".
+    :ivar type: Optional type of the message for categorization (text, voice, agent).
         Defaults to "text" for backwards compatibility.
     :type type: Optional[str]
     :ivar version: Version of the message structure. Defaults to 1.
@@ -250,16 +309,29 @@ class MessageResponse(BaseModel):
     :ivar rating: Optional user-provided rating of the message. 1 indicates
         thumbs up, 0 indicates thumbs down, and None indicates unrated.
     :type rating: Optional[int]
+    :ivar steps: Agent reasoning steps (only for agent messages).
+    :type steps: Optional[List[AgentStep]]
+    :ivar finalResponse: Agent final response (only for agent messages).
+    :type finalResponse: Optional[str]
+    :ivar status: Agent status (only for agent messages).
+    :type status: Optional[str]
+    :ivar error: Agent error message (only for agent messages).
+    :type error: Optional[str]
     """
     id: int
     conversationId: str  # Now using UUID
     roleName: str
-    content: str
+    content: Union[str, AgentContent]  # Now supports both text and agent content
     time: int
     type: Optional[str] = "text"  # Default to "text" for backwards compatibility
     version: int = 1
     lastModified: Optional[int] = None
     rating: Optional[int] = None  # 1 for thumbs up, 0 for thumbs down, None for unrated
+    # Additional fields for agent messages (flattened for backwards compatibility)
+    steps: Optional[List[AgentStep]] = None
+    finalResponse: Optional[str] = None
+    status: Optional[str] = None
+    error: Optional[str] = None
 
 
 class SendAndGenerateResponse(BaseModel):
@@ -319,3 +391,32 @@ class RegenerateMessageRequest(BaseModel):
     """
     id: int
     conversationId: str  # UUID
+
+
+class StreamGenerateRequest(BaseModel):
+    """
+    Represents a request to stream an agent response for a conversation.
+
+    This class is used to initiate a Server-Sent Events (SSE) stream that
+    sends agent reasoning steps and final response tokens in real-time.
+
+    :ivar conversationId: Unique identifier for the conversation.
+    :type conversationId: str
+    :ivar aiParticipant: Name of the AI participant. Defaults to "Assistant".
+    :type aiParticipant: str
+    """
+    conversationId: str  # UUID
+    aiParticipant: str = "Assistant"
+
+
+class StreamEvent(BaseModel):
+    """
+    Represents an event in the SSE stream.
+
+    :ivar event: Type of event (step, token, done, error).
+    :type event: Literal["step", "token", "done", "error"]
+    :ivar data: Event payload (AgentStep for step, string for token, etc.).
+    :type data: Union[AgentStep, str, dict]
+    """
+    event: Literal["step", "token", "done", "error"]
+    data: Union[AgentStep, str, dict]

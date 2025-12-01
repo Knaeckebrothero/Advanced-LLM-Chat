@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Angular 19.2.2 application with FastAPI backend for a waste disposal assistant chatbot (Fessi). Uses microservices architecture with separate frontend and backend containers, supports multiple LLM models via Replicate API, and includes offline-first capabilities with IndexedDB. Supports i18n with German and English via ngx-translate.
+Angular 19.2.2 application with FastAPI backend for a waste disposal assistant chatbot (Fessi). Uses microservices architecture with separate frontend and backend containers, PostgreSQL database, supports multiple LLM models via Replicate API, and includes offline-first capabilities with IndexedDB. Supports i18n with German and English via ngx-translate.
 
 ## Essential Commands
 
@@ -20,14 +20,29 @@ npx tsc --noEmit   # Type-check without building (no ESLint configured)
 
 ### Backend Development
 ```bash
-# Start backend (auto-generates SSL certs on first run)
+# 1. Start PostgreSQL (required)
+cd docker && docker-compose up -d postgres && cd ..
+
+# 2. Initialize database and filesystem (first time or after reset)
+python backend/app_init.py --seed    # Creates tables and seeds test data
+
+# 3. Start backend (auto-generates SSL certs on first run)
 python start_backend.py              # Default: https://localhost:8443
 python start_backend.py --reload     # With auto-reload for development
-python start_backend.py --host 0.0.0.0 --port 8443  # Custom host/port
 
-# Required .env file:
+# Required .env file (copy from .env.example):
 # USE_DEV_CERTS=True
 # REPLICATE_API_TOKEN=your_token_here
+# POSTGRES_HOST=localhost
+# POSTGRES_PORT=5432
+# POSTGRES_DB=fessi_chat
+# POSTGRES_USER=fessi
+# POSTGRES_PASSWORD=fessi_dev_password
+
+# Database commands
+cd docker && docker-compose up -d postgres   # Start PostgreSQL
+cd docker && docker-compose stop postgres    # Stop PostgreSQL
+python backend/app_init.py --force-reset --seed  # Reset and reseed database
 
 # Backend testing
 pytest                      # Run all tests
@@ -79,8 +94,13 @@ The FastAPI backend (`backend/`) is a modular Python package:
 backend/
 ├── main.py           # FastAPI app entry point
 ├── config.py         # Configuration constants
+├── app_init.py       # Database and filesystem initialization script
 ├── api/              # Route handlers (auth, conversations, messages, settings, files)
-├── database/db.py    # SQLAlchemy models and database setup
+├── database/
+│   ├── db.py         # SQLAlchemy engine and connection pool
+│   ├── db_init.py    # Database migration script
+│   ├── tables.py     # SQLAlchemy Core table definitions
+│   └── queries/      # SQL files (schema.sql, seed.sql, complex.sql)
 ├── models/           # Pydantic request/response models
 ├── services/llm.py   # Replicate API integration
 ├── security/         # Auth, CSRF, logging
@@ -94,7 +114,7 @@ Key backend features:
 - RESTful API endpoints for chat operations
 - WebSocket support for streaming responses
 - Session-based authentication with mock/guest providers
-- SQLite database for conversation persistence
+- PostgreSQL database for conversation persistence
 - Integration with Replicate API for multiple LLM models
 
 ### Key Patterns
@@ -153,7 +173,7 @@ The project follows Git Flow:
 - Unit tests use Karma/Jasmine framework
 - Test files are co-located with components (`.spec.ts`)
 - Run specific tests: `ng test --include='**/specific-component.spec.ts'`
-- Backend tests would use pytest (not currently implemented)
+- Backend tests use pytest
 
 ## API Endpoints
 
@@ -177,7 +197,7 @@ The backend provides these main endpoints (all require session authentication):
 - **conversations**: Conversation metadata with userId index
 - **user**: User information store
 
-### Backend (SQLite)
+### Backend (PostgreSQL)
 - **users**: User accounts with email and name
 - **conversations**: Chat conversations with participants
 - **messages**: Chat messages with type field for discriminated content

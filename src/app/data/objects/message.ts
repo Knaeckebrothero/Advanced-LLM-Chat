@@ -67,8 +67,38 @@ export interface VoiceContent {
   waveform?: number[];  // Optional waveform data for visualization
 }
 
+/**
+ * Agent message types for multi-step reasoning
+ */
+export type AgentStepType = 'thought' | 'tool_call' | 'tool_result' | 'observation';
+export type AgentStatus = 'thinking' | 'responding' | 'complete' | 'error';
+
+/**
+ * Represents a single step in agent reasoning
+ */
+export interface AgentStep {
+  id: string;
+  type: AgentStepType;
+  title: string;
+  content: string;
+  timestamp: number;
+  duration?: number;
+  metadata?: Record<string, unknown>; // For tool-specific data (e.g., Neo4j query results)
+}
+
+/**
+ * Agent message content with reasoning steps and final response
+ */
+export interface AgentContent {
+  type: 'agent';
+  steps: AgentStep[];
+  finalResponse: string;
+  status: AgentStatus;
+  error?: string;
+}
+
 // Union type for all possible message content types
-type MessageContent = TextContent | VoiceContent;
+type MessageContent = TextContent | VoiceContent | AgentContent;
 
 /**
  * Main Message class that handles all message types
@@ -131,6 +161,30 @@ export class Message<T extends MessageContent = MessageContent> {
     });
   }
 
+  // Factory method for creating agent messages
+  static createAgent(
+    conversationId: string,
+    steps: AgentStep[] = [],
+    finalResponse: string = '',
+    status: AgentStatus = 'thinking'
+  ): Message<AgentContent> {
+    return new Message(
+      {
+        id: Date.now(),
+        conversationId,
+        roleName: 'assistant',
+        time: new Date(),
+        version: 1,
+      },
+      {
+        type: 'agent',
+        steps,
+        finalResponse,
+        status,
+      }
+    );
+  }
+
   // Factory method to create from API response (backwards compatibility)
   static fromApiResponse(data: any): Message {
     // Generate ID if not provided by server
@@ -156,6 +210,15 @@ export class Message<T extends MessageContent = MessageContent> {
         data.transcript,
         data.waveform
       );
+    } else if (data.type === 'agent') {
+      // Handle agent messages
+      return new Message<AgentContent>(metadata, {
+        type: 'agent',
+        steps: data.steps || [],
+        finalResponse: data.finalResponse || data.content || '',
+        status: data.status || 'complete',
+        error: data.error
+      });
     } else {
       // Convert attachment references from API to FilePreview objects
       let attachments: FilePreview[] | undefined;
@@ -221,6 +284,15 @@ export class Message<T extends MessageContent = MessageContent> {
           ...(this.content.waveform && { waveform: this.content.waveform })
         };
 
+      case 'agent':
+        return {
+          ...base,
+          steps: this.content.steps,
+          finalResponse: this.content.finalResponse,
+          status: this.content.status,
+          ...(this.content.error && { error: this.content.error })
+        };
+
       default:
         // Type guard - this should never happen
         const _exhaustive: never = this.content;
@@ -283,6 +355,10 @@ export class Message<T extends MessageContent = MessageContent> {
     return this.content.type === 'voice';
   }
 
+  isAgent(): this is Message<AgentContent> {
+    return this.content.type === 'agent';
+  }
+
   // Get text content (for backwards compatibility)
   get textContent(): string | undefined {
     if (this.isText()) {
@@ -314,6 +390,8 @@ export class Message<T extends MessageContent = MessageContent> {
         return this.content.content;
       case 'voice':
         return `🎤 Voice message (${this.formatDuration(this.content.duration)})`;
+      case 'agent':
+        return this.content.finalResponse || `Agent ${this.content.status}...`;
       default:
         return 'Unknown message type';
     }
@@ -379,6 +457,14 @@ export class Message<T extends MessageContent = MessageContent> {
       switch (data.content.type) {
         case 'voice':
           return new Message<VoiceContent>(metadata, data.content);
+        case 'agent':
+          return new Message<AgentContent>(metadata, {
+            type: 'agent',
+            steps: data.content.steps || [],
+            finalResponse: data.content.finalResponse || '',
+            status: data.content.status || 'complete',
+            error: data.content.error
+          });
         case 'text':
         default:
           // Ensure FilePreview objects are properly reconstructed
@@ -402,3 +488,6 @@ export class Message<T extends MessageContent = MessageContent> {
 
 // For backwards compatibility - export a type for the old Message structure
 export type LegacyMessage = Message<TextContent>;
+
+// Export TextContent for completeness
+export type { TextContent };

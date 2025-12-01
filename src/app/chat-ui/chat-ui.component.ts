@@ -1,5 +1,5 @@
 import { Component, ViewChild, ElementRef, AfterViewChecked, OnInit, OnDestroy } from '@angular/core';
-import { Message } from '../data/objects/message';
+import { Message, AgentContent } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
 import { Subscription, Observable, combineLatest } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -35,6 +35,15 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   isLoading$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.isLoading));
   error$: Observable<string | null> = this.chatState.state$.pipe(map(state => state.error));
   hasReachedEnd$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.hasReachedEnd || false));
+
+  // Streaming state
+  streamingMessage$: Observable<Message<AgentContent> | null> = this.chatState.state$.pipe(
+    map(state => state.streamingMessage)
+  );
+  isStreaming$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.isStreaming));
+
+  // Feature flag for streaming mode (can be controlled via settings later)
+  useStreaming: boolean = true;
 
   // For template compatibility - expose messages as non-observable
   messages = this.chatState.messages$;
@@ -244,14 +253,16 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
   async onMessageSent(message: string): Promise<void> {
     if (message.trim() || this.pendingFiles.length > 0) {
       try {
-        // ** THE FIX IS HERE **
-        // Re-introduce the logic to call the correct method based on whether files are present.
         if (this.pendingFiles.length > 0) {
           console.log('Sending message with files:', this.pendingFiles);
           await this.chatState.sendMessageWithFiles(message, this.pendingFiles);
           this.pendingFiles = []; // Clear pending files after sending
+        } else if (this.useStreaming) {
+          // Use streaming mode for text-only messages
+          console.log('Sending message with streaming:', message);
+          await this.chatState.sendAndStreamResponse(message);
         } else {
-          // This is for text-only messages and will trigger the AI response.
+          // Fallback to non-streaming mode
           await this.chatState.sendMessage(message);
         }
 
@@ -263,6 +274,17 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
         console.error('Error sending message:', error);
       }
     }
+  }
+
+  // Cancel ongoing streaming
+  cancelStreaming(): void {
+    this.chatState.cancelStreaming();
+  }
+
+  // Toggle streaming mode
+  toggleStreamingMode(): void {
+    this.useStreaming = !this.useStreaming;
+    console.log('Streaming mode:', this.useStreaming ? 'enabled' : 'disabled');
   }
 
   // Generate a new message
