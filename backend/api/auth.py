@@ -10,7 +10,7 @@ from backend.security.auth import (
     create_session, validate_session, delete_session, get_current_user
 )
 from backend.security.logging import log_security_event
-from backend.database.db import get_db
+from backend.database import db
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -41,29 +41,30 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     if ip_address == 'unknown':
         ip_address = f"guest_{secrets.token_hex(4)}"
 
-    with get_db() as db:
-        cur = db.cursor()
-        cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
-        usage = cur.fetchone()
+    now = datetime.now(UTC)
+    limit_duration = timedelta(hours=3)
+    max_requests = 5
 
-        now = datetime.now(UTC)
-        limit_duration = timedelta(hours=3)
-        max_requests = 5
+    usage = db.get_guest_usage(ip_address)
 
-        if usage:
-            last_request_at = datetime.fromisoformat(usage["last_request_at"])
-            if now - last_request_at > limit_duration:
-                cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?",
-                            (now.isoformat(), ip_address))
-            elif usage["request_count"] >= max_requests:
-                reset_time = last_request_at + limit_duration
-                raise HTTPException(status_code=429,
-                                    detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
-        else:
-            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)",
-                        (ip_address, now.isoformat()))
+    if usage:
+        last_request_at = usage["last_request_at"]
+        if isinstance(last_request_at, str):
+            last_request_at = datetime.fromisoformat(last_request_at)
 
-        db.commit()
+        # Ensure timezone awareness
+        if last_request_at.tzinfo is None:
+            last_request_at = last_request_at.replace(tzinfo=UTC)
+
+        if now - last_request_at > limit_duration:
+            # Reset counter
+            db.reset_guest_usage(ip_address)
+        elif usage["request_count"] >= max_requests:
+            reset_time = last_request_at + limit_duration
+            raise HTTPException(status_code=429,
+                                detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
+    else:
+        db.increment_guest_usage(ip_address)
 
     # Get existing session to regenerate from
     old_session_key = req.cookies.get("session")
@@ -144,20 +145,19 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     # Get existing session to regenerate from
     old_session_key = req.cookies.get("session")
 
-    with get_db() as db:
-        cur = db.cursor()
-        cur.execute("SELECT * FROM users WHERE email = ?", (request.email,))
-        user = cur.fetchone()
+    # Check if user exists
+    user = db.get_user_by_email(request.email)
 
-        if not user:
-            # User doesn't exist, create a new one
-            user_name = request.email.split('@')[0].title()
-            cur.execute("INSERT INTO users (email, name) VALUES (?, ?)", (request.email, user_name))
-            user_id = cur.lastrowid
-            db.commit()
-        else:
-            user_id = user['id']
-            user_name = user['name']
+    if not user:
+        # User doesn't exist, create a new one
+        user_name = request.email.split('@')[0].title()
+        user = db.create_user(email=request.email, name=user_name)
+        new_user = True
+    else:
+        new_user = False
+
+    user_id = user['id']
+    user_name = user['name']
 
     # Create session with is_guest=False for regular users, regenerating old session
     session_key, csrf_token = create_session(user_id, request.email, is_guest=False, regenerate_from=old_session_key)
@@ -195,7 +195,7 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     log_security_event("user_login_success", {
         "user_id": user_id,
         "email": request.email,
-        "new_user": user is None
+        "new_user": new_user
     }, req)
 
     return LoginResponse(

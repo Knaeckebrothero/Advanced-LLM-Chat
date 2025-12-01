@@ -14,7 +14,7 @@ from backend.models.conversation import (
     ConversationWithDetails
 )
 from backend.models.message import MessageResponse
-from backend.database.db import get_db
+from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership
 from backend.security.logging import crud_logger
 from backend.utils.hash import generate_hash, generate_sha256_hash
@@ -57,51 +57,37 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
         return []
 
     try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            # Fetch conversations for the current user
-            cur.execute(
-                """
-                SELECT id, userId, name, participants, createdAt, updatedAt, version, lastModified
-                FROM conversations
-                WHERE userId = ?
-                ORDER BY updatedAt DESC
-                """,
-                (user_id,)
-            )
-            conversation_rows = cur.fetchall()
+        # Fetch conversations for the current user
+        conversations = db.get_conversations_by_user(user_id)
 
-            if not conversation_rows:
-                response.status_code = status.HTTP_204_NO_CONTENT
-                return []
+        if not conversations:
+            response.status_code = status.HTTP_204_NO_CONTENT
+            return []
 
-            conversation_responses = []
-            for conv_row in conversation_rows:
-                conversation_id = conv_row['id']
-                # Fetch messages for each conversation to calculate hash
-                cur.execute(
-                    "SELECT content FROM messages WHERE conversationId = ?",
-                    (conversation_id,)
-                )
-                messages = cur.fetchall()
-                hashsum = generate_hash(messages)
+        conversation_responses = []
+        for conv in conversations:
+            conversation_id = conv['id']
+            # Fetch messages for each conversation to calculate hash
+            messages = db.get_messages_by_conversation(conversation_id, limit=1000)
+            message_contents = [{'content': m['content']} for m in messages]
+            hashsum = generate_hash(message_contents)
 
-                # Parse participants (stored as JSON string)
-                participants = json.loads(conv_row['participants']) if conv_row['participants'] else []
+            # Parse participants (stored as JSON string)
+            participants = json.loads(conv['participants']) if conv['participants'] else []
 
-                conversation_responses.append(ConversationResponse(
-                    id=conversation_id,
-                    userId=conv_row['userId'],
-                    name=conv_row['name'],
-                    participants=participants,
-                    createdAt=conv_row['createdAt'],
-                    updatedAt=conv_row['updatedAt'],
-                    hashsum=hashsum,
-                    version=conv_row['version'] or 1,
-                    lastModified=conv_row['lastModified'] or int(time.time())
-                ))
+            conversation_responses.append(ConversationResponse(
+                id=conversation_id,
+                userId=conv['userId'],
+                name=conv['name'],
+                participants=participants,
+                createdAt=conv['createdAt'],
+                updatedAt=conv['updatedAt'],
+                hashsum=hashsum,
+                version=conv['version'] or 1,
+                lastModified=conv['lastModified'] or int(time.time())
+            ))
 
-            return conversation_responses
+        return conversation_responses
 
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -147,48 +133,37 @@ async def get_conversation(conversation_id: str, response: Response, current_use
     user_id = current_user['user_id']
 
     try:
-        with get_db() as conn:
-            cur = conn.cursor()
+        # Fetch conversation details
+        conv = db.get_conversation_by_id(conversation_id, user_id)
 
-            # Fetch conversation details
-            cur.execute("""
-                        SELECT id, userId, name, participants, createdAt, updatedAt
-                        FROM conversations
-                        WHERE id = ? AND userId = ?
-                        """, (conversation_id, user_id))
+        if not conv:
+            response.status_code = status.HTTP_404_NOT_FOUND
+            return ErrorResponse(error="Conversation not found")
 
-            conv_row = cur.fetchone()
+        # Get message count
+        message_count = db.get_message_count(conversation_id)
 
-            if not conv_row:
-                response.status_code = status.HTTP_404_NOT_FOUND
-                return ErrorResponse(error="Conversation not found")
+        # Get all messages to compute hash
+        messages = db.get_messages_by_conversation(conversation_id, limit=1000)
 
-            # Get message count
-            cur.execute("SELECT COUNT(*) as count FROM messages WHERE conversationId = ?", (conversation_id,))
-            message_count = cur.fetchone()['count']
+        # Compute SHA-256 hash of conversation content
+        content_str = ''.join([msg['content'] for msg in messages if msg.get('content')])
+        sync_hash = generate_sha256_hash(content_str) if content_str else None
 
-            # Get all messages to compute hash
-            cur.execute("SELECT content FROM messages WHERE conversationId = ? ORDER BY time", (conversation_id,))
-            messages = cur.fetchall()
+        # Parse participants (stored as JSON string)
+        participants = json.loads(conv['participants']) if conv['participants'] else []
 
-            # Compute SHA-256 hash of conversation content
-            content_str = ''.join([msg['content'] for msg in messages if msg['content']])
-            sync_hash = generate_sha256_hash(content_str) if content_str else None
-
-            # Parse participants (stored as JSON string)
-            participants = json.loads(conv_row['participants']) if conv_row['participants'] else []
-
-            # Return conversation with details
-            return ConversationWithDetails(
-                id=conv_row['id'],
-                userId=conv_row['userId'],
-                name=conv_row['name'],
-                participants=participants,
-                createdAt=conv_row['createdAt'],
-                lastModified=conv_row['updatedAt'],
-                messageCount=message_count,
-                syncHash=sync_hash
-            )
+        # Return conversation with details
+        return ConversationWithDetails(
+            id=conv['id'],
+            userId=conv['userId'],
+            name=conv['name'],
+            participants=participants,
+            createdAt=conv['createdAt'],
+            lastModified=conv['updatedAt'],
+            messageCount=message_count,
+            syncHash=sync_hash
+        )
 
     except Exception as e:
         print(f"Error fetching conversation: {str(e)}")
@@ -216,22 +191,17 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     :rtype: Conversation
     """
     user_id = current_user['user_id']
-    with get_db() as conn:
-        cur = conn.cursor()
-        participants_json = json.dumps(req.participants)
-        new_id = generate_conversation_id()  # Generate UUID
+    participants_json = json.dumps(req.participants)
+    new_id = generate_conversation_id()  # Generate UUID
 
-        cur.execute(
-            "INSERT INTO conversations (id, userId, name, participants) VALUES (?, ?, ?, ?)",
-            (new_id, user_id, req.name, participants_json)
-        )
-        conn.commit()
+    new_conv = db.create_conversation(
+        conversation_id=new_id,
+        user_id=user_id,
+        name=req.name,
+        participants=participants_json
+    )
 
-        cur.execute("SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?",
-                    (new_id,))
-        new_conv_row = cur.fetchone()
-
-        return Conversation(**dict(new_conv_row))
+    return Conversation(**new_conv)
 
 
 @router.patch("/conversation/{conversation_id}",
@@ -261,34 +231,21 @@ async def update_conversation(
     """
     user_id = current_user['user_id']
 
-    with get_db() as conn:
-        cur = conn.cursor()
+    # Check if conversation exists and belongs to user
+    existing = db.get_conversation_by_id(conversation_id, user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Conversation not found")
 
-        # Check if conversation exists and belongs to user
-        cur.execute(
-            "SELECT id FROM conversations WHERE id = ? AND userId = ?",
-            (conversation_id, user_id)
-        )
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Conversation not found")
+    # Update conversation
+    updated_conv = db.update_conversation(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        name=req.name
+    )
 
-        # Update conversation
-        cur.execute(
-            "UPDATE conversations SET name = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND userId = ?",
-            (req.name, conversation_id, user_id)
-        )
-        conn.commit()
+    crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name}' by user {user_id}")
 
-        # Return updated conversation
-        cur.execute(
-            "SELECT id, userId, name, participants, createdAt, updatedAt FROM conversations WHERE id = ?",
-            (conversation_id,)
-        )
-        updated_conv = cur.fetchone()
-
-        crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name}' by user {user_id}")
-
-        return Conversation(**dict(updated_conv))
+    return Conversation(**updated_conv)
 
 
 @router.delete("/conversation/{conversation_id}",
@@ -308,29 +265,16 @@ async def delete_conversation(
     """
     user_id = current_user['user_id']
 
-    with get_db() as conn:
-        cur = conn.cursor()
+    # Delete conversation (messages are cascade-deleted via ON DELETE CASCADE)
+    deleted = db.delete_conversation(conversation_id, user_id)
 
-        # Check if conversation exists and belongs to user
-        cur.execute(
-            "SELECT id FROM conversations WHERE id = ? AND userId = ?",
-            (conversation_id, user_id)
-        )
-        if not cur.fetchone():
-            # Return 204 No Content if conversation doesn't exist
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
+    if not deleted:
+        # Return 204 No Content if conversation doesn't exist
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-        # Delete all messages in the conversation
-        cur.execute("DELETE FROM messages WHERE conversationId = ?", (conversation_id,))
+    crud_logger.info(f"Conversation {conversation_id} and all messages deleted by user {user_id}")
 
-        # Delete the conversation
-        cur.execute("DELETE FROM conversations WHERE id = ? AND userId = ?", (conversation_id, user_id))
-
-        conn.commit()
-
-        crud_logger.info(f"Conversation {conversation_id} and all messages deleted by user {user_id}")
-
-        return {"message": "Conversation deleted successfully"}
+    return {"message": "Conversation deleted successfully"}
 
 
 @router.get("/conversation/messages/{conversation_id}/{timestamp}/{messages_count}",
@@ -379,81 +323,65 @@ async def get_conversation_messages(
             response.status_code = status.HTTP_403_FORBIDDEN
             return ErrorResponse(error="Access denied to this conversation")
 
-        with get_db() as conn:
-            cur = conn.cursor()
+        # Different queries for incremental sync vs pagination
+        if after_timestamp is not None:
+            # Incremental sync: get messages newer than after_timestamp
+            messages = db.get_messages_by_conversation(
+                conversation_id,
+                after_timestamp=after_timestamp
+            )
+        else:
+            # Normal pagination: get messages before timestamp
+            limit = min(messages_count, 30)
+            messages = db.get_messages_by_conversation(
+                conversation_id,
+                before_timestamp=timestamp,
+                limit=limit
+            )
 
-            # Different queries for incremental sync vs pagination
-            if after_timestamp is not None:
-                # Incremental sync: get messages newer than after_timestamp
-                cur.execute(
-                    """
-                    SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
-                    FROM messages
-                    WHERE conversationId = ? AND time > ?
-                    ORDER BY time ASC
-                    """,
-                    (conversation_id, after_timestamp)
-                )
+        if messages:
+            messages_data = messages
+
+            # For pagination, reverse to get chronological order (already DESC from DB)
+            if after_timestamp is None:
+                messages_data = list(reversed(messages_data))
+
+            # Check if there might be more messages
+            has_more = False
+            if after_timestamp is None and messages_count > 30 and len(messages_data) == 30:
+                has_more = True
+                response.status_code = status.HTTP_206_PARTIAL_CONTENT
             else:
-                # Normal pagination: get messages before timestamp
-                cur.execute(
-                    """
-                    SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
-                    FROM messages
-                    WHERE conversationId = ? AND time < ?
-                    ORDER BY time DESC LIMIT ?
-                    """,
-                    (conversation_id, timestamp, min(messages_count, 30))
-                )
-
-            messages_rows = cur.fetchall()
-
-            if messages_rows:
-                messages_data = [dict(msg) for msg in messages_rows]
-
-                # For pagination, reverse to get chronological order
-                if after_timestamp is None:
-                    messages_data.reverse()
-
-                # Check if there might be more messages
-                has_more = False
-                if after_timestamp is None and messages_count > 30 and len(messages_data) == 30:
-                    has_more = True
-                    response.status_code = status.HTTP_206_PARTIAL_CONTENT
-                else:
-                    response.status_code = status.HTTP_200_OK
-
-                # Add header to indicate if more messages exist
-                if after_timestamp is not None:
-                    # For incremental sync, check if there are any messages we didn't fetch
-                    if messages_data:
-                        oldest_fetched = messages_data[0]['time']
-                        cur.execute(
-                            "SELECT COUNT(*) as count FROM messages WHERE conversationId = ? AND time < ?",
-                            (conversation_id, oldest_fetched)
-                        )
-                        older_count = cur.fetchone()['count']
-                        response.headers["X-Has-More-Messages"] = str(older_count > 0)
-                    else:
-                        # No new messages, but check if there are any messages at all
-                        cur.execute(
-                            "SELECT COUNT(*) as count FROM messages WHERE conversationId = ?",
-                            (conversation_id,)
-                        )
-                        total_count = cur.fetchone()['count']
-                        response.headers["X-Has-More-Messages"] = str(total_count > 0)
-                else:
-                    # For initial load, use the has_more flag
-                    response.headers["X-Has-More-Messages"] = str(has_more)
-
-                return messages_data
-            else:
-                # Return empty list instead of None to satisfy response model
                 response.status_code = status.HTTP_200_OK
-                # Add header for incremental sync
-                if after_timestamp is not None:
-                    response.headers["X-Has-More-Messages"] = "false"
-                return []
+
+            # Add header to indicate if more messages exist
+            if after_timestamp is not None:
+                # For incremental sync, check if there are any messages we didn't fetch
+                if messages_data:
+                    oldest_fetched = messages_data[0]['time']
+                    total_count = db.get_message_count(conversation_id)
+                    older_messages = db.get_messages_by_conversation(
+                        conversation_id,
+                        before_timestamp=oldest_fetched,
+                        limit=1
+                    )
+                    response.headers["X-Has-More-Messages"] = str(len(older_messages) > 0)
+                else:
+                    # No new messages, but check if there are any messages at all
+                    total_count = db.get_message_count(conversation_id)
+                    response.headers["X-Has-More-Messages"] = str(total_count > 0)
+            else:
+                # For initial load, use the has_more flag
+                response.headers["X-Has-More-Messages"] = str(has_more)
+
+            return messages_data
+        else:
+            # Return empty list instead of None to satisfy response model
+            response.status_code = status.HTTP_200_OK
+            # Add header for incremental sync
+            if after_timestamp is not None:
+                response.headers["X-Has-More-Messages"] = "false"
+            return []
 
     except Exception as e:
         print(f"Error in get_conversation_messages: {str(e)}")

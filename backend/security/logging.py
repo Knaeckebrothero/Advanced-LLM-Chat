@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime, UTC
 from fastapi import Request
-from backend.config import DB_DIR
+from backend.config import FILESYSTEM_PATH
 
 # Configure logging
 logging.basicConfig(
@@ -27,7 +27,9 @@ crud_logger = logging.getLogger("crud")
 crud_logger.setLevel(logging.INFO)
 
 # Create a file handler for security events
-security_log_path = os.path.join(DB_DIR, 'security.log')
+logs_dir = os.path.join(FILESYSTEM_PATH, 'logs')
+os.makedirs(logs_dir, exist_ok=True)
+security_log_path = os.path.join(logs_dir, 'security.log')
 security_handler = logging.FileHandler(security_log_path)
 security_handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -35,7 +37,7 @@ security_handler.setFormatter(logging.Formatter(
 security_logger.addHandler(security_handler)
 
 # Create a file handler for CRUD operations
-crud_log_path = os.path.join(DB_DIR, 'crud_operations.log')
+crud_log_path = os.path.join(logs_dir, 'crud_operations.log')
 crud_handler = logging.FileHandler(crud_log_path)
 crud_handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'

@@ -1,6 +1,26 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fessi-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-fessi}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_dev_password}
+      - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fessi} -d ${POSTGRES_DB:-fessi_chat}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
   frontend:
     image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-frontend:${TAG:-develop-latest}
     container_name: fessi-frontend
@@ -23,12 +43,23 @@ services:
     environment:
       - USE_DEV_CERTS=True
       - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
+      - POSTGRES_USER=${POSTGRES_USER:-fessi}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_dev_password}
     volumes:
       - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - app-network
 
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  postgres_data:
 

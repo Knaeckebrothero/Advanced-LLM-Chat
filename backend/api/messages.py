@@ -16,7 +16,7 @@ from backend.models.message import (
     RateMessageRequest,
     RegenerateMessageRequest
 )
-from backend.database.db import get_db
+from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
 from backend.services.llm import get_conversation_context, generate_llm_response
@@ -37,26 +37,7 @@ router = APIRouter(prefix="/api/message", tags=["Message"])
 async def user_send_message(request_body: ApiMessageSend, response: Response,
                              current_user: dict = Depends(get_current_user)):
     """
-    Handles the sending of a message in a conversation. This endpoint processes the
-    provided request body to determine the type and content of the message, verifies
-    whether the current user has access to the specified conversation, and inserts
-    the message into the database.
-
-    :param request_body: The request payload containing details of the message, such
-        as `conversationId`, `content`, `roleName`, `time`, `type`, `version`, and
-        `lastModified`.
-    :type request_body: ApiMessageSend
-    :param response: The HTTP response object to set the response status code
-        and return any errors if they occur.
-    :type response: Response
-    :param current_user: The authenticated user information, typically obtained from
-        dependency injection in FastAPI.
-    :type current_user: dict
-    :return: A dictionary containing the `id` of the message if successfully created.
-    :rtype: Dict[str, int]
-    :raises HTTPException: Raises specific HTTP exceptions with appropriate status
-        codes for cases such as empty message content, access denial, or internal
-        server errors.
+    Handles the sending of a message in a conversation.
     """
     crud_logger.info(
         f"Message send called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -76,16 +57,13 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
 
         # Extract content based on message type
         content_str = ""
-        message_type = getattr(request_body, 'type', 'text')  # Default to 'text' for backwards compatibility
+        message_type = getattr(request_body, 'type', 'text')
 
         if message_type == 'text':
             if isinstance(request_body.content, str):
-                # Legacy format - just a string
                 content_str = request_body.content
             elif isinstance(request_body.content, dict):
-                # New format - TextContent object
                 content_str = request_body.content.get('content', '')
-                # Store attachments as JSON in content for now
                 attachments = request_body.content.get('attachments', [])
                 if attachments:
                     content_obj = {
@@ -94,24 +72,21 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
                     }
                     content_str = json.dumps(content_obj)
         elif message_type == 'voice':
-            # Voice messages store the entire content object as JSON
             if isinstance(request_body.content, dict):
                 content_str = json.dumps(request_body.content)
             else:
                 content_str = str(request_body.content)
 
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (message_id, request_body.conversationId, request_body.roleName,
-                 content_str, request_body.time, message_type,
-                 request_body.version or 1, request_body.lastModified or int(time.time()))
-            )
-            conn.commit()
+        db.create_message(
+            message_id=message_id,
+            conversation_id=request_body.conversationId,
+            role_name=request_body.roleName,
+            content=content_str,
+            time=request_body.time,
+            msg_type=message_type,
+            version=request_body.version or 1,
+            last_modified=request_body.lastModified or int(time.time())
+        )
 
         crud_logger.info(f"Message sent successfully - Message ID: {message_id}")
         return {"id": message_id}
@@ -135,19 +110,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
 async def generate_message(request_body: ApiMessageGenerate, response: Response,
                             current_user: dict = Depends(get_current_user)):
     """
-    Generates a message for a conversation based on the provided context, user role, and AI response generation.
-    This endpoint interacts with a database to store the generated message and ensures user access verification
-    for the conversation. Additionally, it handles errors related to conversation ID validation, user access
-    denial, or other server-side issues.
-
-    :param request_body: The request payload containing details of the conversation ID and role.
-    :type request_body: ApiMessageGenerate
-    :param response: FastAPI Response object to set response status codes.
-    :type response: Response
-    :param current_user: Details of the currently authenticated user.
-    :type current_user: dict
-    :return: A dictionary containing the generated message details if successful, or an error response structure.
-    :rtype: dict
+    Generates a message for a conversation based on the provided context.
     """
     crud_logger.info(
         f"Generate message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -178,7 +141,18 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
         message_id = int(time.time() * 1000)
         current_time = int(time.time())
 
-        message_doc_data = {
+        message_doc = db.create_message(
+            message_id=message_id,
+            conversation_id=request_body.conversationId,
+            role_name=request_body.roleName,
+            content=ai_response_content,
+            time=current_time,
+            msg_type='text',
+            version=1,
+            last_modified=current_time
+        )
+
+        return {
             'id': message_id,
             'conversationId': request_body.conversationId,
             'roleName': request_body.roleName,
@@ -187,20 +161,6 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
             'version': 1,
             'lastModified': current_time
         }
-
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (message_id, request_body.conversationId, request_body.roleName,
-                 message_doc_data['content'], current_time, 'text', 1, current_time)
-            )
-            conn.commit()
-
-        return message_doc_data
 
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -222,17 +182,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
 async def patch_message(request_body: MessagePatch, response: Response,
                         current_user: dict = Depends(get_current_user)):
     """
-    Handles the patching of a message within a conversation. This endpoint allows authorized
-    users to update a specific message by its ID. It includes version control to ensure
-    data consistency during concurrent updates and verifies ownership of the conversation
-    before processing the request. Additionally, the method attempts to parse and return the
-    content type appropriately when applicable.
-
-    :param request_body: Contains the request data necessary for updating the message.
-    :param response: The HTTP response object to set status codes and return responses.
-    :param current_user: The current user making the patch request, obtained via dependency injection.
-    :return: A MessageResponse object representing the updated message, or an ErrorResponse
-             if the operation fails.
+    Handles the patching of a message within a conversation.
     """
     crud_logger.info(
         f"Patch message called - User: {current_user['user_id']}, Message: {request_body.id}, Conversation: {request_body.conversationId}")
@@ -248,88 +198,58 @@ async def patch_message(request_body: MessagePatch, response: Response,
             response.status_code = status.HTTP_403_FORBIDDEN
             return ErrorResponse(error="Access denied to this conversation")
 
-        with get_db() as conn:
-            cur = conn.cursor()
+        # First check current version
+        current_version = db.get_message_version(request_body.id, request_body.conversationId)
 
-            # First check current version
-            cur.execute(
-                """
-                SELECT version FROM messages
-                WHERE id = ? AND conversationId = ?
-                """,
-                (request_body.id, request_body.conversationId)
-            )
-            result = cur.fetchone()
+        if current_version is None:
+            response.status_code = status.HTTP_404_NOT_FOUND
+            return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
 
-            if not result:
-                response.status_code = status.HTTP_404_NOT_FOUND
-                return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
+        # Check for version conflict
+        if current_version != request_body.version:
+            response.status_code = status.HTTP_409_CONFLICT
+            return ErrorResponse(
+                error=f"Version conflict: current version is {current_version}, provided version is {request_body.version}")
 
-            current_version = result[0] or 1
+        # Update with version increment
+        updated_message = db.update_message(
+            message_id=request_body.id,
+            conversation_id=request_body.conversationId,
+            content=request_body.content,
+            version=request_body.version,
+            last_modified=int(time.time())
+        )
 
-            # Check for version conflict
-            if current_version != request_body.version:
-                response.status_code = status.HTTP_409_CONFLICT
-                return ErrorResponse(
-                    error=f"Version conflict: current version is {current_version}, provided version is {request_body.version}")
+        if not updated_message:
+            response.status_code = status.HTTP_409_CONFLICT
+            return ErrorResponse(error="Version conflict during update")
 
-            # Update with version increment
-            new_version = current_version + 1
-            cur.execute(
-                """
-                UPDATE messages
-                SET content = ?, version = ?, lastModified = ?
-                WHERE id = ? AND conversationId = ? AND version = ?
-                """,
-                (request_body.content, new_version, int(time.time()),
-                 request_body.id, request_body.conversationId, request_body.version)
-            )
-            conn.commit()
+        # Parse content based on type
+        message_type = updated_message.get('type') or 'text'
+        content = updated_message['content']
 
-            if cur.rowcount == 0:
-                response.status_code = status.HTTP_409_CONFLICT
-                return ErrorResponse(error="Version conflict during update")
+        # Try to parse JSON content for complex types
+        try:
+            if message_type == 'text' and content.startswith('{'):
+                content_obj = json.loads(content)
+                if 'content' in content_obj:
+                    content = content_obj['content']
+        except (json.JSONDecodeError, KeyError, AttributeError):
+            pass
 
-            # Fetch the updated message to return
-            cur.execute(
-                """
-                SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
-                FROM messages
-                WHERE id = ? AND conversationId = ?
-                """,
-                (request_body.id, request_body.conversationId)
-            )
-            updated_row = cur.fetchone()
-
-            if updated_row:
-                # Parse content based on type
-                message_type = updated_row['type'] or 'text'
-                content = updated_row['content']
-
-                # Try to parse JSON content for complex types
-                try:
-                    if message_type == 'text' and content.startswith('{'):
-                        content_obj = json.loads(content)
-                        if 'content' in content_obj:
-                            content = content_obj['content']
-                except (json.JSONDecodeError, KeyError, AttributeError):
-                    pass  # Use content as-is if not JSON
-
-                crud_logger.info(
-                    f"Message patched successfully - Message ID: {request_body.id}, New version: {new_version}")
-                return MessageResponse(
-                    id=updated_row['id'],
-                    conversationId=updated_row['conversationId'],
-                    roleName=updated_row['roleName'],
-                    content=content,
-                    time=updated_row['time'],
-                    type=message_type,
-                    version=updated_row['version'],
-                    lastModified=updated_row['lastModified'],
-                    rating=updated_row['rating']
-                )
-
-        return None
+        crud_logger.info(
+            f"Message patched successfully - Message ID: {request_body.id}, New version: {updated_message['version']}")
+        return MessageResponse(
+            id=updated_message['id'],
+            conversationId=updated_message['conversationId'],
+            roleName=updated_message['roleName'],
+            content=content,
+            time=updated_message['time'],
+            type=message_type,
+            version=updated_message['version'],
+            lastModified=updated_message['lastModified'],
+            rating=updated_message.get('rating')
+        )
 
     except Exception as e:
         crud_logger.error(f"Error patching message: {str(e)}", exc_info=True)
@@ -349,21 +269,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
 async def delete_message(conversation_id: str, message_id: int, response: Response,
                          current_user: dict = Depends(get_current_user)):
     """
-    Deletes a specific message within a conversation. The endpoint requires the conversation ID,
-    message ID, and the current authenticated user to verify access and execute the operation.
-    If successful, the message is deleted from the database.
-
-    :param conversation_id: Unique identifier of the conversation containing the message
-    :type conversation_id: str
-    :param message_id: Unique identifier of the message to be deleted
-    :type message_id: int
-    :param response: The response object to modify the HTTP response status
-    :param current_user: Dictionary object representing the current user, fetched via dependency injection
-    :return: None
-    :raises HTTP_400_BAD_REQUEST: If `conversation_id` or `message_id` is missing
-    :raises HTTP_403_FORBIDDEN: If the user does not have permission to delete the message in the conversation
-    :raises HTTP_404_NOT_FOUND: If the message does not exist in the database
-    :raises HTTP_500_INTERNAL_SERVER_ERROR: In case of unexpected server errors
+    Deletes a specific message within a conversation.
     """
     crud_logger.info(
         f"Delete message called - User: {current_user['user_id']}, Message: {message_id}, Conversation: {conversation_id}")
@@ -380,18 +286,12 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
             response.status_code = status.HTTP_403_FORBIDDEN
             return ErrorResponse(error="Access denied to this conversation")
 
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "DELETE FROM messages WHERE conversationId = ? AND id = ?",
-                (conversation_id, message_id)
-            )
-            conn.commit()
+        deleted = db.delete_message(message_id, conversation_id)
 
-            if cur.rowcount == 0:
-                crud_logger.warning(f"Message not found for deletion - Message ID: {message_id}")
-                response.status_code = status.HTTP_404_NOT_FOUND
-                return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
+        if not deleted:
+            crud_logger.warning(f"Message not found for deletion - Message ID: {message_id}")
+            response.status_code = status.HTTP_404_NOT_FOUND
+            return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
 
         crud_logger.info(f"Message deleted successfully - Message ID: {message_id}")
         return None
@@ -416,26 +316,7 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
 async def rate_message(request_body: RateMessageRequest, response: Response,
                        current_user: dict = Depends(get_current_user)):
     """
-    Rate a message within a conversation. This endpoint allows users to rate a message
-    using a thumbs up (1), thumbs down (0), or remove their rating (null). It ensures the
-    user's ownership of the conversation before performing the operation.
-
-    :param request_body: The request payload containing the `id` of the message to rate,
-        the `conversationId` it belongs to, and the `rating` to apply.
-    :type request_body: RateMessageRequest
-    :param response: HTTP response object for assigning custom status codes and response
-        headers.
-    :type response: Response
-    :param current_user: Information of the currently authenticated user, obtained via
-        dependency injection.
-    :type current_user: dict
-    :return: A response containing the updated message record with the applied rating.
-    :rtype: MessageResponse
-    :raises HTTP_400_BAD_REQUEST: If the provided rating value is invalid.
-    :raises HTTP_403_FORBIDDEN: If the user does not have access to the specified
-        conversation.
-    :raises HTTP_404_NOT_FOUND: If the message to rate does not exist in the conversation.
-    :raises HTTP_500_INTERNAL_SERVER_ERROR: If an internal server error occurs.
+    Rate a message within a conversation.
     """
     crud_logger.info(
         f"Rate message called - User: {current_user['user_id']}, Message: {request_body.id}, Rating: {request_body.rating}")
@@ -452,65 +333,43 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
             response.status_code = status.HTTP_403_FORBIDDEN
             return ErrorResponse(error="Access denied to this conversation")
 
-        with get_db() as conn:
-            cur = conn.cursor()
+        # Update the rating
+        updated_message = db.update_message_rating(
+            request_body.id,
+            request_body.conversationId,
+            request_body.rating
+        )
 
-            # Update the rating
-            cur.execute(
-                """
-                UPDATE messages
-                SET rating = ?
-                WHERE id = ? AND conversationId = ?
-                """,
-                (request_body.rating, request_body.id, request_body.conversationId)
-            )
+        if not updated_message:
+            response.status_code = status.HTTP_404_NOT_FOUND
+            return ErrorResponse(error="Message not found")
 
-            if cur.rowcount == 0:
-                response.status_code = status.HTTP_404_NOT_FOUND
-                return ErrorResponse(error="Message not found")
+        # Parse content based on type
+        message_type = updated_message.get('type') or 'text'
+        content = updated_message['content']
 
-            conn.commit()
+        # Try to parse JSON content for complex types
+        try:
+            if message_type == 'text' and content.startswith('{'):
+                content_obj = json.loads(content)
+                if 'content' in content_obj:
+                    content = content_obj['content']
+        except (json.JSONDecodeError, KeyError, AttributeError):
+            pass
 
-            # Fetch the updated message
-            cur.execute(
-                """
-                SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
-                FROM messages
-                WHERE id = ? AND conversationId = ?
-                """,
-                (request_body.id, request_body.conversationId)
-            )
-
-            row = cur.fetchone()
-            if row:
-                # Parse content based on type
-                message_type = row['type'] or 'text'
-                content = row['content']
-
-                # Try to parse JSON content for complex types
-                try:
-                    if message_type == 'text' and content.startswith('{'):
-                        content_obj = json.loads(content)
-                        if 'content' in content_obj:
-                            content = content_obj['content']
-                except (json.JSONDecodeError, KeyError, AttributeError):
-                    pass  # Use content as-is if not JSON
-
-                rating_text = "removed" if request_body.rating is None else str(request_body.rating)
-                crud_logger.info(f"Message rated successfully - Message ID: {request_body.id}, Rating: {rating_text}")
-                return MessageResponse(
-                    id=row['id'],
-                    conversationId=row['conversationId'],
-                    roleName=row['roleName'],
-                    content=content,
-                    time=row['time'],
-                    type=message_type,
-                    version=row['version'],
-                    lastModified=row['lastModified'],
-                    rating=row['rating']
-                )
-
-        return None
+        rating_text = "removed" if request_body.rating is None else str(request_body.rating)
+        crud_logger.info(f"Message rated successfully - Message ID: {request_body.id}, Rating: {rating_text}")
+        return MessageResponse(
+            id=updated_message['id'],
+            conversationId=updated_message['conversationId'],
+            roleName=updated_message['roleName'],
+            content=content,
+            time=updated_message['time'],
+            type=message_type,
+            version=updated_message['version'],
+            lastModified=updated_message['lastModified'],
+            rating=updated_message.get('rating')
+        )
 
     except Exception as e:
         crud_logger.error(f"Error rating message: {str(e)}", exc_info=True)
@@ -532,30 +391,7 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
 async def regenerate_message(request_body: RegenerateMessageRequest, response: Response,
                               current_user: dict = Depends(get_current_user)):
     """
-    Handles the regeneration of an AI message within a conversation. The endpoint
-    verifies ownership of the conversation, ensures the message to regenerate
-    exists, and is an AI-generated message. It rebuilds the conversation context
-    and regenerates a response using an LLM model. If successful, the message is
-    updated with the new version and returned.
-
-    :param request_body: The details of the message to regenerate, including the
-        message ID and conversation ID.
-    :type request_body: RegenerateMessageRequest
-
-    :param response: The FastAPI Response object to send the HTTP response.
-    :type response: Response
-
-    :param current_user: The current authenticated user information, including
-        user ID and permissions.
-    :type current_user: dict
-
-    :return: Returns the updated message after regeneration if successful.
-    :rtype: MessageResponse
-
-    :raises HTTPException: 400 if the requested message is not an AI message.
-    :raises HTTPException: 403 if the user does not have access to the conversation.
-    :raises HTTPException: 404 if the specified message is not found.
-    :raises HTTPException: 500 if any internal server error occurs.
+    Handles the regeneration of an AI message within a conversation.
     """
     crud_logger.info(f"Regenerate message called - User: {current_user['user_id']}, Message: {request_body.id}")
 
@@ -568,113 +404,82 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
                 detail="Access denied to this conversation"
             )
 
-        with get_db() as conn:
-            cur = conn.cursor()
+        # Get the message to regenerate
+        message = db.get_message_by_id(request_body.id, request_body.conversationId)
 
-            # Get the message to regenerate
-            cur.execute(
-                """
-                SELECT id, conversationId, roleName, time, version
-                FROM messages
-                WHERE id = ? AND conversationId = ?
-                """,
-                (request_body.id, request_body.conversationId)
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
             )
 
-            message_row = cur.fetchone()
-            if not message_row:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Message not found"
-                )
-
-            # Verify it's an AI message
-            if message_row['roleName'] == 'user':
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Can only regenerate AI messages"
-                )
-
-            # Get all messages before this one
-            cur.execute(
-                """
-                SELECT roleName, content, time
-                FROM messages
-                WHERE conversationId = ? AND time < ?
-                ORDER BY time ASC
-                """,
-                (request_body.conversationId, message_row['time'])
+        # Verify it's an AI message
+        if message['roleName'] == 'user':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only regenerate AI messages"
             )
 
-            previous_messages = cur.fetchall()
+        # Get all messages before this one for context
+        all_messages = db.get_messages_by_conversation(
+            request_body.conversationId,
+            before_timestamp=message['time'],
+            limit=20
+        )
 
-            # Build conversation context
-            context_messages = []
-            for msg in previous_messages:
-                context_messages.append({
-                    "role": "user" if msg['roleName'] == 'user' else "assistant",
-                    "content": msg['content']
-                })
+        # Build conversation context
+        context_messages = []
+        for msg in reversed(all_messages):  # Reverse to get chronological order
+            context_messages.append({
+                "role": "user" if msg['roleName'] == 'user' else "assistant",
+                "content": msg['content']
+            })
 
-            # Build prompt from context messages
-            prompt_lines = []
-            for msg in context_messages:
-                role = "User" if msg['role'] == 'user' else "Assistant"
-                prompt_lines.append(f"{role}: {msg['content']}")
-            prompt_lines.append("Assistant:")
-            prompt = "\n".join(prompt_lines)
+        # Build prompt from context messages
+        prompt_lines = []
+        for msg in context_messages:
+            role = "User" if msg['role'] == 'user' else "Assistant"
+            prompt_lines.append(f"{role}: {msg['content']}")
+        prompt_lines.append("Assistant:")
+        prompt = "\n".join(prompt_lines)
 
-            # Generate new AI response
-            ai_response_content = await generate_llm_response(
-                prompt,
-                DEFAULT_TEMPERATURE,
-                DEFAULT_TOP_P,
-                DEFAULT_SYSTEM_PROMPT,
-                DEFAULT_MODEL
+        # Generate new AI response
+        ai_response_content = await generate_llm_response(
+            prompt,
+            DEFAULT_TEMPERATURE,
+            DEFAULT_TOP_P,
+            DEFAULT_SYSTEM_PROMPT,
+            DEFAULT_MODEL
+        )
+
+        # Update the message with new content
+        current_version = message['version'] or 1
+        updated_message = db.update_message(
+            message_id=request_body.id,
+            conversation_id=request_body.conversationId,
+            content=ai_response_content,
+            version=current_version,
+            last_modified=int(time.time())
+        )
+
+        if updated_message:
+            crud_logger.info(f"Message regenerated successfully - Message ID: {request_body.id}")
+            return MessageResponse(
+                id=updated_message['id'],
+                conversationId=updated_message['conversationId'],
+                roleName=updated_message['roleName'],
+                content=updated_message['content'],
+                time=updated_message['time'],
+                type=updated_message.get('type') or 'text',
+                version=updated_message['version'],
+                lastModified=updated_message['lastModified'],
+                rating=updated_message.get('rating')
             )
-
-            # Update the message with new content
-            new_version = (message_row['version'] if message_row['version'] else 1) + 1
-            current_time = int(time.time())
-
-            cur.execute(
-                """
-                UPDATE messages
-                SET content = ?, version = ?, lastModified = ?
-                WHERE id = ? AND conversationId = ?
-                """,
-                (ai_response_content, new_version, current_time, request_body.id, request_body.conversationId)
-            )
-
-            conn.commit()
-
-            # Fetch and return the updated message
-            cur.execute(
-                """
-                SELECT id, conversationId, roleName, content, time, type, version, lastModified, rating
-                FROM messages
-                WHERE id = ? AND conversationId = ?
-                """,
-                (request_body.id, request_body.conversationId)
-            )
-
-            row = cur.fetchone()
-            if row:
-                crud_logger.info(f"Message regenerated successfully - Message ID: {request_body.id}")
-                return MessageResponse(
-                    id=row['id'],
-                    conversationId=row['conversationId'],
-                    roleName=row['roleName'],
-                    content=row['content'],
-                    time=row['time'],
-                    type=row['type'] or 'text',
-                    version=row['version'],
-                    lastModified=row['lastModified'],
-                    rating=row['rating']
-                )
 
         return None
 
+    except HTTPException:
+        raise
     except Exception as e:
         crud_logger.error(f"Error regenerating message: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -699,23 +504,7 @@ async def send_and_generate_message(
 ):
     """
     Handles the processing and storage of user-generated messages while optionally
-    generating AI responses. This endpoint enables communication by allowing a user
-    to send a message to a specified conversation and receive an AI-generated
-    response based on the context of the conversation.
-
-    :param request_body: Data of the message request that includes conversation ID,
-        message type, content, role information, and other metadata.
-    :type request_body: ApiMessageSendAndGenerate
-    :param response: A fastapi Response object used to manipulate HTTP response
-        codes if an error or special condition is encountered.
-    :type response: Response
-    :param current_user: A dictionary representing the current user info fetched
-        using a dependency injection method. It includes user credentials like
-        user_id and guest state.
-    :type current_user: dict
-    :return: A SendAndGenerateResponse object containing user-generated message
-        data as well as an AI-generated response message data (if applicable).
-    :rtype: SendAndGenerateResponse
+    generating AI responses.
     """
     try:
         if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
@@ -739,18 +528,16 @@ async def send_and_generate_message(
             content_str = json.dumps(request_body.content) if isinstance(request_body.content, dict) else str(
                 request_body.content)
 
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (user_message_id, request_body.conversationId, request_body.roleName,
-                 content_str, request_body.time, message_type,
-                 request_body.version or 1, request_body.lastModified or int(time.time()))
-            )
-            conn.commit()
+        db.create_message(
+            message_id=user_message_id,
+            conversation_id=request_body.conversationId,
+            role_name=request_body.roleName,
+            content=content_str,
+            time=request_body.time,
+            msg_type=message_type,
+            version=request_body.version or 1,
+            last_modified=request_body.lastModified or int(time.time())
+        )
 
         user_message_response = MessageResponse(
             id=user_message_id,
@@ -767,8 +554,6 @@ async def send_and_generate_message(
         if request_body.generateResponse:
             context = await get_conversation_context(request_body.conversationId, limit=6)
 
-            # ** THE FIX IS HERE **
-            # The backend now uses its own default values for the LLM.
             ai_response_content = await generate_llm_response(
                 context,
                 DEFAULT_TEMPERATURE,
@@ -779,17 +564,17 @@ async def send_and_generate_message(
 
             ai_message_id = int(time.time() * 1000) + 1
             current_time = int(time.time())
-            with get_db() as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    """
-                    INSERT INTO messages (id, conversationId, roleName, content, time, type, version, lastModified)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (ai_message_id, request_body.conversationId, request_body.aiParticipant,
-                     ai_response_content, current_time, 'text', 1, current_time)
-                )
-                conn.commit()
+
+            db.create_message(
+                message_id=ai_message_id,
+                conversation_id=request_body.conversationId,
+                role_name=request_body.aiParticipant,
+                content=ai_response_content,
+                time=current_time,
+                msg_type='text',
+                version=1,
+                last_modified=current_time
+            )
 
             ai_message_response = MessageResponse(
                 id=ai_message_id,

@@ -4,36 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Angular 19.2.2 application with FastAPI backend for an advanced LLM chat interface. The project uses a microservices architecture with separate frontend and backend containers, supports multiple LLM models, and includes offline-first capabilities with IndexedDB. The app supports internationalization with German and English translations via ngx-translate.
+Angular 19.2.2 application with FastAPI backend for a waste disposal assistant chatbot (Fessi). Uses microservices architecture with separate frontend and backend containers, supports multiple LLM models via Replicate API, and includes offline-first capabilities with IndexedDB. Supports i18n with German and English via ngx-translate.
 
 ## Essential Commands
 
 ### Frontend Development
 ```bash
-npm start          # Start development server with SSL (https://localhost:4200)
+npm start          # Start dev server with SSL (https://localhost:4200)
 npm run build      # Production build (outputs to dist/fessi/browser/)
 npm test           # Run unit tests with Karma/Jasmine
-npm run watch      # Build with watch mode for development
+npm run watch      # Build with watch mode
 ng test --include='**/specific.spec.ts'  # Run specific test file
-
-# TypeScript compilation (no ESLint/TSLint configured)
-npx tsc --noEmit   # Type-check without building
+npx tsc --noEmit   # Type-check without building (no ESLint configured)
 ```
 
 ### Backend Development
 ```bash
-# First run generates SSL certificates
-python backend_mockup.py
+# Start backend (auto-generates SSL certs on first run)
+python start_backend.py              # Default: https://localhost:8443
+python start_backend.py --reload     # With auto-reload for development
+python start_backend.py --host 0.0.0.0 --port 8443  # Custom host/port
 
-# Start backend server with SSL
-uvicorn backend_mockup:app --reload --host localhost --port 8443 --ssl-keyfile devcerts/server.key --ssl-certfile devcerts/server.pem
-
-# Required environment variables (.env file):
+# Required .env file:
 # USE_DEV_CERTS=True
 # REPLICATE_API_TOKEN=your_token_here
-# DB_DIR=./data
 
-# Backend testing (when implemented)
+# Backend testing
 pytest                      # Run all tests
 pytest -v                   # Verbose output
 pytest tests/test_api.py    # Run specific test file
@@ -41,14 +37,9 @@ pytest tests/test_api.py    # Run specific test file
 
 ### Docker Development
 ```bash
-# Using docker-compose (recommended)
 cd docker
 docker-compose up -d --build              # Build and run locally
 docker-compose -f docker-compose.prod.yml up -d  # Use pre-built images from ghcr.io
-
-# Manual Docker commands
-docker build -f docker/Dockerfile -t fessi:latest .
-docker run -d -p 8080:80 -p 8443:443 fessi:latest
 ```
 
 ## Architecture Overview
@@ -83,10 +74,26 @@ The Angular app follows a service-oriented architecture with clear separation of
   - `status-bar/`: Connection status and sync indicators
 
 ### Backend Architecture
-The FastAPI backend (`backend_mockup.py`) provides:
+The FastAPI backend (`backend/`) is a modular Python package:
+```
+backend/
+├── main.py           # FastAPI app entry point
+├── config.py         # Configuration constants
+├── api/              # Route handlers (auth, conversations, messages, settings, files)
+├── database/db.py    # SQLAlchemy models and database setup
+├── models/           # Pydantic request/response models
+├── services/llm.py   # Replicate API integration
+├── security/         # Auth, CSRF, logging
+├── middleware/       # Request/response middleware
+└── utils/            # Certificates, hashing
+
+start_backend.py      # Entry point script
+```
+
+Key backend features:
 - RESTful API endpoints for chat operations
 - WebSocket support for streaming responses
-- Session-based authentication with mock provider
+- Session-based authentication with mock/guest providers
 - SQLite database for conversation persistence
 - Integration with Replicate API for multiple LLM models
 
@@ -119,23 +126,27 @@ The project follows Git Flow:
 
 ## Important Considerations
 
-1. **TypeScript Strict Mode**: All code must pass strict TypeScript checks (`"strict": true` in tsconfig.json)
-2. **Angular Material**: Use existing Material components for UI consistency
-3. **IndexedDB Schema**: Database operations go through `DbService` - never access IndexedDB directly
-4. **Authentication**: All API calls require session authentication via `AuthInterceptor`
-5. **Environment Variables**: Use Angular environments for configuration, not process.env
-6. **SSL Required**: Both frontend and backend require HTTPS - certificates auto-generated in development
-7. **Build Output**: Production builds output to `dist/fessi/browser/` (Angular 19+ pattern)
-8. **No Linting**: Project relies on TypeScript strict mode only - no ESLint/TSLint configured
-9. **Message Type Safety**: Use Message factory methods (createText, createVoice) for type-safe message creation
-10. **Offline Support**: ChatService handles offline scenarios with local-only conversations and pending file uploads
-11. **UUID Conversation IDs**: New conversations use UUIDs; frontend accepts both string and number types
-12. **Serialization**: Use `toJSON()`/`fromJSON()` methods when storing/retrieving objects from IndexedDB
-13. **HTTP Options**: Use `ApiService.getHttpOptions()` for consistent headers with credentials
-14. **Error Handling**: API errors return `ErrorResponse` model with error message
-15. **State Services**: Prefer injecting state services over direct repository access
-16. **Internationalization**: Use ngx-translate for i18n - translations in `src/assets/i18n/` (de.json, en.json)
-17. **Angular SSL Config**: Dev server uses SSL with certs from `devcerts/` folder (see angular.json)
+### Code Standards
+- **TypeScript Strict Mode**: All code must pass strict TypeScript checks - no ESLint configured
+- **Angular Material**: Use existing Material components for UI consistency
+- **State Services**: Prefer injecting state services (`ChatStateService`, `UIStateService`, `SettingsStateService`) over direct repository access
+- **Message Type Safety**: Use factory methods `Message.createText()`, `Message.createVoice()` for type-safe message creation
+
+### Data Layer
+- **IndexedDB**: All database operations go through `DbService` - never access IndexedDB directly
+- **Serialization**: Use `toJSON()`/`fromJSON()` methods when storing/retrieving objects from IndexedDB
+- **UUID Conversation IDs**: New conversations use UUIDs; frontend accepts both string and number types for backward compatibility
+
+### API & Authentication
+- **SSL Required**: Both frontend (port 4200) and backend (port 8443) require HTTPS
+- **Authentication**: All API calls require session authentication via `AuthInterceptor`
+- **HTTP Options**: Use `ApiService.getHttpOptions()` for consistent headers with credentials
+- **Error Handling**: API errors return `ErrorResponse` model with error message
+
+### Build & Environment
+- **Build Output**: Production builds output to `dist/fessi/browser/` (Angular 19+ pattern)
+- **Environment Variables**: Use Angular environments (`src/app/environments/`) for frontend config
+- **i18n**: Use ngx-translate - translations in `src/assets/i18n/` (de.json, en.json)
 
 ## Testing Approach
 
@@ -174,38 +185,19 @@ The backend provides these main endpoints (all require session authentication):
 - **guest_usage**: Rate limiting for guest users
 - **user_settings**: User preferences and LLM settings
 
-## Recent Architecture Changes
+## Message System
 
-### UUID Implementation
-- Conversation IDs now use UUIDs (v4) instead of integers
-- Backend generates UUIDs using Python's `uuid.uuid4()`
-- Frontend supports both string and number IDs for backward compatibility
-- Existing conversations are migrated to UUIDs on backend startup
-
-### Message System Refactoring
-The message system now uses a discriminated union pattern:
+The message system uses a discriminated union pattern with factory methods:
 - **TextContent**: Regular text messages with optional file attachments
 - **VoiceContent**: Audio messages with base64 data, duration, and optional transcript
-- Messages are created using factory methods: `Message.createText()`, `Message.createVoice()`
-- Backend stores type field and handles content appropriately
+- Create messages via `Message.createText()` or `Message.createVoice()`
 
-### State Management Refactoring (Phase 4)
-- Replaced legacy services with new state management pattern
-- Introduced `ChatStateService`, `UIStateService`, and `SettingsStateService`
-- Removed old DisplayService, SyncService, and legacy SettingsService
-- Implemented comprehensive unit tests for all state services
+## Offline Support
 
-### Offline Support Enhancements
-- File uploads are queued when offline and automatically uploaded when connection is restored
-- Voice messages are stored as base64 in IndexedDB for offline access
+- File uploads queue when offline and auto-upload when connection restores
+- Voice messages stored as base64 in IndexedDB for offline access
 - Connection monitoring checks every 30 seconds for pending uploads
 - Local-only conversations supported for offline usage
-
-### Audio Features
-- Voice recording with real-time audio visualization
-- WebAudio API integration for processing
-- Time-based bar visualizer for recording feedback
-- Audio level smoothing for better UX
 
 ## Common Development Patterns
 

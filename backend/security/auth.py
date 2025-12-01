@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timedelta, UTC
 from typing import Optional, Dict
 from fastapi import Request, HTTPException, Depends
-from backend.database.db import get_db
+from backend.database import db
 from backend.security.csrf import generate_csrf_token
 
 # Session storage (in-memory cache for tracking active sessions)
@@ -64,15 +64,15 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
     session_timeout = int(os.getenv('SESSION_TIMEOUT_HOURS', str(session_duration_hours)))
     expires_at = datetime.now(UTC) + timedelta(hours=session_timeout)
 
-    # Save session to database
-    with get_db() as db:
-        db.execute(
-            """
-            INSERT INTO sessions (session_key, user_id, email, expires_at, is_guest, csrf_token)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """, (session_key, user_id, user_email, expires_at.isoformat(), is_guest, csrf_token))
-
-        db.commit()
+    # Save session to database using the new Database class
+    db.create_session(
+        session_key=session_key,
+        user_id=user_id,
+        email=user_email,
+        expires_at=expires_at,
+        is_guest=is_guest,
+        csrf_token=csrf_token
+    )
 
     return session_key, csrf_token
 
@@ -93,48 +93,36 @@ def validate_session(session_key: str) -> Optional[dict]:
     if not session_key:
         return None
 
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT user_id, email, expires_at, last_activity, is_guest, csrf_token
-            FROM sessions
-            WHERE session_key = ?
-            """, (session_key,))
-        result = cur.fetchone()
+    # Get session from database (already filters expired sessions)
+    session = db.get_session(session_key)
 
-        if not result:
-            return None
+    if not session:
+        return None
 
-        expires_at = datetime.fromisoformat(result["expires_at"])
-        current_time = datetime.now(UTC)
+    # Update last activity timestamp
+    db.update_session_activity(session_key)
 
-        if current_time > expires_at:
-            # Session expired, clean up
-            cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
-            conn.commit()
-            return None
+    # Calculate time until expiry
+    expires_at = session['expires_at']
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
 
-        # Update last activity timestamp
-        cur.execute("""
-                    UPDATE sessions
-                    SET last_activity = ?
-                    WHERE session_key = ?
-                    """, (current_time.isoformat(), session_key))
-        conn.commit()
+    # Ensure expires_at is timezone-aware
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
 
-        # Calculate time until expiry
-        time_until_expiry = expires_at - current_time
-        expires_in_seconds = int(time_until_expiry.total_seconds())
+    current_time = datetime.now(UTC)
+    time_until_expiry = expires_at - current_time
+    expires_in_seconds = int(time_until_expiry.total_seconds())
 
-        return {
-            "user_id": result["user_id"],
-            "email": result["email"],
-            "is_guest": result["is_guest"],
-            "csrf_token": result["csrf_token"],
-            "expires_at": expires_at.isoformat(),
-            "expires_in": expires_in_seconds
-        }
+    return {
+        "user_id": session["user_id"],
+        "email": session["email"],
+        "is_guest": session["is_guest"],
+        "csrf_token": session["csrf_token"],
+        "expires_at": expires_at.isoformat(),
+        "expires_in": expires_in_seconds
+    }
 
 
 def delete_session(session_key: str):
@@ -149,10 +137,7 @@ def delete_session(session_key: str):
     :type session_key: str
     :return: None
     """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
-        conn.commit()
+    db.delete_session(session_key)
 
 
 async def get_current_user(request: Request) -> dict:
@@ -205,14 +190,8 @@ async def cleanup_expired_sessions():
     """
     while True:
         try:
-            # Clean database sessions
-            with get_db() as conn:
-                cur = conn.cursor()
-                cur.execute("""
-                            DELETE FROM sessions
-                            WHERE datetime(expires_at) < datetime('now')
-                            """)
-                conn.commit()
+            # Clean expired sessions using the new Database method
+            db.delete_expired_sessions()
 
         except Exception as e:
             print(f"Error cleaning up sessions: {e}")
@@ -241,18 +220,12 @@ def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: 
     if is_guest:
         return True
 
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT userId FROM conversations WHERE id = ?",
-            (conversation_id,)
-        )
-        result = cur.fetchone()
+    owner_id = db.get_conversation_owner(conversation_id)
 
-        if not result:
-            return False
+    if owner_id is None:
+        return False
 
-        return result['userId'] == user_id
+    return owner_id == user_id
 
 
 async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
@@ -275,35 +248,34 @@ async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depe
         return  # Not a guest, no rate limit
 
     ip_address = request.client.host
-    with get_db() as db:
-        cur = db.cursor()
-        cur.execute("SELECT request_count, last_request_at FROM guest_usage WHERE ip_address = ?", (ip_address,))
-        usage = cur.fetchone()
+    now = datetime.now(UTC)
+    limit_duration = timedelta(hours=3)
+    max_requests = 5
 
-        now = datetime.now(UTC)
-        limit_duration = timedelta(hours=3)
-        max_requests = 5
+    usage = db.get_guest_usage(ip_address)
 
-        if usage:
-            last_request_at = datetime.fromisoformat(usage["last_request_at"])
-            if now - last_request_at > limit_duration:
-                # Reset counter
-                cur.execute("UPDATE guest_usage SET request_count = 1, last_request_at = ? WHERE ip_address = ?",
-                            (now.isoformat(), ip_address))
-            elif usage["request_count"] >= max_requests:
-                reset_time = last_request_at + limit_duration
-                retry_after_seconds = (reset_time - now).total_seconds()
-                headers = {"Retry-After": str(int(retry_after_seconds))}
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Too many requests. Please try again after {reset_time.isoformat()}",
-                    headers=headers
-                )
-            else:
-                cur.execute(
-                    "UPDATE guest_usage SET request_count = request_count + 1, last_request_at = ? WHERE ip_address = ?",
-                    (now.isoformat(), ip_address))
+    if usage:
+        last_request_at = usage["last_request_at"]
+        if isinstance(last_request_at, str):
+            last_request_at = datetime.fromisoformat(last_request_at)
+
+        # Ensure timezone awareness
+        if last_request_at.tzinfo is None:
+            last_request_at = last_request_at.replace(tzinfo=UTC)
+
+        if now - last_request_at > limit_duration:
+            # Reset counter
+            db.reset_guest_usage(ip_address)
+        elif usage["request_count"] >= max_requests:
+            reset_time = last_request_at + limit_duration
+            retry_after_seconds = (reset_time - now).total_seconds()
+            headers = {"Retry-After": str(int(retry_after_seconds))}
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many requests. Please try again after {reset_time.isoformat()}",
+                headers=headers
+            )
         else:
-            cur.execute("INSERT INTO guest_usage (ip_address, request_count, last_request_at) VALUES (?, 1, ?)",
-                        (ip_address, now.isoformat()))
-        db.commit()
+            db.increment_guest_usage(ip_address)
+    else:
+        db.increment_guest_usage(ip_address)

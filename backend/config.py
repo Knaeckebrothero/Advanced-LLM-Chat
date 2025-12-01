@@ -21,8 +21,17 @@ CORS_ORIGINS = [
     "https://localhost:8080",
 ]
 
-# Database directory
-DB_DIR = os.getenv('DB_DIR', '.')
+# PostgreSQL configuration
+POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')
+POSTGRES_PORT = int(os.getenv('POSTGRES_PORT', '5432'))
+POSTGRES_DB = os.getenv('POSTGRES_DB', 'fessi_chat')
+POSTGRES_USER = os.getenv('POSTGRES_USER', 'fessi')
+POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', '')
+POSTGRES_MIN_CONNECTIONS = int(os.getenv('POSTGRES_MIN_CONNECTIONS', '1'))
+POSTGRES_MAX_CONNECTIONS = int(os.getenv('POSTGRES_MAX_CONNECTIONS', '10'))
+
+# Database URL (can override individual settings)
+DATABASE_URL = os.getenv('DATABASE_URL', None)
 
 # SSL/TLS configuration
 USE_DEV_CERTS = os.getenv("USE_DEV_CERTS") == "True"
@@ -30,6 +39,9 @@ USE_DEV_CERTS = os.getenv("USE_DEV_CERTS") == "True"
 # Server configuration
 HOST = os.getenv("HOST", "localhost")
 PORT = int(os.getenv("PORT", "8443"))
+
+# Filesystem configuration
+FILESYSTEM_PATH = os.getenv("FILESYSTEM_PATH", ".filesystem")
 
 # Replicate API configuration
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")

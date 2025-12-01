@@ -10,8 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # Import configuration
 from backend.config import CORS_ORIGINS, USE_DEV_CERTS, HOST, PORT
 
-# Import database initialization
-from backend.database.db import init_db
+# Import database
+from backend.database import db
 
 # Import security and utilities
 from backend.security.auth import cleanup_expired_sessions
@@ -32,7 +32,7 @@ from backend.middleware.middleware import (
 async def lifespan(app: FastAPI):
     """
     Manages the lifespan of the application by performing necessary asynchronous
-    tasks such as cleanup of expired sessions.
+    tasks such as cleanup of expired sessions and database initialization/shutdown.
 
     This function ensures that the application lifecycle includes running specific
     background tasks that are necessary for maintaining the application's state or
@@ -43,8 +43,16 @@ async def lifespan(app: FastAPI):
     :return: Async generator for managing application lifespan.
     :rtype: AsyncGenerator
     """
+    # Initialize database tables
+    db.init_tables()
+
+    # Start background cleanup task
     asyncio.create_task(cleanup_expired_sessions())
+
     yield
+
+    # Shutdown: close database connections
+    db.close_all()
 
 
 # Setup FastAPI app
@@ -57,9 +65,6 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
     lifespan=lifespan
 )
-
-# Initialize the database on startup
-init_db()
 
 # Add CORS middleware
 app.add_middleware(

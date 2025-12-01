@@ -7,7 +7,6 @@ pydantic==2.5.0
 python-multipart==0.0.6
 httpx==0.25.2
 
-# TODO: Do we need these for the container?
-# python-multipart==0.0.6
-# Add CORS middleware support
-# httpx==0.25.2
+# Database
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.23

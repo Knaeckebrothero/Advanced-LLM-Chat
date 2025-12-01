@@ -3,7 +3,7 @@ LLM (Large Language Model) service operations.
 """
 import uuid
 import replicate
-from backend.database.db import get_db
+from backend.database import db
 
 
 def generate_conversation_id() -> str:
@@ -90,26 +90,15 @@ async def get_conversation_context(conversation_id: str, limit: int = 5) -> str:
     :rtype: str
     """
     try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT roleName, content
-                FROM messages
-                WHERE conversationId = ?
-                ORDER BY time DESC
-                  LIMIT ?
-                """,
-                (conversation_id, limit)
-            )
-            messages = cur.fetchall()
+        # Get recent messages using CRUD method (returns in DESC order)
+        messages = db.get_recent_messages_for_context(conversation_id, limit)
 
-            # Build context string by joining messages
-            context = []
-            for msg in reversed(messages):
-                context.append(f"{msg['roleName']}: {msg['content']}")
+        # Build context string by joining messages (reverse for chronological order)
+        context = []
+        for msg in reversed(messages):
+            context.append(f"{msg['roleName']}: {msg['content']}")
 
-            return "\n".join(context)
+        return "\n".join(context)
     except Exception as e:
         print(f"Error getting conversation context: {str(e)}")
         return ""

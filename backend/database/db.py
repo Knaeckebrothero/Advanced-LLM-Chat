@@ -1,223 +1,1059 @@
 """
-Database operations and initialization.
+PostgreSQL Database Manager.
+
+This module provides a Database class for managing PostgreSQL connections and
+performing CRUD operations on all database entities. It uses SQLAlchemy Core
+for simple operations and loads complex queries from external .sql files.
+
+Example usage:
+    from backend.database import db
+
+    # Get a user
+    user = db.get_user_by_email("user@example.com")
+
+    # Create a message
+    message = db.create_message(
+        message_id=1234567890,
+        conversation_id="conv-uuid",
+        role_name="user",
+        content="Hello!",
+        time=1234567890
+    )
 """
+import logging
 import os
-import sqlite3
+import re
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
-from backend.config import DB_DIR
+from typing import Optional, Generator
 
-# Database configuration
-Path(DB_DIR).mkdir(exist_ok=True)
-DB_PATH = os.path.join(DB_DIR, 'chat.db')
+from sqlalchemy import create_engine, text, select, insert, update, delete
+from sqlalchemy.engine import Engine, Connection
+from sqlalchemy.pool import QueuePool
+
+from backend.config import (
+    POSTGRES_HOST,
+    POSTGRES_PORT,
+    POSTGRES_DB,
+    POSTGRES_USER,
+    POSTGRES_PASSWORD,
+    POSTGRES_MIN_CONNECTIONS,
+    POSTGRES_MAX_CONNECTIONS,
+    DATABASE_URL,
+)
+from backend.database.tables import (
+    metadata,
+    users,
+    conversations,
+    messages,
+    sessions,
+    guest_usage,
+    user_settings,
+)
+
+log = logging.getLogger(__name__)
+
+# Path to SQL query files
+QUERIES_DIR = Path(__file__).parent / "queries"
 
 
-@contextmanager
-def get_db():
+class Database:
     """
-    Manages a context for database connection, ensuring proper cleanup of resources.
+    PostgreSQL database manager with connection pooling and CRUD operations.
 
-    This function is used to provide a managed context for database interaction.
-    It opens a SQLite database connection and ensures it is properly closed after
-    use, even if an exception occurs during the interaction. The connection uses
-    a row factory to allow access to columns by name.
+    This class provides a clean interface for database operations using SQLAlchemy
+    Core for simple CRUD and external .sql files for complex queries. Connection
+    pooling is handled automatically via SQLAlchemy's engine.
 
-    :param DB_PATH: The file path to the SQLite database.
+    Attributes:
+        engine: SQLAlchemy engine with connection pooling.
+        _queries: Cache of loaded SQL queries from .sql files.
 
-    :yield: A SQLite database connection object.
+    Example:
+        db = Database()
+        db.init_tables()
+        user = db.create_user("user@example.com", "John Doe")
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
 
+    def __init__(
+        self,
+        host: str = None,
+        port: int = None,
+        database: str = None,
+        user: str = None,
+        password: str = None,
+        min_connections: int = None,
+        max_connections: int = None,
+        database_url: str = None,
+    ):
+        """
+        Initialize the database connection pool.
 
-def init_db():
-    """
-    Initializes the database by creating necessary tables, indices, and triggers, as well as modifying
-    tables to add new columns if they are missing. Existing data migrations and structural changes are
-    also handled to enhance database schema integrity and functionality.
+        Args:
+            host: PostgreSQL host (default from config).
+            port: PostgreSQL port (default from config).
+            database: Database name (default from config).
+            user: Database user (default from config).
+            password: Database password (default from config).
+            min_connections: Minimum pool size (default from config).
+            max_connections: Maximum pool size (default from config).
+            database_url: Full connection URL (overrides individual settings).
+        """
+        # Use provided values or fall back to config
+        self._host = host or POSTGRES_HOST
+        self._port = port or POSTGRES_PORT
+        self._database = database or POSTGRES_DB
+        self._user = user or POSTGRES_USER
+        self._password = password or POSTGRES_PASSWORD
+        self._min_connections = min_connections or POSTGRES_MIN_CONNECTIONS
+        self._max_connections = max_connections or POSTGRES_MAX_CONNECTIONS
 
-    :raises Exception: If the database connection or operations fail.
-    :returns: None
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
+        # Build connection URL
+        if database_url or DATABASE_URL:
+            url = database_url or DATABASE_URL
+        else:
+            url = f"postgresql://{self._user}:{self._password}@{self._host}:{self._port}/{self._database}"
 
-        # Create users table
-        cur.execute('''
-                    CREATE TABLE IF NOT EXISTS users (
-                                                       id INTEGER PRIMARY KEY,
-                                                       email TEXT UNIQUE NOT NULL,
-                                                       name TEXT,
-                                                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                    ''')
+        log.debug(f"Initializing database connection to {self._host}:{self._port}/{self._database}")
 
-        # Create conversations table with UUID support
-        cur.execute('''
-                    CREATE TABLE IF NOT EXISTS conversations (
-                                                               id TEXT PRIMARY KEY,
-                                                               userId INTEGER NOT NULL,
-                                                               name TEXT NOT NULL,
-                                                               participants TEXT,
-                                                               createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                               updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                               version INTEGER DEFAULT 1,
-                                                               lastModified INTEGER,
-                                                               FOREIGN KEY(userId) REFERENCES users(id)
-                      )
-                    ''')
+        # Create engine with connection pooling
+        self.engine: Engine = create_engine(
+            url,
+            poolclass=QueuePool,
+            pool_size=self._min_connections,
+            max_overflow=self._max_connections - self._min_connections,
+            pool_pre_ping=True,  # Verify connections before use
+            echo=False,  # Set to True for SQL debugging
+        )
 
-        # Create messages table to store chat messages
-        cur.execute('''
-                    CREATE TABLE IF NOT EXISTS messages (
-                                                          id INTEGER PRIMARY KEY,
-                                                          conversationId TEXT NOT NULL,
-                                                          roleName TEXT NOT NULL,
-                                                          content TEXT NOT NULL,
-                                                          time INTEGER NOT NULL,
-                                                          type TEXT DEFAULT 'text',
-                                                          version INTEGER DEFAULT 1,
-                                                          lastModified INTEGER,
-                                                          FOREIGN KEY(conversationId) REFERENCES conversations(id)
-                      )
-                    ''')
+        # Cache for loaded queries
+        self._queries: dict[str, str] = {}
 
-        # Create sessions table to manage user sessions
-        cur.execute('''
-                    CREATE TABLE IF NOT EXISTS sessions (
-                                                          session_key TEXT PRIMARY KEY,
-                                                          user_id INTEGER NOT NULL,
-                                                          email TEXT NOT NULL,
-                                                          is_guest BOOLEAN DEFAULT FALSE,
-                                                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                          expires_at TIMESTAMP NOT NULL,
-                                                          last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                          FOREIGN KEY(user_id) REFERENCES users(id)
-                      )
-                    ''')
+        log.info("Database connection pool initialized")
 
-        # Check if is_guest column exists, if not add it (for existing databases)
-        cur.execute("PRAGMA table_info(sessions)")
-        columns = [column[1] for column in cur.fetchall()]
-        if 'is_guest' not in columns:
-            print("Adding is_guest column to sessions table...")
-            cur.execute('ALTER TABLE sessions ADD COLUMN is_guest BOOLEAN DEFAULT FALSE')
+    @contextmanager
+    def connection(self) -> Generator[Connection, None, None]:
+        """
+        Context manager for database connections.
 
-        # Check if csrf_token column exists, if not add it
-        if 'csrf_token' not in columns:
-            print("Adding csrf_token column to sessions table...")
-            cur.execute('ALTER TABLE sessions ADD COLUMN csrf_token TEXT')
+        Yields a connection from the pool that is automatically returned
+        when the context exits. Transactions are automatically committed
+        on success or rolled back on exception.
 
-        # Check if type column exists in messages table, if not add it
-        cur.execute("PRAGMA table_info(messages)")
-        columns = [column[1] for column in cur.fetchall()]
-        if 'type' not in columns:
-            print("Adding type column to messages table...")
-            cur.execute("ALTER TABLE messages ADD COLUMN type TEXT DEFAULT 'text'")
+        Yields:
+            SQLAlchemy Connection object.
 
-        # Add version columns for optimistic locking
-        if 'version' not in columns:
-            print("Adding version column to messages table...")
-            cur.execute("ALTER TABLE messages ADD COLUMN version INTEGER DEFAULT 1")
+        Example:
+            with db.connection() as conn:
+                result = conn.execute(select(users))
+        """
+        conn = self.engine.connect()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
-        if 'lastModified' not in columns:
-            print("Adding lastModified column to messages table...")
-            cur.execute("ALTER TABLE messages ADD COLUMN lastModified INTEGER")
+    def close_all(self) -> None:
+        """
+        Close all connections in the pool.
 
-        # Check conversations table for version columns
-        cur.execute("PRAGMA table_info(conversations)")
-        columns = [column[1] for column in cur.fetchall()]
-        if 'version' not in columns:
-            print("Adding version column to conversations table...")
-            cur.execute("ALTER TABLE conversations ADD COLUMN version INTEGER DEFAULT 1")
+        Should be called when shutting down the application.
+        """
+        self.engine.dispose()
+        log.info("Database connection pool closed")
 
-        if 'lastModified' not in columns:
-            print("Adding lastModified column to conversations table...")
-            cur.execute("ALTER TABLE conversations ADD COLUMN lastModified INTEGER")
+    def _load_query(self, filename: str, query_name: str) -> str:
+        """
+        Load a named query from a .sql file.
 
-        # Create guest_usage table
-        cur.execute('''
-                    CREATE TABLE IF NOT EXISTS guest_usage (
-                                                             ip_address TEXT PRIMARY KEY,
-                                                             request_count INTEGER NOT NULL,
-                                                             last_request_at TIMESTAMP NOT NULL
-                    )
-                    ''')
+        SQL files use '-- name: query_name' comments to separate queries.
 
-        # Create index for faster querying by conversationId and time
-        cur.execute('''
-                    CREATE INDEX IF NOT EXISTS idx_conversation_time
-                      ON messages(conversationId, time)
-                    ''')
+        Args:
+            filename: Name of the .sql file (e.g., 'complex.sql').
+            query_name: Name of the query to load.
 
-        # Create index for faster querying by userId on conversations
-        cur.execute('''
-                    CREATE INDEX IF NOT EXISTS idx_conversations_user
-                      ON conversations(userId)
-                    ''')
+        Returns:
+            The SQL query string.
 
-        conn.commit()
+        Raises:
+            ValueError: If the query is not found.
+        """
+        cache_key = f"{filename}:{query_name}"
+        if cache_key in self._queries:
+            return self._queries[cache_key]
 
-        # Create Table for user-based settings
-        cur.execute('''
-                    CREATE TABLE IF NOT EXISTS user_settings (
-                                                               user_id INTEGER PRIMARY KEY,
-                                                               theme TEXT NOT NULL,
-                                                               language TEXT NOT NULL,
-                                                               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                    ''')
+        file_path = QUERIES_DIR / filename
+        if not file_path.exists():
+            raise ValueError(f"Query file not found: {file_path}")
 
-        # Add updated_at column to messages table if it doesn't exist
-        cur.execute("PRAGMA table_info(messages)")
-        columns = [column[1] for column in cur.fetchall()]
-        if 'updated_at' not in columns:
-            print("Adding updated_at column to messages table...")
-            cur.execute("ALTER TABLE messages ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        content = file_path.read_text()
 
-        # Add updated_at column to user_settings table if it doesn't exist
-        cur.execute("PRAGMA table_info(user_settings)")
-        columns = [column[1] for column in cur.fetchall()]
-        if 'updated_at' not in columns:
-            print("Adding updated_at column to user_settings table...")
-            cur.execute("ALTER TABLE user_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        # Parse named queries using regex
+        pattern = r"--\s*name:\s*(\w+)\s*\n(.*?)(?=--\s*name:|\Z)"
+        matches = re.findall(pattern, content, re.DOTALL)
 
-        # Add rating column to messages table if it doesn't exist
-        cur.execute("PRAGMA table_info(messages)")
-        columns = [column[1] for column in cur.fetchall()]
-        if 'rating' not in columns:
-            print("Adding rating column to messages table...")
-            cur.execute("ALTER TABLE messages ADD COLUMN rating INTEGER")
+        for name, sql in matches:
+            self._queries[f"{filename}:{name}"] = sql.strip()
 
-        # Create trigger to update conversations timestamp
-        cur.execute('''
-                    CREATE TRIGGER IF NOT EXISTS update_conversations_timestamp
-                    AFTER UPDATE ON conversations
-                    BEGIN
-                    UPDATE conversations SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
-                    END;
-                    ''')
+        if cache_key not in self._queries:
+            raise ValueError(f"Query '{query_name}' not found in {filename}")
 
-        # Create trigger to update messages timestamp
-        cur.execute('''
-                    CREATE TRIGGER IF NOT EXISTS update_messages_timestamp
-                    AFTER UPDATE ON messages
-                    BEGIN
-                    UPDATE messages SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-                    END;
-                    ''')
+        return self._queries[cache_key]
 
-        # Create trigger to update user_settings timestamp
-        cur.execute('''
-                    CREATE TRIGGER IF NOT EXISTS update_user_settings_timestamp
-                    AFTER UPDATE ON user_settings
-                    BEGIN
-                    UPDATE user_settings SET updated_at = CURRENT_TIMESTAMP WHERE user_id = NEW.user_id;
-                    END;
-                    ''')
+    def _row_to_dict(self, row) -> Optional[dict]:
+        """
+        Convert a SQLAlchemy row to a dictionary.
 
-        conn.commit()
+        Args:
+            row: SQLAlchemy Row object or None.
+
+        Returns:
+            Dictionary with column names as keys, or None if row is None.
+        """
+        if row is None:
+            return None
+        return dict(row._mapping)
+
+    def init_tables(self) -> None:
+        """
+        Create all database tables if they don't exist.
+
+        This method reads the schema.sql file and executes all DDL statements
+        to create tables, indexes, and triggers.
+        """
+        log.info("Initializing database tables...")
+
+        schema_file = QUERIES_DIR / "schema.sql"
+        if not schema_file.exists():
+            raise ValueError(f"Schema file not found: {schema_file}")
+
+        # Read and execute schema SQL
+        schema_sql = schema_file.read_text()
+
+        # Split by -- name: comments and execute each block
+        pattern = r"--\s*name:\s*\w+\s*\n"
+        blocks = re.split(pattern, schema_sql)
+
+        with self.connection() as conn:
+            for block in blocks:
+                block = block.strip()
+                if block:
+                    # Execute each statement in the block
+                    statements = [s.strip() for s in block.split(';') if s.strip()]
+                    for stmt in statements:
+                        try:
+                            conn.execute(text(stmt))
+                        except Exception as e:
+                            log.warning(f"Statement warning (may be expected): {e}")
+
+        log.info("Database tables initialized successfully")
+
+    # =========================================================================
+    # User CRUD Operations
+    # =========================================================================
+
+    def get_user_by_id(self, user_id: int) -> Optional[dict]:
+        """
+        Get a user by their ID.
+
+        Args:
+            user_id: The user's ID.
+
+        Returns:
+            User dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = select(users).where(users.c.id == user_id)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def get_user_by_email(self, email: str) -> Optional[dict]:
+        """
+        Get a user by their email address (case-insensitive).
+
+        Args:
+            email: The user's email address.
+
+        Returns:
+            User dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = select(users).where(users.c.email.ilike(email))
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def create_user(self, email: str, name: str = None) -> dict:
+        """
+        Create a new user.
+
+        Args:
+            email: The user's email address.
+            name: The user's name (optional).
+
+        Returns:
+            The created user dictionary.
+        """
+        with self.connection() as conn:
+            stmt = insert(users).values(email=email, name=name).returning(users)
+            result = conn.execute(stmt).fetchone()
+            log.info(f"Created user: {email}")
+            return self._row_to_dict(result)
+
+    def update_user(self, user_id: int, name: str = None, email: str = None) -> Optional[dict]:
+        """
+        Update a user's information.
+
+        Args:
+            user_id: The user's ID.
+            name: New name (optional).
+            email: New email (optional).
+
+        Returns:
+            Updated user dictionary or None if not found.
+        """
+        values = {}
+        if name is not None:
+            values['name'] = name
+        if email is not None:
+            values['email'] = email
+
+        if not values:
+            return self.get_user_by_id(user_id)
+
+        with self.connection() as conn:
+            stmt = update(users).where(users.c.id == user_id).values(**values).returning(users)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def delete_user(self, user_id: int) -> bool:
+        """
+        Delete a user.
+
+        Args:
+            user_id: The user's ID.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        with self.connection() as conn:
+            stmt = delete(users).where(users.c.id == user_id)
+            result = conn.execute(stmt)
+            return result.rowcount > 0
+
+    # =========================================================================
+    # Conversation CRUD Operations
+    # =========================================================================
+
+    def get_conversation_by_id(
+        self,
+        conversation_id: str,
+        user_id: int = None,
+        include_message_count: bool = False
+    ) -> Optional[dict]:
+        """
+        Get a conversation by its ID.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            user_id: Optional user ID for ownership check (None allows any).
+            include_message_count: If True, include message count in result.
+
+        Returns:
+            Conversation dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            if include_message_count:
+                if user_id is not None:
+                    query = self._load_query("complex.sql", "get_conversation_with_message_count")
+                    result = conn.execute(
+                        text(query),
+                        {"conversation_id": conversation_id, "user_id": user_id}
+                    ).fetchone()
+                else:
+                    query = self._load_query("complex.sql", "get_conversation_with_message_count_guest")
+                    result = conn.execute(
+                        text(query),
+                        {"conversation_id": conversation_id}
+                    ).fetchone()
+            else:
+                stmt = select(conversations).where(conversations.c.id == conversation_id)
+                if user_id is not None:
+                    stmt = stmt.where(conversations.c.userId == user_id)
+                result = conn.execute(stmt).fetchone()
+
+            return self._row_to_dict(result)
+
+    def get_conversations_by_user(self, user_id: int) -> list[dict]:
+        """
+        Get all conversations for a user.
+
+        Args:
+            user_id: The user's ID.
+
+        Returns:
+            List of conversation dictionaries.
+        """
+        with self.connection() as conn:
+            stmt = (
+                select(conversations)
+                .where(conversations.c.userId == user_id)
+                .order_by(conversations.c.updatedAt.desc())
+            )
+            results = conn.execute(stmt).fetchall()
+            return [self._row_to_dict(row) for row in results]
+
+    def create_conversation(
+        self,
+        conversation_id: str,
+        user_id: int,
+        name: str,
+        participants: str = None,
+        last_modified: int = None
+    ) -> dict:
+        """
+        Create a new conversation.
+
+        Args:
+            conversation_id: UUID for the conversation.
+            user_id: Owner's user ID.
+            name: Conversation name.
+            participants: JSON-encoded participant list (optional).
+            last_modified: Unix timestamp (optional).
+
+        Returns:
+            The created conversation dictionary.
+        """
+        with self.connection() as conn:
+            stmt = insert(conversations).values(
+                id=conversation_id,
+                userId=user_id,
+                name=name,
+                participants=participants,
+                lastModified=last_modified,
+            ).returning(conversations)
+            result = conn.execute(stmt).fetchone()
+            log.info(f"Created conversation: {conversation_id}")
+            return self._row_to_dict(result)
+
+    def update_conversation(
+        self,
+        conversation_id: str,
+        user_id: int = None,
+        name: str = None,
+        version: int = None,
+        last_modified: int = None
+    ) -> Optional[dict]:
+        """
+        Update a conversation.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            user_id: Optional user ID for ownership check.
+            name: New name (optional).
+            version: New version for optimistic locking (optional).
+            last_modified: Unix timestamp (optional).
+
+        Returns:
+            Updated conversation dictionary or None if not found.
+        """
+        values = {}
+        if name is not None:
+            values['name'] = name
+        if version is not None:
+            values['version'] = version
+        if last_modified is not None:
+            values['lastModified'] = last_modified
+
+        if not values:
+            return self.get_conversation_by_id(conversation_id, user_id)
+
+        with self.connection() as conn:
+            stmt = update(conversations).where(conversations.c.id == conversation_id)
+            if user_id is not None:
+                stmt = stmt.where(conversations.c.userId == user_id)
+            stmt = stmt.values(**values).returning(conversations)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def delete_conversation(self, conversation_id: str, user_id: int = None) -> bool:
+        """
+        Delete a conversation and all its messages.
+
+        Messages are automatically deleted via ON DELETE CASCADE.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            user_id: Optional user ID for ownership check.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        with self.connection() as conn:
+            stmt = delete(conversations).where(conversations.c.id == conversation_id)
+            if user_id is not None:
+                stmt = stmt.where(conversations.c.userId == user_id)
+            result = conn.execute(stmt)
+            if result.rowcount > 0:
+                log.info(f"Deleted conversation: {conversation_id}")
+            return result.rowcount > 0
+
+    def get_conversation_owner(self, conversation_id: str) -> Optional[int]:
+        """
+        Get the owner's user ID for a conversation.
+
+        Args:
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            User ID or None if conversation not found.
+        """
+        with self.connection() as conn:
+            stmt = select(conversations.c.userId).where(conversations.c.id == conversation_id)
+            result = conn.execute(stmt).fetchone()
+            return result[0] if result else None
+
+    # =========================================================================
+    # Message CRUD Operations
+    # =========================================================================
+
+    def get_message_by_id(self, message_id: int, conversation_id: str) -> Optional[dict]:
+        """
+        Get a message by its ID.
+
+        Args:
+            message_id: The message's ID.
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            Message dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = select(messages).where(
+                (messages.c.id == message_id) &
+                (messages.c.conversationId == conversation_id)
+            )
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def get_messages_by_conversation(
+        self,
+        conversation_id: str,
+        before_timestamp: int = None,
+        after_timestamp: int = None,
+        limit: int = 30
+    ) -> list[dict]:
+        """
+        Get messages from a conversation.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            before_timestamp: Get messages before this timestamp (pagination).
+            after_timestamp: Get messages after this timestamp (incremental sync).
+            limit: Maximum number of messages to return.
+
+        Returns:
+            List of message dictionaries.
+        """
+        with self.connection() as conn:
+            if before_timestamp is not None:
+                query = self._load_query("complex.sql", "get_messages_before_timestamp")
+                results = conn.execute(
+                    text(query),
+                    {"conversation_id": conversation_id, "before_timestamp": before_timestamp, "limit": limit}
+                ).fetchall()
+            elif after_timestamp is not None:
+                query = self._load_query("complex.sql", "get_messages_after_timestamp")
+                results = conn.execute(
+                    text(query),
+                    {"conversation_id": conversation_id, "after_timestamp": after_timestamp}
+                ).fetchall()
+            else:
+                stmt = (
+                    select(messages)
+                    .where(messages.c.conversationId == conversation_id)
+                    .order_by(messages.c.time.desc())
+                    .limit(limit)
+                )
+                results = conn.execute(stmt).fetchall()
+
+            return [self._row_to_dict(row) for row in results]
+
+    def get_message_count(self, conversation_id: str) -> int:
+        """
+        Get the number of messages in a conversation.
+
+        Args:
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            Number of messages.
+        """
+        from sqlalchemy import func
+        with self.connection() as conn:
+            stmt = select(func.count(messages.c.id)).where(
+                messages.c.conversationId == conversation_id
+            )
+            result = conn.execute(stmt).scalar()
+            return result or 0
+
+    def create_message(
+        self,
+        message_id: int,
+        conversation_id: str,
+        role_name: str,
+        content: str,
+        time: int,
+        msg_type: str = 'text',
+        version: int = 1,
+        last_modified: int = None
+    ) -> dict:
+        """
+        Create a new message.
+
+        Args:
+            message_id: The message's ID (usually timestamp-based).
+            conversation_id: The conversation's UUID.
+            role_name: Message sender role ('user', 'assistant', etc.).
+            content: Message content (text or JSON for complex types).
+            time: Unix timestamp when sent.
+            msg_type: Message type ('text' or 'voice').
+            version: Version for optimistic locking.
+            last_modified: Unix timestamp (optional).
+
+        Returns:
+            The created message dictionary.
+        """
+        with self.connection() as conn:
+            stmt = insert(messages).values(
+                id=message_id,
+                conversationId=conversation_id,
+                roleName=role_name,
+                content=content,
+                time=time,
+                type=msg_type,
+                version=version,
+                lastModified=last_modified,
+            ).returning(messages)
+            result = conn.execute(stmt).fetchone()
+            log.debug(f"Created message: {message_id} in conversation {conversation_id}")
+            return self._row_to_dict(result)
+
+    def update_message(
+        self,
+        message_id: int,
+        conversation_id: str,
+        content: str,
+        version: int,
+        last_modified: int = None
+    ) -> Optional[dict]:
+        """
+        Update a message's content with optimistic locking.
+
+        Args:
+            message_id: The message's ID.
+            conversation_id: The conversation's UUID.
+            content: New message content.
+            version: Expected current version (for optimistic locking).
+            last_modified: Unix timestamp (optional).
+
+        Returns:
+            Updated message dictionary or None if version mismatch/not found.
+        """
+        with self.connection() as conn:
+            values = {
+                'content': content,
+                'version': version + 1,
+            }
+            if last_modified is not None:
+                values['lastModified'] = last_modified
+
+            stmt = (
+                update(messages)
+                .where(
+                    (messages.c.id == message_id) &
+                    (messages.c.conversationId == conversation_id) &
+                    (messages.c.version == version)
+                )
+                .values(**values)
+                .returning(messages)
+            )
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def update_message_rating(
+        self,
+        message_id: int,
+        conversation_id: str,
+        rating: Optional[int]
+    ) -> Optional[dict]:
+        """
+        Update a message's rating.
+
+        Args:
+            message_id: The message's ID.
+            conversation_id: The conversation's UUID.
+            rating: Rating value (0, 1, or None to clear).
+
+        Returns:
+            Updated message dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = (
+                update(messages)
+                .where(
+                    (messages.c.id == message_id) &
+                    (messages.c.conversationId == conversation_id)
+                )
+                .values(rating=rating)
+                .returning(messages)
+            )
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def delete_message(self, message_id: int, conversation_id: str) -> bool:
+        """
+        Delete a message.
+
+        Args:
+            message_id: The message's ID.
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        with self.connection() as conn:
+            stmt = delete(messages).where(
+                (messages.c.id == message_id) &
+                (messages.c.conversationId == conversation_id)
+            )
+            result = conn.execute(stmt)
+            return result.rowcount > 0
+
+    def delete_messages_by_conversation(self, conversation_id: str) -> int:
+        """
+        Delete all messages in a conversation.
+
+        Args:
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            Number of messages deleted.
+        """
+        with self.connection() as conn:
+            stmt = delete(messages).where(messages.c.conversationId == conversation_id)
+            result = conn.execute(stmt)
+            return result.rowcount
+
+    def get_message_version(self, message_id: int, conversation_id: str) -> Optional[int]:
+        """
+        Get the current version of a message.
+
+        Args:
+            message_id: The message's ID.
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            Version number or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = select(messages.c.version).where(
+                (messages.c.id == message_id) &
+                (messages.c.conversationId == conversation_id)
+            )
+            result = conn.execute(stmt).fetchone()
+            return result[0] if result else None
+
+    def get_recent_messages_for_context(
+        self,
+        conversation_id: str,
+        limit: int = 20
+    ) -> list[dict]:
+        """
+        Get recent messages for LLM context building.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            limit: Maximum number of messages.
+
+        Returns:
+            List of message dictionaries (id, roleName, content, time, type).
+        """
+        with self.connection() as conn:
+            query = self._load_query("complex.sql", "get_recent_messages_for_context")
+            results = conn.execute(
+                text(query),
+                {"conversation_id": conversation_id, "limit": limit}
+            ).fetchall()
+            return [self._row_to_dict(row) for row in results]
+
+    # =========================================================================
+    # Session CRUD Operations
+    # =========================================================================
+
+    def get_session(self, session_key: str) -> Optional[dict]:
+        """
+        Get a session by its key.
+
+        Args:
+            session_key: The session key.
+
+        Returns:
+            Session dictionary or None if not found/expired.
+        """
+        with self.connection() as conn:
+            stmt = select(sessions).where(
+                (sessions.c.session_key == session_key) &
+                (sessions.c.expires_at > datetime.utcnow())
+            )
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def create_session(
+        self,
+        session_key: str,
+        user_id: int,
+        email: str,
+        expires_at: datetime,
+        is_guest: bool = False,
+        csrf_token: str = None
+    ) -> dict:
+        """
+        Create a new session.
+
+        Args:
+            session_key: Unique session key.
+            user_id: User ID for the session.
+            email: User's email.
+            expires_at: Session expiration datetime.
+            is_guest: Whether this is a guest session.
+            csrf_token: CSRF token (optional).
+
+        Returns:
+            The created session dictionary.
+        """
+        with self.connection() as conn:
+            stmt = insert(sessions).values(
+                session_key=session_key,
+                user_id=user_id,
+                email=email,
+                expires_at=expires_at,
+                is_guest=is_guest,
+                csrf_token=csrf_token,
+            ).returning(sessions)
+            result = conn.execute(stmt).fetchone()
+            log.debug(f"Created session for user {user_id}")
+            return self._row_to_dict(result)
+
+    def update_session_activity(self, session_key: str) -> bool:
+        """
+        Update a session's last activity timestamp.
+
+        Args:
+            session_key: The session key.
+
+        Returns:
+            True if updated, False if not found.
+        """
+        with self.connection() as conn:
+            stmt = (
+                update(sessions)
+                .where(sessions.c.session_key == session_key)
+                .values(last_activity=datetime.utcnow())
+            )
+            result = conn.execute(stmt)
+            return result.rowcount > 0
+
+    def delete_session(self, session_key: str) -> bool:
+        """
+        Delete a session.
+
+        Args:
+            session_key: The session key.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        with self.connection() as conn:
+            stmt = delete(sessions).where(sessions.c.session_key == session_key)
+            result = conn.execute(stmt)
+            return result.rowcount > 0
+
+    def delete_expired_sessions(self) -> int:
+        """
+        Delete all expired sessions.
+
+        Returns:
+            Number of sessions deleted.
+        """
+        with self.connection() as conn:
+            stmt = delete(sessions).where(sessions.c.expires_at < datetime.utcnow())
+            result = conn.execute(stmt)
+            count = result.rowcount
+            if count > 0:
+                log.info(f"Cleaned up {count} expired sessions")
+            return count
+
+    def delete_sessions_by_user(self, user_id: int) -> int:
+        """
+        Delete all sessions for a user.
+
+        Args:
+            user_id: The user's ID.
+
+        Returns:
+            Number of sessions deleted.
+        """
+        with self.connection() as conn:
+            stmt = delete(sessions).where(sessions.c.user_id == user_id)
+            result = conn.execute(stmt)
+            return result.rowcount
+
+    # =========================================================================
+    # Guest Usage CRUD Operations
+    # =========================================================================
+
+    def get_guest_usage(self, ip_address: str) -> Optional[dict]:
+        """
+        Get guest usage record for an IP address.
+
+        Args:
+            ip_address: The IP address.
+
+        Returns:
+            Guest usage dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = select(guest_usage).where(guest_usage.c.ip_address == ip_address)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def create_or_update_guest_usage(
+        self,
+        ip_address: str,
+        request_count: int,
+        last_request_at: datetime
+    ) -> dict:
+        """
+        Create or update guest usage record (upsert).
+
+        Args:
+            ip_address: The IP address.
+            request_count: Number of requests.
+            last_request_at: Timestamp of last request.
+
+        Returns:
+            The guest usage dictionary.
+        """
+        with self.connection() as conn:
+            # Try to update first
+            stmt = (
+                update(guest_usage)
+                .where(guest_usage.c.ip_address == ip_address)
+                .values(request_count=request_count, last_request_at=last_request_at)
+                .returning(guest_usage)
+            )
+            result = conn.execute(stmt).fetchone()
+
+            if result is None:
+                # Insert if not exists
+                stmt = insert(guest_usage).values(
+                    ip_address=ip_address,
+                    request_count=request_count,
+                    last_request_at=last_request_at,
+                ).returning(guest_usage)
+                result = conn.execute(stmt).fetchone()
+
+            return self._row_to_dict(result)
+
+    def increment_guest_usage(self, ip_address: str) -> dict:
+        """
+        Increment the request count for a guest IP.
+
+        Creates a new record if it doesn't exist.
+
+        Args:
+            ip_address: The IP address.
+
+        Returns:
+            Updated guest usage dictionary.
+        """
+        now = datetime.utcnow()
+        current = self.get_guest_usage(ip_address)
+
+        if current is None:
+            return self.create_or_update_guest_usage(ip_address, 1, now)
+
+        return self.create_or_update_guest_usage(
+            ip_address,
+            current['request_count'] + 1,
+            now
+        )
+
+    def reset_guest_usage(self, ip_address: str) -> dict:
+        """
+        Reset the request count for a guest IP.
+
+        Args:
+            ip_address: The IP address.
+
+        Returns:
+            Updated guest usage dictionary.
+        """
+        return self.create_or_update_guest_usage(ip_address, 0, datetime.utcnow())
+
+    # =========================================================================
+    # User Settings CRUD Operations
+    # =========================================================================
+
+    def get_user_settings(self, user_id: int) -> Optional[dict]:
+        """
+        Get user settings.
+
+        Args:
+            user_id: The user's ID.
+
+        Returns:
+            User settings dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = select(user_settings).where(user_settings.c.user_id == user_id)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def upsert_user_settings(self, user_id: int, theme: str, language: str) -> dict:
+        """
+        Create or update user settings.
+
+        Args:
+            user_id: The user's ID.
+            theme: Theme setting ('auto', 'dark', 'light').
+            language: Language setting ('en', 'de', etc.).
+
+        Returns:
+            The user settings dictionary.
+        """
+        with self.connection() as conn:
+            # Try to update first
+            stmt = (
+                update(user_settings)
+                .where(user_settings.c.user_id == user_id)
+                .values(theme=theme, language=language)
+                .returning(user_settings)
+            )
+            result = conn.execute(stmt).fetchone()
+
+            if result is None:
+                # Insert if not exists
+                stmt = insert(user_settings).values(
+                    user_id=user_id,
+                    theme=theme,
+                    language=language,
+                ).returning(user_settings)
+                result = conn.execute(stmt).fetchone()
+
+            return self._row_to_dict(result)

@@ -186,7 +186,74 @@ Before you begin, ensure you have the following installed:
 - npm (v8.x or higher)
 - Python 3.8+ (for backend)
 - Angular CLI (`npm install -g @angular/cli`)
+- Docker and Docker Compose (for PostgreSQL database)
 - A Replicate API token (for LLM functionality) - get one at https://replicate.com
+
+## Local Development Setup
+
+### Quick Start (Recommended)
+
+1. **Clone and setup environment**
+   ```bash
+   git clone https://github.com/fra-uas/fessi-chatbot.git
+   cd fessi-chatbot
+   cp .env.example .env
+   # Edit .env and add your REPLICATE_API_TOKEN
+   ```
+
+2. **Start PostgreSQL database**
+   ```bash
+   cd docker
+   docker-compose up -d postgres
+   cd ..
+   ```
+
+3. **Initialize the backend**
+   ```bash
+   # Create virtual environment
+   python -m venv venv
+   source venv/bin/activate  # Windows: .\venv\Scripts\activate
+
+   # Install dependencies
+   pip install -r requirements.txt
+
+   # Initialize database and filesystem
+   python backend/app_init.py --seed
+   ```
+
+4. **Start the backend**
+   ```bash
+   python start_backend.py --reload
+   ```
+
+5. **Start the frontend** (in a new terminal)
+   ```bash
+   npm install
+   npm start
+   ```
+
+6. **Access the application**
+   - Frontend: `https://localhost:4200`
+   - Backend API: `https://localhost:8443/api/docs`
+   - Accept the self-signed certificate warning at `https://localhost:8443` first
+
+### Database Commands
+
+```bash
+# Start PostgreSQL only
+cd docker && docker-compose up -d postgres
+
+# Stop PostgreSQL
+cd docker && docker-compose stop postgres
+
+# View PostgreSQL logs
+docker logs fessi-postgres
+
+# Reset database (deletes all data)
+cd docker && docker-compose down -v postgres
+docker-compose up -d postgres
+python backend/app_init.py --force-reset --seed
+```
 
 ## Installation
 
@@ -223,7 +290,13 @@ Create a `.env` file in the root directory with the following content:
 ```
 USE_DEV_CERTS=True
 REPLICATE_API_TOKEN=your_replicate_api_token_here
-DB_DIR=./data
+
+# PostgreSQL Configuration
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=fessi_chat
+POSTGRES_USER=fessi
+POSTGRES_PASSWORD=fessi_dev_password
 ```
 **Tip:** You can use the [.env.example](.env.example) file to do so.
 
@@ -295,7 +368,7 @@ The project is structured with the following key components:
 ng build --configuration production
 ```
 
-The build artifacts will be stored in the `dist/fessi-chatbot/browser/` directory (Angular 19+ structure).
+The build artifacts will be stored in the `dist/fessi/browser/` directory (Angular 19+ structure).
 
 ### Running Tests
 
@@ -382,7 +455,7 @@ Fessi follows a modern microservices architecture optimized for campus-wide depl
 │   (Angular PWA)         │ <-----> │   (FastAPI + RAG)       │
 │                         │  HTTPS  │                         │
 │  - Angular 19.2.2       │         │  - FastAPI              │
-│  - TypeScript (strict)  │         │  - SQLite DB            │
+│  - TypeScript (strict)  │         │  - PostgreSQL DB        │
 │  - IndexedDB            │         │  - RAG Pipeline         │
 │  - Service Worker       │         │  - Waste Knowledge Base │
 │  - NGX-Translate i18n   │         │  - LLM Integration      │
@@ -442,6 +515,7 @@ The backend follows a modular architecture for maintainability and scalability:
 backend/
 ├── main.py                # FastAPI application entry point
 ├── config.py              # Configuration constants and settings
+├── app_init.py            # Application initialization script (filesystem, SSL, DB)
 ├── api/                   # API route handlers
 │   ├── auth.py            # Authentication endpoints
 │   ├── conversations.py   # Conversation CRUD operations
@@ -450,7 +524,13 @@ backend/
 │   ├── files.py           # File upload handling
 │   └── docs.py            # API documentation routes
 ├── database/
-│   └── db.py              # SQLAlchemy models and database setup
+│   ├── db.py              # SQLAlchemy engine and connection pool setup
+│   ├── db_init.py         # Database initialization and migration script
+│   ├── tables.py          # SQLAlchemy Core table definitions
+│   └── queries/           # SQL query files
+│       ├── schema.sql     # Database schema definition
+│       ├── seed.sql       # Test/example data
+│       └── complex.sql    # Complex query templates
 ├── models/                # Pydantic request/response models
 │   ├── auth.py            # Authentication models
 │   ├── conversation.py    # Conversation models
@@ -491,8 +571,9 @@ Component → State Service → Repository → API Service → Backend
 ### Docker Deployment
 - **Frontend Container**: nginx:alpine serving production Angular build
 - **Backend Container**: python:3.11-slim running FastAPI with uvicorn
+- **Database Container**: PostgreSQL 15 for persistent data storage
 - **Network**: Shared Docker network for inter-container communication
-- **Volumes**: Persistent storage for SQLite database and uploaded files
+- **Volumes**: Persistent storage for PostgreSQL data and uploaded files
 
 ## API Endpoints
 
@@ -560,9 +641,34 @@ export NODE_TLS_REJECT_UNAUTHORIZED=0
 ### Database Connection Issues
 
 If you encounter database issues:
-1. Check that the SQLite database file has been created
-2. Ensure your user has permission to read/write to the file
-3. Try deleting the file to start fresh (all data will be lost)
+1. Check that PostgreSQL is running: `docker ps | grep postgres`
+2. Verify connection: `docker exec -it fessi-postgres psql -U fessi -d fessi_chat -c "SELECT 1"`
+3. Check PostgreSQL logs: `docker logs fessi-postgres`
+4. Reset database: `cd docker && docker-compose down -v postgres && docker-compose up -d postgres`
+
+### PostgreSQL Connection Issues
+
+1. **Check PostgreSQL is running**:
+   ```bash
+   cd docker && docker-compose ps postgres
+   ```
+
+2. **Check logs**:
+   ```bash
+   docker logs fessi-postgres
+   ```
+
+3. **Verify connection**:
+   ```bash
+   docker exec -it fessi-postgres psql -U fessi -d fessi_chat -c "SELECT 1"
+   ```
+
+4. **Reset database**:
+   ```bash
+   cd docker && docker-compose down -v postgres
+   docker-compose up -d postgres
+   python backend/app_init.py --force-reset --seed
+   ```
 
 ### Backend Connection Issues
 
@@ -579,9 +685,9 @@ If the frontend cannot connect to the backend:
    - Check backend logs for API errors: `docker logs advanced-llm-chat-backend`
 
 2. **Database persistence**:
-   - SQLite database stores waste disposal queries in `./docker/data/`
-   - Ensure proper permissions: `chmod 755 ./docker/data`
-   - Backup this directory to preserve query history and waste knowledge base
+   - PostgreSQL data is stored in a Docker volume (`postgres_data`)
+   - Backup with: `docker exec fessi-postgres pg_dump -U fessi fessi_chat > backup.sql`
+   - Restore with: `docker exec -i fessi-postgres psql -U fessi fessi_chat < backup.sql`
 
 3. **Port conflicts**:
    - Frontend runs on port 8080, backend on 8443
