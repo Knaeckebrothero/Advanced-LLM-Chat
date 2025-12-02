@@ -33,6 +33,50 @@ from backend.services.llm_provider import is_provider_available
 router = APIRouter(prefix="/api/message", tags=["Message"])
 
 
+def _save_agent_message(
+    message_id: int,
+    conversation_id: str,
+    role_name: str,
+    msg_time: int,
+    content
+) -> None:
+    """
+    Save an agent message using JSONB storage.
+
+    Extracts agent fields from various input formats and calls
+    db.create_agent_message with proper column storage.
+    """
+    # Handle different input formats
+    if hasattr(content, 'model_dump'):
+        agent_data = content.model_dump()
+    elif isinstance(content, dict):
+        agent_data = content
+    else:
+        # Fallback for string content
+        agent_data = {
+            'finalResponse': str(content),
+            'steps': [],
+            'status': 'complete'
+        }
+
+    # Extract fields with defaults
+    steps = agent_data.get('steps', [])
+    final_response = agent_data.get('finalResponse', '')
+    agent_status = agent_data.get('status', 'complete')
+    error = agent_data.get('error')
+
+    db.create_agent_message(
+        message_id=message_id,
+        conversation_id=conversation_id,
+        role_name=role_name,
+        time=msg_time,
+        final_response=final_response,
+        status=agent_status,
+        error=error,
+        steps=steps
+    )
+
+
 @router.post("/send",
              response_model=Dict[str, int],
              status_code=status.HTTP_201_CREATED,
@@ -90,14 +134,18 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
             else:
                 content_str = str(request_body.content)
         elif message_type == 'agent':
-            # Handle agent messages - serialize the full AgentContent
-            if hasattr(request_body.content, 'model_dump'):
-                content_str = json.dumps(request_body.content.model_dump())
-            elif isinstance(request_body.content, dict):
-                content_str = json.dumps(request_body.content)
-            else:
-                content_str = str(request_body.content)
+            # Use JSONB storage for agent messages (same as streaming endpoint)
+            _save_agent_message(
+                message_id=message_id,
+                conversation_id=request_body.conversationId,
+                role_name=request_body.roleName,
+                msg_time=request_body.time,
+                content=request_body.content
+            )
+            crud_logger.info(f"Agent message sent successfully - Message ID: {message_id}")
+            return {"id": message_id}
 
+        # For text/voice messages, use regular message storage
         db.create_message(
             message_id=message_id,
             conversation_id=request_body.conversationId,
@@ -555,13 +603,40 @@ async def send_and_generate_message(
             else:
                 content_str = str(request_body.content)
         elif message_type == 'agent':
+            # Use JSONB storage for agent messages (same as streaming endpoint)
+            _save_agent_message(
+                message_id=user_message_id,
+                conversation_id=request_body.conversationId,
+                role_name=request_body.roleName,
+                msg_time=request_body.time,
+                content=request_body.content
+            )
+            # Extract agent fields for response
             if hasattr(request_body.content, 'model_dump'):
-                content_str = json.dumps(request_body.content.model_dump())
+                agent_data = request_body.content.model_dump()
             elif isinstance(request_body.content, dict):
-                content_str = json.dumps(request_body.content)
+                agent_data = request_body.content
             else:
-                content_str = str(request_body.content)
+                agent_data = {'finalResponse': str(request_body.content), 'steps': [], 'status': 'complete'}
 
+            user_message_response = MessageResponse(
+                id=user_message_id,
+                conversationId=request_body.conversationId,
+                roleName=request_body.roleName,
+                content='',  # Empty for JSONB-stored agent messages
+                time=request_body.time,
+                type='agent',
+                version=request_body.version or 1,
+                lastModified=request_body.lastModified or int(time.time()),
+                steps=agent_data.get('steps', []),
+                finalResponse=agent_data.get('finalResponse', ''),
+                status=agent_data.get('status', 'complete'),
+                error=agent_data.get('error')
+            )
+            # Agent messages don't need AI generation - return immediately
+            return SendAndGenerateResponse(userMessage=user_message_response, aiMessage=None)
+
+        # For text/voice messages, use regular message storage
         db.create_message(
             message_id=user_message_id,
             conversation_id=request_body.conversationId,

@@ -47,7 +47,11 @@ SELECT
     version,
     "lastModified",
     updated_at,
-    rating
+    rating,
+    agent_status,
+    agent_steps,
+    final_response,
+    agent_error
 FROM messages
 WHERE "conversationId" = :conversation_id AND time < :before_timestamp
 ORDER BY time DESC
@@ -65,7 +69,11 @@ SELECT
     version,
     "lastModified",
     updated_at,
-    rating
+    rating,
+    agent_status,
+    agent_steps,
+    final_response,
+    agent_error
 FROM messages
 WHERE "conversationId" = :conversation_id AND time > :after_timestamp
 ORDER BY time ASC;
@@ -77,7 +85,11 @@ SELECT
     "roleName",
     content,
     time,
-    type
+    type,
+    agent_status,
+    agent_steps,
+    final_response,
+    agent_error
 FROM messages
 WHERE "conversationId" = :conversation_id
 ORDER BY time DESC

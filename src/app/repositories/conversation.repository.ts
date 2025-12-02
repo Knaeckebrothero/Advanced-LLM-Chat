@@ -249,7 +249,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       if (!serverConv) return false;
       
       // Compute local hash for comparison
-      const localHash = await localConv.computeHash(this.dbService);
+      const messageContents = localMessages.map(m => m.getDisplayContent() || '');
+      const localHash = localConv.computeHashFromContents(messageContents);
       const hasNoMessages = localMessages.length === 0;
       
       // Determine if we need to sync
@@ -685,9 +686,26 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   async loadConversationMessages(conversationId: string, limit: number = 20): Promise<Message[]> {
     const conversation = await this.dbService.getConversation(conversationId);
     if (!conversation) return [];
-    
-    // Get latest messages using the built-in method
-    return conversation.getLatestMessages(this.dbService, limit);
+
+    // Get latest messages directly from DB
+    try {
+      const messages = await this.dbService.getMessagesByConversationId(conversationId);
+      if (messages !== undefined) {
+        // Sort with ID as tie-breaker for timestamp precision issues
+        messages.sort((a, b) => {
+          const timeDiff = a.time!.getTime() - b.time!.getTime();
+          if (Math.abs(timeDiff) < 1000) {
+            return a.id - b.id;
+          }
+          return timeDiff;
+        });
+        return [...messages.slice(-limit)];
+      }
+      return [];
+    } catch (error) {
+      console.error('Error getting messages:', error);
+      return [];
+    }
   }
 
   /**

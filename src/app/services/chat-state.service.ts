@@ -67,7 +67,15 @@ export class ChatStateService implements OnDestroy {
       }
       return this.messageRepository.getByConversationId(id);
     }),
-    map(messages => messages.sort((a, b) => (a.time?.getTime() || 0) - (b.time?.getTime() || 0))),
+    map(messages => messages.sort((a, b) => {
+      const timeDiff = (a.time?.getTime() || 0) - (b.time?.getTime() || 0);
+      // Use ID as tie-breaker when timestamps are within 1 second
+      // This fixes ordering issues caused by timestamp precision loss in SSE streaming
+      if (Math.abs(timeDiff) < 1000) {
+        return a.id - b.id;
+      }
+      return timeDiff;
+    })),
     shareReplay(1)
   );
 
