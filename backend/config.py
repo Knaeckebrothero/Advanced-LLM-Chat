@@ -33,6 +33,11 @@ POSTGRES_MAX_CONNECTIONS = int(os.getenv('POSTGRES_MAX_CONNECTIONS', '10'))
 # Database URL (can override individual settings)
 DATABASE_URL = os.getenv('DATABASE_URL', None)
 
+# Neo4j Knowledge Graph configuration
+NEO4J_URI = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
+NEO4J_USER = os.getenv('NEO4J_USER', 'neo4j')
+NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD', 'fessi_neo4j_dev')
+
 # SSL/TLS configuration
 USE_DEV_CERTS = os.getenv("USE_DEV_CERTS") == "True"
 

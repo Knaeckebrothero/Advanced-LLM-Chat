@@ -20,11 +20,11 @@ npx tsc --noEmit   # Type-check without building (no ESLint configured)
 
 ### Backend Development
 ```bash
-# 1. Start PostgreSQL (required)
-cd docker && docker-compose up -d postgres && cd ..
+# 1. Start databases (PostgreSQL required, Neo4j optional for knowledge graph)
+cd docker && docker-compose up -d postgres neo4j && cd ..
 
-# 2. Initialize database and filesystem (first time or after reset)
-python backend/app_init.py --seed    # Creates tables and seeds test data
+# 2. Initialize databases and filesystem (first time or after reset)
+python backend/app_init.py --seed    # Creates tables and seeds all databases
 
 # 3. Start backend (auto-generates SSL certs on first run)
 python start_backend.py              # Default: https://localhost:8443
@@ -38,11 +38,20 @@ python start_backend.py --reload     # With auto-reload for development
 # POSTGRES_DB=fessi_chat
 # POSTGRES_USER=fessi
 # POSTGRES_PASSWORD=fessi_dev_password
+# NEO4J_URI=bolt://localhost:7687
+# NEO4J_USER=neo4j
+# NEO4J_PASSWORD=fessi_neo4j_dev
 
 # Database commands
-cd docker && docker-compose up -d postgres   # Start PostgreSQL
-cd docker && docker-compose stop postgres    # Stop PostgreSQL
-python backend/app_init.py --force-reset --seed  # Reset and reseed database
+cd docker && docker-compose up -d postgres   # Start PostgreSQL only
+cd docker && docker-compose up -d neo4j      # Start Neo4j only
+cd docker && docker-compose stop             # Stop all databases
+python backend/app_init.py --force-reset --seed  # Reset and reseed all databases
+python backend/app_init.py --skip-neo4j --seed   # Skip Neo4j initialization
+
+# Database-specific initialization
+python -m backend.database.db_init --seed           # PostgreSQL only
+python -m backend.database.neo4j_init --force-reset # Neo4j only (reset and reseed)
 
 # Backend testing
 pytest                      # Run all tests
@@ -97,12 +106,19 @@ backend/
 ├── app_init.py       # Database and filesystem initialization script
 ├── api/              # Route handlers (auth, conversations, messages, settings, files)
 ├── database/
-│   ├── db.py         # SQLAlchemy engine and connection pool
-│   ├── db_init.py    # Database migration script
+│   ├── db.py         # PostgreSQL database manager (SQLAlchemy)
+│   ├── db_init.py    # PostgreSQL migration script
 │   ├── tables.py     # SQLAlchemy Core table definitions
+│   ├── neo4j_db.py   # Neo4j knowledge graph database manager
+│   ├── neo4j_init.py # Neo4j initialization script
+│   ├── neo4j_seed.cypher # Knowledge graph seed data
 │   └── queries/      # SQL files (schema.sql, seed.sql, complex.sql)
 ├── models/           # Pydantic request/response models
-├── services/llm.py   # Replicate API integration
+├── services/
+│   ├── llm.py        # Replicate API integration
+│   ├── llm_provider.py # Multi-provider LLM abstraction (OpenAI, Anthropic)
+│   ├── agent.py      # LangGraph agent for waste disposal queries
+│   └── tools/neo4j_tools.py # LangChain tools for knowledge graph
 ├── security/         # Auth, CSRF, logging
 ├── middleware/       # Request/response middleware
 └── utils/            # Certificates, hashing
@@ -112,9 +128,11 @@ start_backend.py      # Entry point script
 
 Key backend features:
 - RESTful API endpoints for chat operations
-- WebSocket support for streaming responses
+- Server-Sent Events (SSE) for streaming agent responses
 - Session-based authentication with mock/guest providers
 - PostgreSQL database for conversation persistence
+- Neo4j knowledge graph for waste disposal information
+- LangGraph agent with multi-step reasoning
 - Integration with Replicate API for multiple LLM models
 
 ### Key Patterns
@@ -204,6 +222,14 @@ The backend provides these main endpoints (all require session authentication):
 - **sessions**: Active user sessions with expiration
 - **guest_usage**: Rate limiting for guest users
 - **user_settings**: User preferences and LLM settings
+
+### Knowledge Graph (Neo4j)
+- **WasteCategory**: Categories like Recycling, Hazardous, Electronic, Organic, Bulky
+- **WasteItem**: Specific waste items (batteries, electronics, furniture, etc.)
+- **DisposalMethod**: How to dispose (Yellow Bag, Wertstoffhof, Biotonne, etc.)
+- **Location**: Recycling centers with addresses and hours
+- **FAQ**: Frequently asked questions about waste disposal
+- Relationships: BELONGS_TO, DISPOSED_VIA, AVAILABLE_AT, HAS_FAQ
 
 ## Message System
 

@@ -4,8 +4,6 @@
 
 Fessi is a Progressive Web Application (PWA) designed to help campus users identify appropriate disposal methods and locations for various types of waste. Built with Angular 19.2.2 and FastAPI, this chatbot uses a Retrieval-Augmented Generation (RAG) architecture to provide contextually appropriate responses to waste disposal queries.
 
-Developed during the 2025 Summer Semester at Frankfurt University of Applied Sciences (FRA UAS) as a continuation and modernization of the "Müll-Meister" project, Fessi represents a complete redesign using modern web development practices to address the operational challenges of campus waste management.
-
 ## Table of Contents
 
 - [Project Background](#project-background)
