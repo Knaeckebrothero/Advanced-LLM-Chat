@@ -792,6 +792,104 @@ class Database:
             return [self._row_to_dict(row) for row in results]
 
     # =========================================================================
+    # Agent Message Operations
+    # =========================================================================
+
+    def create_agent_message(
+        self,
+        message_id: int,
+        conversation_id: str,
+        role_name: str,
+        time: int,
+        final_response: str,
+        status: str = 'complete',
+        error: str = None,
+        steps: list = None
+    ) -> dict:
+        """
+        Create an agent message with steps stored as JSONB.
+
+        Args:
+            message_id: The message's ID (usually timestamp-based).
+            conversation_id: The conversation's UUID.
+            role_name: Message sender role (e.g., 'Assistant').
+            time: Unix timestamp when created.
+            final_response: The final response text.
+            status: Agent status ('thinking', 'responding', 'complete', 'error').
+            error: Error message if status is 'error'.
+            steps: List of AgentStep dictionaries.
+
+        Returns:
+            The created message dictionary.
+        """
+        import json as json_module
+        with self.connection() as conn:
+            stmt = insert(messages).values(
+                id=message_id,
+                conversationId=conversation_id,
+                roleName=role_name,
+                content='',  # Empty for agent messages using new schema
+                time=time,
+                type='agent',
+                version=1,
+                lastModified=time,
+                agent_status=status,
+                agent_steps=steps,  # Stored directly as JSONB
+                final_response=final_response,
+                agent_error=error
+            ).returning(messages)
+            result = conn.execute(stmt).fetchone()
+            log.debug(f"Created agent message: {message_id} in conversation {conversation_id}")
+            return self._row_to_dict(result)
+
+    def update_agent_message(
+        self,
+        message_id: int,
+        conversation_id: str,
+        final_response: str = None,
+        status: str = None,
+        error: str = None,
+        steps: list = None
+    ) -> Optional[dict]:
+        """
+        Update an existing agent message.
+
+        Args:
+            message_id: The message's ID.
+            conversation_id: The conversation's UUID.
+            final_response: New final response text (optional).
+            status: New status (optional).
+            error: New error message (optional).
+            steps: New steps list (optional).
+
+        Returns:
+            Updated message dictionary or None if not found.
+        """
+        import time as time_module
+        values = {"lastModified": int(time_module.time())}
+        if final_response is not None:
+            values["final_response"] = final_response
+        if status is not None:
+            values["agent_status"] = status
+        if error is not None:
+            values["agent_error"] = error
+        if steps is not None:
+            values["agent_steps"] = steps
+
+        with self.connection() as conn:
+            stmt = (
+                update(messages)
+                .where(
+                    (messages.c.id == message_id) &
+                    (messages.c.conversationId == conversation_id)
+                )
+                .values(**values)
+                .returning(messages)
+            )
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    # =========================================================================
     # Session CRUD Operations
     # =========================================================================
 

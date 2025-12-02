@@ -74,6 +74,14 @@ export type AgentStepType = 'thought' | 'tool_call' | 'tool_result' | 'observati
 export type AgentStatus = 'thinking' | 'responding' | 'complete' | 'error';
 
 /**
+ * Display mode for agent steps UI
+ * - unified: All steps in one collapsible dropdown (Gemini-style)
+ * - grouped: Steps grouped by type in separate dropdowns (Claude-style)
+ * - expanded: All steps visible, no dropdowns (debug view)
+ */
+export type AgentDisplayMode = 'unified' | 'grouped' | 'expanded';
+
+/**
  * Represents a single step in agent reasoning
  */
 export interface AgentStep {
@@ -83,6 +91,7 @@ export interface AgentStep {
   content: string;
   timestamp: number;
   duration?: number;
+  callId?: string; // Links tool_call to tool_result
   metadata?: Record<string, unknown>; // For tool-specific data (e.g., Neo4j query results)
 }
 
@@ -381,6 +390,86 @@ export class Message<T extends MessageContent = MessageContent> {
       return this.content.attachments;
     }
     return undefined;
+  }
+
+  // =========================================================================
+  // Agent Display Mode Helpers
+  // =========================================================================
+
+  /**
+   * Group steps by callId for unified tool display.
+   * Steps without callId are grouped separately.
+   * Useful for the "unified" display mode (Gemini-style).
+   *
+   * @returns Map where key is callId (or null), value is array of steps
+   */
+  getGroupedSteps(): Map<string | null, AgentStep[]> {
+    const groups = new Map<string | null, AgentStep[]>();
+    if (!this.isAgent()) return groups;
+
+    for (const step of this.content.steps) {
+      const key = step.callId || null;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(step);
+    }
+    return groups;
+  }
+
+  /**
+   * Get steps filtered by type.
+   * Useful for the "grouped" display mode (Claude-style).
+   *
+   * @param type The step type to filter for
+   * @returns Array of steps matching the type
+   */
+  getStepsByType(type: AgentStepType): AgentStep[] {
+    if (!this.isAgent()) return [];
+    return this.content.steps.filter(s => s.type === type);
+  }
+
+  /**
+   * Get all unique step types present in this message.
+   * Useful for the "grouped" display mode to know which sections to render.
+   *
+   * @returns Array of unique step types
+   */
+  getStepTypes(): AgentStepType[] {
+    if (!this.isAgent()) return [];
+    return [...new Set(this.content.steps.map(s => s.type))];
+  }
+
+  /**
+   * Get tool calls with their linked results.
+   * Returns an array of objects containing the tool call and its result.
+   *
+   * @returns Array of tool call/result pairs
+   */
+  getToolCallPairs(): Array<{ call: AgentStep; result?: AgentStep }> {
+    if (!this.isAgent()) return [];
+
+    const pairs: Array<{ call: AgentStep; result?: AgentStep }> = [];
+    const resultsByCallId = new Map<string, AgentStep>();
+
+    // First pass: collect all results by callId
+    for (const step of this.content.steps) {
+      if (step.type === 'tool_result' && step.callId) {
+        resultsByCallId.set(step.callId, step);
+      }
+    }
+
+    // Second pass: match calls with results
+    for (const step of this.content.steps) {
+      if (step.type === 'tool_call') {
+        pairs.push({
+          call: step,
+          result: step.callId ? resultsByCallId.get(step.callId) : undefined
+        });
+      }
+    }
+
+    return pairs;
   }
 
   // Utility method to get display content

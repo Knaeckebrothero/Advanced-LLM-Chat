@@ -409,14 +409,40 @@ class StreamGenerateRequest(BaseModel):
     aiParticipant: str = "Assistant"
 
 
+class MessageStartEvent(BaseModel):
+    """
+    Metadata sent at the start of a streaming response.
+
+    This event is sent before any reasoning steps or tokens to provide
+    the frontend with message metadata (ID, timestamp) upfront, enabling
+    proper message tracking even if the stream is interrupted.
+
+    :ivar messageId: Unique identifier for the message (timestamp-based).
+    :type messageId: int
+    :ivar conversationId: UUID of the conversation this message belongs to.
+    :type conversationId: str
+    :ivar roleName: Name of the AI participant (e.g., "Assistant").
+    :type roleName: str
+    :ivar time: Unix timestamp (seconds) when the message was created.
+    :type time: int
+    :ivar type: Always "agent" for agent messages.
+    :type type: Literal["agent"]
+    """
+    messageId: int
+    conversationId: str
+    roleName: str
+    time: int
+    type: Literal["agent"] = "agent"
+
+
 class StreamEvent(BaseModel):
     """
     Represents an event in the SSE stream.
 
-    :ivar event: Type of event (step, token, done, error).
-    :type event: Literal["step", "token", "done", "error"]
-    :ivar data: Event payload (AgentStep for step, string for token, etc.).
-    :type data: Union[AgentStep, str, dict]
+    :ivar event: Type of event (message_start, step, token, done, error).
+    :type event: Literal["message_start", "step", "token", "done", "error"]
+    :ivar data: Event payload (MessageStartEvent for message_start, AgentStep for step, string for token, etc.).
+    :type data: Union[MessageStartEvent, AgentStep, str, dict]
     """
-    event: Literal["step", "token", "done", "error"]
-    data: Union[AgentStep, str, dict]
+    event: Literal["message_start", "step", "token", "done", "error"]
+    data: Union[MessageStartEvent, AgentStep, str, dict]

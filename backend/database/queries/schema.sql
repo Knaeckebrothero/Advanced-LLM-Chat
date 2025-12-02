@@ -32,7 +32,12 @@ CREATE TABLE IF NOT EXISTS messages (
     version INTEGER DEFAULT 1,
     "lastModified" BIGINT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    rating INTEGER
+    rating INTEGER,
+    -- Agent message columns (JSONB strategy)
+    agent_status TEXT,           -- thinking, responding, complete, error
+    agent_steps JSONB,           -- Array of reasoning steps
+    final_response TEXT,         -- Final response text
+    agent_error TEXT             -- Error message if status is 'error'
 );
 
 -- name: create_sessions_table
@@ -67,6 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_time ON messages("conversationId", t
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations("userId");
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_agent_status ON messages(agent_status) WHERE type = 'agent';
 
 -- name: create_update_timestamp_function
 CREATE OR REPLACE FUNCTION update_timestamp()

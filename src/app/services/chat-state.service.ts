@@ -13,7 +13,7 @@ import { AuthService } from '../auth/auth.service';
 import { SettingsStateService } from './settings-state.service';
 import { UIStateService } from './ui-state.service';
 import { NotificationService } from './notification.service';
-import { StreamingService, StreamEvent, DoneEventData, ErrorEventData } from './streaming.service';
+import { StreamingService, StreamEvent, MessageStartEventData, DoneEventData, ErrorEventData } from './streaming.service';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { DBService } from '../data/db.service';
@@ -409,6 +409,15 @@ export class ChatStateService implements OnDestroy {
    */
   private handleStreamEvent(event: StreamEvent, message: Message<AgentContent>): void {
     switch (event.type) {
+      case 'message_start':
+        // Message envelope received - apply metadata immediately
+        const startData = event.data as MessageStartEventData;
+        message.id = startData.messageId;
+        message.time = new Date(startData.time * 1000);
+        message.roleName = startData.roleName;
+        // Status remains 'thinking' until we get steps or tokens
+        break;
+
       case 'step':
         // Add the new step to the message
         message.content.steps.push(event.data as AgentStep);
@@ -422,11 +431,8 @@ export class ChatStateService implements OnDestroy {
         break;
 
       case 'done':
-        // Mark as complete
+        // Mark as complete (ID should already be set from message_start)
         message.content.status = 'complete';
-        const doneData = event.data as DoneEventData;
-        // Update message ID with the server-assigned ID
-        message.id = doneData.messageId;
         break;
 
       case 'error':

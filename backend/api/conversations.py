@@ -346,6 +346,22 @@ async def get_conversation_messages(
             if after_timestamp is None:
                 messages_data = list(reversed(messages_data))
 
+            # Format agent messages for frontend (new JSONB schema)
+            for msg in messages_data:
+                if msg.get('type') == 'agent':
+                    # Transform JSONB columns to frontend-expected format
+                    # Steps come directly as array from JSONB
+                    msg['steps'] = msg.get('agent_steps', [])
+                    msg['finalResponse'] = msg.get('final_response', '')
+                    msg['status'] = msg.get('agent_status', 'complete')
+                    msg['error'] = msg.get('agent_error')
+
+                    # Clean up internal column names
+                    msg.pop('agent_steps', None)
+                    msg.pop('final_response', None)
+                    msg.pop('agent_status', None)
+                    msg.pop('agent_error', None)
+
             # Check if there might be more messages
             has_more = False
             if after_timestamp is None and messages_count > 30 and len(messages_data) == 30:

@@ -19,7 +19,8 @@ from backend.models.message import (
     RateMessageRequest,
     RegenerateMessageRequest,
     StreamGenerateRequest,
-    AgentStep
+    AgentStep,
+    MessageStartEvent
 )
 from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
@@ -668,8 +669,23 @@ async def stream_generate(
     async def event_generator() -> AsyncGenerator[dict, None]:
         """Generate SSE events for agent reasoning and response."""
         message_id = int(time.time() * 1000)
-        steps = []
+        current_time = int(time.time())
+        steps = []  # Will store step dicts (not models)
         final_response = ""
+        current_call_id = None  # Track current tool call for linking
+
+        # Send message envelope FIRST - provides metadata before any content
+        message_start = MessageStartEvent(
+            messageId=message_id,
+            conversationId=request_body.conversationId,
+            roleName=request_body.aiParticipant,
+            time=current_time,
+            type="agent"
+        )
+        yield {
+            "event": "message_start",
+            "data": json.dumps(message_start.model_dump())
+        }
 
         try:
             # Get the last user message from the conversation
@@ -695,10 +711,20 @@ async def stream_generate(
                     # Stream reasoning steps and response using astream_full
                     async for event_type, event_data in agent.astream_full(user_message):
                         if event_type == "step":
-                            steps.append(event_data)
+                            step_dict = event_data.model_dump()
+
+                            # Add callId linking for tool calls and results
+                            if step_dict.get('type') == 'tool_call':
+                                current_call_id = str(uuid.uuid4())
+                                step_dict['callId'] = current_call_id
+                            elif step_dict.get('type') == 'tool_result' and current_call_id:
+                                step_dict['callId'] = current_call_id
+                                current_call_id = None  # Reset after result
+
+                            steps.append(step_dict)
                             yield {
                                 "event": "step",
-                                "data": json.dumps(event_data.model_dump())
+                                "data": json.dumps(step_dict)
                             }
                         elif event_type == "token":
                             final_response += event_data
@@ -724,35 +750,35 @@ async def stream_generate(
                 # Fallback: Use the basic LLM (Replicate) when no LangChain provider is available
                 crud_logger.info("No LangChain LLM provider available, using fallback Replicate LLM")
 
-                # Emit a thinking step
-                thinking_step = AgentStep(
-                    id=str(uuid.uuid4()),
-                    type="thought",
-                    title="Verarbeite Anfrage",
-                    content="Analysiere die Nachricht und bereite eine Antwort vor...",
-                    timestamp=int(time.time() * 1000)
-                )
+                # Emit a thinking step (as dict for consistency)
+                thinking_step = {
+                    "id": str(uuid.uuid4()),
+                    "type": "thought",
+                    "title": "Verarbeite Anfrage",
+                    "content": "Analysiere die Nachricht und bereite eine Antwort vor...",
+                    "timestamp": int(time.time() * 1000)
+                }
                 steps.append(thinking_step)
                 yield {
                     "event": "step",
-                    "data": json.dumps(thinking_step.model_dump())
+                    "data": json.dumps(thinking_step)
                 }
 
                 # Generate using fallback
                 final_response = await _fallback_generate(request_body.conversationId, steps)
 
-                # Emit observation step
-                observation_step = AgentStep(
-                    id=str(uuid.uuid4()),
-                    type="observation",
-                    title="Antwort generiert",
-                    content="Die Antwort wurde erfolgreich generiert.",
-                    timestamp=int(time.time() * 1000)
-                )
+                # Emit observation step (as dict for consistency)
+                observation_step = {
+                    "id": str(uuid.uuid4()),
+                    "type": "observation",
+                    "title": "Antwort generiert",
+                    "content": "Die Antwort wurde erfolgreich generiert.",
+                    "timestamp": int(time.time() * 1000)
+                }
                 steps.append(observation_step)
                 yield {
                     "event": "step",
-                    "data": json.dumps(observation_step.model_dump())
+                    "data": json.dumps(observation_step)
                 }
 
                 # Stream the response tokens
@@ -765,26 +791,15 @@ async def stream_generate(
                     }
                     await asyncio.sleep(0.01)
 
-            # Save the complete message to the database
-            current_time = int(time.time())
-
-            # Serialize agent content for storage
-            agent_content = {
-                "type": "agent",
-                "steps": [s.model_dump() for s in steps],
-                "finalResponse": final_response,
-                "status": "complete"
-            }
-
-            db.create_message(
+            # Save using JSONB storage (new schema)
+            db.create_agent_message(
                 message_id=message_id,
                 conversation_id=request_body.conversationId,
                 role_name=request_body.aiParticipant,
-                content=json.dumps(agent_content),
                 time=current_time,
-                msg_type='agent',
-                version=1,
-                last_modified=current_time
+                final_response=final_response,
+                status='complete',
+                steps=steps  # Stored as JSONB array
             )
 
             # Signal completion
@@ -800,6 +815,19 @@ async def stream_generate(
 
         except Exception as e:
             crud_logger.error(f"Error in stream generate: {str(e)}", exc_info=True)
+
+            # Save error state using JSONB storage
+            db.create_agent_message(
+                message_id=message_id,
+                conversation_id=request_body.conversationId,
+                role_name=request_body.aiParticipant,
+                time=current_time,
+                final_response=final_response,
+                status='error',
+                error=str(e),
+                steps=steps
+            )
+
             yield {
                 "event": "error",
                 "data": json.dumps({"error": str(e)})
