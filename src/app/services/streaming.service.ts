@@ -143,10 +143,11 @@ export class StreamingService {
             currentEventType = trimmedLine.slice(6).trim() as StreamEventType;
           } else if (trimmedLine.startsWith('data:') && currentEventType) {
             // Parse and emit the event data
-            // Note: Don't trim token data as spaces are significant for text streaming
+            // Per SSE spec, strip exactly one leading space after the colon if present
+            const rawData = trimmedLine.slice(5);
             const data = currentEventType === 'token'
-              ? trimmedLine.slice(5)  // Preserve spaces for tokens
-              : trimmedLine.slice(5).trim();  // Trim for JSON events (step, done, error)
+              ? (rawData.startsWith(' ') ? rawData.slice(1) : rawData)  // Strip one space per SSE spec, preserve rest
+              : rawData.trim();  // Full trim for JSON events (step, done, error)
             const event = this.parseEvent(currentEventType, data);
             if (event) {
               observer.next(event);
