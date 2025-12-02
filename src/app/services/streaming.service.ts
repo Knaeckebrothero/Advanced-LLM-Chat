@@ -131,7 +131,10 @@ export class StreamingService {
             currentEventType = trimmedLine.slice(6).trim() as StreamEventType;
           } else if (trimmedLine.startsWith('data:') && currentEventType) {
             // Parse and emit the event data
-            const data = trimmedLine.slice(5).trim();
+            // Note: Don't trim token data as spaces are significant for text streaming
+            const data = currentEventType === 'token'
+              ? trimmedLine.slice(5)  // Preserve spaces for tokens
+              : trimmedLine.slice(5).trim();  // Trim for JSON events (step, done, error)
             const event = this.parseEvent(currentEventType, data);
             if (event) {
               observer.next(event);

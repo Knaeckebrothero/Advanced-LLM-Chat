@@ -6,12 +6,13 @@ This script initializes the complete application environment including:
 - Environment configuration (.env file)
 - SSL certificates for development
 - PostgreSQL database (via db_init.py)
+- Neo4j knowledge graph (via neo4j_init.py)
 
 Usage:
-    # Initialize everything (filesystem + database)
+    # Initialize everything (filesystem + database + Neo4j)
     python backend/app_init.py
 
-    # Force reset everything (delete .filesystem, recreate database)
+    # Force reset everything (delete .filesystem, recreate databases)
     python backend/app_init.py --force-reset
 
     # With seed data
@@ -19,6 +20,9 @@ Usage:
 
     # Skip database initialization
     python backend/app_init.py --skip-db
+
+    # Skip Neo4j initialization
+    python backend/app_init.py --skip-neo4j
 
     # Setup filesystem only (no database, no certs)
     python backend/app_init.py --setup-only
@@ -106,6 +110,11 @@ Examples:
         "--no-certs",
         action="store_true",
         help="Skip SSL certificate generation",
+    )
+    parser.add_argument(
+        "--skip-neo4j",
+        action="store_true",
+        help="Skip Neo4j knowledge graph initialization",
     )
     return parser.parse_args()
 
@@ -274,7 +283,52 @@ def run_db_init(logger: logging.Logger, force_reset: bool = False, seed: bool = 
         return False
 
 
-def verify_setup(logger: logging.Logger, skip_db: bool = False, skip_certs: bool = False) -> bool:
+def run_neo4j_init(logger: logging.Logger, force_reset: bool = False, seed: bool = True) -> bool:
+    """
+    Run the Neo4j knowledge graph initialization script.
+
+    Args:
+        logger: Logger instance.
+        force_reset: If True, clear all data and re-seed.
+        seed: If True, insert knowledge graph data.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    try:
+        # Import neo4j_init module
+        from backend.database import neo4j_init
+
+        # Create args namespace to match neo4j_init expectations
+        class Neo4jInitArgs:
+            pass
+
+        args = Neo4jInitArgs()
+        args.uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        args.user = os.getenv("NEO4J_USER", "neo4j")
+        args.password = os.getenv("NEO4J_PASSWORD", "fessi_neo4j_dev")
+        args.force_reset = force_reset
+        args.no_seed = not seed
+
+        # Create a sub-logger for neo4j_init
+        neo4j_logger = logging.getLogger("neo4j_init")
+        neo4j_logger.setLevel(logging.INFO)
+
+        # Run initialization
+        success = neo4j_init.initialize_neo4j(args, neo4j_logger)
+        return success
+
+    except ImportError as e:
+        logger.warning(f"  ⚠ Could not import neo4j_init module: {e}")
+        logger.info("  Hint: Neo4j may not be required for basic functionality")
+        return True  # Don't fail the whole init if Neo4j is not available
+    except Exception as e:
+        logger.warning(f"  ⚠ Error running Neo4j initialization: {e}")
+        logger.info("  Hint: Make sure Neo4j is running: cd docker && docker-compose up -d neo4j")
+        return True  # Don't fail the whole init if Neo4j is not available
+
+
+def verify_setup(logger: logging.Logger, skip_db: bool = False, skip_certs: bool = False, skip_neo4j: bool = False) -> bool:
     """
     Verify that all components are properly initialized.
 
@@ -282,6 +336,7 @@ def verify_setup(logger: logging.Logger, skip_db: bool = False, skip_certs: bool
         logger: Logger instance.
         skip_db: Skip database verification.
         skip_certs: Skip certificate verification.
+        skip_neo4j: Skip Neo4j verification.
 
     Returns:
         True if verification passes, False otherwise.
@@ -317,11 +372,22 @@ def verify_setup(logger: logging.Logger, skip_db: bool = False, skip_certs: bool
             from backend.database import db
             # Try to get engine - this verifies connection config is valid
             if db.engine:
-                logger.info("  ✓ Database connection configured")
+                logger.info("  ✓ PostgreSQL connection configured")
             else:
-                logger.warning("  ⚠ Database connection not configured")
+                logger.warning("  ⚠ PostgreSQL connection not configured")
         except Exception as e:
-            logger.warning(f"  ⚠ Could not verify database: {e}")
+            logger.warning(f"  ⚠ Could not verify PostgreSQL: {e}")
+
+    # Check Neo4j connection
+    if not skip_neo4j:
+        try:
+            from backend.database.neo4j_db import neo4j_db
+            if neo4j_db.is_connected():
+                logger.info("  ✓ Neo4j connection verified")
+            else:
+                logger.warning("  ⚠ Neo4j not connected (knowledge graph features unavailable)")
+        except Exception as e:
+            logger.warning(f"  ⚠ Could not verify Neo4j: {e}")
 
     return all_ok
 
@@ -340,13 +406,17 @@ def main() -> int:
     logger.info("=== Fessi Backend Initialization ===")
     logger.info("")
 
-    total_steps = 5
+    # Calculate total steps based on flags
+    total_steps = 6  # Base: filesystem, env, certs, postgres, neo4j, verify
     if args.setup_only:
         total_steps = 2
-    elif args.skip_db:
-        total_steps = 4
-    elif args.no_certs:
-        total_steps = 4
+    else:
+        if args.no_certs:
+            total_steps -= 1
+        if args.skip_db:
+            total_steps -= 1
+        if args.skip_neo4j:
+            total_steps -= 1
 
     current_step = 0
 
@@ -373,7 +443,7 @@ def main() -> int:
         logger.info("=== Setup Complete (filesystem only) ===")
         logger.info("")
         logger.info("Next steps:")
-        logger.info("  1. Configure .env file with your PostgreSQL credentials")
+        logger.info("  1. Configure .env file with your PostgreSQL and Neo4j credentials")
         logger.info("  2. Run: python backend/app_init.py")
         return 0
 
@@ -386,21 +456,29 @@ def main() -> int:
             logger.warning("")
             logger.warning("SSL certificate setup failed, but continuing...")
 
-    # Step 4: Initialize database
+    # Step 4: Initialize PostgreSQL database
     if not args.skip_db:
         current_step += 1
         logger.info("")
-        logger.info(f"[{current_step}/{total_steps}] Initializing database...")
+        logger.info(f"[{current_step}/{total_steps}] Initializing PostgreSQL database...")
         if not run_db_init(logger, args.force_reset, args.seed):
             logger.error("")
-            logger.error("Database initialization failed. Aborting.")
+            logger.error("PostgreSQL initialization failed. Aborting.")
             return 1
 
-    # Step 5: Verify setup
+    # Step 5: Initialize Neo4j knowledge graph
+    if not args.skip_neo4j:
+        current_step += 1
+        logger.info("")
+        logger.info(f"[{current_step}/{total_steps}] Initializing Neo4j knowledge graph...")
+        # Neo4j init doesn't fail the whole process if unavailable
+        run_neo4j_init(logger, args.force_reset, args.seed)
+
+    # Step 6: Verify setup
     current_step += 1
     logger.info("")
     logger.info(f"[{current_step}/{total_steps}] Verifying setup...")
-    verify_setup(logger, args.skip_db, args.no_certs)
+    verify_setup(logger, args.skip_db, args.no_certs, args.skip_neo4j)
 
     # Success message
     logger.info("")

@@ -26,6 +26,8 @@ from backend.security.auth import get_current_user, verify_conversation_ownershi
 from backend.security.logging import crud_logger
 from backend.services.llm import get_conversation_context, generate_llm_response
 from backend.config import DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_SYSTEM_PROMPT
+from backend.services.agent import create_fessi_agent
+from backend.services.llm_provider import is_provider_available
 
 router = APIRouter(prefix="/api/message", tags=["Message"])
 
@@ -648,6 +650,9 @@ async def stream_generate(
     - token: A token from the final response stream
     - done: Signals completion with the final message ID
     - error: An error occurred during processing
+
+    The agent uses LangGraph to orchestrate multi-step reasoning with Neo4j tools
+    for waste disposal knowledge retrieval.
     """
     crud_logger.info(
         f"Stream generate called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -667,64 +672,98 @@ async def stream_generate(
         final_response = ""
 
         try:
-            # Get conversation context
-            context = await get_conversation_context(request_body.conversationId, limit=6)
+            # Get the last user message from the conversation
+            user_message = await _get_last_user_message(request_body.conversationId)
 
-            # Emit a "thinking" step to show the agent is processing
-            thinking_step = AgentStep(
-                id=str(uuid.uuid4()),
-                type="thought",
-                title="Analyzing request",
-                content="Processing your message and preparing response...",
-                timestamp=int(time.time() * 1000)
-            )
-            steps.append(thinking_step)
-            yield {
-                "event": "step",
-                "data": json.dumps(thinking_step.model_dump())
-            }
-
-            # Small delay to simulate thinking
-            await asyncio.sleep(0.1)
-
-            # Generate the LLM response
-            # In Phase 3, this will be replaced with actual LangGraph agent streaming
-            ai_response_content = await generate_llm_response(
-                context,
-                DEFAULT_TEMPERATURE,
-                DEFAULT_TOP_P,
-                DEFAULT_SYSTEM_PROMPT,
-                DEFAULT_MODEL
-            )
-
-            # Emit an observation step
-            observation_step = AgentStep(
-                id=str(uuid.uuid4()),
-                type="observation",
-                title="Response generated",
-                content="Successfully generated response from the language model.",
-                timestamp=int(time.time() * 1000),
-                duration=100  # Placeholder duration
-            )
-            steps.append(observation_step)
-            yield {
-                "event": "step",
-                "data": json.dumps(observation_step.model_dump())
-            }
-
-            # Stream the response tokens
-            # For now, we simulate token streaming by chunking the response
-            # In Phase 3, this will use actual LLM token streaming
-            chunk_size = 4  # Characters per "token"
-            for i in range(0, len(ai_response_content), chunk_size):
-                token = ai_response_content[i:i + chunk_size]
-                final_response += token
+            if not user_message:
                 yield {
-                    "event": "token",
-                    "data": token
+                    "event": "error",
+                    "data": json.dumps({"error": "No user message found in conversation"})
                 }
-                # Small delay to simulate streaming
-                await asyncio.sleep(0.01)
+                return
+
+            # Check if we have an LLM provider configured
+            use_agent = is_provider_available("openai") or is_provider_available("anthropic")
+
+            if use_agent:
+                # Use the real LangGraph agent
+                crud_logger.info(f"Using LangGraph agent for message: {user_message[:50]}...")
+
+                try:
+                    agent = create_fessi_agent()
+
+                    # Stream reasoning steps and response using astream_full
+                    async for event_type, event_data in agent.astream_full(user_message):
+                        if event_type == "step":
+                            steps.append(event_data)
+                            yield {
+                                "event": "step",
+                                "data": json.dumps(event_data.model_dump())
+                            }
+                        elif event_type == "token":
+                            final_response += event_data
+                            yield {
+                                "event": "token",
+                                "data": event_data
+                            }
+
+                except Exception as agent_error:
+                    crud_logger.error(f"Agent error, falling back to basic LLM: {agent_error}", exc_info=True)
+                    # Fall back to basic LLM if agent fails
+                    final_response = await _fallback_generate(request_body.conversationId, steps)
+                    # Stream fallback response
+                    for i in range(0, len(final_response), 4):
+                        token = final_response[i:i + 4]
+                        yield {
+                            "event": "token",
+                            "data": token
+                        }
+                        await asyncio.sleep(0.01)
+
+            else:
+                # Fallback: Use the basic LLM (Replicate) when no LangChain provider is available
+                crud_logger.info("No LangChain LLM provider available, using fallback Replicate LLM")
+
+                # Emit a thinking step
+                thinking_step = AgentStep(
+                    id=str(uuid.uuid4()),
+                    type="thought",
+                    title="Verarbeite Anfrage",
+                    content="Analysiere die Nachricht und bereite eine Antwort vor...",
+                    timestamp=int(time.time() * 1000)
+                )
+                steps.append(thinking_step)
+                yield {
+                    "event": "step",
+                    "data": json.dumps(thinking_step.model_dump())
+                }
+
+                # Generate using fallback
+                final_response = await _fallback_generate(request_body.conversationId, steps)
+
+                # Emit observation step
+                observation_step = AgentStep(
+                    id=str(uuid.uuid4()),
+                    type="observation",
+                    title="Antwort generiert",
+                    content="Die Antwort wurde erfolgreich generiert.",
+                    timestamp=int(time.time() * 1000)
+                )
+                steps.append(observation_step)
+                yield {
+                    "event": "step",
+                    "data": json.dumps(observation_step.model_dump())
+                }
+
+                # Stream the response tokens
+                chunk_size = 4
+                for i in range(0, len(final_response), chunk_size):
+                    token = final_response[i:i + chunk_size]
+                    yield {
+                        "event": "token",
+                        "data": token
+                    }
+                    await asyncio.sleep(0.01)
 
             # Save the complete message to the database
             current_time = int(time.time())
@@ -767,3 +806,52 @@ async def stream_generate(
             }
 
     return EventSourceResponse(event_generator())
+
+
+async def _get_last_user_message(conversation_id: str) -> str:
+    """
+    Get the last user message from a conversation.
+
+    Args:
+        conversation_id: The conversation ID.
+
+    Returns:
+        The content of the last user message, or empty string if not found.
+    """
+    messages = db.get_messages_by_conversation(conversation_id, limit=10)
+
+    # Find the last user message (messages are returned in reverse order)
+    for msg in messages:
+        if msg.get('roleName') == 'user':
+            content = msg.get('content', '')
+            # Handle JSON-encoded content
+            if content.startswith('{'):
+                try:
+                    content_obj = json.loads(content)
+                    return content_obj.get('content', content)
+                except json.JSONDecodeError:
+                    pass
+            return content
+
+    return ""
+
+
+async def _fallback_generate(conversation_id: str, steps: list) -> str:
+    """
+    Fallback generation using the basic Replicate LLM.
+
+    Args:
+        conversation_id: The conversation ID.
+        steps: List to append any additional steps to.
+
+    Returns:
+        The generated response text.
+    """
+    context = await get_conversation_context(conversation_id, limit=6)
+    return await generate_llm_response(
+        context,
+        DEFAULT_TEMPERATURE,
+        DEFAULT_TOP_P,
+        DEFAULT_SYSTEM_PROMPT,
+        DEFAULT_MODEL
+    )
