@@ -5,6 +5,7 @@ import json
 import time
 import asyncio
 import uuid
+from collections import defaultdict
 from typing import Dict, AsyncGenerator
 from fastapi import APIRouter, Response, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
@@ -747,7 +748,8 @@ async def stream_generate(
         current_time = int(time.time())
         steps = []  # Will store step dicts (not models)
         final_response = ""
-        current_call_id = None  # Track current tool call for linking
+        # Track pending tool calls by tool name (queue per tool for parallel calls)
+        pending_tool_calls: dict[str, list[str]] = defaultdict(list)
 
         # Send message envelope FIRST - provides metadata before any content
         message_start = MessageStartEvent(
@@ -789,12 +791,18 @@ async def stream_generate(
                             step_dict = event_data.model_dump()
 
                             # Add callId linking for tool calls and results
-                            if step_dict.get('type') == 'tool_call':
-                                current_call_id = str(uuid.uuid4())
-                                step_dict['callId'] = current_call_id
-                            elif step_dict.get('type') == 'tool_result' and current_call_id:
-                                step_dict['callId'] = current_call_id
-                                current_call_id = None  # Reset after result
+                            step_type = step_dict.get('type')
+                            tool_title = step_dict.get('title', '')
+
+                            if step_type == 'tool_call':
+                                call_id = str(uuid.uuid4())
+                                pending_tool_calls[tool_title].append(call_id)
+                                step_dict['callId'] = call_id
+                            elif step_type == 'tool_result':
+                                # Extract original tool title from "Ergebnis: <tool_title>"
+                                original_title = tool_title.replace('Ergebnis: ', '', 1)
+                                if pending_tool_calls[original_title]:
+                                    step_dict['callId'] = pending_tool_calls[original_title].pop(0)
 
                             steps.append(step_dict)
                             yield {
