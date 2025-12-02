@@ -18,6 +18,7 @@ from sqlalchemy import (
     Index,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 
 # Create metadata instance
 metadata = MetaData()
@@ -55,11 +56,16 @@ messages = Table(
     Column('roleName', Text, nullable=False),
     Column('content', Text, nullable=False),
     Column('time', BigInteger, nullable=False),  # Unix timestamp
-    Column('type', Text, server_default='text'),  # 'text' or 'voice'
+    Column('type', Text, server_default='text'),  # 'text', 'voice', or 'agent'
     Column('version', Integer, server_default='1'),
     Column('lastModified', BigInteger),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
     Column('rating', Integer),  # 0 (thumbs down), 1 (thumbs up), or NULL
+    # Agent message columns (JSONB strategy)
+    Column('agent_status', Text),  # thinking, responding, complete, error
+    Column('agent_steps', JSONB),  # Array of reasoning steps
+    Column('final_response', Text),  # Final response text
+    Column('agent_error', Text),  # Error message if status is 'error'
 )
 
 # Sessions table
@@ -100,3 +106,9 @@ idx_conversation_time = Index('idx_conversation_time', messages.c.conversationId
 idx_conversations_user = Index('idx_conversations_user', conversations.c.userId)
 idx_sessions_expires = Index('idx_sessions_expires', sessions.c.expires_at)
 idx_sessions_user = Index('idx_sessions_user', sessions.c.user_id)
+# Partial index for agent messages - only index rows where type='agent'
+idx_messages_agent_status = Index(
+    'idx_messages_agent_status',
+    messages.c.agent_status,
+    postgresql_where=(messages.c.type == 'agent')
+)

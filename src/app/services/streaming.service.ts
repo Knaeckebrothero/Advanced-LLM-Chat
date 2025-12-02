@@ -8,14 +8,26 @@ import { ApiService } from './api.service';
 /**
  * Types of events that can be received from the SSE stream
  */
-export type StreamEventType = 'step' | 'token' | 'done' | 'error';
+export type StreamEventType = 'message_start' | 'step' | 'token' | 'done' | 'error';
 
 /**
  * Represents an event from the SSE stream
  */
 export interface StreamEvent {
   type: StreamEventType;
-  data: AgentStep | string | DoneEventData | ErrorEventData;
+  data: MessageStartEventData | AgentStep | string | DoneEventData | ErrorEventData;
+}
+
+/**
+ * Data payload for 'message_start' events
+ * Sent at the start of streaming to provide message metadata upfront
+ */
+export interface MessageStartEventData {
+  messageId: number;
+  conversationId: string;
+  roleName: string;
+  time: number;
+  type: 'agent';
 }
 
 /**
@@ -161,6 +173,10 @@ export class StreamingService {
   private parseEvent(type: StreamEventType, data: string): StreamEvent | null {
     try {
       switch (type) {
+        case 'message_start':
+          // Message start events contain message metadata
+          return { type, data: JSON.parse(data) as MessageStartEventData };
+
         case 'token':
           // Token events are plain strings
           return { type, data };
