@@ -105,23 +105,19 @@ jobs:
         run: |
           echo "Checking backend files..."
 
-          if [ ! -f "backend_mockup.py" ]; then
-            echo "Error: backend_mockup.py not found!"
+          if [ ! -d "backend" ]; then
+            echo "Error: backend/ directory not found!"
+            exit 1
+          fi
+
+          if [ ! -f "start_backend.py" ]; then
+            echo "Error: start_backend.py not found!"
             exit 1
           fi
 
           if [ ! -f "requirements.txt" ]; then
-            echo "Warning: requirements.txt not found. Creating one..."
-            cat > requirements.txt << 'EOF'
-          fastapi==0.104.1
-          uvicorn[standard]==0.24.0
-          python-dotenv==1.0.0
-          replicate==0.22.0
-          trustme==1.1.0
-          pydantic==2.5.0
-          python-multipart==0.0.6
-          httpx==0.25.2
-          EOF
+            echo "Error: requirements.txt not found!"
+            exit 1
           fi
 
           if [ ! -f "docker/backend.Dockerfile" ]; then
@@ -129,7 +125,10 @@ jobs:
             exit 1
           fi
 
-          echo "✅ All required backend files found"
+          echo "Backend directory structure:"
+          ls -la backend/
+          echo ""
+          echo "All required backend files found"
 
       - name: Log in to the Container registry
         if: github.event_name != 'pull_request'
@@ -173,16 +172,74 @@ jobs:
           echo "Creating deployment directory..."
           mkdir -p deployment
 
-          # Create a complete docker-compose template
+          # Create a complete docker-compose template with PostgreSQL, Neo4j, and init container
           cat > deployment/docker-compose.yml << 'EOF'
           version: '3.8'
 
           services:
+            postgres:
+              image: postgres:16-alpine
+              container_name: fessi-postgres
+              environment:
+                - POSTGRES_USER=${POSTGRES_USER:-fessi}
+                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_password}
+                - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
+              volumes:
+                - postgres_data:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U fessi -d fessi_chat"]
+                interval: 5s
+                timeout: 5s
+                retries: 5
+              networks:
+                - app-network
+              restart: unless-stopped
+
+            neo4j:
+              image: neo4j:5.15-community
+              container_name: fessi-neo4j
+              environment:
+                - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-fessi_neo4j}
+                - NEO4J_PLUGINS=["apoc"]
+              volumes:
+                - neo4j_data:/data
+              healthcheck:
+                test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+                interval: 10s
+                timeout: 10s
+                retries: 5
+                start_period: 30s
+              networks:
+                - app-network
+              restart: unless-stopped
+
+            db-init:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
+              container_name: fessi-db-init
+              command: ["python", "-m", "backend.app_init", "--seed"]
+              environment:
+                - POSTGRES_HOST=postgres
+                - POSTGRES_PORT=5432
+                - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
+                - POSTGRES_USER=${POSTGRES_USER:-fessi}
+                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_password}
+                - NEO4J_URI=bolt://neo4j:7687
+                - NEO4J_USER=${NEO4J_USER:-neo4j}
+                - NEO4J_PASSWORD=${NEO4J_PASSWORD:-fessi_neo4j}
+              depends_on:
+                postgres:
+                  condition: service_healthy
+                neo4j:
+                  condition: service_healthy
+              networks:
+                - app-network
+              restart: "no"
+
             frontend:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
               container_name: fessi-frontend
               ports:
-                - "8080:80"
+                - "${FRONTEND_PORT:-8080}:80"
               restart: unless-stopped
               environment:
                 - NODE_ENV=production
@@ -195,19 +252,35 @@ jobs:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
               container_name: fessi-backend
               ports:
-                - "8443:8443"
+                - "${BACKEND_PORT:-8443}:8443"
               restart: unless-stopped
               environment:
                 - USE_DEV_CERTS=True
                 - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN}
+                - POSTGRES_HOST=postgres
+                - POSTGRES_PORT=5432
+                - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
+                - POSTGRES_USER=${POSTGRES_USER:-fessi}
+                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_password}
+                - NEO4J_URI=bolt://neo4j:7687
+                - NEO4J_USER=${NEO4J_USER:-neo4j}
+                - NEO4J_PASSWORD=${NEO4J_PASSWORD:-fessi_neo4j}
               volumes:
-                - ./data:/app/data
+                - filesystem_data:/app/.filesystem
+              depends_on:
+                db-init:
+                  condition: service_completed_successfully
               networks:
                 - app-network
 
           networks:
             app-network:
               driver: bridge
+
+          volumes:
+            postgres_data:
+            neo4j_data:
+            filesystem_data:
           EOF
 
           # Create deployment instructions
@@ -221,9 +294,10 @@ jobs:
 
           ## Quick Start
 
-          1. Create a `.env` file with your Replicate API token:
+          1. Copy the `.env.example` file and fill in your values:
           ```bash
-          echo "REPLICATE_API_TOKEN=your_token_here" > .env
+          cp .env.example .env
+          # Edit .env with your credentials
           ```
 
           2. Pull and run the containers:
@@ -231,35 +305,15 @@ jobs:
           docker-compose up -d
           ```
 
-          ## Manual Docker Commands
+          The `db-init` container will automatically initialize the PostgreSQL and Neo4j databases on first run.
 
-          ### Pull the latest images:
-          ```bash
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
-          ```
+          ## Services
 
-          ### Run individually:
-          ```bash
-          # Create a network
-          docker network create app-network
-
-          # Run backend
-          docker run -d \
-            --name fessi-backend \
-            --network app-network \
-            -p 8443:8443 \
-            -v $(pwd)/data:/app/data \
-            -e REPLICATE_API_TOKEN=your_token_here \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
-
-          # Run frontend
-          docker run -d \
-            --name fessi-frontend \
-            --network app-network \
-            -p 8080:80 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
-          ```
+          - **postgres**: PostgreSQL 16 database for conversations and messages
+          - **neo4j**: Neo4j 5.15 knowledge graph for waste disposal information
+          - **db-init**: One-time initialization container (seeds databases)
+          - **frontend**: Angular web application
+          - **backend**: FastAPI backend with LangGraph agent
 
           ## Access the Application
 
@@ -276,7 +330,8 @@ jobs:
           ## Notes
 
           - The backend uses self-signed certificates. You'll need to accept the certificate warning in your browser.
-          - SQLite database is persisted in the `./data` directory
+          - PostgreSQL data is persisted in a Docker volume
+          - Neo4j knowledge graph data is persisted in a Docker volume
           - Make sure to set your REPLICATE_API_TOKEN for AI responses to work
           EOF
 
@@ -284,6 +339,15 @@ jobs:
           cat > deployment/.env.example << 'EOF'
           # Copy this file to .env and fill in your values
           REPLICATE_API_TOKEN=your_replicate_api_token_here
+
+          # PostgreSQL
+          POSTGRES_USER=fessi
+          POSTGRES_PASSWORD=your_secure_password_here
+          POSTGRES_DB=fessi_chat
+
+          # Neo4j
+          NEO4J_USER=neo4j
+          NEO4J_PASSWORD=your_neo4j_password_here
 
           # Optional: Change ports if needed
           FRONTEND_PORT=8080
