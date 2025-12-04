@@ -85,7 +85,7 @@
               <mat-expansion-panel-header>
                 <mat-panel-title>
                   <mat-icon>{{ getStepIcon(step.type) }}</mat-icon>
-                  <span class="step-title">{{ step.title }}</span>
+                  <span class="step-title">{{ 'tools.' + step.title | translate }}</span>
                 </mat-panel-title>
                 <mat-panel-description *ngIf="step.duration">
                   {{ step.duration }}ms
@@ -93,8 +93,8 @@
               </mat-expansion-panel-header>
 
               <div class="step-content">
-                <pre *ngIf="step.type === 'tool_call'">{{ step.content }}</pre>
-                <p *ngIf="step.type !== 'tool_call'">{{ step.content }}</p>
+                <pre *ngIf="step.type === 'tool_call' || step.type === 'tool_result'">{{ step.content }}</pre>
+                <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'">{{ 'tool_content.' + step.content | translate }}</p>
 
                 <!-- Tool-specific metadata display -->
                 <div class="step-metadata" *ngIf="step.metadata">

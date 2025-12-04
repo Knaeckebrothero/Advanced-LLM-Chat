@@ -126,6 +126,8 @@ export class StreamingService {
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      // Accumulate data lines for multi-line SSE data (per SSE spec)
+      let dataLines: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -136,25 +138,42 @@ export class StreamingService {
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          const trimmedLine = line.trim();
+          // SSE spec: lines can have \r\n or \n endings, trim only \r
+          const cleanLine = line.endsWith('\r') ? line.slice(0, -1) : line;
 
-          if (trimmedLine.startsWith('event:')) {
+          if (cleanLine.startsWith('event:')) {
             // Parse the event type
-            currentEventType = trimmedLine.slice(6).trim() as StreamEventType;
-          } else if (trimmedLine.startsWith('data:') && currentEventType) {
-            // Parse and emit the event data
-            // Per SSE spec, strip exactly one leading space after the colon if present
-            const rawData = trimmedLine.slice(5);
+            currentEventType = cleanLine.slice(6).trim() as StreamEventType;
+          } else if (cleanLine.startsWith('data:') && currentEventType) {
+            // Accumulate data lines - per SSE spec, strip exactly one leading space after colon
+            const rawData = cleanLine.slice(5);
+            const dataContent = rawData.startsWith(' ') ? rawData.slice(1) : rawData;
+            dataLines.push(dataContent);
+          } else if (cleanLine === '' && currentEventType && dataLines.length > 0) {
+            // Blank line signals end of event - emit accumulated data
+            // Per SSE spec, multiple data lines are joined with newlines
+            const fullData = dataLines.join('\n');
             const data = currentEventType === 'token'
-              ? (rawData.startsWith(' ') ? rawData.slice(1) : rawData)  // Strip one space per SSE spec, preserve rest
-              : rawData.trim();  // Full trim for JSON events (step, done, error)
+              ? fullData  // Preserve all whitespace for tokens
+              : fullData.trim();  // Trim for JSON events
             const event = this.parseEvent(currentEventType, data);
             if (event) {
               observer.next(event);
             }
-            // Reset event type after processing
+            // Reset for next event
             currentEventType = null;
+            dataLines = [];
           }
+        }
+      }
+
+      // Handle any remaining data at end of stream
+      if (currentEventType && dataLines.length > 0) {
+        const fullData = dataLines.join('\n');
+        const data = currentEventType === 'token' ? fullData : fullData.trim();
+        const event = this.parseEvent(currentEventType, data);
+        if (event) {
+          observer.next(event);
         }
       }
 

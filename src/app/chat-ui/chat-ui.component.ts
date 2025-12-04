@@ -1,13 +1,14 @@
-import { Component, ViewChild, ElementRef, AfterViewChecked, OnInit, OnDestroy } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
 import { Message, AgentContent } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
 import { Subscription, Observable, combineLatest } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { map, filter } from 'rxjs/operators';
 import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
 import { RecordingResult } from '../data/objects/recording';
 import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
-import { ThemeService } from '../services/theme.service'; // Import ThemeService
+import { ThemeService } from '../services/theme.service';
+import { ChatUiInputfieldComponent } from './chat-ui-inputfield/chat-ui-inputfield.component';
 
 
 @Component({
@@ -16,10 +17,13 @@ import { ThemeService } from '../services/theme.service'; // Import ThemeService
   styleUrls: ['./chat-ui.component.scss'],
   standalone: false
 })
-export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
+export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit, OnDestroy {
 
   // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef;
+
+  // Reference to the chat input field component for programmatic focus
+  @ViewChild(ChatUiInputfieldComponent) private chatInputField!: ChatUiInputfieldComponent;
 
   // Variables
   userName: string = 'user';
@@ -108,6 +112,18 @@ export class ChatUiComponent implements AfterViewChecked, OnInit, OnDestroy {
           // Reset scroll state when conversation changes
           this.shouldScrollToBottom = true;
         })
+    );
+  }
+
+  ngAfterViewInit() {
+    // Focus input field when a new conversation is created
+    this.destroy$.add(
+      this.chatState.isNewConversation$.pipe(
+        filter(isNew => isNew)
+      ).subscribe(() => {
+        // Small delay to ensure the view is ready
+        setTimeout(() => this.chatInputField?.focusInput(), 0);
+      })
     );
   }
 

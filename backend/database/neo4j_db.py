@@ -19,7 +19,6 @@ Example usage:
         stats = neo4j_db.get_stats()
 """
 import logging
-import os
 from contextlib import contextmanager
 from typing import Optional, Generator
 

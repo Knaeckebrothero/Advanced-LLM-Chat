@@ -1,6 +1,6 @@
 // src/app/services/chat-state.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, from, of, Subscription } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, of, Subscription } from 'rxjs';
 import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
@@ -13,7 +13,7 @@ import { AuthService } from '../auth/auth.service';
 import { SettingsStateService } from './settings-state.service';
 import { UIStateService } from './ui-state.service';
 import { NotificationService } from './notification.service';
-import { StreamingService, StreamEvent, MessageStartEventData, DoneEventData, ErrorEventData } from './streaming.service';
+import { StreamingService, StreamEvent, MessageStartEventData, ErrorEventData } from './streaming.service';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { DBService } from '../data/db.service';
@@ -38,7 +38,7 @@ export class ChatStateService implements OnDestroy {
 
   // State management
   private activeConversationId$ = new BehaviorSubject<string | null>(null);
-  private isNewConversation$ = new BehaviorSubject<boolean>(false);
+  public isNewConversation$ = new BehaviorSubject<boolean>(false);
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
   private hasReachedEnd$ = new BehaviorSubject<boolean>(false);

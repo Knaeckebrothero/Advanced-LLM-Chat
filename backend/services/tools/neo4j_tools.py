@@ -5,7 +5,6 @@ These tools allow the agent to search for waste disposal information in Neo4j.
 """
 
 from langchain_core.tools import tool
-from typing import Optional
 from backend.database.neo4j_db import neo4j_db
 
 
