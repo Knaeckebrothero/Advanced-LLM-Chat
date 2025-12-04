@@ -192,6 +192,14 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     this.adjustTextareaHeight();
   }
 
+  /**
+   * Focus the message input textarea.
+   * Called externally when a new conversation is created.
+   */
+  public focusInput(): void {
+    this.messageTextarea?.nativeElement.focus();
+  }
+
   // Method to dynamically adjust the textarea height
   private adjustTextareaHeight(): void {
     const textarea = this.messageTextarea.nativeElement;

@@ -38,7 +38,7 @@ export class ChatStateService implements OnDestroy {
 
   // State management
   private activeConversationId$ = new BehaviorSubject<string | null>(null);
-  private isNewConversation$ = new BehaviorSubject<boolean>(false);
+  public isNewConversation$ = new BehaviorSubject<boolean>(false);
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
   private hasReachedEnd$ = new BehaviorSubject<boolean>(false);
