@@ -1,0 +1,307 @@
+.dialog-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  animation: fadeIn 0.3s ease;
+  z-index: 1000;
+}
+
+.dialog-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(30, 30, 30, 0.95);
+
+  &.is-document {
+    width: 600px;
+    max-width: 90vw;
+  }
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  min-height: 56px;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.file-type-icon {
+  font-size: 28px;
+  width: 28px;
+  height: 28px;
+  opacity: 0.8;
+}
+
+.file-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.file-name {
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-size {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.zoom-level {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  min-width: 40px;
+  text-align: center;
+}
+
+.action-button {
+  color: white;
+
+  &:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+  }
+}
+
+.content-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+  min-height: 200px;
+  padding: 16px;
+}
+
+// Loading state
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.loading-text {
+  font-size: 14px;
+}
+
+// Error state
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+  padding: 24px;
+}
+
+.error-icon {
+  font-size: 48px;
+  width: 48px;
+  height: 48px;
+  color: #ef5350;
+}
+
+.error-message {
+  font-size: 14px;
+  max-width: 300px;
+}
+
+// Image container for zoom/pan
+.image-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+  max-width: 100%;
+  max-height: calc(90vh - 120px);
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  // Custom scrollbar for zoomed image
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+  }
+}
+
+// Image preview
+.preview-image {
+  max-width: 100%;
+  max-height: calc(90vh - 120px);
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  animation: zoomIn 0.3s ease;
+  transition: transform 0.2s ease;
+  transform-origin: center center;
+  user-select: none;
+}
+
+// Audio preview
+.audio-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 32px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.audio-icon {
+  font-size: 64px;
+  width: 64px;
+  height: 64px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.audio-player {
+  width: 100%;
+  max-width: 350px;
+
+  &::-webkit-media-controls-panel {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+// Document preview placeholder
+.document-preview,
+.generic-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px;
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+}
+
+.document-icon,
+.generic-icon {
+  font-size: 64px;
+  width: 64px;
+  height: 64px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.document-message,
+.generic-message {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+// Animations
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+// Mobile responsiveness
+@media (max-width: 768px) {
+  .dialog-content {
+    max-width: 95vw;
+    max-height: 95vh;
+    min-width: unset;
+
+    &.is-document {
+      width: 95vw;
+    }
+  }
+
+  .dialog-header {
+    padding: 8px 12px;
+  }
+
+  .file-name {
+    font-size: 14px;
+  }
+
+  .file-type-icon {
+    font-size: 24px;
+    width: 24px;
+    height: 24px;
+  }
+
+  .preview-image {
+    max-height: calc(95vh - 100px);
+  }
+
+  .audio-preview,
+  .document-preview,
+  .generic-preview {
+    padding: 24px 16px;
+  }
+}

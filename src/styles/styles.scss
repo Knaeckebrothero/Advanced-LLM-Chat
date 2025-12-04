@@ -157,3 +157,20 @@ body.theme-initialized {
 .image-preview-backdrop {
   background-color: rgba(0, 0, 0, 0.85) !important;
 }
+
+// --- File Preview Dialog Panel ---
+.file-preview-dialog-panel {
+  .mat-mdc-dialog-container {
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+  }
+
+  .mat-mdc-dialog-surface {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+}

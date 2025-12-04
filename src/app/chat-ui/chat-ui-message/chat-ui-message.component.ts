@@ -2,8 +2,10 @@
 import { Component, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
 import { Message, VoiceContent, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
+import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
+import { FilePreviewDialogComponent, FilePreviewDialogData } from '../../components/file-preview-dialog/file-preview-dialog.component';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -24,7 +26,8 @@ export class ChatUiMessageComponent implements OnChanges {
   constructor(
     private sanitizer: DomSanitizer,
     private chatUI: ChatUiComponent,
-    private renderer: Renderer2
+    private renderer: Renderer2,
+    private dialog: MatDialog
   ) { }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -71,10 +74,8 @@ export class ChatUiMessageComponent implements OnChanges {
   }
 
   onAttachmentClick(event: MouseEvent, attachment: FilePreview): void {
-    if (attachment.type === 'image' && attachment.preview) {
-      event.preventDefault();
-      this.openImagePopup(attachment.preview);
-    }
+    event.preventDefault();
+    this.openFilePreviewDialog(attachment);
   }
 
   createDownloadUrl(file: File): SafeUrl {
@@ -82,16 +83,29 @@ export class ChatUiMessageComponent implements OnChanges {
     return this.sanitizer.bypassSecurityTrustUrl(objectUrl);
   }
 
-  openImagePopup(imageUrl: string): void {
-    const overlay = this.renderer.createElement('div');
-    this.renderer.addClass(overlay, 'image-popup-overlay');
-    const img = this.renderer.createElement('img');
-    this.renderer.addClass(img, 'image-popup-content');
-    this.renderer.setAttribute(img, 'src', imageUrl);
-    this.renderer.appendChild(overlay, img);
-    this.renderer.appendChild(document.body, overlay);
-    this.renderer.listen(overlay, 'click', () => {
-      this.renderer.removeChild(document.body, overlay);
+  openFilePreviewDialog(attachment: FilePreview): void {
+    const dialogData: FilePreviewDialogData = {
+      fileId: attachment.id,
+      fileName: attachment.name,
+      fileSize: attachment.sizeFormatted,
+      fileType: attachment.type as FileType,
+      mimeType: attachment.mimeType,
+      // Pass local content if available
+      localUrl: attachment.preview,
+      localFile: attachment.file,
+      // Pass message info for thumbnail regeneration on synced images
+      messageId: this.message.id,
+      conversationId: this.message.conversationId
+    };
+
+    this.dialog.open(FilePreviewDialogComponent, {
+      data: dialogData,
+      panelClass: 'file-preview-dialog-panel',
+      hasBackdrop: false, // Component handles its own backdrop
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      width: '100vw',
+      height: '100vh'
     });
   }
 

@@ -1,0 +1,118 @@
+<div class="dialog-container" (click)="onBackdropClick($event)">
+  <div class="dialog-content" [class.is-document]="isDocument()">
+    <!-- Header with file info and actions -->
+    <div class="dialog-header">
+      <div class="file-info">
+        <mat-icon class="file-type-icon">{{ getFileIcon() }}</mat-icon>
+        <div class="file-details">
+          <span class="file-name">{{ data.fileName }}</span>
+          <span class="file-size" *ngIf="data.fileSize">{{ data.fileSize }}</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <!-- Zoom controls for images -->
+        <ng-container *ngIf="isImage() && state === 'loaded'">
+          <button mat-icon-button
+                  class="action-button"
+                  (click)="zoomOut()"
+                  [disabled]="!canZoomOut"
+                  aria-label="Zoom out">
+            <mat-icon>zoom_out</mat-icon>
+          </button>
+          <span class="zoom-level">{{ zoomPercentage }}%</span>
+          <button mat-icon-button
+                  class="action-button"
+                  (click)="zoomIn()"
+                  [disabled]="!canZoomIn"
+                  aria-label="Zoom in">
+            <mat-icon>zoom_in</mat-icon>
+          </button>
+          <button mat-icon-button
+                  class="action-button"
+                  (click)="resetZoom()"
+                  [disabled]="zoomLevel === 1"
+                  aria-label="Reset zoom">
+            <mat-icon>fit_screen</mat-icon>
+          </button>
+        </ng-container>
+        <button mat-icon-button
+                class="action-button"
+                (click)="download()"
+                [disabled]="state !== 'loaded'"
+                aria-label="Download file">
+          <mat-icon>download</mat-icon>
+        </button>
+        <button mat-icon-button
+                class="action-button close-button"
+                (click)="close()"
+                aria-label="Close dialog">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content area -->
+    <div class="content-container" (click)="onContentClick($event)">
+      <!-- Loading state -->
+      <div *ngIf="state === 'loading'" class="loading-state">
+        <mat-spinner diameter="48"></mat-spinner>
+        <span class="loading-text">Loading file...</span>
+      </div>
+
+      <!-- Error state -->
+      <div *ngIf="state === 'error'" class="error-state">
+        <mat-icon class="error-icon">error_outline</mat-icon>
+        <span class="error-message">{{ errorMessage }}</span>
+        <button mat-stroked-button color="primary" (click)="retry()">
+          <mat-icon>refresh</mat-icon>
+          Retry
+        </button>
+      </div>
+
+      <!-- Image preview with zoom -->
+      <ng-container *ngIf="state === 'loaded' && isImage()">
+        <div class="image-container" (wheel)="onWheel($event)">
+          <img [src]="contentUrl"
+               [alt]="data.fileName"
+               class="preview-image"
+               [style.transform]="'scale(' + zoomLevel + ')'"
+               draggable="false">
+        </div>
+      </ng-container>
+
+      <!-- Audio preview -->
+      <ng-container *ngIf="state === 'loaded' && isAudio()">
+        <div class="audio-preview">
+          <mat-icon class="audio-icon">audiotrack</mat-icon>
+          <audio controls [src]="contentUrl" class="audio-player">
+            Your browser does not support the audio element.
+          </audio>
+        </div>
+      </ng-container>
+
+      <!-- Document preview (placeholder for now - will be enhanced in Section 3) -->
+      <ng-container *ngIf="state === 'loaded' && isDocument()">
+        <div class="document-preview">
+          <mat-icon class="document-icon">description</mat-icon>
+          <span class="document-message">Document preview not yet available</span>
+          <button mat-stroked-button color="primary" (click)="download()">
+            <mat-icon>download</mat-icon>
+            Download to view
+          </button>
+        </div>
+      </ng-container>
+
+      <!-- Other file types -->
+      <ng-container *ngIf="state === 'loaded' && !isImage() && !isAudio() && !isDocument()">
+        <div class="generic-preview">
+          <mat-icon class="generic-icon">insert_drive_file</mat-icon>
+          <span class="generic-message">Preview not available for this file type</span>
+          <button mat-stroked-button color="primary" (click)="download()">
+            <mat-icon>download</mat-icon>
+            Download file
+          </button>
+        </div>
+      </ng-container>
+    </div>
+  </div>
+</div>

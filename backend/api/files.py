@@ -1,15 +1,19 @@
 """
-File upload API endpoints.
+File upload and retrieval API endpoints.
 """
 import secrets
 import time
 from typing import List
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from backend.models.common import ErrorResponse
 from backend.security.auth import get_current_user
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
+
+# Directory where files are stored
+FILES_DIR = Path("./files")
 
 
 @router.post("/upload",
@@ -50,10 +54,9 @@ async def upload_files(
 
         file_ids = []
         max_file_size = 10 * 1024 * 1024  # 10MB limit per file
-        files_dir = Path("./files")
 
         # Ensure files directory exists
-        files_dir.mkdir(exist_ok=True)
+        FILES_DIR.mkdir(exist_ok=True)
 
         for file in files:
             # Read file to check size and content
@@ -74,7 +77,7 @@ async def upload_files(
                 stored_filename = file_id
 
             # Save file to disk
-            file_path = files_dir / stored_filename
+            file_path = FILES_DIR / stored_filename
             with open(file_path, "wb") as f:
                 f.write(contents)
 
@@ -91,3 +94,84 @@ async def upload_files(
     except Exception as e:
         print(f"Error uploading files: {str(e)}")
         raise HTTPException(status_code=500, detail="Error uploading files")
+
+
+def _find_file_by_id(file_id: str) -> Path | None:
+    """
+    Find a file in the files directory by its ID (without extension).
+    Returns the full path if found, None otherwise.
+    """
+    if not FILES_DIR.exists():
+        return None
+
+    # Search for files matching the fileId with any extension
+    for file_path in FILES_DIR.iterdir():
+        if file_path.is_file() and file_path.stem == file_id:
+            return file_path
+
+    return None
+
+
+def _get_media_type(file_path: Path) -> str:
+    """
+    Determine the media type based on file extension.
+    """
+    extension_to_media_type = {
+        # Images
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        # Documents
+        '.pdf': 'application/pdf',
+        '.txt': 'text/plain',
+        '.md': 'text/markdown',
+        '.json': 'application/json',
+        # Audio
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/wav',
+        '.ogg': 'audio/ogg',
+        '.webm': 'audio/webm',
+        '.m4a': 'audio/mp4',
+        # Fallback
+    }
+    return extension_to_media_type.get(file_path.suffix.lower(), 'application/octet-stream')
+
+
+@router.get("/{file_id}",
+            responses={
+                status.HTTP_200_OK: {"description": "File content"},
+                status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "Not authenticated"},
+                status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "File not found"}
+            })
+async def get_file(
+        file_id: str,
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    Retrieves a file by its ID.
+
+    Looks up the file in the files directory and returns it with the appropriate
+    Content-Type header based on the file extension.
+
+    :param file_id: The unique identifier of the file (without extension)
+    :type file_id: str
+    :param current_user: The currently authenticated user making the request
+    :type current_user: dict
+    :return: The file content with appropriate Content-Type header
+    :raises HTTPException: 404 if file not found, 401 if not authenticated
+    """
+    file_path = _find_file_by_id(file_id)
+
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    media_type = _get_media_type(file_path)
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=file_path.name
+    )
