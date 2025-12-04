@@ -837,8 +837,8 @@ async def stream_generate(
                 thinking_step = {
                     "id": str(uuid.uuid4()),
                     "type": "thought",
-                    "title": "Verarbeite Anfrage",
-                    "content": "Analysiere die Nachricht und bereite eine Antwort vor...",
+                    "title": "Processing Request",
+                    "content": "Analyzing message and preparing response...",
                     "timestamp": int(time.time() * 1000)
                 }
                 steps.append(thinking_step)
@@ -854,8 +854,8 @@ async def stream_generate(
                 observation_step = {
                     "id": str(uuid.uuid4()),
                     "type": "observation",
-                    "title": "Antwort generiert",
-                    "content": "Die Antwort wurde erfolgreich generiert.",
+                    "title": "Response Generated",
+                    "content": "Response has been successfully generated.",
                     "timestamp": int(time.time() * 1000)
                 }
                 steps.append(observation_step)

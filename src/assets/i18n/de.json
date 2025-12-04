@@ -21,5 +21,29 @@
   "Summary": "Zusammenfassung",
   "Refresh": "Aktualisieren",
   "Update Summary": "Zusammenfassung aktualisieren",
-  "Logout": "Ausloggen"
+  "Logout": "Ausloggen",
+  "tools": {
+    "Analyzing request...": "Analysiere Anfrage...",
+    "Searching Knowledge Base": "Durchsuche Wissensdatenbank",
+    "Retrieving Details": "Rufe Details ab",
+    "Searching Locations": "Suche Standorte",
+    "Exploring Categories": "Erkunde Kategorien",
+    "Searching FAQs": "Durchsuche FAQs",
+    "Result: Searching Knowledge Base": "Ergebnis: Durchsuche Wissensdatenbank",
+    "Result: Retrieving Details": "Ergebnis: Rufe Details ab",
+    "Result: Searching Locations": "Ergebnis: Suche Standorte",
+    "Result: Exploring Categories": "Ergebnis: Erkunde Kategorien",
+    "Result: Searching FAQs": "Ergebnis: Durchsuche FAQs",
+    "Generating Response": "Generiere Antwort",
+    "Processing Request": "Verarbeite Anfrage",
+    "Response Generated": "Antwort generiert",
+    "Error": "Fehler"
+  },
+  "tool_content": {
+    "Processing the question and determining next steps.": "Verarbeite die Frage und bestimme die nächsten Schritte.",
+    "Creating the final response based on gathered information.": "Erstelle die finale Antwort basierend auf den gesammelten Informationen.",
+    "Analyzing message and preparing response...": "Analysiere die Nachricht und bereite eine Antwort vor...",
+    "Response has been successfully generated.": "Die Antwort wurde erfolgreich generiert.",
+    "An error occurred:": "Ein Fehler ist aufgetreten:"
+  }
 }
