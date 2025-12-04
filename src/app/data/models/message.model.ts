@@ -5,7 +5,7 @@
  * They serve as the single source of truth and mirror the backend Pydantic models.
  */
 
-import { IFilePreview, IFileAttachment } from './file.model';
+import { IFilePreview } from './file.model';
 
 // ============================================================================
 // Core Types
