@@ -448,4 +448,20 @@ export class ApiService {
     }
   }
 
+  // Fetch a file by its ID
+  async getFile(fileId: string): Promise<Blob> {
+    const endpoint = `${this.baseUrl}/api/files/${fileId}`;
+    try {
+      return await lastValueFrom(
+        this.http.get(endpoint, {
+          ...this.getHttpOptions(),
+          responseType: 'blob'
+        })
+      );
+    } catch (error) {
+      console.error('Error fetching file:', error);
+      throw error;
+    }
+  }
+
 }

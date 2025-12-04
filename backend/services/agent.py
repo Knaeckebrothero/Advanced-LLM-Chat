@@ -7,7 +7,7 @@ This agent uses Neo4j tools to answer waste disposal questions with multi-step r
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from typing import TypedDict, Annotated, Sequence, AsyncGenerator, Union
+from typing import TypedDict, Annotated, Sequence, AsyncGenerator, Union, Optional
 import operator
 import json
 import time
@@ -16,6 +16,7 @@ import logging
 
 from .tools.neo4j_tools import get_all_tools
 from ..models.message import AgentStep
+from .image_handler import prepare_image_for_llm, is_image_processing_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +276,8 @@ class FessiAgent:
 
     async def astream_full(
         self,
-        user_message: str
+        user_message: str,
+        images: Optional[list[dict]] = None
     ) -> AsyncGenerator[tuple[str, Union[AgentStep, str]], None]:
         """
         Stream both reasoning steps and response tokens.
@@ -285,12 +287,15 @@ class FessiAgent:
 
         Args:
             user_message: The user's input message.
+            images: Optional list of image attachments with fileId and mimeType.
 
         Yields:
             Tuples of (type, data) where type is "step" or "token".
         """
+        # Build message content - multi-modal if images are provided
+        message_content = self._build_message_content(user_message, images)
         initial_state: AgentState = {
-            "messages": [HumanMessage(content=user_message)],
+            "messages": [HumanMessage(content=message_content)],
             "steps": [],
             "final_response": ""
         }
@@ -384,6 +389,75 @@ class FessiAgent:
             "answer_waste_faq": "Searching FAQs"
         }
         return titles.get(tool_name, tool_name)
+
+    def _build_message_content(
+        self,
+        text: str,
+        images: Optional[list[dict]] = None
+    ) -> Union[str, list[dict]]:
+        """
+        Build message content, supporting multi-modal format when images are provided.
+
+        Args:
+            text: The text content of the message.
+            images: Optional list of image attachments with fileId and mimeType.
+
+        Returns:
+            Either a string (text-only) or a list of content blocks (multi-modal).
+        """
+        # If no images or image processing is disabled, return plain text
+        if not images or not is_image_processing_enabled():
+            # If images were provided but processing is disabled, add a note
+            if images and not is_image_processing_enabled():
+                image_count = len(images)
+                image_note = f"\n\n[Note: {image_count} image(s) attached but image processing is disabled]"
+                return text + image_note
+            return text
+
+        # Build multi-modal content
+        content_blocks = []
+
+        # Add text content first
+        content_blocks.append({
+            "type": "text",
+            "text": text
+        })
+
+        # Add image content blocks
+        images_loaded = 0
+        images_failed = []
+
+        for image in images:
+            file_id = image.get('fileId', '')
+            mime_type = image.get('mimeType', '')
+            name = image.get('name', 'Unknown')
+
+            if not file_id:
+                continue
+
+            image_content = prepare_image_for_llm(file_id, mime_type)
+            if image_content:
+                content_blocks.append(image_content)
+                images_loaded += 1
+                logger.info(f"Loaded image for LLM: {name} ({file_id})")
+            else:
+                images_failed.append(name)
+                logger.warning(f"Failed to load image for LLM: {name} ({file_id})")
+
+        # If no images were successfully loaded, return plain text with note
+        if images_loaded == 0:
+            if images_failed:
+                return text + f"\n\n[Note: Failed to load {len(images_failed)} image(s): {', '.join(images_failed)}]"
+            return text
+
+        # If some images failed, add a note
+        if images_failed:
+            content_blocks.append({
+                "type": "text",
+                "text": f"\n[Note: Failed to load {len(images_failed)} image(s): {', '.join(images_failed)}]"
+            })
+
+        return content_blocks
 
 
 def create_fessi_agent(llm=None) -> FessiAgent:

@@ -13,27 +13,44 @@
       <ng-container *ngIf="message.isText()">
         <!-- Attachments -->
         <div *ngIf="message.hasAttachments()" class="message-attachments">
-          <a *ngFor="let attachment of message.attachments"
-             [href]="attachment.type !== 'image' ? createDownloadUrl(attachment.file) : attachment.preview"
-             [download]="attachment.type !== 'image' ? attachment.name : null"
-             (click)="onAttachmentClick($event, attachment)"
-             class="attachment-item"
-             [class.is-image]="attachment.type === 'image'">
+          <div *ngFor="let attachment of message.attachments"
+               (click)="onAttachmentClick($event, attachment)"
+               class="attachment-item"
+               [class.is-image]="attachment.type === 'image'"
+               [class.is-synced]="!attachment.file && !attachment.preview"
+               [class.has-error]="attachment.error">
 
+            <!-- Image with local preview -->
             <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
               <img [src]="attachment.preview" [alt]="attachment.name">
               <div class="attachment-info-overlay">
                 {{ attachment.name }}
               </div>
             </div>
-            <div class="attachment-icon" *ngIf="attachment.type !== 'image'">
-              <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
+
+            <!-- Image without preview (synced from server) -->
+            <div class="attachment-placeholder" *ngIf="attachment.type === 'image' && !attachment.preview">
+              <mat-icon class="placeholder-icon">image</mat-icon>
+              <span class="placeholder-text">{{ attachment.name }}</span>
+              <span class="placeholder-hint">Click to view</span>
             </div>
-            <div class="attachment-info" *ngIf="attachment.type !== 'image'">
-              <span class="attachment-name">{{ attachment.name }}</span>
-              <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
+
+            <!-- Non-image files -->
+            <ng-container *ngIf="attachment.type !== 'image'">
+              <div class="attachment-icon">
+                <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
+              </div>
+              <div class="attachment-info">
+                <span class="attachment-name">{{ attachment.name }}</span>
+                <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
+              </div>
+            </ng-container>
+
+            <!-- Error indicator -->
+            <div class="attachment-error" *ngIf="attachment.error">
+              <mat-icon class="error-icon">error_outline</mat-icon>
             </div>
-          </a>
+          </div>
         </div>
 
         <!-- Display formatted message when not editing -->

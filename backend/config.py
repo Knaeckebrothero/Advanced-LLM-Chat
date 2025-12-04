@@ -50,3 +50,11 @@ FILESYSTEM_PATH = os.getenv("FILESYSTEM_PATH", ".filesystem")
 
 # Replicate API configuration
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+
+# Image processing configuration for LLM
+# Set to 'yes' to pass images to vision-capable models
+# Set to 'no' to skip images or include a note that an image was attached
+MODEL_RECEIVE_IMAGES = os.getenv("MODEL_RECEIVE_IMAGES", "yes").lower() == "yes"
+
+# Files directory for uploaded files
+FILES_DIR = os.getenv("FILES_DIR", "./files")
