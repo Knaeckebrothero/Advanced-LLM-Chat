@@ -155,8 +155,8 @@ class FessiAgent:
                     yield AgentStep(
                         id=str(uuid.uuid4()),
                         type="thought",
-                        title="Analysiere Anfrage...",
-                        content="Verarbeite die Frage und bestimme die nächsten Schritte.",
+                        title="Analyzing request...",
+                        content="Processing the question and determining next steps.",
                         timestamp=int(time.time() * 1000)
                     )
 
@@ -198,7 +198,7 @@ class FessiAgent:
                     yield AgentStep(
                         id=event.get("run_id", str(uuid.uuid4())),
                         type="tool_result",
-                        title=f"Ergebnis: {self._get_tool_title(tool_name)}",
+                        title=f"Result: {self._get_tool_title(tool_name)}",
                         content=content,
                         timestamp=int(time.time() * 1000),
                         duration=duration,
@@ -210,8 +210,8 @@ class FessiAgent:
             yield AgentStep(
                 id=str(uuid.uuid4()),
                 type="observation",
-                title="Fehler",
-                content=f"Ein Fehler ist aufgetreten: {str(e)}",
+                title="Error",
+                content=f"An error occurred: {str(e)}",
                 timestamp=int(time.time() * 1000)
             )
 
@@ -237,7 +237,7 @@ class FessiAgent:
             return last_message.content
         except Exception as e:
             logger.error(f"Error in agenerate: {e}", exc_info=True)
-            return f"Es ist ein Fehler aufgetreten: {str(e)}"
+            return f"An error occurred: {str(e)}"
 
     async def astream_response(self, user_message: str) -> AsyncGenerator[str, None]:
         """
@@ -271,7 +271,7 @@ class FessiAgent:
                             yield chunk.content
         except Exception as e:
             logger.error(f"Error in astream_response: {e}", exc_info=True)
-            yield f"\n\n[Fehler: {str(e)}]"
+            yield f"\n\n[Error: {str(e)}]"
 
     async def astream_full(
         self,
@@ -308,8 +308,8 @@ class FessiAgent:
                     yield ("step", AgentStep(
                         id=str(uuid.uuid4()),
                         type="thought",
-                        title="Analysiere Anfrage...",
-                        content="Verarbeite die Frage und bestimme die nächsten Schritte.",
+                        title="Analyzing request...",
+                        content="Processing the question and determining next steps.",
                         timestamp=int(time.time() * 1000)
                     ))
 
@@ -341,7 +341,7 @@ class FessiAgent:
                     yield ("step", AgentStep(
                         id=event.get("run_id", str(uuid.uuid4())),
                         type="tool_result",
-                        title=f"Ergebnis: {self._get_tool_title(tool_name)}",
+                        title=f"Result: {self._get_tool_title(tool_name)}",
                         content=content,
                         timestamp=int(time.time() * 1000),
                         metadata=tool_output if isinstance(tool_output, dict) else None
@@ -358,8 +358,8 @@ class FessiAgent:
                                 yield ("step", AgentStep(
                                     id=str(uuid.uuid4()),
                                     type="observation",
-                                    title="Generiere Antwort",
-                                    content="Erstelle die finale Antwort basierend auf den gesammelten Informationen.",
+                                    title="Generating Response",
+                                    content="Creating the final response based on gathered information.",
                                     timestamp=int(time.time() * 1000)
                                 ))
                             yield ("token", chunk.content)
@@ -369,19 +369,19 @@ class FessiAgent:
             yield ("step", AgentStep(
                 id=str(uuid.uuid4()),
                 type="observation",
-                title="Fehler",
-                content=f"Ein Fehler ist aufgetreten: {str(e)}",
+                title="Error",
+                content=f"An error occurred: {str(e)}",
                 timestamp=int(time.time() * 1000)
             ))
 
     def _get_tool_title(self, tool_name: str) -> str:
-        """Get a human-readable title for a tool."""
+        """Get English title for a tool (frontend handles localization)."""
         titles = {
-            "search_waste_disposal": "Suche Entsorgungsinfo",
-            "get_disposal_method_details": "Hole Methodendetails",
-            "find_nearby_recycling_centers": "Suche Wertstoffhöfe",
-            "get_waste_category_info": "Hole Kategorieinfo",
-            "answer_waste_faq": "Durchsuche FAQs"
+            "search_waste_disposal": "Searching Knowledge Base",
+            "get_disposal_method_details": "Retrieving Details",
+            "find_nearby_recycling_centers": "Searching Locations",
+            "get_waste_category_info": "Exploring Categories",
+            "answer_waste_faq": "Searching FAQs"
         }
         return titles.get(tool_name, tool_name)
 
