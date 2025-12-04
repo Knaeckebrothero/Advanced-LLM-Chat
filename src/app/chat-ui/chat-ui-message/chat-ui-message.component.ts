@@ -1,6 +1,6 @@
 // src/app/chat-ui/chat-ui-message/chat-ui-message.component.ts
 import { Component, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
-import { Message, VoiceContent, AgentContent, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
+import { Message, VoiceContent, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
