@@ -13,48 +13,60 @@
       <ng-container *ngIf="message.isText()">
         <!-- Attachments -->
         <div *ngIf="message.hasAttachments()" class="message-attachments">
-          <div *ngFor="let attachment of message.attachments"
-               (click)="onAttachmentClick($event, attachment)"
-               class="attachment-item"
-               [class.is-image]="attachment.type === 'image'"
-               [class.is-synced]="!attachment.file && !attachment.preview"
-               [class.has-error]="attachment.error">
+          <ng-container *ngFor="let attachment of message.attachments">
+            <!-- Audio attachments use the AudioMessageComponent -->
+            <app-audio-message
+              *ngIf="attachment.type === 'audio'"
+              [attachment]="attachment"
+              [transcript]="attachment.transcript"
+              [messageId]="message.id"
+              [conversationId]="message.conversationId">
+            </app-audio-message>
 
-            <!-- Image with local preview -->
-            <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
-              <img [src]="attachment.preview" [alt]="attachment.name">
-              <div class="attachment-info-overlay">
-                {{ attachment.name }}
+            <!-- Non-audio attachments -->
+            <div *ngIf="attachment.type !== 'audio'"
+                 (click)="onAttachmentClick($event, attachment)"
+                 class="attachment-item"
+                 [class.is-image]="attachment.type === 'image'"
+                 [class.is-synced]="!attachment.file && !attachment.preview"
+                 [class.has-error]="attachment.error">
+
+              <!-- Image with local preview -->
+              <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
+                <img [src]="attachment.preview" [alt]="attachment.name">
+                <div class="attachment-info-overlay">
+                  {{ attachment.name }}
+                </div>
+              </div>
+
+              <!-- Image without preview (synced from server) -->
+              <div class="attachment-placeholder" *ngIf="attachment.type === 'image' && !attachment.preview">
+                <mat-icon class="placeholder-icon">image</mat-icon>
+                <span class="placeholder-text">{{ attachment.name }}</span>
+                <span class="placeholder-hint">Click to view</span>
+              </div>
+
+              <!-- Non-image, non-audio files -->
+              <ng-container *ngIf="attachment.type !== 'image'">
+                <div class="attachment-icon">
+                  <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
+                </div>
+                <div class="attachment-info">
+                  <span class="attachment-name">{{ attachment.name }}</span>
+                  <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
+                </div>
+              </ng-container>
+
+              <!-- Error indicator -->
+              <div class="attachment-error" *ngIf="attachment.error">
+                <mat-icon class="error-icon">error_outline</mat-icon>
               </div>
             </div>
-
-            <!-- Image without preview (synced from server) -->
-            <div class="attachment-placeholder" *ngIf="attachment.type === 'image' && !attachment.preview">
-              <mat-icon class="placeholder-icon">image</mat-icon>
-              <span class="placeholder-text">{{ attachment.name }}</span>
-              <span class="placeholder-hint">Click to view</span>
-            </div>
-
-            <!-- Non-image files -->
-            <ng-container *ngIf="attachment.type !== 'image'">
-              <div class="attachment-icon">
-                <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
-              </div>
-              <div class="attachment-info">
-                <span class="attachment-name">{{ attachment.name }}</span>
-                <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
-              </div>
-            </ng-container>
-
-            <!-- Error indicator -->
-            <div class="attachment-error" *ngIf="attachment.error">
-              <mat-icon class="error-icon">error_outline</mat-icon>
-            </div>
-          </div>
+          </ng-container>
         </div>
 
-        <!-- Display formatted message when not editing -->
-        <div *ngIf="!editing && message.textContent" [innerHTML]="formattedTextContent"></div>
+        <!-- Display formatted message when not editing (only if not a voice message with just transcript) -->
+        <div *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()" [innerHTML]="formattedTextContent"></div>
 
         <!-- Edit mode - only for text messages -->
         <div *ngIf="editing"

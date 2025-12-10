@@ -1,0 +1,70 @@
+<div class="audio-message">
+  <!-- Header with icon and title -->
+  <div class="audio-header">
+    <mat-icon class="audio-icon">mic</mat-icon>
+    <span class="audio-title">Voice message ({{ displayDuration }})</span>
+  </div>
+
+  <!-- Audio player -->
+  <div class="audio-player-container">
+    <!-- Play/Pause button -->
+    <button mat-icon-button
+            class="play-button"
+            (click)="togglePlay()"
+            [disabled]="isLoading || audioError"
+            [attr.aria-label]="isPlaying ? 'Pause' : 'Play'">
+      <mat-icon *ngIf="isLoading">hourglass_empty</mat-icon>
+      <mat-icon *ngIf="!isLoading && !audioError">{{ isPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
+      <mat-icon *ngIf="audioError">error_outline</mat-icon>
+    </button>
+
+    <!-- Progress bar -->
+    <div class="progress-container" (click)="onSeek($event)">
+      <div class="progress-track">
+        <div class="progress-fill" [style.width.%]="progressPercent"></div>
+        <div class="progress-thumb" [style.left.%]="progressPercent"></div>
+      </div>
+    </div>
+
+    <!-- Time display -->
+    <span class="time-display">
+      {{ formatTime(currentTime) }} / {{ duration > 0 ? formatTime(duration) : displayDuration }}
+    </span>
+  </div>
+
+  <!-- Error state -->
+  <div *ngIf="audioError" class="audio-error">
+    <span>Failed to load audio</span>
+    <button mat-button color="primary" (click)="retryLoad()">
+      <mat-icon>refresh</mat-icon>
+      Retry
+    </button>
+  </div>
+
+  <!-- Transcript toggle -->
+  <button mat-button
+          class="transcript-toggle"
+          (click)="toggleTranscript()"
+          [disabled]="isLoadingTranscript">
+    <mat-icon>{{ showTranscript ? 'expand_less' : 'expand_more' }}</mat-icon>
+    {{ showTranscript ? 'Hide transcript' : 'Show transcript' }}
+    <mat-icon *ngIf="isLoadingTranscript" class="loading-spinner">hourglass_empty</mat-icon>
+  </button>
+
+  <!-- Transcript content -->
+  <div *ngIf="showTranscript" class="transcript-container" [@expandCollapse]>
+    <div class="transcript-divider"></div>
+    <p class="transcript-text">{{ loadedTranscript || 'No transcript available' }}</p>
+  </div>
+
+  <!-- Hidden audio element -->
+  <audio #audioPlayer
+         [src]="audioUrl"
+         (play)="onPlay()"
+         (pause)="onPause()"
+         (ended)="onEnded()"
+         (timeupdate)="onTimeUpdate($event)"
+         (loadedmetadata)="onLoadedMetadata($event)"
+         (error)="onError()">
+  </audio>
+</div>

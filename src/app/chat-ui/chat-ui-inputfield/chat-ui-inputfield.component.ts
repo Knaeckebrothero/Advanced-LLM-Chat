@@ -466,7 +466,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Create recording config
       const config: RecordingConfig = {
         isHoldToRecord: this.isHoldToRecord,
-        maxDuration: 300, // 5 minutes maximum
+        maxDuration: 600, // 10 minutes maximum
         audioConstraints: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -596,12 +596,21 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
         filePreview.uploadStatus = UploadStatus.UPLOADING;
 
         // Upload single file
-        const uploadedFileIds = await this.apiService.uploadFiles([filePreview]);
+        const uploadResults = await this.apiService.uploadFiles([filePreview]);
 
-        // Update file with server-assigned ID
-        filePreview.uploadStatus = UploadStatus.COMPLETED;
-        filePreview.id = uploadedFileIds[0] || filePreview.id;
-        filePreview.error = undefined;
+        // Update file with server-assigned ID and transcript (for audio)
+        if (uploadResults.length > 0) {
+          const result = uploadResults[0];
+          filePreview.uploadStatus = UploadStatus.COMPLETED;
+          filePreview.id = result.fileId;
+          filePreview.error = undefined;
+
+          // Store transcript for audio files
+          if (result.transcript) {
+            filePreview.transcript = result.transcript;
+            console.log('Audio file transcribed:', filePreview.name);
+          }
+        }
 
         console.log('File uploaded successfully:', filePreview.name, filePreview.id);
       } catch (error) {

@@ -30,7 +30,7 @@ from backend.services.llm import get_conversation_context, generate_llm_response
 from backend.config import DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_SYSTEM_PROMPT
 from backend.services.agent import create_fessi_agent
 from backend.services.llm_provider import is_provider_available
-from backend.services.image_handler import extract_image_attachments
+from backend.services.image_handler import extract_image_attachments, extract_document_attachments, extract_audio_attachments
 
 router = APIRouter(prefix="/api/message", tags=["Message"])
 
@@ -766,8 +766,8 @@ async def stream_generate(
         }
 
         try:
-            # Get the last user message from the conversation (including images)
-            user_message, image_attachments = await _get_last_user_message(request_body.conversationId)
+            # Get the last user message from the conversation (including attachments)
+            user_message, image_attachments, document_attachments, audio_attachments = await _get_last_user_message(request_body.conversationId)
 
             if not user_message:
                 yield {
@@ -776,9 +776,13 @@ async def stream_generate(
                 }
                 return
 
-            # Log if images are attached
+            # Log if attachments are found
             if image_attachments:
                 crud_logger.info(f"Found {len(image_attachments)} image attachment(s) in message")
+            if document_attachments:
+                crud_logger.info(f"Found {len(document_attachments)} document attachment(s) in message")
+            if audio_attachments:
+                crud_logger.info(f"Found {len(audio_attachments)} audio attachment(s) in message")
 
             # Check if we have an LLM provider configured
             use_agent = is_provider_available("openai") or is_provider_available("anthropic")
@@ -790,8 +794,13 @@ async def stream_generate(
                 try:
                     agent = create_fessi_agent()
 
-                    # Stream reasoning steps and response using astream_full (with images if available)
-                    async for event_type, event_data in agent.astream_full(user_message, images=image_attachments):
+                    # Stream reasoning steps and response using astream_full (with attachments if available)
+                    async for event_type, event_data in agent.astream_full(
+                        user_message,
+                        images=image_attachments,
+                        documents=document_attachments,
+                        audio=audio_attachments
+                    ):
                         if event_type == "step":
                             step_dict = event_data.model_dump()
 
@@ -924,15 +933,15 @@ async def stream_generate(
     return EventSourceResponse(event_generator())
 
 
-async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict]]:
+async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict], list[dict], list[dict]]:
     """
-    Get the last user message from a conversation, including any image attachments.
+    Get the last user message from a conversation, including any attachments.
 
     Args:
         conversation_id: The conversation ID.
 
     Returns:
-        Tuple of (text_content, image_attachments).
+        Tuple of (text_content, image_attachments, document_attachments, audio_attachments).
     """
     messages = db.get_messages_by_conversation(conversation_id, limit=10)
 
@@ -941,6 +950,8 @@ async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict]]
         if msg.get('roleName') == 'user':
             content = msg.get('content', '')
             images = []
+            documents = []
+            audio = []
 
             # Handle JSON-encoded content (contains attachments)
             if content.startswith('{'):
@@ -948,13 +959,15 @@ async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict]]
                     content_obj = json.loads(content)
                     text_content = content_obj.get('content', content)
                     images = extract_image_attachments(content_obj)
-                    return (text_content, images)
+                    documents = extract_document_attachments(content_obj)
+                    audio = extract_audio_attachments(content_obj)
+                    return (text_content, images, documents, audio)
                 except json.JSONDecodeError:
                     pass
 
-            return (content, images)
+            return (content, images, documents, audio)
 
-    return ("", [])
+    return ("", [], [], [])
 
 
 async def _fallback_generate(conversation_id: str, steps: list) -> str:

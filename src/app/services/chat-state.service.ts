@@ -277,8 +277,10 @@ export class ChatStateService implements OnDestroy {
           const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
 
           pendingFiles.forEach((f, index) => {
+            const uploadResponse = uploadedFileIds[index];
             f.uploadStatus = UploadStatus.COMPLETED;
-            f.id = uploadedFileIds[index] || `file-${Date.now()}-${Math.random()}`;
+            f.id = uploadResponse?.fileId || `file-${Date.now()}-${Math.random()}`;
+            f.transcript = uploadResponse?.transcript || f.transcript;
           });
         } catch (error) {
           console.error('Error uploading files:', error);

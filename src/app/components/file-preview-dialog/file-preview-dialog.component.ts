@@ -41,6 +41,7 @@ export interface FilePreviewDialogData {
 export class FilePreviewDialogComponent implements OnInit, OnDestroy {
   state: FilePreviewState = 'loading';
   contentUrl: string | null = null;
+  textContent: string | null = null;  // For document text preview
   errorMessage: string = '';
   // For zoom/pan functionality
   zoomLevel: number = 1;
@@ -81,7 +82,20 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Otherwise, fetch from backend
+    // For documents, fetch text content instead of binary
+    if (this.isDocument()) {
+      try {
+        this.textContent = await this.apiService.getFileText(this.data.fileId);
+        this.state = 'loaded';
+      } catch (error) {
+        console.error('Failed to load document text:', error);
+        this.errorMessage = 'Failed to load document content. You can still download the file.';
+        this.state = 'error';
+      }
+      return;
+    }
+
+    // Otherwise, fetch binary content from backend
     try {
       const blob = await this.apiService.getFile(this.data.fileId);
       this.contentUrl = URL.createObjectURL(blob);

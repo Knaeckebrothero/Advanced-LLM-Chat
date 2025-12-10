@@ -90,16 +90,23 @@
         </div>
       </ng-container>
 
-      <!-- Document preview (placeholder for now - will be enhanced in Section 3) -->
+      <!-- Document preview with extracted text -->
       <ng-container *ngIf="state === 'loaded' && isDocument()">
-        <div class="document-preview">
-          <mat-icon class="document-icon">description</mat-icon>
-          <span class="document-message">Document preview not yet available</span>
-          <button mat-stroked-button color="primary" (click)="download()">
-            <mat-icon>download</mat-icon>
-            Download to view
-          </button>
+        <div class="document-preview" *ngIf="textContent; else documentFallback">
+          <div class="document-text-container">
+            <pre class="document-text">{{ textContent }}</pre>
+          </div>
         </div>
+        <ng-template #documentFallback>
+          <div class="document-preview document-preview--fallback">
+            <mat-icon class="document-icon">description</mat-icon>
+            <span class="document-message">No text content available for this document</span>
+            <button mat-stroked-button color="primary" (click)="download()">
+              <mat-icon>download</mat-icon>
+              Download to view
+            </button>
+          </div>
+        </ng-template>
       </ng-container>
 
       <!-- Other file types -->
