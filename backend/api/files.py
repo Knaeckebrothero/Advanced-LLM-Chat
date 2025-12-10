@@ -1,23 +1,37 @@
 """
 File upload and retrieval API endpoints.
 """
+import logging
 import secrets
 import time
-from typing import List
+from typing import List, Optional
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
+from pydantic import BaseModel
 from backend.models.common import ErrorResponse
 from backend.security.auth import get_current_user
+from backend.services.document_handler import is_document, process_pdf, get_extracted_text
+from backend.services.audio_handler import is_audio, process_audio, get_transcript
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
+logger = logging.getLogger(__name__)
 
 # Directory where files are stored
 FILES_DIR = Path("./files")
 
+# MIME types that trigger document processing
+PDF_MIME_TYPES = {'application/pdf'}
+
+
+class UploadedFileResponse(BaseModel):
+    """Response model for a single uploaded file."""
+    fileId: str
+    transcript: Optional[str] = None
+
 
 @router.post("/upload",
-             response_model=List[str],
+             response_model=List[UploadedFileResponse],
              status_code=status.HTTP_201_CREATED,
              responses={
                  status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "No files provided"},
@@ -33,16 +47,17 @@ async def upload_files(
     """
     Handles the upload of multiple files via a POST request. This endpoint validates
     the files against a maximum allowed size, generates unique IDs for the files,
-    and saves them to a local directory. It returns a list of unique file identifiers
-    of successfully uploaded files. If no files are provided or a file exceeds the
-    maximum allowed size of 10 MB, an appropriate HTTP response is returned.
+    and saves them to a local directory.
+
+    For audio files, transcription is automatically performed using Whisper and
+    the transcript is included in the response.
 
     :param files: The list of files to be uploaded
     :type files: List[UploadFile]
     :param current_user: The currently authenticated user making the request
     :type current_user: dict
-    :return: A list of unique file IDs representing the uploaded files
-    :rtype: List[str]
+    :return: A list of uploaded file responses with fileId and optional transcript
+    :rtype: List[UploadedFileResponse]
     :raises HTTPException: Raised on validation errors like missing files, files
         exceeding the size limit, or on internal server errors
     """
@@ -52,7 +67,7 @@ async def upload_files(
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
-        file_ids = []
+        uploaded_files = []
         max_file_size = 10 * 1024 * 1024  # 10MB limit per file
 
         # Ensure files directory exists
@@ -81,13 +96,44 @@ async def upload_files(
             with open(file_path, "wb") as f:
                 f.write(contents)
 
-            file_ids.append(file_id)
-            print(f"Uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes) saved to {file_path}")
+            logger.info(f"Uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes) saved to {file_path}")
+
+            # Initialize response for this file
+            file_response = UploadedFileResponse(fileId=file_id)
+
+            # Process PDFs to extract text and render pages
+            if file.content_type in PDF_MIME_TYPES:
+                logger.info(f"Processing PDF: {file_id}")
+                try:
+                    result = process_pdf(file_path, file_id)
+                    if result.get('error'):
+                        logger.warning(f"PDF processing had errors: {result['error']}")
+                    else:
+                        logger.info(f"PDF processed: {result['page_count']} pages extracted")
+                except Exception as e:
+                    logger.error(f"Error processing PDF {file_id}: {e}")
+                    # Continue - file is uploaded, just not processed
+
+            # Process audio files to transcribe
+            elif is_audio(file.content_type):
+                logger.info(f"Processing audio file: {file_id}")
+                try:
+                    result = process_audio(file_path, file_id)
+                    if result.get('transcript'):
+                        file_response.transcript = result['transcript']
+                        logger.info(f"Audio transcribed: {len(result['transcript'])} characters")
+                    elif result.get('error'):
+                        logger.warning(f"Audio transcription had errors: {result['error']}")
+                except Exception as e:
+                    logger.error(f"Error processing audio {file_id}: {e}")
+                    # Continue - file is uploaded, just not transcribed
+
+            uploaded_files.append(file_response)
 
             # Reset file position (not needed after saving, but good practice)
             await file.seek(0)
 
-        return file_ids
+        return uploaded_files
 
     except HTTPException:
         raise
@@ -175,3 +221,50 @@ async def get_file(
         media_type=media_type,
         filename=file_path.name
     )
+
+
+@router.get("/{file_id}/text",
+            response_class=PlainTextResponse,
+            responses={
+                status.HTTP_200_OK: {"description": "Extracted text content or transcript"},
+                status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "Not authenticated"},
+                status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "File or text not found"}
+            })
+async def get_file_text(
+        file_id: str,
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    Retrieves extracted text content for a document or transcript for audio.
+
+    For PDFs, returns the extracted text from the _text.txt file.
+    For TXT/MD files, returns the original file content.
+    For audio files, returns the transcript from the _transcript.txt file.
+
+    :param file_id: The unique identifier of the file (without extension)
+    :type file_id: str
+    :param current_user: The currently authenticated user making the request
+    :type current_user: dict
+    :return: The extracted text content or audio transcript
+    :rtype: str
+    :raises HTTPException: 404 if file or text not found, 401 if not authenticated
+    """
+    # First check if the original file exists
+    file_path = _find_file_by_id(file_id)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Try to get document text first
+    text_content = get_extracted_text(file_id)
+
+    # If no document text, try to get audio transcript
+    if text_content is None:
+        text_content = get_transcript(file_id)
+
+    if text_content is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No text content available for this file"
+        )
+
+    return PlainTextResponse(content=text_content, media_type="text/plain; charset=utf-8")

@@ -166,6 +166,23 @@ export class ChatUiMessageComponent implements OnChanges {
     return this.message.getDisplayContent();
   }
 
+  // Check if this is a voice message (text with only audio attachment)
+  // In this case, we don't show the text content separately since
+  // the AudioMessageComponent handles the transcript display
+  isVoiceMessageWithTranscript(): boolean {
+    if (!this.message.isText() || !this.message.hasAttachments()) {
+      return false;
+    }
+    const attachments = this.message.attachments;
+    // If there's exactly one audio attachment and the text looks like a transcript
+    // (not manually typed text), treat it as a voice message
+    if (attachments && attachments.length === 1 && attachments[0].type === FileType.AUDIO) {
+      // Check if the attachment name indicates it's a voice message
+      return attachments[0].name.includes('Voice message');
+    }
+    return false;
+  }
+
   // Check if message is editable
   get isEditable(): boolean {
     return this.message.isText();

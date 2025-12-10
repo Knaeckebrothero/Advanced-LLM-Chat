@@ -7,6 +7,14 @@ import { Conversation } from '../data/objects/conversation';
 import { AppSettings } from '../models/settings.model';
 import { FilePreview } from '../data/objects/file-preview';
 
+/**
+ * Response from file upload endpoint
+ */
+export interface UploadedFileResponse {
+  fileId: string;
+  transcript?: string;  // Present only for audio files
+}
+
 
 @Injectable({
   providedIn: 'root'
@@ -364,7 +372,7 @@ export class ApiService {
   }
 
   // Method for file upload
-  async uploadFiles(files: FilePreview[]): Promise<string[]> {
+  async uploadFiles(files: FilePreview[]): Promise<UploadedFileResponse[]> {
     const endpoint = `${this.baseUrl}/api/files/upload`;
 
     // Convert FilePreview to FormData and upload
@@ -374,7 +382,7 @@ export class ApiService {
     });
 
     try {
-      // Upload files and return their server IDs
+      // Upload files and return their server IDs (and transcripts for audio)
       // Get existing headers with CSRF token
       const baseHeaders = this.getHeaders();
 
@@ -391,7 +399,7 @@ export class ApiService {
       });
 
       const response = await lastValueFrom(
-        this.http.post<string[]>(endpoint, formData, {
+        this.http.post<UploadedFileResponse[]>(endpoint, formData, {
           headers: uploadHeaders,
           withCredentials: true,
           reportProgress: true
@@ -460,6 +468,22 @@ export class ApiService {
       );
     } catch (error) {
       console.error('Error fetching file:', error);
+      throw error;
+    }
+  }
+
+  // Fetch extracted text content for a document
+  async getFileText(fileId: string): Promise<string> {
+    const endpoint = `${this.baseUrl}/api/files/${fileId}/text`;
+    try {
+      return await lastValueFrom(
+        this.http.get(endpoint, {
+          ...this.getHttpOptions(),
+          responseType: 'text'
+        })
+      );
+    } catch (error) {
+      console.error('Error fetching file text:', error);
       throw error;
     }
   }

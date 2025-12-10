@@ -241,8 +241,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
 
         // Update file statuses
         pendingFiles.forEach((f, index) => {
+          const uploadResponse = uploadedFileIds[index];
           f.uploadStatus = UploadStatus.COMPLETED;
-          f.id = uploadedFileIds[index] || f.id;
+          f.id = uploadResponse?.fileId || f.id;
+          f.transcript = uploadResponse?.transcript || f.transcript;
           f.error = undefined;
         });
 
@@ -315,8 +317,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
 
         pendingFiles.forEach((f, index) => {
+          const uploadResponse = uploadedFileIds[index];
           f.uploadStatus = UploadStatus.COMPLETED;
-          f.id = uploadedFileIds[index] || f.id;
+          f.id = uploadResponse?.fileId || f.id;
+          f.transcript = uploadResponse?.transcript || f.transcript;
         });
 
         this.pendingUploads.delete(message.conversationId);

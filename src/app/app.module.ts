@@ -8,6 +8,7 @@ import {AuthCallbackComponent} from './auth/auth-callback/auth-callback.componen
 import {AuthGuard} from './auth/auth.guard';
 import {LoginComponent} from './login/login.component';
 import { ChatUiInputfieldComponent } from './chat-ui/chat-ui-inputfield/chat-ui-inputfield.component';
+import { AudioMessageComponent } from './components/audio-message/audio-message.component';
 
 // Services
 import {AuthService} from './auth/auth.service';
@@ -92,6 +93,7 @@ export function HttpLoaderFactory(http: HttpClient) {
     SidebarComponent,
     ConversationComponent,
     SettingsComponent,
+    AudioMessageComponent,
     TranslateModule.forRoot({
       loader: {
         provide: TranslateLoader,

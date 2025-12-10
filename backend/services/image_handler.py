@@ -1,7 +1,7 @@
 # backend/services/image_handler.py
 """
-Image handling utilities for AI integration.
-Handles reading, encoding, and preparing images for vision-capable LLMs.
+Image and document handling utilities for AI integration.
+Handles reading, encoding, and preparing images/documents for vision-capable LLMs.
 """
 
 import base64
@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..config import FILES_DIR, MODEL_RECEIVE_IMAGES
+from ..config import FILES_DIR, MODEL_RECEIVE_IMAGES, MODEL_RECEIVE_IMAGES_PDF
 
 logger = logging.getLogger(__name__)
 
@@ -171,3 +171,174 @@ def extract_image_attachments(content: dict | str) -> list[dict]:
             })
 
     return images
+
+
+# Document handling functions
+
+SUPPORTED_DOCUMENT_TYPES = {
+    'application/pdf': 'pdf',
+    'text/plain': 'txt',
+    'text/markdown': 'md',
+}
+
+
+def is_pdf_page_images_enabled() -> bool:
+    """Check if PDF page images should be sent to the model."""
+    return MODEL_RECEIVE_IMAGES_PDF and MODEL_RECEIVE_IMAGES
+
+
+def is_document(mime_type: str) -> bool:
+    """Check if the MIME type is a supported document format."""
+    return mime_type.lower() in SUPPORTED_DOCUMENT_TYPES
+
+
+def extract_document_attachments(content: dict | str) -> list[dict]:
+    """
+    Extract document attachment information from message content.
+
+    Args:
+        content: Message content (JSON object or string).
+
+    Returns:
+        List of document attachment dictionaries with fileId, mimeType, and name.
+    """
+    if isinstance(content, str):
+        return []
+
+    attachments = content.get('attachments', [])
+    documents = []
+
+    for attachment in attachments:
+        file_type = attachment.get('type', '')
+        mime_type = attachment.get('mimeType', '')
+
+        # Check if it's a document
+        if file_type == 'document' or is_document(mime_type):
+            documents.append({
+                'fileId': attachment.get('id', ''),
+                'mimeType': mime_type,
+                'name': attachment.get('name', 'Unknown')
+            })
+
+    return documents
+
+
+def prepare_document_for_llm(file_id: str, mime_type: str, name: str) -> Optional[dict]:
+    """
+    Prepare document content for inclusion in LLM messages.
+
+    Args:
+        file_id: The file ID of the document.
+        mime_type: MIME type of the document.
+        name: Filename for context.
+
+    Returns:
+        Dictionary with text content and optionally images, or None if failed.
+    """
+    from .document_handler import get_extracted_text, get_pdf_page_paths
+
+    result = {
+        'text': None,
+        'images': [],
+        'name': name
+    }
+
+    # Get text content
+    text_content = get_extracted_text(file_id)
+    if text_content:
+        result['text'] = text_content
+
+    # For PDFs, optionally include page images
+    if mime_type.lower() == 'application/pdf' and is_pdf_page_images_enabled():
+        page_paths = get_pdf_page_paths(file_id)
+        for page_path in page_paths:
+            try:
+                with open(page_path, 'rb') as f:
+                    image_data = f.read()
+                base64_data = base64.b64encode(image_data).decode('utf-8')
+                result['images'].append({
+                    'type': 'image_url',
+                    'image_url': {
+                        'url': f"data:image/png;base64,{base64_data}"
+                    }
+                })
+            except Exception as e:
+                logger.warning(f"Failed to load PDF page image {page_path}: {e}")
+
+    return result if result['text'] or result['images'] else None
+
+
+# Audio handling functions
+
+SUPPORTED_AUDIO_TYPES = {
+    'audio/webm': 'webm',
+    'audio/ogg': 'ogg',
+    'audio/mp4': 'm4a',
+    'audio/mpeg': 'mp3',
+    'audio/wav': 'wav',
+    'audio/x-wav': 'wav',
+    'audio/mp3': 'mp3',
+    'audio/m4a': 'm4a',
+}
+
+
+def is_audio(mime_type: str) -> bool:
+    """Check if the MIME type is a supported audio format."""
+    return mime_type.lower() in SUPPORTED_AUDIO_TYPES
+
+
+def extract_audio_attachments(content: dict | str) -> list[dict]:
+    """
+    Extract audio attachment information from message content.
+
+    Args:
+        content: Message content (JSON object or string).
+
+    Returns:
+        List of audio attachment dictionaries with fileId, mimeType, and name.
+    """
+    if isinstance(content, str):
+        return []
+
+    attachments = content.get('attachments', [])
+    audio_files = []
+
+    for attachment in attachments:
+        file_type = attachment.get('type', '')
+        mime_type = attachment.get('mimeType', '')
+
+        # Check if it's an audio file
+        if file_type == 'audio' or is_audio(mime_type):
+            audio_files.append({
+                'fileId': attachment.get('id', ''),
+                'mimeType': mime_type,
+                'name': attachment.get('name', 'Unknown')
+            })
+
+    return audio_files
+
+
+def prepare_audio_for_llm(file_id: str, name: str) -> Optional[dict]:
+    """
+    Prepare audio content for inclusion in LLM messages.
+
+    For audio files, we pass the transcript as text to the LLM.
+
+    Args:
+        file_id: The file ID of the audio.
+        name: Filename for context.
+
+    Returns:
+        Dictionary with transcript text, or None if no transcript available.
+    """
+    from .audio_handler import get_transcript
+
+    transcript = get_transcript(file_id)
+    if not transcript:
+        return None
+
+    return {
+        'text': transcript,
+        'name': name,
+        'type': 'audio_transcript'
+    }

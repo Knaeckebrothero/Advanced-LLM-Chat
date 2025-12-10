@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Angular 19.2.2 application with FastAPI backend for a waste disposal assistant chatbot (Fessi). Uses microservices architecture with separate frontend and backend containers, PostgreSQL database, supports multiple LLM models via Replicate API, and includes offline-first capabilities with IndexedDB. Supports i18n with German and English via ngx-translate.
+Angular 19.2.2 PWA with FastAPI backend for a waste disposal assistant chatbot (Fessi). Uses microservices architecture with:
+- **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, ngx-translate for i18n (German/English)
+- **Backend**: FastAPI with PostgreSQL for persistence, Neo4j knowledge graph for waste disposal data, LangGraph agent with multi-step reasoning
+- **LLM Integration**: Multi-provider support (Replicate, OpenAI, Anthropic) with SSE streaming for agent responses
 
 ## Essential Commands
 
@@ -73,9 +76,10 @@ The Angular app follows a service-oriented architecture with clear separation of
 
 - **Core Services** handle business logic and data management:
   - `ApiService`: Backend communication with retry logic and interceptors
-  - `AuthService`: Authentication state and session management  
+  - `AuthService`: Authentication state and session management
   - `DbService`: IndexedDB operations for offline storage
   - `ThemeService`: Theme management and system preference detection
+  - `StreamingService`: SSE connection handling for agent response streaming
 
 - **State Management Services** provide reactive state:
   - `ChatStateService`: Manages conversations, messages, and chat operations
@@ -115,10 +119,11 @@ backend/
 │   └── queries/      # SQL files (schema.sql, seed.sql, complex.sql)
 ├── models/           # Pydantic request/response models
 ├── services/
-│   ├── llm.py        # Replicate API integration
-│   ├── llm_provider.py # Multi-provider LLM abstraction (OpenAI, Anthropic)
-│   ├── agent.py      # LangGraph agent for waste disposal queries
-│   └── tools/neo4j_tools.py # LangChain tools for knowledge graph
+│   ├── llm.py            # Replicate API integration
+│   ├── llm_provider.py   # Multi-provider LLM abstraction (OpenAI, Anthropic, Replicate)
+│   ├── agent.py          # LangGraph agent with multi-step reasoning
+│   ├── neo4j_service.py  # Neo4j graph database operations
+│   └── tools/neo4j_tools.py # LangChain tools for knowledge graph queries
 ├── security/         # Auth, CSRF, logging
 ├── middleware/       # Request/response middleware
 └── utils/            # Certificates, hashing
@@ -128,12 +133,12 @@ start_backend.py      # Entry point script
 
 Key backend features:
 - RESTful API endpoints for chat operations
-- Server-Sent Events (SSE) for streaming agent responses
+- Server-Sent Events (SSE) for streaming agent responses with step-by-step reasoning visibility
 - Session-based authentication with mock/guest providers
 - PostgreSQL database for conversation persistence
-- Neo4j knowledge graph for waste disposal information
-- LangGraph agent with multi-step reasoning
-- Integration with Replicate API for multiple LLM models
+- Neo4j knowledge graph for waste disposal information (categories, items, disposal methods, locations, FAQs)
+- LangGraph agent that uses Neo4j tools to answer waste disposal queries with multi-step reasoning
+- Multi-provider LLM support: Replicate (default), OpenAI, Anthropic - configured via environment variables
 
 ### Key Patterns
 - **Offline-First**: All data stored in IndexedDB, synced with backend when available
@@ -198,9 +203,10 @@ The project follows Git Flow:
 The backend provides these main endpoints (all require session authentication):
 - **Auth**: `/api/auth/mock-login`, `/api/auth/guest-login`, `/api/auth/logout`, `/api/auth/me`
 - **Conversations**: `/api/conversations`, `/api/conversation/create`, `/api/conversation/messages/{id}/{timestamp}/{count}`
-- **Messages**: 
+- **Messages**:
   - `/api/message/send` - Send a message
-  - `/api/message/generate` - Generate AI response
+  - `/api/message/generate` - Generate AI response (non-streaming)
+  - `/api/message/stream-generate` - SSE endpoint for streaming agent responses with reasoning steps
   - `/api/message/send-and-generate` - Combined endpoint for better performance
   - `/api/message/patch` - Update message
   - `/api/message/delete/{conversation_id}/{message_id}` - Delete message
@@ -236,7 +242,19 @@ The backend provides these main endpoints (all require session authentication):
 The message system uses a discriminated union pattern with factory methods:
 - **TextContent**: Regular text messages with optional file attachments
 - **VoiceContent**: Audio messages with base64 data, duration, and optional transcript
+- **AgentContent**: Agent responses with reasoning steps and final response
 - Create messages via `Message.createText()` or `Message.createVoice()`
+
+## Agent Streaming Protocol
+
+The `/api/message/stream-generate` endpoint uses Server-Sent Events (SSE) with these event types:
+- **message_start**: Contains message metadata (messageId, conversationId, roleName, time, type)
+- **step**: Agent reasoning step (thought, tool_call, tool_result, observation)
+- **token**: Individual text tokens for the final response
+- **done**: Signals completion with messageId and conversationId
+- **error**: Error information
+
+Agent steps have types: `thought`, `tool_call`, `tool_result`, `observation` - used to show the agent's reasoning process in the UI.
 
 ## Offline Support
 

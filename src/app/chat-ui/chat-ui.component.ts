@@ -336,19 +336,21 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       (voiceFile as any).isSent = true;
 
       try {
-        const durationMatch = voiceFile.name.match(/\((\d+):(\d+)\)/);
-        let duration = 0;
-        if (durationMatch) {
-          const minutes = parseInt(durationMatch[1], 10);
-          const seconds = parseInt(durationMatch[2], 10);
-          duration = minutes * 60 + seconds;
+        // Wait for the file to be uploaded and transcribed
+        // The transcript should already be set by uploadFilesImmediately in the inputfield component
+        // If not uploaded yet, wait a bit for it to complete
+        let waitAttempts = 0;
+        const maxWaitAttempts = 30; // Wait up to 30 seconds for transcription
+        while (!voiceFile.transcript && voiceFile.uploadStatus !== 'completed' && waitAttempts < maxWaitAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          waitAttempts++;
         }
 
-        await this.chatState.sendVoiceMessage(
-            voiceFile.file,
-            duration,
-            voiceFile.mimeType
-        );
+        // Get transcript - use the one from upload response, or fallback to placeholder
+        const transcript = voiceFile.transcript || 'Voice message';
+
+        // Send as a text message with the audio file as attachment
+        await this.chatState.sendMessageWithFiles(transcript, [voiceFile]);
 
         // After successfully sending, permanently remove it from the pending list.
         this.pendingFiles = this.pendingFiles.filter(fp => fp.id !== voiceFile.id);

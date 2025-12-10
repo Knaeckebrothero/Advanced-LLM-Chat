@@ -39,4 +39,5 @@ export interface IFilePreview {
   uploadProgress?: number;
   uploadStatus: UploadStatus;
   error?: string;
+  transcript?: string;  // For audio files - transcript from backend transcription
 }

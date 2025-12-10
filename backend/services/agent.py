@@ -16,7 +16,12 @@ import logging
 
 from .tools.neo4j_tools import get_all_tools
 from ..models.message import AgentStep
-from .image_handler import prepare_image_for_llm, is_image_processing_enabled
+from .image_handler import (
+    prepare_image_for_llm,
+    is_image_processing_enabled,
+    prepare_document_for_llm,
+    prepare_audio_for_llm
+)
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +282,9 @@ class FessiAgent:
     async def astream_full(
         self,
         user_message: str,
-        images: Optional[list[dict]] = None
+        images: Optional[list[dict]] = None,
+        documents: Optional[list[dict]] = None,
+        audio: Optional[list[dict]] = None
     ) -> AsyncGenerator[tuple[str, Union[AgentStep, str]], None]:
         """
         Stream both reasoning steps and response tokens.
@@ -288,12 +295,14 @@ class FessiAgent:
         Args:
             user_message: The user's input message.
             images: Optional list of image attachments with fileId and mimeType.
+            documents: Optional list of document attachments with fileId, mimeType, and name.
+            audio: Optional list of audio attachments with fileId and name.
 
         Yields:
             Tuples of (type, data) where type is "step" or "token".
         """
-        # Build message content - multi-modal if images are provided
-        message_content = self._build_message_content(user_message, images)
+        # Build message content - multi-modal if images/documents/audio are provided
+        message_content = self._build_message_content(user_message, images, documents, audio)
         initial_state: AgentState = {
             "messages": [HumanMessage(content=message_content)],
             "steps": [],
@@ -393,68 +402,161 @@ class FessiAgent:
     def _build_message_content(
         self,
         text: str,
-        images: Optional[list[dict]] = None
+        images: Optional[list[dict]] = None,
+        documents: Optional[list[dict]] = None,
+        audio: Optional[list[dict]] = None
     ) -> Union[str, list[dict]]:
         """
-        Build message content, supporting multi-modal format when images are provided.
+        Build message content, supporting multi-modal format when images/documents/audio are provided.
 
         Args:
             text: The text content of the message.
             images: Optional list of image attachments with fileId and mimeType.
+            documents: Optional list of document attachments with fileId, mimeType, and name.
+            audio: Optional list of audio attachments with fileId and name.
 
         Returns:
             Either a string (text-only) or a list of content blocks (multi-modal).
         """
-        # If no images or image processing is disabled, return plain text
-        if not images or not is_image_processing_enabled():
-            # If images were provided but processing is disabled, add a note
+        has_images = images and is_image_processing_enabled()
+        has_documents = documents and len(documents) > 0
+        has_audio = audio and len(audio) > 0
+
+        # If no attachments, return plain text
+        if not has_images and not has_documents and not has_audio:
+            # Add note if images were provided but processing is disabled
             if images and not is_image_processing_enabled():
                 image_count = len(images)
                 image_note = f"\n\n[Note: {image_count} image(s) attached but image processing is disabled]"
                 return text + image_note
             return text
 
-        # Build multi-modal content
+        # Build content - will include text, documents, and/or images
         content_blocks = []
+        additional_text_parts = []
 
-        # Add text content first
-        content_blocks.append({
+        # Process documents first (add text content)
+        docs_loaded = 0
+        docs_failed = []
+
+        if has_documents:
+            for doc in documents:
+                file_id = doc.get('fileId', '')
+                mime_type = doc.get('mimeType', '')
+                name = doc.get('name', 'Unknown')
+
+                if not file_id:
+                    continue
+
+                doc_content = prepare_document_for_llm(file_id, mime_type, name)
+                if doc_content:
+                    docs_loaded += 1
+                    # Add document text as a section
+                    if doc_content.get('text'):
+                        additional_text_parts.append(
+                            f"\n\n--- Document: {name} ---\n{doc_content['text']}\n--- End of {name} ---"
+                        )
+                    # Add page images if available
+                    for page_image in doc_content.get('images', []):
+                        content_blocks.append(page_image)
+                    logger.info(f"Loaded document for LLM: {name} ({file_id})")
+                else:
+                    docs_failed.append(name)
+                    logger.warning(f"Failed to load document for LLM: {name} ({file_id})")
+
+        # Process audio transcripts (add to text content)
+        audio_loaded = 0
+        audio_failed = []
+
+        if has_audio:
+            for aud in audio:
+                file_id = aud.get('fileId', '')
+                name = aud.get('name', 'Unknown')
+
+                if not file_id:
+                    continue
+
+                audio_content = prepare_audio_for_llm(file_id, name)
+                if audio_content and audio_content.get('text'):
+                    audio_loaded += 1
+                    additional_text_parts.append(
+                        f"\n\n--- Audio Transcript: {name} ---\n{audio_content['text']}\n--- End of {name} ---"
+                    )
+                    logger.info(f"Loaded audio transcript for LLM: {name} ({file_id})")
+                else:
+                    audio_failed.append(name)
+                    logger.warning(f"Failed to load audio transcript for LLM: {name} ({file_id})")
+
+        # Build the main text content
+        full_text = text
+        if additional_text_parts:
+            full_text += "".join(additional_text_parts)
+
+        # If we only have document/audio text (no images), return as plain text
+        if not has_images and len(content_blocks) == 0:
+            failure_notes = []
+            if docs_failed:
+                failure_notes.append(f"Failed to load {len(docs_failed)} document(s): {', '.join(docs_failed)}")
+            if audio_failed:
+                failure_notes.append(f"Failed to load {len(audio_failed)} audio transcript(s): {', '.join(audio_failed)}")
+            if failure_notes:
+                full_text += f"\n\n[Note: {'; '.join(failure_notes)}]"
+            return full_text
+
+        # Add text content block first
+        content_blocks.insert(0, {
             "type": "text",
-            "text": text
+            "text": full_text
         })
 
         # Add image content blocks
         images_loaded = 0
         images_failed = []
 
-        for image in images:
-            file_id = image.get('fileId', '')
-            mime_type = image.get('mimeType', '')
-            name = image.get('name', 'Unknown')
+        if has_images:
+            for image in images:
+                file_id = image.get('fileId', '')
+                mime_type = image.get('mimeType', '')
+                name = image.get('name', 'Unknown')
 
-            if not file_id:
-                continue
+                if not file_id:
+                    continue
 
-            image_content = prepare_image_for_llm(file_id, mime_type)
-            if image_content:
-                content_blocks.append(image_content)
-                images_loaded += 1
-                logger.info(f"Loaded image for LLM: {name} ({file_id})")
-            else:
-                images_failed.append(name)
-                logger.warning(f"Failed to load image for LLM: {name} ({file_id})")
+                image_content = prepare_image_for_llm(file_id, mime_type)
+                if image_content:
+                    content_blocks.append(image_content)
+                    images_loaded += 1
+                    logger.info(f"Loaded image for LLM: {name} ({file_id})")
+                else:
+                    images_failed.append(name)
+                    logger.warning(f"Failed to load image for LLM: {name} ({file_id})")
 
-        # If no images were successfully loaded, return plain text with note
-        if images_loaded == 0:
+        # If no content was successfully loaded, return plain text with notes
+        if images_loaded == 0 and docs_loaded == 0 and audio_loaded == 0 and len(content_blocks) == 1:
+            notes = []
             if images_failed:
-                return text + f"\n\n[Note: Failed to load {len(images_failed)} image(s): {', '.join(images_failed)}]"
+                notes.append(f"Failed to load {len(images_failed)} image(s): {', '.join(images_failed)}")
+            if docs_failed:
+                notes.append(f"Failed to load {len(docs_failed)} document(s): {', '.join(docs_failed)}")
+            if audio_failed:
+                notes.append(f"Failed to load {len(audio_failed)} audio transcript(s): {', '.join(audio_failed)}")
+            if notes:
+                return text + f"\n\n[Note: {'; '.join(notes)}]"
             return text
 
-        # If some images failed, add a note
+        # Add failure notes if any
+        failure_notes = []
         if images_failed:
+            failure_notes.append(f"Failed to load {len(images_failed)} image(s): {', '.join(images_failed)}")
+        if docs_failed:
+            failure_notes.append(f"Failed to load {len(docs_failed)} document(s): {', '.join(docs_failed)}")
+        if audio_failed:
+            failure_notes.append(f"Failed to load {len(audio_failed)} audio transcript(s): {', '.join(audio_failed)}")
+
+        if failure_notes:
             content_blocks.append({
                 "type": "text",
-                "text": f"\n[Note: Failed to load {len(images_failed)} image(s): {', '.join(images_failed)}]"
+                "text": f"\n[Note: {'; '.join(failure_notes)}]"
             })
 
         return content_blocks
