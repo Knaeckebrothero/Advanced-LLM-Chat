@@ -108,14 +108,18 @@ def _get_openai_llm(
             "OPENAI_API_KEY environment variable is required for OpenAI provider."
         )
 
+    base_url = os.getenv("OPENAI_BASE_URL")
     model = model or os.getenv("OPENAI_MODEL", DEFAULT_MODELS[PROVIDER_OPENAI])
 
     logger.info(f"Initializing OpenAI LLM with model: {model}")
+    if base_url:
+        logger.info(f"Using custom OpenAI base URL: {base_url}")
 
     return ChatOpenAI(
         model=model,
         temperature=temperature,
         api_key=api_key,
+        base_url=base_url,
         **kwargs
     )
 
