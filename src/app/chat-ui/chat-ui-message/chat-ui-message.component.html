@@ -1,13 +1,26 @@
-<!-- Message to be used within the Chat UI component -->
-<div class="message-display-container">
-  <div class="message"
-       [class.message-user]="message.roleName === 'user'"
-       [class.message-not-user]="message.roleName !== 'user'"
-       [class.message-system]="message.roleName === 'system'"
-       [class.message-voice]="message.isVoice()">
+<!-- Modern Chat Message Component -->
+<div class="message-row" [class.message-row--user]="message.roleName === 'user'"
+  [class.message-row--assistant]="message.roleName !== 'user'"
+  [class.message-row--system]="message.roleName === 'system'" [class.message-row--voice]="message.isVoice()">
 
-    <span class="message-user-name">{{ message.roleName }}</span>
+  <!-- Avatar -->
+  <div class="message-avatar" [class.message-avatar--user]="message.roleName === 'user'">
+    <span class="avatar-icon">
+      <mat-icon *ngIf="message.roleName === 'user'">person</mat-icon>
+      <mat-icon *ngIf="message.roleName !== 'user' && !message.isAgent()">smart_toy</mat-icon>
+      <mat-icon *ngIf="message.isAgent()">psychology</mat-icon>
+    </span>
+  </div>
 
+  <!-- Message Content Wrapper -->
+  <div class="message-content-wrapper">
+    <!-- Role Label -->
+    <div class="message-role-label">
+      <span class="role-name">{{ message.roleName === 'user' ? 'You' : (message.roleName === 'system' ? 'System' :
+        'Assistant') }}</span>
+    </div>
+
+    <!-- Message Body -->
     <div class="message-body">
       <!-- == TEXT MESSAGE == -->
       <ng-container *ngIf="message.isText()">
@@ -15,21 +28,14 @@
         <div *ngIf="message.hasAttachments()" class="message-attachments">
           <ng-container *ngFor="let attachment of message.attachments">
             <!-- Audio attachments use the AudioMessageComponent -->
-            <app-audio-message
-              *ngIf="attachment.type === 'audio'"
-              [attachment]="attachment"
-              [transcript]="attachment.transcript"
-              [messageId]="message.id"
-              [conversationId]="message.conversationId">
+            <app-audio-message *ngIf="attachment.type === 'audio'" [attachment]="attachment"
+              [transcript]="attachment.transcript" [messageId]="message.id" [conversationId]="message.conversationId">
             </app-audio-message>
 
             <!-- Non-audio attachments -->
-            <div *ngIf="attachment.type !== 'audio'"
-                 (click)="onAttachmentClick($event, attachment)"
-                 class="attachment-item"
-                 [class.is-image]="attachment.type === 'image'"
-                 [class.is-synced]="!attachment.file && !attachment.preview"
-                 [class.has-error]="attachment.error">
+            <div *ngIf="attachment.type !== 'audio'" (click)="onAttachmentClick($event, attachment)"
+              class="attachment-item" [class.is-image]="attachment.type === 'image'"
+              [class.is-synced]="!attachment.file && !attachment.preview" [class.has-error]="attachment.error">
 
               <!-- Image with local preview -->
               <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
@@ -66,15 +72,12 @@
         </div>
 
         <!-- Display formatted message when not editing (only if not a voice message with just transcript) -->
-        <div *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()" [innerHTML]="formattedTextContent"></div>
+        <div *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()" class="message-text"
+          [innerHTML]="formattedTextContent"></div>
 
         <!-- Edit mode - only for text messages -->
-        <div *ngIf="editing"
-             contenteditable="true"
-             class="editable-message"
-             #editableDiv
-             [innerText]="message.textContent"
-             (blur)="updateContent(editableDiv.innerText)">
+        <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
+          [innerText]="message.textContent" (blur)="updateContent(editableDiv.innerText)">
         </div>
       </ng-container>
 
@@ -101,84 +104,113 @@
         <div class="agent-message">
           <!-- Status indicator while processing -->
           <div class="agent-status" *ngIf="message.content.status !== 'complete'">
-            <mat-spinner diameter="16" *ngIf="message.content.status === 'thinking' || message.content.status === 'responding'"></mat-spinner>
-            <span>{{ getStatusText(message.content.status) }}</span>
+            <div class="status-indicator">
+              <span class="status-dot"
+                *ngIf="message.content.status === 'thinking' || message.content.status === 'responding'"></span>
+              <span class="status-text">{{ getStatusText(message.content.status) }}</span>
+            </div>
           </div>
 
           <!-- Collapsible reasoning steps -->
-          <mat-accordion class="agent-steps" *ngIf="message.content.steps.length > 0">
-            <mat-expansion-panel *ngFor="let step of message.content.steps; trackBy: trackStep"
-                                 [expanded]="false"
-                                 class="agent-step"
-                                 [ngClass]="'step-' + step.type">
-              <mat-expansion-panel-header>
-                <mat-panel-title>
-                  <mat-icon>{{ getStepIcon(step.type) }}</mat-icon>
-                  <span class="step-title">{{ 'tools.' + step.title | translate }}</span>
-                </mat-panel-title>
-                <mat-panel-description *ngIf="step.duration">
-                  {{ step.duration }}ms
-                </mat-panel-description>
-              </mat-expansion-panel-header>
+          <div class="agent-steps-container" *ngIf="message.content.steps.length > 0">
+            <mat-accordion class="agent-steps" multi>
+              <mat-expansion-panel *ngFor="let step of message.content.steps; trackBy: trackStep" [expanded]="false"
+                class="agent-step" [ngClass]="'step-' + step.type">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>
+                    <div class="step-icon-wrapper" [ngClass]="'step-icon--' + step.type">
+                      <mat-icon>{{ getStepIcon(step.type) }}</mat-icon>
+                    </div>
+                    <span class="step-title">{{ 'tools.' + step.title | translate }}</span>
+                  </mat-panel-title>
+                  <mat-panel-description *ngIf="step.duration">
+                    <span class="step-duration">{{ step.duration }}ms</span>
+                  </mat-panel-description>
+                </mat-expansion-panel-header>
 
-              <div class="step-content">
-                <pre *ngIf="step.type === 'tool_call' || step.type === 'tool_result'">{{ step.content }}</pre>
-                <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'">{{ 'tool_content.' + step.content | translate }}</p>
+                <div class="step-content">
+                  <pre *ngIf="step.type === 'tool_call' || step.type === 'tool_result'"
+                    class="step-code">{{ step.content }}</pre>
+                  <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'" class="step-text">{{
+                    'tool_content.' + step.content | translate }}</p>
 
-                <!-- Tool-specific metadata display -->
-                <div class="step-metadata" *ngIf="step.metadata">
-                  <pre class="metadata-json">{{ step.metadata | json }}</pre>
+                  <!-- Tool-specific metadata display -->
+                  <div class="step-metadata" *ngIf="step.metadata">
+                    <pre class="metadata-json">{{ step.metadata | json }}</pre>
+                  </div>
                 </div>
-              </div>
-            </mat-expansion-panel>
-          </mat-accordion>
+              </mat-expansion-panel>
+            </mat-accordion>
+          </div>
 
           <!-- Final response with streaming cursor -->
           <div class="agent-response" *ngIf="message.content.finalResponse || message.content.status === 'responding'">
-            <div [innerHTML]="formatAgentResponse(message.content.finalResponse)"></div>
-            <span class="streaming-cursor" *ngIf="message.content.status === 'responding'">▊</span>
+            <div class="response-text" [innerHTML]="formatAgentResponse(message.content.finalResponse)"></div>
+            <span class="streaming-cursor" *ngIf="message.content.status === 'responding'"></span>
           </div>
 
           <!-- Error display -->
           <div class="agent-error" *ngIf="message.content.error">
-            <mat-icon>error</mat-icon>
+            <mat-icon>error_outline</mat-icon>
             <span>{{ message.content.error }}</span>
           </div>
         </div>
       </ng-container>
     </div>
 
-    <div class="message-footer">
-      <!-- Buttons for Edit, Regenerate, and Insert something above the message. -->
-      <div *ngIf="!editing" class="message-actions">
-        <!-- Only show edit button for text messages -->
-        <button *ngIf="isEditable" mat-icon-button (click)="editMessage()" aria-label="Edit message">
+    <!-- Message Actions -->
+    <div class="message-actions" [class.message-actions--visible]="editing">
+      <ng-container *ngIf="!editing">
+        <!-- Copy button for AI messages -->
+        <button *ngIf="message.roleName !== 'user'" mat-icon-button class="action-btn" (click)="copyMessage()"
+          title="Copy" aria-label="Copy message">
+          <mat-icon>content_copy</mat-icon>
+        </button>
+
+        <!-- Edit button - only for text messages -->
+        <button *ngIf="isEditable" mat-icon-button class="action-btn" (click)="editMessage()" title="Edit"
+          aria-label="Edit message">
           <mat-icon>edit</mat-icon>
         </button>
+
         <!-- Regenerate button - only for AI messages that are the last AI message -->
-        <button *ngIf="canRegenerate" mat-icon-button (click)="regenerateMessage()" aria-label="Regenerate message">
+        <button *ngIf="canRegenerate" mat-icon-button class="action-btn" (click)="regenerateMessage()"
+          title="Regenerate" aria-label="Regenerate message">
           <mat-icon>refresh</mat-icon>
         </button>
+
         <!-- Rating buttons - only for AI messages -->
-        <button *ngIf="message.roleName !== 'user'" mat-icon-button [class.active-rating]="message.rating === 1" (click)="rateMessage(1)" aria-label="Thumbs up">
+        <button *ngIf="message.roleName !== 'user'" mat-icon-button class="action-btn"
+          [class.action-btn--active]="message.rating === 1" (click)="rateMessage(1)" title="Good response"
+          aria-label="Thumbs up">
           <mat-icon>thumb_up</mat-icon>
         </button>
-        <button *ngIf="message.roleName !== 'user'" mat-icon-button [class.active-rating]="message.rating === 0" (click)="rateMessage(0)" aria-label="Thumbs down">
+        <button *ngIf="message.roleName !== 'user'" mat-icon-button class="action-btn"
+          [class.action-btn--active]="message.rating === 0" (click)="rateMessage(0)" title="Bad response"
+          aria-label="Thumbs down">
           <mat-icon>thumb_down</mat-icon>
         </button>
-        <button mat-icon-button (click)="deleteMessage()" aria-label="Delete message">
-          <mat-icon>delete</mat-icon>
+
+        <!-- Delete button -->
+        <button mat-icon-button class="action-btn action-btn--danger" (click)="deleteMessage()" title="Delete"
+          aria-label="Delete message">
+          <mat-icon>delete_outline</mat-icon>
         </button>
-      </div>
+      </ng-container>
+
       <!-- Edit mode actions -->
-      <div *ngIf="editing" class="message-actions">
-        <button mat-icon-button (click)="doneEditing()" aria-label="Done editing">
-          <mat-icon>done</mat-icon>
+      <ng-container *ngIf="editing">
+        <button mat-icon-button class="action-btn action-btn--confirm" (click)="doneEditing()"
+          aria-label="Save changes">
+          <mat-icon>check</mat-icon>
         </button>
-        <button mat-icon-button (click)="abortEditing()" aria-label="Abort editing">
-          <mat-icon>clear</mat-icon>
+        <button mat-icon-button class="action-btn action-btn--cancel" (click)="abortEditing()"
+          aria-label="Cancel editing">
+          <mat-icon>close</mat-icon>
         </button>
-      </div>
+      </ng-container>
+
+      <!-- Timestamp -->
       <span class="message-timestamp">{{ message.time | date:'shortTime' }}</span>
     </div>
   </div>

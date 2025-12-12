@@ -30,6 +30,25 @@ export class ChatUiMessageComponent implements OnChanges {
     private dialog: MatDialog
   ) { }
 
+  // Copy message content to clipboard
+  copyMessage(): void {
+    let textToCopy = '';
+    if (this.message.isText()) {
+      textToCopy = this.message.textContent || '';
+    } else if (this.message.isAgent()) {
+      textToCopy = this.message.content.finalResponse || '';
+    }
+
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        console.log('Message copied to clipboard');
+      }).catch(err => {
+        console.error('Failed to copy message:', err);
+      });
+    }
+  }
+
+
   ngOnChanges(changes: SimpleChanges) {
     if (changes['message']) {
       this.updateFormattedContent();

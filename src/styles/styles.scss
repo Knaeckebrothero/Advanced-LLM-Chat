@@ -6,6 +6,9 @@
 // Import the theme mixin.
 @use 'themes/themes' as theme;
 
+// --- Modern Font Import ---
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 // --- STEP 1: Include Core & Typography Styles Once ---
 @include mat.core();
 @include mat.typography-hierarchy(typography.$custom-typography);
@@ -24,14 +27,19 @@
 }
 
 // --- Global Styles ---
-html, body {
+html,
+body {
   height: 100vh;
   width: 100%;
   margin: 0;
   padding: 0;
   overflow: clip;
-  // Use the font family defined in the Material typography config.
-  font-family: mat.m2-font-family(typography.$custom-typography);
+  // Use modern font stack
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  // Improve text rendering
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -42,22 +50,61 @@ body {
 html {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+// Modern selection color
+::selection {
+  background-color: rgba(var(--theme-primary-rgb), 0.3);
+  color: inherit;
+}
+
+// Modern link styles
+a {
+  color: var(--theme-link);
+  text-decoration: none;
+  transition: color 0.2s ease;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// Focus visible styles for accessibility
+:focus-visible {
+  outline: 2px solid var(--theme-primary);
+  outline-offset: 2px;
+}
+
+// Hide focus ring for mouse users
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 // Selective transitions for theme-aware elements
 body.theme-initialized {
+
   // Main containers and surfaces
-  .sidebar, .content-wrapper, .chat-ui, .settings-container,
-  .input-field-container, .message, .surface-element,
-  .nav-button, .new-conversation-button, mat-card {
+  .sidebar,
+  .content-wrapper,
+  .chat-ui,
+  .settings-container,
+  .input-field-container,
+  .message,
+  .surface-element,
+  .nav-button,
+  .new-conversation-button,
+  mat-card {
     transition: background-color 0.3s ease,
-                color 0.3s ease,
-                border-color 0.3s ease,
-                box-shadow 0.3s ease;
+      color 0.3s ease,
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
   }
 
   // Background pseudo-element transition
@@ -66,17 +113,22 @@ body.theme-initialized {
   }
 
   // Form elements
-  input, textarea, select, .custom-input {
+  input,
+  textarea,
+  select,
+  .custom-input {
     transition: background-color 0.3s ease,
-                color 0.3s ease,
-                border-color 0.3s ease;
+      color 0.3s ease,
+      border-color 0.3s ease;
   }
 
   // Buttons and interactive elements
-  button, .toggle-switch, .slider {
+  button,
+  .toggle-switch,
+  .slider {
     transition: background-color 0.3s ease,
-                color 0.3s ease,
-                border-color 0.3s ease;
+      color 0.3s ease,
+      border-color 0.3s ease;
   }
 }
 
@@ -135,13 +187,25 @@ body.theme-initialized {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes zoomIn {
-  from { transform: scale(0.9); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 // --- Angular Material Dialog Custom Styles for Image Preview ---

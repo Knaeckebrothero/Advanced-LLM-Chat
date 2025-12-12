@@ -1,398 +1,633 @@
 // src/app/chat-ui/chat-ui-message/chat-ui-message.component.scss
-@use 'src/styles/variables' as vars;
+// Modern AI Chat Message Styles - Inspired by ChatGPT/Claude
 
-// Ensure the message display container takes up the full width so that the messages are displayed in a column.
-.message-display-container {
+// ============================================
+// MESSAGE ROW - Main Container
+// ============================================
+.message-row {
   display: flex;
-  flex-direction: column;
-  flex-grow: 1;
+  gap: 16px;
+  padding: 24px 0;
   width: 100%;
-  overflow-y: auto;
+  max-width: 768px;
+  margin: 0 auto;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    .message-actions {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+
+  // User message styling
+  &--user {
+    .message-avatar {
+      background: var(--theme-avatar-user);
+    }
+  }
+
+  // Assistant message styling
+  &--assistant {
+    .message-avatar {
+      background: var(--theme-avatar-ai);
+    }
+  }
+
+  // System message styling
+  &--system {
+    opacity: 0.8;
+    padding: 16px 0;
+
+    .message-avatar {
+      background: var(--theme-border);
+    }
+
+    .message-content-wrapper {
+      font-style: italic;
+    }
+  }
 }
 
-// Message component styles
-.message {
-  //
+// ============================================
+// AVATAR
+// ============================================
+.message-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   display: flex;
-  // Aligns the message to the left or right side of the screen
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: var(--theme-shadow-sm);
+
+  .avatar-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    mat-icon {
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+    }
+  }
+}
+
+// ============================================
+// MESSAGE CONTENT WRAPPER
+// ============================================
+.message-content-wrapper {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
-  max-width: 60%;
-  // Adds space between the message and the edge of the screen
-  padding: 10px;
-  // Gives the message rounded corners
-  border-radius: 20px;
-  // Elevates the message from the background
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  // Adds space between messages
-  margin-bottom: 20px;
-  color: var(--theme-text); // Use theme text color
+  gap: 8px;
+}
+
+// Role Label
+.message-role-label {
+  .role-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--theme-text);
+  }
+}
+
+// ============================================
+// MESSAGE BODY
+// ============================================
+.message-body {
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--theme-text);
   word-wrap: break-word;
-  text-align: left;
-  position: relative;
+  overflow-wrap: break-word;
 
-  // Adjusts the messages for the user
-  &.message-user {
-    // Aligns the message to the right side of the screen
-    align-self: flex-end;
-    // Flattens the top left corner
-    border-top-right-radius: 0;
-    // Use the specific user message background from the theme
-    background-color: var(--theme-msg-user-bg);
-    .message-user-name {
-      display: none;
+  .message-text {
+    white-space: pre-wrap;
+  }
+}
+
+// ============================================
+// ATTACHMENTS
+// ============================================
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--theme-hover);
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  max-width: 280px;
+
+  &:hover {
+    background-color: var(--theme-active);
+    border-color: var(--theme-primary);
+    transform: translateY(-1px);
+  }
+
+  &.is-image {
+    padding: 0;
+    width: 160px;
+    height: 160px;
+    overflow: hidden;
+    position: relative;
+
+    .attachment-thumbnail {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
+
+.attachment-thumbnail {
+  width: 100%;
+  height: 100%;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 11px;
+  }
+}
+
+.attachment-info-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  color: white;
+  padding: 24px 12px 12px;
+  font-size: 12px;
+  border-bottom-left-radius: 11px;
+  border-bottom-right-radius: 11px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+
+  .attachment-item:hover & {
+    opacity: 1;
+  }
+}
+
+.attachment-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: var(--theme-hover);
+
+  .placeholder-icon {
+    font-size: 40px;
+    width: 40px;
+    height: 40px;
+    opacity: 0.5;
+  }
+
+  .placeholder-text {
+    font-size: 11px;
+    opacity: 0.7;
+    text-align: center;
+    padding: 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .placeholder-hint {
+    font-size: 10px;
+    opacity: 0.5;
+    color: var(--theme-primary);
+  }
+}
+
+.attachment-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--theme-primary);
+  border-radius: 10px;
+  flex-shrink: 0;
+
+  mat-icon {
+    font-size: 22px;
+    color: var(--theme-primary-contrast);
+  }
+}
+
+.attachment-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+
+  .attachment-name {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attachment-size {
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.attachment-error {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+
+  .error-icon {
+    font-size: 20px;
+    color: #ef4444;
+  }
+}
+
+.attachment-item.has-error {
+  border-color: rgba(239, 68, 68, 0.5);
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+.attachment-item.is-synced {
+  border-style: dashed;
+}
+
+// ============================================
+// VOICE MESSAGE
+// ============================================
+.voice-message {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: var(--theme-hover);
+  border-radius: 16px;
+  border: 1px solid var(--theme-border);
+
+  .voice-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .voice-icon {
+      color: var(--theme-primary);
+    }
+
+    .voice-duration {
+      font-weight: 500;
+      font-size: 14px;
     }
   }
 
-  // Adjusts the messages for others
-  &.message-not-user {
-    // Aligns the message to the left side of the screen
-    align-self: flex-start;
-    // Flattens the top right corner
-    border-top-left-radius: 0;
-    // Use the specific assistant message background from the theme
-    background-color: var(--theme-msg-assistant-bg);
-  }
-
-  // Adjusts the messages for the system
-  &.message-system {
-    // Center the message
-    align-self: center;
-    border-radius: 0;
-    // Use a neutral surface color for system messages
+  .voice-transcript {
+    padding: 12px 16px;
     background-color: var(--theme-surface);
-    border: 1px solid var(--theme-border);
-    .message-user-name, .message-timestamp {
-      display: none;
+    border-radius: 12px;
+    font-style: italic;
+    opacity: 0.9;
+  }
+
+  .voice-player {
+    .voice-audio-player {
+      width: 100%;
+      height: 40px;
+      border-radius: 20px;
+    }
+  }
+}
+
+// ============================================
+// AGENT MESSAGE
+// ============================================
+.agent-message {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  .agent-status {
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background-color: var(--theme-hover);
+      border-radius: 20px;
+      font-size: 14px;
+      color: var(--theme-text-secondary);
     }
 
-    .message-footer {
-      align-self: center;
-      .message-timestamp {
-        display: none;
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--theme-primary);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.5;
+        transform: scale(0.9);
       }
     }
   }
 
-  // --- Voice Message ---
-  &.message-voice {
-    .voice-message {
+  .agent-steps-container {
+    .agent-steps {
       display: flex;
       flex-direction: column;
       gap: 8px;
 
-      .voice-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        .voice-icon { font-size: 1.2em; }
-        .voice-duration {
-          font-weight: 500;
-          color: var(--theme-text);
-        }
-      }
+      .agent-step {
+        background-color: var(--theme-surface);
+        border: 1px solid var(--theme-border);
+        border-radius: 12px !important;
+        box-shadow: none !important;
+        overflow: hidden;
 
-      .voice-transcript {
-        padding: 8px;
-        // Use a subtle background for the transcript
-        background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
-        border-radius: 8px;
-        font-style: italic;
-        color: var(--theme-text);
-        opacity: 0.9;
-      }
-
-      .voice-player {
-        margin-top: 8px;
-
-        .voice-audio-player {
-          width: 100%;
-          height: 40px;
-          border-radius: 20px;
-          &::-webkit-media-controls-panel {
-            background-color: transparent;
-          }
-
-          &::-webkit-media-controls-play-button,
-          &::-webkit-media-controls-current-time-display,
-          &::-webkit-media-controls-time-remaining-display {
-            color: var(--theme-text);
-          }
-        }
-      }
-    }
-  }
-}
-
-// Message username
-.message-user-name {
-  // Space between username and message text
-  margin-bottom: 4px;
-  // Slightly smaller font for username
-  font-size: 0.80em;
-}
-
-// Message content
-.message-body {
-  // Font size for message text content
-  font-size: 1em;
-
-  // Preserve line breaks and spaces in messages
-  white-space: pre-wrap;
-
-  // Ensure text wraps properly at container edges
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-
-  // Prevent text from overflowing the message bubble
-  max-width: 100%;
-
-  // Attachments styling
-  .message-attachments {
-    margin-bottom: 12px;
-    display: flex;
-    flex-wrap: nowrap;      // <-- Changed from 'wrap' to 'nowrap'
-    gap: 8px;
-    overflow-x: auto;       // <-- Added for horizontal scrolling
-    overflow-y: hidden;     // <-- Added to hide vertical scrollbar
-    padding-bottom: 8px;    // <-- Added padding for scrollbar visibility
-
-    // Custom scrollbar styling
-    &::-webkit-scrollbar {
-      height: 4px;
-    }
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    &::-webkit-scrollbar-thumb {
-      background-color: rgba(var(--theme-primary-contrast-rgb), 0.2);
-      border-radius: 4px;
-    }
-  }
-
-    // Target the <a> tag to remove link styling
-    a.attachment-item {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    .attachment-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
-      border: 1px solid rgba(var(--theme-primary-contrast-rgb), 0.1);
-      border-radius: 18px;
-      max-width: 250px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-
-      &:hover {
-        background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
-      }
-
-      &.is-image {
-        width: 120px;
-        height: 120px;
-        padding: 0;
-        border-radius: 12px;
-        position: relative;
-        flex-shrink: 0; // Prevents the image from shrinking
-
-        .attachment-thumbnail {
-          width: 100%;
-          height: 100%;
-          border-radius: 12px;
-        }
-
-        .attachment-info, .attachment-icon {
+        &::before {
           display: none;
         }
 
-        &:hover .attachment-info-overlay {
-          opacity: 1;
+        // Step type colors
+        &.step-thought .step-icon-wrapper {
+          background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+        }
+
+        &.step-tool_call .step-icon-wrapper {
+          background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+        }
+
+        &.step-tool_result .step-icon-wrapper {
+          background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+        }
+
+        &.step-observation .step-icon-wrapper {
+          background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%);
+        }
+
+        ::ng-deep .mat-expansion-panel-header {
+          padding: 12px 16px;
+          font-family: inherit;
+
+          .mat-expansion-panel-header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-right: 16px;
+
+            .step-icon-wrapper {
+              width: 28px;
+              height: 28px;
+              border-radius: 8px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+
+              mat-icon {
+                color: white;
+                font-size: 16px;
+                width: 16px;
+                height: 16px;
+              }
+            }
+
+            .step-title {
+              font-weight: 500;
+              font-size: 14px;
+              color: var(--theme-text);
+            }
+          }
+
+          .mat-expansion-panel-header-description {
+            .step-duration {
+              font-size: 12px;
+              color: var(--theme-text-secondary);
+              font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            }
+          }
+        }
+
+        ::ng-deep .mat-expansion-panel-body {
+          padding: 0 16px 16px;
+        }
+
+        .step-content {
+          .step-code {
+            background: var(--theme-code-bg);
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            border: 1px solid var(--theme-border);
+          }
+
+          .step-text {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.6;
+          }
+
+          .step-metadata {
+            margin-top: 12px;
+
+            .metadata-json {
+              background: var(--theme-code-bg);
+              padding: 12px;
+              border-radius: 8px;
+              font-size: 12px;
+              max-height: 200px;
+              overflow: auto;
+              font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+              border: 1px solid var(--theme-border);
+            }
+          }
         }
       }
     }
+  }
 
-  .attachment-thumbnail {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    overflow: hidden;
-    flex-shrink: 0;
-    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+  .agent-response {
+    line-height: 1.75;
 
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
+    .response-text {
+      white-space: pre-wrap;
+    }
+
+    .streaming-cursor {
+      display: inline-block;
+      width: 3px;
+      height: 1.2em;
+      background-color: var(--theme-primary);
+      margin-left: 4px;
+      animation: blink 0.8s infinite;
+      vertical-align: text-bottom;
+      border-radius: 1px;
+    }
+
+    @keyframes blink {
+
+      0%,
+      50% {
+        opacity: 1;
+      }
+
+      51%,
+      100% {
+        opacity: 0;
+      }
     }
   }
 
-  .attachment-info-overlay {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    padding: 4px 8px;
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    border-bottom-left-radius: 11px;
-    border-bottom-right-radius: 11px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    pointer-events: none;
-  }
-
-  .attachment-icon {
-    width: 32px;
-    height: 32px;
+  .agent-error {
     display: flex;
     align-items: center;
-    justify-content: center;
-    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
-    border-radius: 6px;
-    flex-shrink: 0;
+    gap: 12px;
+    padding: 16px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+    color: #ef4444;
 
     mat-icon {
-      font-size: 20px;
-      color: var(--theme-text);
-      opacity: 0.8;
-    }
-  }
-
-  .attachment-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1;
-
-    .attachment-name {
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .attachment-size {
-      font-size: 11px;
-      opacity: 0.7;
-    }
-  }
-
-  // Placeholder for synced images without local preview
-  .attachment-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
-    border-radius: 12px;
-
-    .placeholder-icon {
-      font-size: 32px;
-      width: 32px;
-      height: 32px;
-      opacity: 0.5;
-    }
-
-    .placeholder-text {
-      font-size: 10px;
-      opacity: 0.7;
-      max-width: 100px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-align: center;
-      padding: 0 4px;
-    }
-
-    .placeholder-hint {
-      font-size: 9px;
-      opacity: 0.5;
-    }
-  }
-
-  // Synced attachment indicator
-  .attachment-item.is-synced {
-    border-style: dashed;
-    opacity: 0.9;
-
-    &:hover {
-      opacity: 1;
-    }
-  }
-
-  // Error state for attachments
-  .attachment-item.has-error {
-    border-color: rgba(244, 67, 54, 0.5);
-    background-color: rgba(244, 67, 54, 0.05);
-  }
-
-  .attachment-error {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-
-    .error-icon {
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-      color: #f44336;
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
     }
   }
 }
 
-// Message footer
-.message-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-// Message timestamp
-.message-timestamp {
-  align-self: flex-end;
-  // Smaller font for timestamp
-  font-size: 0.50em;
-  // Space between message text and timestamp
-  margin-top: 4px;
-}
-
-// Message actions
+// ============================================
+// MESSAGE ACTIONS
+// ============================================
 .message-actions {
   display: flex;
   align-items: center;
-  // This ensures the buttons are on the same level as the timestamp
-  margin-bottom: -10px;
+  gap: 4px;
+  margin-top: 12px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
 
-  button {
-    // Reduce the size of the icons
+  &--visible {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+
     mat-icon {
-      font-size: 15px;
-      height: 15px;
-      width: 15px;
-    }
-    // Adjust padding to ensure icons are not too close to each other
-    &:not(:last-child) {
-      margin-right: 3px;
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--theme-text-secondary);
+      transition: color 0.15s ease;
     }
 
-    // Active rating style
-    &.active-rating {
+    &:hover {
+      background-color: var(--theme-hover);
+
       mat-icon {
-        color: var(--theme-primary);
+        color: var(--theme-text);
       }
     }
+
+    &--active {
+      mat-icon {
+        color: var(--theme-primary) !important;
+      }
+    }
+
+    &--danger:hover {
+      background-color: rgba(239, 68, 68, 0.1);
+
+      mat-icon {
+        color: #ef4444 !important;
+      }
+    }
+
+    &--confirm {
+      mat-icon {
+        color: #10b981;
+      }
+
+      &:hover {
+        background-color: rgba(16, 185, 129, 0.1);
+      }
+    }
+
+    &--cancel {
+      mat-icon {
+        color: #ef4444;
+      }
+
+      &:hover {
+        background-color: rgba(239, 68, 68, 0.1);
+      }
+    }
+  }
+
+  .message-timestamp {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+  }
+}
+
+// ============================================
+// EDITABLE MESSAGE
+// ============================================
+.editable-message {
+  outline: none;
+  border: 2px solid var(--theme-primary);
+  background-color: var(--theme-surface);
+  padding: 12px 16px;
+  border-radius: 12px;
+  min-height: 60px;
+  white-space: pre-wrap;
+  transition: border-color 0.2s ease;
+
+  &:focus {
+    border-color: var(--theme-secondary);
+    box-shadow: var(--theme-shadow-glow);
   }
 }
 
@@ -401,173 +636,35 @@ em {
   font-style: italic;
 }
 
-// Editable message styling
-.editable-message {
-  outline: none;
-  border: 1px dashed rgba(var(--theme-primary-contrast-rgb), 0.3);
-  padding: 4px;
-  border-radius: 4px;
-  min-height: 1.5em;
-
-  &:focus {
-    border-color: var(--theme-primary);
-    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
-  }
-}
-
-// --- Agent Message ---
-.agent-message {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-
-  .agent-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    color: var(--theme-text);
-    opacity: 0.8;
-    font-size: 0.875rem;
-
-    mat-spinner {
-      ::ng-deep circle {
-        stroke: var(--theme-primary);
-      }
-    }
-  }
-
-  .agent-steps {
-    margin-bottom: 12px;
-
-    .agent-step {
-      margin-bottom: 4px;
-      background-color: transparent;
-
-      &.step-thought {
-        --step-color: #7c4dff;
-      }
-      &.step-tool_call {
-        --step-color: #ff9100;
-      }
-      &.step-tool_result {
-        --step-color: #00c853;
-      }
-      &.step-observation {
-        --step-color: #00b8d4;
-      }
-
-      ::ng-deep .mat-expansion-panel-header {
-        padding: 0 12px;
-        height: 40px;
-
-        .mat-expansion-panel-header-title {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-
-          mat-icon {
-            color: var(--step-color);
-            font-size: 18px;
-            height: 18px;
-            width: 18px;
-          }
-
-          .step-title {
-            font-weight: 500;
-            font-size: 0.875rem;
-          }
-        }
-
-        .mat-expansion-panel-header-description {
-          font-size: 0.75rem;
-          opacity: 0.7;
-        }
-      }
-
-      ::ng-deep .mat-expansion-panel-body {
-        padding: 0 12px 12px;
-      }
-
-      .step-content {
-        pre {
-          background: rgba(var(--theme-primary-contrast-rgb), 0.05);
-          padding: 12px;
-          border-radius: 4px;
-          overflow-x: auto;
-          font-size: 0.8125rem;
-          margin: 0;
-          white-space: pre-wrap;
-          word-break: break-word;
-        }
-
-        p {
-          margin: 0;
-          font-size: 0.875rem;
-          line-height: 1.5;
-        }
-
-        .step-metadata {
-          margin-top: 8px;
-
-          .metadata-json {
-            background: rgba(var(--theme-primary-contrast-rgb), 0.08);
-            padding: 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            max-height: 200px;
-            overflow: auto;
-          }
-        }
-      }
-    }
-  }
-
-  .agent-response {
-    padding: 8px 0;
-    line-height: 1.6;
-    font-size: 1em;
-
-    .streaming-cursor {
-      display: inline-block;
-      margin-left: 2px;
-      animation: blink 1s infinite;
-      color: var(--theme-primary);
-      font-weight: bold;
-    }
-  }
-
-  // Blinking cursor animation
-  @keyframes blink {
-    0%, 50% {
-      opacity: 1;
-    }
-    51%, 100% {
-      opacity: 0;
-    }
-  }
-
-  .agent-error {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px;
-    background: rgba(244, 67, 54, 0.1);
-    color: #f44336;
-    border-radius: 4px;
-
-    mat-icon {
-      color: #f44336;
-    }
-  }
-}
-
-// Responsive adjustment, allowing the message to take more space on smaller screens
+// ============================================
+// RESPONSIVE
+// ============================================
 @media (max-width: 768px) {
-  .message {
-    max-width: 75%;
-    &.message-user {
-      margin-right: 5%;
+  .message-row {
+    padding: 16px 12px;
+    gap: 12px;
+  }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+
+    .avatar-icon mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
     }
+  }
+
+  .message-actions {
+    opacity: 1;
+    visibility: visible;
+    flex-wrap: wrap;
+  }
+
+  .attachment-item.is-image {
+    width: 120px;
+    height: 120px;
   }
 }

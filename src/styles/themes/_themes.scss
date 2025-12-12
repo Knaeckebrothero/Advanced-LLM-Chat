@@ -5,40 +5,30 @@
 // Theming mixin for the entire application.
 @mixin apply-app-theme($theme-name, $typography) {
   $theme-map: map.get(config.$themes, $theme-name);
-  $is-dark: $theme-name == 'dark';
+  $is-dark: $theme-name =='dark';
 
   // Create a full palette map that includes all required hues.
   $primary-color: map.get($theme-map, primary);
-  $primary-palette: mat.m2-define-palette((
-    100: $primary-color, 500: $primary-color, 700: $primary-color,
-    contrast: (
-      100: if($is-dark, white, rgba(black, 0.87)),
-      500: if($is-dark, white, rgba(black, 0.87)),
-      700: if($is-dark, white, rgba(black, 0.87)),
-    )
-  ));
+  $primary-palette: mat.m2-define-palette((100: $primary-color, 500: $primary-color, 700: $primary-color,
+        contrast: (100: if($is-dark, white, rgba(black, 0.87)),
+          500: if($is-dark, white, rgba(black, 0.87)),
+          700: if($is-dark, white, rgba(black, 0.87)),
+        )));
   $accent-color: map.get($theme-map, secondary);
-  $accent-palette: mat.m2-define-palette((
-    100: $accent-color, 500: $accent-color, 700: $accent-color,
-    contrast: (
-      100: if($is-dark, white, rgba(black, 0.87)),
-      500: if($is-dark, white, rgba(black, 0.87)),
-      700: if($is-dark, white, rgba(black, 0.87)),
-    )
-  ));
+  $accent-palette: mat.m2-define-palette((100: $accent-color, 500: $accent-color, 700: $accent-color,
+        contrast: (100: if($is-dark, white, rgba(black, 0.87)),
+          500: if($is-dark, white, rgba(black, 0.87)),
+          700: if($is-dark, white, rgba(black, 0.87)),
+        )));
 
   // Define the Material theme
-  $material-theme: if(
-      $is-dark,
-      mat.m2-define-dark-theme((
-        color: ( primary: $primary-palette, accent: $accent-palette ),
-        typography: $typography, density: 0,
-      )),
-      mat.m2-define-light-theme((
-        color: ( primary: $primary-palette, accent: $accent-palette ),
-        typography: $typography, density: 0,
-      ))
-  );
+  $material-theme: if($is-dark,
+      mat.m2-define-dark-theme((color: (primary: $primary-palette, accent: $accent-palette ),
+          typography: $typography, density: 0,
+        )),
+      mat.m2-define-light-theme((color: (primary: $primary-palette, accent: $accent-palette ),
+          typography: $typography, density: 0,
+        )));
 
   // Apply base styles and component themes
   & {
@@ -46,6 +36,7 @@
     --theme-background: #{map.get($theme-map, background)};
     --theme-background-image: #{map.get($theme-map, 'background-image')};
     --theme-text: #{map.get($theme-map, text)};
+    --theme-text-secondary: #{map.get($theme-map, 'text-secondary')};
     --theme-surface: #{map.get($theme-map, surface)};
     --theme-border: #{map.get($theme-map, border)};
     --theme-link: #{map.get($theme-map, link)};
@@ -58,6 +49,15 @@
     --theme-text-accent: #{map.get($theme-map, 'text-accent')};
     --theme-primary-contrast: #{map.get($theme-map, 'primary-contrast')};
     --theme-primary-contrast-rgb: #{map.get($theme-map, 'primary-contrast-rgb')};
+    // New modern tokens
+    --theme-avatar-user: #{map.get($theme-map, 'avatar-user')};
+    --theme-avatar-ai: #{map.get($theme-map, 'avatar-ai')};
+    --theme-hover: #{map.get($theme-map, 'hover')};
+    --theme-active: #{map.get($theme-map, 'active')};
+    --theme-code-bg: #{map.get($theme-map, 'code-bg')};
+    --theme-shadow-sm: #{map.get($theme-map, 'shadow-sm')};
+    --theme-shadow-md: #{map.get($theme-map, 'shadow-md')};
+    --theme-shadow-glow: #{map.get($theme-map, 'shadow-glow')};
 
     // Apply base background and text color to the body
     background-color: var(--theme-background);
