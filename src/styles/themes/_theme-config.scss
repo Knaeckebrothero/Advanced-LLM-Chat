@@ -1,31 +1,51 @@
 @use "sass:color";
 
 // Light Theme Colors
-$light-bg: #f3f9fd;
+$light-bg: #f4f4f5;
 $light-text: #1a1a1a;
+$light-text-secondary: #6b7280;
 $light-surface: #ffffff;
-$light-primary: #1976d2;
-$light-primary-rgb: 25, 118, 210; // RGB for transparency
-$light-secondary: #2C8BCC;
-$light-border: #ccc;
-$light-link: #007bff;
-$light-msg-user-bg: #e6f0fc;
-$light-msg-assistant-bg: #d8ebff;
+$light-primary: #2563eb;
+$light-primary-rgb: 37, 99, 235; // RGB for transparency
+$light-secondary: #3b82f6;
+$light-border: #e5e7eb;
+$light-link: #2563eb;
+$light-msg-user-bg: transparent;
+$light-msg-assistant-bg: transparent;
 $light-primary-contrast: #ffffff;
 $light-primary-contrast-rgb: 255, 255, 255;
+// New modern light theme tokens
+$light-avatar-user: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+$light-avatar-ai: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+$light-hover: rgba(0, 0, 0, 0.04);
+$light-active: rgba(0, 0, 0, 0.08);
+$light-code-bg: #f8fafc;
+$light-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+$light-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+$light-shadow-glow: 0 0 20px rgba(37, 99, 235, 0.15);
 
 // Dark Theme Colors
-$dark-bg: #212529;
-$dark-text: #e9ecef;
-$dark-surface: #353535;
-$dark-primary: #5C287E;
-$dark-primary-rgb: 92, 40, 126; // RGB for transparency
-$dark-secondary: #A088D2;
-$dark-border: #495057;
-$dark-link: #A088D2;
-$dark-msg-bg: #353535;
+$dark-bg: #0f0f0f;
+$dark-text: #ececf1;
+$dark-text-secondary: #8e8ea0;
+$dark-surface: #1a1a1a;
+$dark-primary: #8b5cf6;
+$dark-primary-rgb: 139, 92, 246; // RGB for transparency
+$dark-secondary: #a78bfa;
+$dark-border: #2f2f2f;
+$dark-link: #a78bfa;
+$dark-msg-bg: transparent;
 $dark-primary-contrast: #ffffff;
 $dark-primary-contrast-rgb: 255, 255, 255;
+// New modern dark theme tokens
+$dark-avatar-user: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+$dark-avatar-ai: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+$dark-hover: rgba(255, 255, 255, 0.04);
+$dark-active: rgba(255, 255, 255, 0.08);
+$dark-code-bg: #282828;
+$dark-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+$dark-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+$dark-shadow-glow: 0 0 20px rgba(139, 92, 246, 0.2);
 
 // --- Theme Maps ---
 $light-theme: (
@@ -35,15 +55,24 @@ $light-theme: (
   background: $light-bg,
   surface: $light-surface,
   text: $light-text,
+  'text-secondary': $light-text-secondary,
   border: $light-border,
   link: $light-link,
   'msg-user-bg': $light-msg-user-bg,
   'msg-assistant-bg': $light-msg-assistant-bg,
-  'input-bg': $light-bg,
+  'input-bg': $light-surface,
   'text-accent': $light-primary,
   'primary-contrast': $light-primary-contrast,
   'primary-contrast-rgb': $light-primary-contrast-rgb,
-  'background-image': url('/assets/background/light-mode-bg.svg')
+  'background-image': url('/assets/background/light-mode-bg.svg'),
+  'avatar-user': $light-avatar-user,
+  'avatar-ai': $light-avatar-ai,
+  'hover': $light-hover,
+  'active': $light-active,
+  'code-bg': $light-code-bg,
+  'shadow-sm': $light-shadow-sm,
+  'shadow-md': $light-shadow-md,
+  'shadow-glow': $light-shadow-glow
 );
 
 $dark-theme: (
@@ -53,15 +82,24 @@ $dark-theme: (
   background: $dark-bg,
   surface: $dark-surface,
   text: $dark-text,
+  'text-secondary': $dark-text-secondary,
   border: $dark-border,
   link: $dark-link,
   'msg-user-bg': $dark-msg-bg,
   'msg-assistant-bg': $dark-msg-bg,
-  'input-bg': color.adjust($dark-surface, $lightness: 5%),
+  'input-bg': $dark-surface,
   'text-accent': $dark-secondary,
   'primary-contrast': $dark-primary-contrast,
   'primary-contrast-rgb': $dark-primary-contrast-rgb,
-  'background-image': url('/assets/background/dark-mode-bg.svg')
+  'background-image': url('/assets/background/dark-mode-bg.svg'),
+  'avatar-user': $dark-avatar-user,
+  'avatar-ai': $dark-avatar-ai,
+  'hover': $dark-hover,
+  'active': $dark-active,
+  'code-bg': $dark-code-bg,
+  'shadow-sm': $dark-shadow-sm,
+  'shadow-md': $dark-shadow-md,
+  'shadow-glow': $dark-shadow-glow
 );
 
 // Central map of all themes
