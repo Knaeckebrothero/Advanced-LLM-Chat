@@ -1,4 +1,4 @@
-import { Component, ViewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Message, AgentContent } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
 import { Subscription, Observable, combineLatest } from 'rxjs';
@@ -66,11 +66,12 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   private hasReachedEnd = false;
 
   constructor(
-      private chatState: ChatStateService,
-      private uiState: UIStateService,
-      private authService: AuthService,
-      private themeService: ThemeService // Inject ThemeService
-  ) {}
+    private chatState: ChatStateService,
+    private uiState: UIStateService,
+    private authService: AuthService,
+    private themeService: ThemeService,
+    private cdr: ChangeDetectorRef
+  ) { }
 
   ngOnInit() {
     // Add this block to subscribe to theme changes
@@ -87,31 +88,53 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
 
     // Subscribe to the hasReachedEnd$ observable to keep our local property in sync
     this.destroy$.add(
-        this.hasReachedEnd$.subscribe(value => {
-          this.hasReachedEnd = value;
-        })
+      this.hasReachedEnd$.subscribe(value => {
+        this.hasReachedEnd = value;
+      })
     );
 
     this.destroy$.add(
-        this.messages$.subscribe(messages => {
-          const previousLength = this.currentMessages.length;
-          this.currentMessages = messages || [];
+      this.messages$.subscribe(messages => {
+        const previousLength = this.currentMessages.length;
+        this.currentMessages = messages || [];
 
-          // When switching conversations or loading initial messages, scroll to bottom
-          if (previousLength === 0 && this.currentMessages.length > 0) {
-            this.shouldScrollToBottom = true;
-            // Use setTimeout to ensure DOM has updated
-            setTimeout(() => this.scrollToBottom(), 100);
-          }
-        })
+        // When switching conversations or loading initial messages, scroll to bottom
+        if (previousLength === 0 && this.currentMessages.length > 0) {
+          this.shouldScrollToBottom = true;
+          this.userIsAtBottom = true;
+          // Use setTimeout to ensure DOM has updated
+          setTimeout(() => this.scrollToBottom(), 100);
+        }
+      })
     );
 
     // Subscribe to active conversation changes
     this.destroy$.add(
-        this.chatState.activeConversation$.subscribe(() => {
-          // Reset scroll state when conversation changes
-          this.shouldScrollToBottom = true;
-        })
+      this.chatState.activeConversation$.subscribe(() => {
+        // Reset scroll state when conversation changes
+        this.shouldScrollToBottom = true;
+        this.userIsAtBottom = true;
+      })
+    );
+
+    // Subscribe to streaming message for auto-scroll during response generation
+    this.destroy$.add(
+      this.streamingMessage$.subscribe(streamingMsg => {
+        if (streamingMsg && this.userIsAtBottom) {
+          // Get current streaming content length
+          const currentContent = streamingMsg.content?.finalResponse || '';
+
+          // Only scroll if content has grown (throttle scrolls)
+          if (currentContent.length > this.lastStreamingContent.length + 50) {
+            this.lastStreamingContent = currentContent;
+            // Use requestAnimationFrame for smooth scrolling
+            requestAnimationFrame(() => this.scrollToBottom());
+          }
+        } else if (!streamingMsg) {
+          // Reset when streaming ends
+          this.lastStreamingContent = '';
+        }
+      })
     );
   }
 
@@ -127,11 +150,25 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     );
   }
 
-  // Handle scroll events to load older messages
+  // Handle scroll events to load older messages and track user scroll intent
   onScroll(event: Event): void {
     if (this.isRestoringScroll) return;
 
     const element = event.target as HTMLElement;
+
+    // Track if user manually scrolled away from bottom
+    const wasAtBottom = this.userIsAtBottom;
+    this.userIsAtBottom = this.isNearBottom();
+
+    // If user scrolled up from bottom, they want to read history - disable auto-scroll
+    if (wasAtBottom && !this.userIsAtBottom) {
+      this.shouldScrollToBottom = false;
+    }
+
+    // If user scrolled back to bottom, re-enable auto-scroll
+    if (!wasAtBottom && this.userIsAtBottom) {
+      this.shouldScrollToBottom = true;
+    }
 
     // Use the component's 'hasReachedEnd' property here
     if (element.scrollTop < 100 && !this.isLoadingMessages && this.currentMessages.length > 0 && !this.hasReachedEnd) {
@@ -216,7 +253,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   private scrollToBottom(): void {
     try {
       this.messageContainer.nativeElement.scrollTop = this.messageContainer.nativeElement.scrollHeight;
-    } catch(err) { }
+    } catch (err) { }
   }
 
   // Track if we should auto-scroll
@@ -224,6 +261,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   private lastMessageCount = 0;
   private currentMessages: Message[] = [];
   private wasNearBottom = true; // Track scroll position before updates
+  private userIsAtBottom = true; // Track if user is intentionally at bottom
+  private lastStreamingContent = ''; // Track streaming content for scroll triggers
 
   // Loading state for older messages
   isLoadingOlderMessages = false;
@@ -232,11 +271,11 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   private lastLoadTime = 0;
   private readonly LOAD_DEBOUNCE_MS = 300;
 
-  // Check if user is near bottom of chat (within 100px)
+  // Check if user is near bottom of chat (within threshold)
   private isNearBottom(): boolean {
     if (!this.messageContainer) return true;
     const element = this.messageContainer.nativeElement;
-    const threshold = 100;
+    const threshold = 150; // Slightly larger threshold for better UX
     return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
   }
 
@@ -249,8 +288,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       // Messages changed, check if we should scroll
       this.lastMessageCount = currentMessageCount;
 
-      // Only auto-scroll if user was already near the bottom OR we should force scroll
-      if (this.wasNearBottom || this.shouldScrollToBottom) {
+      // Only auto-scroll if user is at bottom OR we should force scroll
+      if (this.userIsAtBottom || this.shouldScrollToBottom) {
         this.scrollToBottom();
         this.shouldScrollToBottom = false; // Reset flag after scrolling
       }
@@ -325,10 +364,10 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
 
     // Find a voice message that hasn't been marked as 'sent' yet.
     const voiceFile = this.pendingFiles.find(
-        (fp) =>
-            fp.mimeType.startsWith('audio/') &&
-            fp.name.includes('Voice message') &&
-            !(fp as any).isSent
+      (fp) =>
+        fp.mimeType.startsWith('audio/') &&
+        fp.name.includes('Voice message') &&
+        !(fp as any).isSent
     );
 
     if (voiceFile) {
