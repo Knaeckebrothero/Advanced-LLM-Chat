@@ -13,12 +13,13 @@ from backend.models.common import ErrorResponse
 from backend.security.auth import get_current_user
 from backend.services.document_handler import is_document, process_pdf, get_extracted_text
 from backend.services.audio_handler import is_audio, process_audio, get_transcript
+from backend.config import FILES_DIR as FILES_DIR_STR
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
 logger = logging.getLogger(__name__)
 
-# Directory where files are stored
-FILES_DIR = Path("./files")
+# Directory where files are stored (from config, converted to Path)
+FILES_DIR = Path(FILES_DIR_STR)
 
 # MIME types that trigger document processing
 PDF_MIME_TYPES = {'application/pdf'}

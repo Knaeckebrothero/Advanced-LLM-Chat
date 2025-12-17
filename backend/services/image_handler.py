@@ -158,16 +158,24 @@ def extract_image_attachments(content: dict | str) -> list[dict]:
     attachments = content.get('attachments', [])
     images = []
 
+    logger.debug(f"Extracting images from {len(attachments)} attachments")
+
     for attachment in attachments:
-        file_type = attachment.get('type', '')
+        # Frontend sends 'mimeType', check for image/* MIME types
         mime_type = attachment.get('mimeType', '')
 
-        # Check if it's an image (FileType.IMAGE or image/* mime type)
-        if file_type == 'image' or (mime_type and mime_type.startswith('image/')):
+        logger.debug(f"Attachment: {attachment}")
+
+        # Check if it's an image based on MIME type
+        if mime_type and mime_type.startswith('image/'):
+            # Frontend sends 'fileId' and 'fileName', not 'id' and 'name'
+            file_id = attachment.get('fileId', attachment.get('id', ''))
+            name = attachment.get('fileName', attachment.get('name', 'Unknown'))
+            logger.info(f"Found image attachment: fileId={file_id}, mimeType={mime_type}, name={name}")
             images.append({
-                'fileId': attachment.get('id', ''),
+                'fileId': file_id,
                 'mimeType': mime_type,
-                'name': attachment.get('name', 'Unknown')
+                'name': name
             })
 
     return images
@@ -208,16 +216,21 @@ def extract_document_attachments(content: dict | str) -> list[dict]:
     attachments = content.get('attachments', [])
     documents = []
 
+    logger.debug(f"Extracting documents from {len(attachments)} attachments")
+
     for attachment in attachments:
-        file_type = attachment.get('type', '')
         mime_type = attachment.get('mimeType', '')
 
-        # Check if it's a document
-        if file_type == 'document' or is_document(mime_type):
+        # Check if it's a document based on MIME type
+        if is_document(mime_type):
+            # Frontend sends 'fileId' and 'fileName', not 'id' and 'name'
+            file_id = attachment.get('fileId', attachment.get('id', ''))
+            name = attachment.get('fileName', attachment.get('name', 'Unknown'))
+            logger.info(f"Found document attachment: fileId={file_id}, mimeType={mime_type}, name={name}")
             documents.append({
-                'fileId': attachment.get('id', ''),
+                'fileId': file_id,
                 'mimeType': mime_type,
-                'name': attachment.get('name', 'Unknown')
+                'name': name
             })
 
     return documents
@@ -304,15 +317,15 @@ def extract_audio_attachments(content: dict | str) -> list[dict]:
     audio_files = []
 
     for attachment in attachments:
-        file_type = attachment.get('type', '')
         mime_type = attachment.get('mimeType', '')
 
-        # Check if it's an audio file
-        if file_type == 'audio' or is_audio(mime_type):
+        # Check if it's an audio file based on MIME type
+        if is_audio(mime_type):
+            # Frontend sends 'fileId' and 'fileName', not 'id' and 'name'
             audio_files.append({
-                'fileId': attachment.get('id', ''),
+                'fileId': attachment.get('fileId', attachment.get('id', '')),
                 'mimeType': mime_type,
-                'name': attachment.get('name', 'Unknown')
+                'name': attachment.get('fileName', attachment.get('name', 'Unknown'))
             })
 
     return audio_files

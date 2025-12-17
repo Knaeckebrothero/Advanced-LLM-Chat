@@ -114,20 +114,54 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
         message_type = getattr(request_body, 'type', 'text')
 
         if message_type == 'text':
+            # Check for top-level attachments (frontend sends them alongside content, not inside it)
+            top_level_attachments = getattr(request_body, 'attachments', None)
+
             if isinstance(request_body.content, str):
                 content_str = request_body.content
+                # Check for top-level attachments when content is a plain string
+                if top_level_attachments:
+                    content_obj = {
+                        'content': content_str,
+                        'attachments': top_level_attachments
+                    }
+                    content_str = json.dumps(content_obj)
+                    crud_logger.info(f"Stored message with {len(top_level_attachments)} attachment(s) from top-level")
             elif isinstance(request_body.content, dict):
                 content_str = request_body.content.get('content', '')
                 attachments = request_body.content.get('attachments', [])
+                # Also check top-level attachments if none in content
+                if not attachments and top_level_attachments:
+                    attachments = top_level_attachments
                 if attachments:
                     content_obj = {
                         'content': content_str,
                         'attachments': attachments
                     }
                     content_str = json.dumps(content_obj)
+                    crud_logger.info(f"Stored message with {len(attachments)} attachment(s) from dict")
             elif hasattr(request_body.content, 'content'):
-                # Handle TextContent model
+                # Handle TextContent model - include attachments if present
                 content_str = request_body.content.content
+                attachments = getattr(request_body.content, 'attachments', None)
+                # Also check top-level attachments
+                if not attachments and top_level_attachments:
+                    attachments = top_level_attachments
+                if attachments:
+                    # Convert FileReference models or dicts to JSON-serializable dicts
+                    attachment_dicts = []
+                    for att in attachments:
+                        if hasattr(att, 'model_dump'):
+                            attachment_dicts.append(att.model_dump())
+                        elif isinstance(att, dict):
+                            attachment_dicts.append(att)
+                    if attachment_dicts:
+                        content_obj = {
+                            'content': content_str,
+                            'attachments': attachment_dicts
+                        }
+                        content_str = json.dumps(content_obj)
+                        crud_logger.info(f"Stored message with {len(attachment_dicts)} attachment(s) from TextContent model")
         elif message_type == 'voice':
             if isinstance(request_body.content, dict):
                 content_str = json.dumps(request_body.content)
@@ -587,16 +621,51 @@ async def send_and_generate_message(
         content_str = ""
         message_type = request_body.type
         if message_type == 'text':
+            # Check for top-level attachments (frontend sends them alongside content, not inside it)
+            top_level_attachments = getattr(request_body, 'attachments', None)
+
             if isinstance(request_body.content, str):
                 content_str = request_body.content
+                # Check for top-level attachments when content is a plain string
+                if top_level_attachments:
+                    content_obj = {
+                        'content': content_str,
+                        'attachments': top_level_attachments
+                    }
+                    content_str = json.dumps(content_obj)
+                    crud_logger.info(f"[send_and_generate] Stored message with {len(top_level_attachments)} attachment(s) from top-level")
             elif isinstance(request_body.content, dict):
                 content_str = request_body.content.get('content', '')
                 attachments = request_body.content.get('attachments', [])
+                # Also check top-level attachments if none in content
+                if not attachments and top_level_attachments:
+                    attachments = top_level_attachments
                 if attachments:
                     content_obj = {'content': content_str, 'attachments': attachments}
                     content_str = json.dumps(content_obj)
+                    crud_logger.info(f"[send_and_generate] Stored message with {len(attachments)} attachment(s) from dict")
             elif hasattr(request_body.content, 'content'):
+                # Handle TextContent model - include attachments if present
                 content_str = request_body.content.content
+                attachments = getattr(request_body.content, 'attachments', None)
+                # Also check top-level attachments
+                if not attachments and top_level_attachments:
+                    attachments = top_level_attachments
+                if attachments:
+                    # Convert FileReference models to dicts for JSON storage
+                    attachment_dicts = []
+                    for att in attachments:
+                        if hasattr(att, 'model_dump'):
+                            attachment_dicts.append(att.model_dump())
+                        elif isinstance(att, dict):
+                            attachment_dicts.append(att)
+                    if attachment_dicts:
+                        content_obj = {
+                            'content': content_str,
+                            'attachments': attachment_dicts
+                        }
+                        content_str = json.dumps(content_obj)
+                        crud_logger.info(f"[send_and_generate] Stored message with {len(attachment_dicts)} attachment(s) from TextContent model")
         elif message_type == 'voice':
             if isinstance(request_body.content, dict):
                 content_str = json.dumps(request_body.content)
@@ -945,6 +1014,8 @@ async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict],
     """
     messages = db.get_messages_by_conversation(conversation_id, limit=10)
 
+    crud_logger.debug(f"Retrieved {len(messages)} messages for conversation {conversation_id}")
+
     # Find the last user message (messages are returned in reverse order)
     for msg in messages:
         if msg.get('roleName') == 'user':
@@ -953,20 +1024,30 @@ async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict],
             documents = []
             audio = []
 
+            crud_logger.info(f"Found user message - content starts with: {content[:100] if content else '(empty)'}...")
+            crud_logger.info(f"Content is JSON: {content.startswith('{') if content else False}")
+
             # Handle JSON-encoded content (contains attachments)
             if content.startswith('{'):
                 try:
                     content_obj = json.loads(content)
                     text_content = content_obj.get('content', content)
+                    crud_logger.info(f"Parsed JSON content - has attachments key: {'attachments' in content_obj}")
+                    if 'attachments' in content_obj:
+                        crud_logger.info(f"Attachments count: {len(content_obj.get('attachments', []))}")
+                        crud_logger.info(f"Attachments: {content_obj.get('attachments', [])}")
                     images = extract_image_attachments(content_obj)
                     documents = extract_document_attachments(content_obj)
                     audio = extract_audio_attachments(content_obj)
+                    crud_logger.info(f"Extracted: {len(images)} images, {len(documents)} documents, {len(audio)} audio files")
                     return (text_content, images, documents, audio)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    crud_logger.error(f"Failed to parse JSON content: {e}")
                     pass
 
             return (content, images, documents, audio)
 
+    crud_logger.warning(f"No user message found in conversation {conversation_id}")
     return ("", [], [], [])
 
 
