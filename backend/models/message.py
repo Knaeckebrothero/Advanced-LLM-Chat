@@ -2,7 +2,7 @@
 Message-related models.
 """
 from typing import List, Optional, Union, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 
 
 class FileReference(BaseModel):
@@ -14,6 +14,9 @@ class FileReference(BaseModel):
     This class is used to simplify the organization and retrieval of file
     information in applications interacting with file systems or APIs.
 
+    Note: Accepts both 'id'/'fileId', 'name'/'fileName', 'size'/'fileSize' for
+    compatibility with frontend which sends fileId/fileName/fileSize.
+
     :ivar id: Unique identifier for the file.
     :type id: str
     :ivar name: Name of the file.
@@ -23,9 +26,9 @@ class FileReference(BaseModel):
     :ivar mimeType: MIME type of the file.
     :type mimeType: str
     """
-    id: str
-    name: str
-    size: int
+    id: str = Field(validation_alias=AliasChoices('fileId', 'id'))
+    name: str = Field(validation_alias=AliasChoices('fileName', 'name'))
+    size: int = Field(validation_alias=AliasChoices('fileSize', 'size'))
     mimeType: str
 
 
@@ -160,6 +163,8 @@ class ApiMessageSend(BaseModel):
     :ivar lastModified: Optional integer indicating the timestamp of the last
         modification to the message. If not specified, it defaults to None.
     :type lastModified: Optional[int]
+    :ivar attachments: Optional list of file attachments (frontend sends at top level).
+    :type attachments: Optional[List[dict]]
     """
     conversationId: str  # Now using UUID
     roleName: str
@@ -168,6 +173,7 @@ class ApiMessageSend(BaseModel):
     time: int
     version: Optional[int] = 1
     lastModified: Optional[int] = None
+    attachments: Optional[List[dict]] = None  # Frontend sends attachments at top level
 
 
 class ApiMessageGenerate(BaseModel):
@@ -239,6 +245,8 @@ class ApiMessageSendAndGenerate(BaseModel):
     :ivar aiParticipant: Name of the AI participant associated with the message.
         Defaults to "Assistant".
     :type aiParticipant: str
+    :ivar attachments: Optional list of file attachments (frontend sends at top level).
+    :type attachments: Optional[List[dict]]
     """
     conversationId: str
     roleName: str
@@ -249,6 +257,7 @@ class ApiMessageSendAndGenerate(BaseModel):
     lastModified: Optional[int] = None
     generateResponse: bool = True
     aiParticipant: str = "Assistant"
+    attachments: Optional[List[dict]] = None  # Frontend sends attachments at top level
 
 
 class MessagePatch(BaseModel):
