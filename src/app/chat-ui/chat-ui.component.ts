@@ -46,9 +46,6 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   );
   isStreaming$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.isStreaming));
 
-  // Feature flag for streaming mode (can be controlled via settings later)
-  useStreaming: boolean = true;
-
   // For template compatibility - expose messages as non-observable
   messages = this.chatState.messages$;
 
@@ -312,12 +309,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
           console.log('Sending message with files:', this.pendingFiles);
           await this.chatState.sendMessageWithFiles(message, this.pendingFiles);
           this.pendingFiles = []; // Clear pending files after sending
-        } else if (this.useStreaming) {
-          // Use streaming mode for text-only messages
-          console.log('Sending message with streaming:', message);
-          await this.chatState.sendAndStreamResponse(message);
         } else {
-          // Fallback to non-streaming mode
+          console.log('Sending message:', message);
           await this.chatState.sendMessage(message);
         }
 
@@ -334,12 +327,6 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   // Cancel ongoing streaming
   cancelStreaming(): void {
     this.chatState.cancelStreaming();
-  }
-
-  // Toggle streaming mode
-  toggleStreamingMode(): void {
-    this.useStreaming = !this.useStreaming;
-    console.log('Streaming mode:', this.useStreaming ? 'enabled' : 'disabled');
   }
 
   // Generate a new message

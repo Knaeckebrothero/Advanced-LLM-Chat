@@ -469,6 +469,34 @@ a.file-preview-item {
   }
 }
 
+// Style the camera label to look like a button
+.camera-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  .mat-icon {
+    font-size: 22px;
+    width: 22px;
+    height: 22px;
+    color: var(--theme-text-secondary);
+    transition: all 0.2s ease;
+  }
+
+  &:hover {
+    background-color: var(--theme-hover);
+
+    .mat-icon {
+      color: var(--theme-primary);
+    }
+  }
+}
+
 // ============================================
 // ATTACHMENT MENU
 // ============================================
@@ -490,6 +518,28 @@ a.file-preview-item {
     border-radius: 10px;
     margin: 2px 0;
     height: 44px;
+    color: var(--theme-text);
+    transition: all 0.2s ease;
+
+    .mat-icon {
+      color: var(--theme-primary);
+      margin-right: 12px;
+    }
+
+    &:hover {
+      background-color: var(--theme-hover);
+    }
+  }
+
+  // Style the file upload label to look like a menu item
+  label.file-upload-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    border-radius: 10px;
+    margin: 2px 0;
+    height: 44px;
+    padding: 0 16px;
     color: var(--theme-text);
     transition: all 0.2s ease;
 
