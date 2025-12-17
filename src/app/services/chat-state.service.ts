@@ -206,7 +206,7 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Send a text message
+   * Send a text message and stream the AI response
    */
   async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
     // Create conversation if it's new
@@ -216,8 +216,8 @@ export class ChatStateService implements OnDestroy {
 
     const conversationId = this.activeConversationId$.getValue()!;
 
-    // Create message
-    const message = Message.createText(
+    // Create and save user message
+    const userMessage = Message.createText(
       {
         id: Math.floor(Date.now() / 1000),
         conversationId,
@@ -230,24 +230,11 @@ export class ChatStateService implements OnDestroy {
     // Mark that we're sending a message to prevent immediate re-sync
     await this.conversationRepository.markMessageSent(conversationId);
 
-    // Use the new combined send and generate method
-    const aiMessage = await this.messageRepository.sendAndGenerate(message, true);
+    // Save user message to repository
+    await this.messageRepository.save(userMessage);
 
-    // Update conversation timestamp
-    const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== '0') {
-      conversation.updatedAt = new Date();
-      await this.conversationRepository.save(conversation);
-    }
-
-    // Handle guest limit if AI generation failed
-    if (!aiMessage && await this.isBackendAvailable()) {
-      // Check if it's a rate limit issue
-      const error = (message as any).syncError;
-      if (error && error.includes('429')) {
-        this.handleRateLimitError(error);
-      }
-    }
+    // Start streaming the AI response
+    await this._streamResponse(conversationId);
   }
 
   /**
@@ -301,8 +288,8 @@ export class ChatStateService implements OnDestroy {
       });
     }
 
-    // Create and save message
-    const message = Message.createText(
+    // Create user message with file attachments
+    const userMessage = Message.createText(
       {
         id: Math.floor(Date.now() / 1000),
         conversationId,
@@ -313,15 +300,14 @@ export class ChatStateService implements OnDestroy {
       files
     );
 
-    // This now also handles the AI response generation
-    await this.messageRepository.sendAndGenerate(message, true);
+    // Mark that we're sending a message to prevent immediate re-sync
+    await this.conversationRepository.markMessageSent(conversationId);
 
-    // Update conversation
-    const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== '0') {
-      conversation.updatedAt = new Date();
-      await this.conversationRepository.save(conversation);
-    }
+    // Save user message to repository
+    await this.messageRepository.save(userMessage);
+
+    // Start streaming the AI response (backend will extract file attachments)
+    await this._streamResponse(conversationId);
   }
 
   /**
@@ -367,51 +353,12 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Send a message and stream the AI response using SSE
+   * Send a message and stream the AI response using SSE.
+   * @deprecated Use sendMessage() instead - it now uses streaming by default.
    */
   async sendAndStreamResponse(content: string, roleName: string = 'user'): Promise<void> {
-    // Create conversation if it's new
-    if (this.isNewConversation$.getValue()) {
-      await this.createConversationFromFirstMessage(content);
-    }
-
-    const conversationId = this.activeConversationId$.getValue()!;
-
-    // Create and save user message
-    const userMessage = Message.createText(
-      {
-        id: Math.floor(Date.now() / 1000),
-        conversationId,
-        roleName,
-        time: new Date()
-      },
-      content
-    );
-
-    // Mark that we're sending a message
-    await this.conversationRepository.markMessageSent(conversationId);
-
-    // Save user message to repository
-    await this.messageRepository.save(userMessage);
-
-    // Create placeholder agent message for streaming
-    const agentMessage = Message.createAgent(conversationId, [], '', 'thinking');
-    this.streamingMessage$.next(agentMessage);
-    this.isStreaming$.next(true);
-
-    // Cancel any existing streaming subscription
-    if (this.streamingSubscription) {
-      this.streamingSubscription.unsubscribe();
-    }
-
-    // Start streaming
-    this.streamingSubscription = this.streamingService
-      .streamAgentResponse(conversationId, 'Assistant')
-      .subscribe({
-        next: (event) => this.handleStreamEvent(event, agentMessage),
-        error: (error) => this.handleStreamError(error, agentMessage),
-        complete: () => this.handleStreamComplete(agentMessage)
-      });
+    // Delegate to sendMessage which now uses streaming
+    await this.sendMessage(content, roleName);
   }
 
   /**
@@ -512,6 +459,31 @@ export class ChatStateService implements OnDestroy {
     }
     this.isStreaming$.next(false);
     this.streamingMessage$.next(null);
+  }
+
+  /**
+   * Internal helper to start streaming an AI response.
+   * Creates a placeholder agent message and streams the response.
+   */
+  private async _streamResponse(conversationId: string): Promise<void> {
+    // Create placeholder agent message for streaming
+    const agentMessage = Message.createAgent(conversationId, [], '', 'thinking');
+    this.streamingMessage$.next(agentMessage);
+    this.isStreaming$.next(true);
+
+    // Cancel any existing streaming subscription
+    if (this.streamingSubscription) {
+      this.streamingSubscription.unsubscribe();
+    }
+
+    // Start streaming
+    this.streamingSubscription = this.streamingService
+      .streamAgentResponse(conversationId, 'Assistant')
+      .subscribe({
+        next: (event) => this.handleStreamEvent(event, agentMessage),
+        error: (error) => this.handleStreamError(error, agentMessage),
+        complete: () => this.handleStreamComplete(agentMessage)
+      });
   }
 
   /**
@@ -685,7 +657,8 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Regenerate a message
+   * Regenerate a message using streaming.
+   * Deletes the old AI message and streams a new response.
    */
   async regenerateMessage(message: Message): Promise<void> {
     if (!message.id || !message.conversationId) {
@@ -697,28 +670,19 @@ export class ChatStateService implements OnDestroy {
       throw new Error('Can only regenerate AI messages');
     }
 
-    this.isLoading$.next(true);
     this.error$.next(null);
 
     try {
-      // Use the new regenerate endpoint
-      await this.messageRepository.regenerateMessage(
-        message.id,
-        message.conversationId
-      );
+      // Delete the old AI message immediately
+      await this.messageRepository.delete(message.id);
 
-      // The message repository will automatically update the cache and trigger
-      // the messages$ observable to emit the new value
-
-      // Show success notification
-      this.notificationService.showSuccess('Message regenerated successfully');
+      // Start streaming a new response (backend will use the last user message)
+      await this._streamResponse(message.conversationId);
     } catch (error) {
       console.error('Error regenerating message:', error);
       this.error$.next('Failed to regenerate message');
       this.notificationService.showError('Failed to regenerate message');
       throw error;
-    } finally {
-      this.isLoading$.next(false);
     }
   }
 
