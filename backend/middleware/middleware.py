@@ -146,6 +146,7 @@ async def add_security_headers(request: Request, call_next):
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
             "img-src 'self' data: blob: https://fastapi.tiangolo.com",
+            "media-src 'self' blob: data:",
             "font-src 'self' data: https://cdn.jsdelivr.net",
             "connect-src 'self'",
             "frame-ancestors 'none'",
@@ -160,6 +161,7 @@ async def add_security_headers(request: Request, call_next):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: blob:",
+            "media-src 'self' blob: data:",  # Allow audio/video from blob and data URLs
             "connect-src 'self' wss: https: ws://localhost:* http://localhost:*",  # Allow dev server websockets
             "frame-ancestors 'none'",
             "base-uri 'self'",
@@ -174,6 +176,7 @@ async def add_security_headers(request: Request, call_next):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # Styles still need unsafe-inline
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: blob:",
+            "media-src 'self' blob: data:",  # Allow audio/video from blob and data URLs
             "connect-src 'self' wss: https:",
             "frame-ancestors 'none'",
             "base-uri 'self'",

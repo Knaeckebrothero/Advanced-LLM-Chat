@@ -75,11 +75,32 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
     // React to attachment changes (e.g., when transcript becomes available)
     if (changes['attachment'] && !changes['attachment'].firstChange) {
       const newAttachment = changes['attachment'].currentValue;
+      const oldAttachment = changes['attachment'].previousValue;
+
+      console.log('AudioMessage: Attachment changed', {
+        newId: newAttachment?.id,
+        oldId: oldAttachment?.id,
+        newStatus: newAttachment?.uploadStatus,
+        oldStatus: oldAttachment?.uploadStatus,
+        hasFile: !!newAttachment?.file,
+        hasBase64: !!newAttachment?.base64Data
+      });
+
       if (newAttachment?.transcript && !this.loadedTranscript) {
         this.loadedTranscript = newAttachment.transcript;
       }
-      // Re-initialize audio URL if needed
-      if (!this.audioUrl && newAttachment?.base64Data) {
+
+      // Re-initialize audio URL if:
+      // - We don't have one yet
+      // - Or upload status changed from uploading to completed
+      // - Or the attachment ID changed (server ID received)
+      const statusChanged = oldAttachment?.uploadStatus === 'uploading' && newAttachment?.uploadStatus === 'completed';
+      const idChanged = oldAttachment?.id !== newAttachment?.id;
+
+      if (!this.audioUrl || statusChanged || idChanged || this.audioError) {
+        // Reset error state and reinitialize
+        this.audioError = false;
+        this.triedBackendFallback = false;
         this.initializeAudioUrl();
       }
     }
@@ -206,10 +227,38 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
     this.duration = audio.duration;
   }
 
-  onError(): void {
-    this.audioError = true;
+  onError(event?: Event): void {
+    // Get more details about the error
+    const audioEl = this.audioPlayerRef?.nativeElement;
+    const error = audioEl?.error;
+
+    console.error('AudioMessage: Audio error', {
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      audioUrl: this.audioUrl ? this.audioUrl.substring(0, 100) + '...' : null,
+      attachmentId: this.attachment?.id,
+      networkState: audioEl?.networkState,
+      readyState: audioEl?.readyState
+    });
+
+    // Only handle error if we actually have a URL set
+    // (avoid error on initial empty src)
+    if (this.audioUrl) {
+      // If we were using base64 data and it failed, try loading from backend
+      if (this.audioUrl.startsWith('data:') && this.attachment?.id && !this.triedBackendFallback) {
+        console.log('AudioMessage: Base64 failed, trying backend fallback');
+        this.triedBackendFallback = true;
+        this.audioUrl = null;
+        this.loadAudio(); // Try loading from backend
+      } else {
+        this.audioError = true;
+      }
+    }
     this.isLoading = false;
   }
+
+  // Track if we've already tried the backend fallback
+  private triedBackendFallback = false;
 
   // Seek to position
   onSeek(event: MouseEvent): void {

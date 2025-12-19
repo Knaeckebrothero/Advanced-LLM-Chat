@@ -74,14 +74,14 @@
     </div>
   </div>
 
-  <!-- Hidden audio element -->
+  <!-- Hidden audio element - only set src when URL is available -->
   <audio #audioPlayer
-         [src]="audioUrl"
+         [attr.src]="audioUrl || null"
          (play)="onPlay()"
          (pause)="onPause()"
          (ended)="onEnded()"
          (timeupdate)="onTimeUpdate($event)"
          (loadedmetadata)="onLoadedMetadata($event)"
-         (error)="onError()">
+         (error)="onError($event)">
   </audio>
 </div>
