@@ -302,9 +302,8 @@ class MessageResponse(BaseModel):
     :ivar roleName: Role indicating the sender's identity or purpose in the
         conversation (e.g., "user", "assistant").
     :type roleName: str
-    :ivar content: Actual message content or body. Can be string for text/voice
-        or AgentContent for agent messages.
-    :type content: Union[str, AgentContent]
+    :ivar content: Actual message content or body. Plain string for text messages.
+    :type content: str
     :ivar time: UNIX epoch timestamp of when the message was created.
     :type time: int
     :ivar type: Optional type of the message for categorization (text, voice, agent).
@@ -318,6 +317,8 @@ class MessageResponse(BaseModel):
     :ivar rating: Optional user-provided rating of the message. 1 indicates
         thumbs up, 0 indicates thumbs down, and None indicates unrated.
     :type rating: Optional[int]
+    :ivar attachments: Optional list of file attachments for text messages.
+    :type attachments: Optional[List[dict]]
     :ivar steps: Agent reasoning steps (only for agent messages).
     :type steps: Optional[List[AgentStep]]
     :ivar finalResponse: Agent final response (only for agent messages).
@@ -330,12 +331,13 @@ class MessageResponse(BaseModel):
     id: int
     conversationId: str  # Now using UUID
     roleName: str
-    content: Union[str, AgentContent]  # Now supports both text and agent content
+    content: str  # Always a plain string (text content only)
     time: int
     type: Optional[str] = "text"  # Default to "text" for backwards compatibility
     version: int = 1
     lastModified: Optional[int] = None
     rating: Optional[int] = None  # 1 for thumbs up, 0 for thumbs down, None for unrated
+    attachments: Optional[List[dict]] = None  # File attachments for text messages
     # Additional fields for agent messages (flattened for backwards compatibility)
     steps: Optional[List[AgentStep]] = None
     finalResponse: Optional[str] = None

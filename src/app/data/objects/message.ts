@@ -496,12 +496,11 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
           });
         case 'text':
         default:
-          const content: ITextContent = {
+          return new Message<ITextContent>(metadata, {
             type: 'text',
             content: data.content.content || '',
             attachments: data.content.attachments
-          };
-          return new Message<ITextContent>(metadata, content);
+          });
       }
     }
 

@@ -361,6 +361,19 @@ async def get_conversation_messages(
                     msg.pop('final_response', None)
                     msg.pop('agent_status', None)
                     msg.pop('agent_error', None)
+                elif msg.get('type') == 'text' or not msg.get('type'):
+                    # Parse JSON content for text messages with attachments
+                    content = msg.get('content', '')
+                    if content and isinstance(content, str) and content.startswith('{'):
+                        try:
+                            content_obj = json.loads(content)
+                            if isinstance(content_obj, dict) and 'content' in content_obj:
+                                msg['content'] = content_obj.get('content', '')
+                                if 'attachments' in content_obj:
+                                    msg['attachments'] = content_obj['attachments']
+                        except json.JSONDecodeError:
+                            # Not valid JSON, keep as-is
+                            pass
 
             # Check if there might be more messages
             has_more = False
