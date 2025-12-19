@@ -67,12 +67,23 @@ CREATE TABLE IF NOT EXISTS user_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- name: create_file_description_cache_table
+-- Caches vision-generated descriptions to avoid repeated API calls
+CREATE TABLE IF NOT EXISTS file_description_cache (
+    cache_key VARCHAR(64) PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    query TEXT,
+    description TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- name: create_indexes
 CREATE INDEX IF NOT EXISTS idx_conversation_time ON messages("conversationId", time);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations("userId");
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_agent_status ON messages(agent_status) WHERE type = 'agent';
+CREATE INDEX IF NOT EXISTS idx_cache_file_id ON file_description_cache(file_id);
 
 -- name: create_update_timestamp_function
 CREATE OR REPLACE FUNCTION update_timestamp()

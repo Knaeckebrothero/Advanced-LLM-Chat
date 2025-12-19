@@ -269,3 +269,62 @@ async def get_file_text(
         )
 
     return PlainTextResponse(content=text_content, media_type="text/plain; charset=utf-8")
+
+
+@router.delete("/{file_id}",
+               status_code=status.HTTP_204_NO_CONTENT,
+               responses={
+                   status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "Not authenticated"},
+                   status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "File not found"}
+               })
+async def delete_file(
+        file_id: str,
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a file and its associated data.
+
+    Removes the original file, any extracted text/page images,
+    and clears the description cache.
+
+    :param file_id: The unique identifier of the file (without extension)
+    :type file_id: str
+    :param current_user: The currently authenticated user making the request
+    :type current_user: dict
+    :raises HTTPException: 404 if file not found, 401 if not authenticated
+    """
+    import shutil
+
+    file_path = _find_file_by_id(file_id)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        # Delete the main file
+        file_path.unlink()
+        logger.info(f"Deleted file: {file_path}")
+
+        # Delete associated files (extracted text, page images, transcripts)
+        associated_files = list(FILES_DIR.glob(f"{file_id}_*"))
+        for assoc_file in associated_files:
+            if assoc_file.is_file():
+                assoc_file.unlink()
+                logger.debug(f"Deleted associated file: {assoc_file}")
+            elif assoc_file.is_dir():
+                shutil.rmtree(assoc_file)
+                logger.debug(f"Deleted associated directory: {assoc_file}")
+
+        # Clear the description cache for this file
+        try:
+            from backend.services.cache.description_cache import get_description_cache
+            cache = get_description_cache()
+            await cache.delete_by_file(file_id)
+        except Exception as e:
+            logger.warning(f"Failed to clear cache for {file_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error deleting file {file_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete file: {str(e)}"
+        )

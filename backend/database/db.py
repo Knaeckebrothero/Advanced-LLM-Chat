@@ -50,6 +50,7 @@ from backend.database.tables import (
     sessions,
     guest_usage,
     user_settings,
+    file_description_cache,
 )
 
 log = logging.getLogger(__name__)
@@ -1155,3 +1156,69 @@ class Database:
                 result = conn.execute(stmt).fetchone()
 
             return self._row_to_dict(result)
+
+    # ==================== File Description Cache ====================
+
+    def get_cache_entry(self, cache_key: str) -> Optional[str]:
+        """
+        Get a cached file description.
+
+        Args:
+            cache_key: The cache key (SHA256 of file_id + query).
+
+        Returns:
+            The cached description or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = select(file_description_cache.c.description).where(
+                file_description_cache.c.cache_key == cache_key
+            )
+            result = conn.execute(stmt).fetchone()
+            return result[0] if result else None
+
+    def set_cache_entry(
+        self,
+        cache_key: str,
+        file_id: str,
+        description: str,
+        query: Optional[str] = None
+    ) -> None:
+        """
+        Store a file description in the cache.
+
+        Args:
+            cache_key: The cache key (SHA256 of file_id + query).
+            file_id: The original file ID.
+            description: The generated description.
+            query: Optional query used for the description.
+        """
+        with self.connection() as conn:
+            # Use upsert pattern (ON CONFLICT DO UPDATE)
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            stmt = pg_insert(file_description_cache).values(
+                cache_key=cache_key,
+                file_id=file_id,
+                query=query,
+                description=description,
+            ).on_conflict_do_update(
+                index_elements=['cache_key'],
+                set_={'description': description}
+            )
+            conn.execute(stmt)
+
+    def delete_cache_by_file(self, file_id: str) -> int:
+        """
+        Delete all cached descriptions for a file.
+
+        Args:
+            file_id: The file ID to delete cache entries for.
+
+        Returns:
+            Number of entries deleted.
+        """
+        with self.connection() as conn:
+            stmt = delete(file_description_cache).where(
+                file_description_cache.c.file_id == file_id
+            )
+            result = conn.execute(stmt)
+            return result.rowcount

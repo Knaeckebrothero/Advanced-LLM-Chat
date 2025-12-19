@@ -12,11 +12,14 @@ from .neo4j_tools import (
     get_all_tools
 )
 
+from .file_tools import get_file_content
+
 __all__ = [
     "search_waste_disposal",
     "get_disposal_method_details",
     "find_nearby_recycling_centers",
     "get_waste_category_info",
     "answer_waste_faq",
-    "get_all_tools"
+    "get_all_tools",
+    "get_file_content"
 ]

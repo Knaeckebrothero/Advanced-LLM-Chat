@@ -63,3 +63,9 @@ MODEL_RECEIVE_IMAGES_PDF = os.getenv("MODEL_RECEIVE_IMAGES_PDF", "yes").lower() 
 
 # Files directory for uploaded files
 FILES_DIR = os.getenv("FILES_DIR", "./files")
+
+# Vision Helper LLM configuration
+# Used for image/document analysis when primary model is text-only
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+VISION_BASE_URL = os.getenv("VISION_BASE_URL", OPENAI_BASE_URL)
+VISION_MODEL = os.getenv("VISION_MODEL", "gpt-4o-mini")

@@ -101,6 +101,18 @@ user_settings = Table(
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
+# File description cache table
+# Caches vision-generated descriptions to avoid repeated API calls
+file_description_cache = Table(
+    'file_description_cache',
+    metadata,
+    Column('cache_key', Text, primary_key=True),  # SHA256(file_id + query)
+    Column('file_id', Text, nullable=False),
+    Column('query', Text),  # Optional query used for description
+    Column('description', Text, nullable=False),
+    Column('created_at', DateTime, server_default=func.now()),
+)
+
 # Define indexes
 idx_conversation_time = Index('idx_conversation_time', messages.c.conversationId, messages.c.time)
 idx_conversations_user = Index('idx_conversations_user', conversations.c.userId)
@@ -112,3 +124,5 @@ idx_messages_agent_status = Index(
     messages.c.agent_status,
     postgresql_where=(messages.c.type == 'agent')
 )
+# Index for file description cache - enables efficient deletion by file_id
+idx_cache_file_id = Index('idx_cache_file_id', file_description_cache.c.file_id)
