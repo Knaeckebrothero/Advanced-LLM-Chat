@@ -310,6 +310,96 @@ export class ChatStateService implements OnDestroy {
     await this._streamResponse(conversationId);
   }
 
+  // Track pending voice message for async updates
+  private pendingVoiceMessage: Message | null = null;
+
+  /**
+   * Add a voice message locally (for immediate display while transcription is pending)
+   * This creates the message and displays it but doesn't send to backend yet.
+   */
+  async addLocalVoiceMessage(
+    placeholderText: string,
+    voiceFile: FilePreview
+  ): Promise<void> {
+    // Create conversation if needed
+    if (this.isNewConversation$.getValue()) {
+      await this.createConversationFromFirstMessage('Voice message');
+    }
+
+    const conversationId = this.activeConversationId$.getValue()!;
+
+    // Create user message with voice file attachment
+    const userMessage = Message.createText(
+      {
+        id: Math.floor(Date.now() / 1000),
+        conversationId,
+        roleName: 'user',
+        time: new Date()
+      },
+      placeholderText,
+      [voiceFile]
+    );
+
+    // Store reference to update later
+    this.pendingVoiceMessage = userMessage;
+
+    // Save to local repository only (skip backend sync)
+    await this.messageRepository.save(userMessage, true); // skipSync = true
+  }
+
+  /**
+   * Update a pending voice message with the real transcript and trigger AI response
+   */
+  async updateVoiceMessageAndRespond(
+    voiceFile: FilePreview,
+    transcript: string
+  ): Promise<void> {
+    if (!this.pendingVoiceMessage) {
+      console.error('No pending voice message to update');
+      return;
+    }
+
+    const conversationId = this.activeConversationId$.getValue()!;
+
+    // Update message content with real transcript
+    if (this.pendingVoiceMessage.isText()) {
+      (this.pendingVoiceMessage.content as any).content = transcript;
+    }
+
+    // Update attachment with transcript
+    const attachments = this.pendingVoiceMessage.attachments;
+    if (attachments && attachments.length > 0) {
+      attachments[0].transcript = voiceFile.transcript;
+      attachments[0].uploadStatus = voiceFile.uploadStatus;
+      attachments[0].id = voiceFile.id;
+    }
+
+    // Mark message as modified
+    this.pendingVoiceMessage.version = (this.pendingVoiceMessage.version || 1) + 1;
+    this.pendingVoiceMessage.lastModified = Math.floor(Date.now() / 1000);
+
+    // Update in local repository
+    await this.messageRepository.update(this.pendingVoiceMessage);
+
+    // Mark that we're sending a message to prevent immediate re-sync
+    await this.conversationRepository.markMessageSent(conversationId);
+
+    // Clear the pending reference
+    const messageToSync = this.pendingVoiceMessage;
+    this.pendingVoiceMessage = null;
+
+    // Now sync with backend (this will send the message)
+    try {
+      await this.apiService.sendMessage(messageToSync);
+    } catch (error) {
+      console.error('Failed to sync voice message with backend:', error);
+      // Continue anyway - message is saved locally
+    }
+
+    // Start streaming the AI response
+    await this._streamResponse(conversationId);
+  }
+
   /**
    * Send a message and stream the AI response using SSE.
    * @deprecated Use sendMessage() instead - it now uses streaming by default.

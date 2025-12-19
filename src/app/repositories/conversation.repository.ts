@@ -527,10 +527,37 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     
     // Messages to keep
     const mergedMessages: Message[] = [];
-    
+
+    // Create map of local messages for attachment data preservation
+    const localMessageMap = new Map(localMessages.map(msg => [msg.id, msg]));
+
     // 1. Add all server messages (these are authoritative)
-    mergedMessages.push(...serverMessages);
-    
+    // But preserve local attachment data (base64Data, transcript) if available
+    for (const serverMsg of serverMessages) {
+      const localMsg = localMessageMap.get(serverMsg.id);
+      if (localMsg && serverMsg.isText() && localMsg.isText()) {
+        // Preserve local attachment data that backend doesn't have
+        const serverAttachments = serverMsg.attachments;
+        const localAttachments = localMsg.attachments;
+        if (serverAttachments && localAttachments) {
+          for (const serverAtt of serverAttachments) {
+            // Find matching local attachment by ID
+            const localAtt = localAttachments.find(la => la.id === serverAtt.id);
+            if (localAtt) {
+              // Preserve offline data from local
+              if (localAtt.base64Data && !serverAtt.base64Data) {
+                serverAtt.base64Data = localAtt.base64Data;
+              }
+              if (localAtt.transcript && !serverAtt.transcript) {
+                serverAtt.transcript = localAtt.transcript;
+              }
+            }
+          }
+        }
+      }
+      mergedMessages.push(serverMsg);
+    }
+
     // 2. Add pending messages that aren't in server response
     for (const pendingMsg of pendingMessages) {
       if (!serverMessageMap.has(pendingMsg.id)) {
