@@ -29,7 +29,7 @@ export interface IFileAttachment {
 // Full preview object for local state
 export interface IFilePreview {
   id: string;
-  file: File;
+  file?: File;  // Optional - not available after deserialization from IndexedDB
   name: string;
   size: number;
   sizeFormatted: string;
@@ -40,4 +40,5 @@ export interface IFilePreview {
   uploadStatus: UploadStatus;
   error?: string;
   transcript?: string;  // For audio files - transcript from backend transcription
+  base64Data?: string;  // For audio files - base64 encoded audio data for offline playback
 }

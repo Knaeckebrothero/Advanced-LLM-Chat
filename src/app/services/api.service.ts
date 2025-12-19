@@ -378,7 +378,9 @@ export class ApiService {
     // Convert FilePreview to FormData and upload
     const formData = new FormData();
     files.forEach(fp => {
-      formData.append('files', fp.file, fp.name);
+      if (fp.file) {
+        formData.append('files', fp.file, fp.name);
+      }
     });
 
     try {

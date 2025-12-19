@@ -311,48 +311,6 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Send a voice message
-   */
-  async sendVoiceMessage(
-    audioBlob: Blob,
-    duration: number,
-    mimeType: string = 'audio/webm',
-    roleName: string = 'user'
-  ): Promise<void> {
-    // Create conversation if needed
-    if (this.isNewConversation$.getValue()) {
-      await this.createConversationFromFirstMessage('Voice conversation');
-    }
-
-    const conversationId = this.activeConversationId$.getValue()!;
-
-    // Convert blob to base64
-    const base64Audio = await this.blobToBase64(audioBlob);
-
-    // Create and save message
-    const message = Message.createVoice(
-      {
-        id: Math.floor(Date.now() / 1000),
-        conversationId,
-        roleName,
-        time: new Date()
-      },
-      base64Audio,
-      duration,
-      mimeType
-    );
-
-    await this.messageRepository.save(message);
-
-    // Update conversation
-    const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== '0') {
-      conversation.updatedAt = new Date();
-      await this.conversationRepository.save(conversation);
-    }
-  }
-
-  /**
    * Send a message and stream the AI response using SSE.
    * @deprecated Use sendMessage() instead - it now uses streaming by default.
    */
@@ -865,20 +823,6 @@ export class ChatStateService implements OnDestroy {
       }
     }
     this.authService.setGuestLimitReached(true, resetTimeMessage);
-  }
-
-  /**
-   * Helper: Convert blob to base64
-   */
-  private blobToBase64(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        resolve((reader.result as string).split(',')[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
   }
 
   /**
