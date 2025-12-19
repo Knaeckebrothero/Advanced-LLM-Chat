@@ -28,8 +28,9 @@
         <div *ngIf="message.hasAttachments()" class="message-attachments">
           <ng-container *ngFor="let attachment of message.attachments">
             <!-- Audio attachments use the AudioMessageComponent -->
+            <!-- For voice messages: transcript is in attachment.transcript (new) or message.textContent (synced) -->
             <app-audio-message *ngIf="attachment.type === 'audio'" [attachment]="attachment"
-              [transcript]="attachment.transcript" [messageId]="message.id" [conversationId]="message.conversationId">
+              [transcript]="attachment.transcript || message.textContent" [messageId]="message.id" [conversationId]="message.conversationId">
             </app-audio-message>
 
             <!-- Non-audio attachments -->

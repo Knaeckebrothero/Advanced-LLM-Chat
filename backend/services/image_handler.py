@@ -297,7 +297,9 @@ SUPPORTED_AUDIO_TYPES = {
 
 def is_audio(mime_type: str) -> bool:
     """Check if the MIME type is a supported audio format."""
-    return mime_type.lower() in SUPPORTED_AUDIO_TYPES
+    # Handle MIME types with parameters (e.g., "audio/webm;codecs=opus")
+    base_mime = mime_type.lower().split(';')[0].strip()
+    return base_mime in SUPPORTED_AUDIO_TYPES
 
 
 def extract_audio_attachments(content: dict | str) -> list[dict]:
