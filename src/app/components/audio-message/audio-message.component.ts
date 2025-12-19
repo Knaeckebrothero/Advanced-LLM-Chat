@@ -162,6 +162,24 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
     return match ? match[1] : '0:00';
   }
 
+  // Parse duration from filename to seconds (fallback when audio metadata unavailable)
+  get parsedDurationSeconds(): number {
+    const match = this.attachment.name.match(/\((\d+):(\d+)\)/);
+    if (match) {
+      return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    }
+    return 0;
+  }
+
+  // Get effective duration for progress calculations
+  // Uses audio metadata if valid, otherwise falls back to parsed filename duration
+  get effectiveDuration(): number {
+    if (this.duration > 0 && Number.isFinite(this.duration)) {
+      return this.duration;
+    }
+    return this.parsedDurationSeconds;
+  }
+
   // Format time in MM:SS
   formatTime(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -262,18 +280,18 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
 
   // Seek to position
   onSeek(event: MouseEvent): void {
-    if (!this.audioPlayerRef?.nativeElement || !this.duration) return;
+    if (!this.audioPlayerRef?.nativeElement || !this.effectiveDuration) return;
 
     const progressBar = event.currentTarget as HTMLElement;
     const rect = progressBar.getBoundingClientRect();
     const percent = (event.clientX - rect.left) / rect.width;
-    this.audioPlayerRef.nativeElement.currentTime = percent * this.duration;
+    this.audioPlayerRef.nativeElement.currentTime = percent * this.effectiveDuration;
   }
 
   // Get progress percentage
   get progressPercent(): number {
-    if (!this.duration || !Number.isFinite(this.duration)) return 0;
-    return (this.currentTime / this.duration) * 100;
+    if (!this.effectiveDuration) return 0;
+    return (this.currentTime / this.effectiveDuration) * 100;
   }
 
   // Check if duration is valid (finite number > 0)
