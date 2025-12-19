@@ -69,3 +69,11 @@ FILES_DIR = os.getenv("FILES_DIR", "./files")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 VISION_BASE_URL = os.getenv("VISION_BASE_URL", OPENAI_BASE_URL)
 VISION_MODEL = os.getenv("VISION_MODEL", "gpt-4o-mini")
+
+# OpenAI Audio/Whisper Configuration
+# WHISPER_BASE_URL allows deploying Whisper on a separate server/GPU from other models
+WHISPER_BASE_URL = os.getenv("WHISPER_BASE_URL", OPENAI_BASE_URL)
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")
+WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", None)  # Optional: 'en', 'de', etc.
+USE_LOCAL_WHISPER = os.getenv("USE_LOCAL_WHISPER", "false").lower() == "true"
+LOCAL_WHISPER_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "base")  # tiny, base, small, medium, large

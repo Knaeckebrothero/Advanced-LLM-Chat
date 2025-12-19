@@ -1,14 +1,24 @@
 # backend/services/audio_handler.py
 """
 Audio handling utilities for transcription.
-Handles audio transcription using OpenAI Whisper and preparing transcripts for LLM context.
+Handles audio transcription using OpenAI Whisper API (default) or local Whisper model (fallback).
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
-from ..config import FILES_DIR
+from openai import AsyncOpenAI
+
+from ..config import (
+    FILES_DIR,
+    WHISPER_BASE_URL,
+    WHISPER_MODEL,
+    WHISPER_LANGUAGE,
+    USE_LOCAL_WHISPER,
+    LOCAL_WHISPER_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +34,9 @@ SUPPORTED_AUDIO_TYPES = {
     'audio/m4a': 'm4a',
 }
 
-# Whisper model to use (tiny, base, small, medium, large)
-# tiny is fastest but less accurate, large is most accurate but slow
-WHISPER_MODEL = 'base'
-
-# Lazy-loaded whisper model (cached after first load)
-_whisper_model = None
+# Lazy-loaded clients
+_openai_client: Optional[AsyncOpenAI] = None
+_whisper_model = None  # Local Whisper model (cached after first load)
 
 
 def is_audio(mime_type: str) -> bool:
@@ -67,9 +74,31 @@ def get_file_path(file_id: str) -> Optional[Path]:
     return None
 
 
-def _get_whisper_model():
+def _get_openai_client() -> Optional[AsyncOpenAI]:
     """
-    Lazy-load and cache the whisper model.
+    Get OpenAI client for Whisper API.
+
+    Returns:
+        AsyncOpenAI client or None if no API key is configured.
+    """
+    global _openai_client
+
+    if _openai_client is not None:
+        return _openai_client
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.info("No OPENAI_API_KEY configured - will use local Whisper for transcription")
+        return None
+
+    _openai_client = AsyncOpenAI(api_key=api_key, base_url=WHISPER_BASE_URL)
+    logger.info(f"OpenAI Audio client initialized: model={WHISPER_MODEL}, base_url={WHISPER_BASE_URL}")
+    return _openai_client
+
+
+def _get_local_whisper_model():
+    """
+    Lazy-load and cache the local whisper model.
 
     Returns:
         Whisper model or None if loading fails.
@@ -81,21 +110,58 @@ def _get_whisper_model():
 
     try:
         import whisper
-        logger.info(f"Loading Whisper model: {WHISPER_MODEL}")
-        _whisper_model = whisper.load_model(WHISPER_MODEL)
-        logger.info("Whisper model loaded successfully")
+        logger.info(f"Loading local Whisper model: {LOCAL_WHISPER_MODEL}")
+        _whisper_model = whisper.load_model(LOCAL_WHISPER_MODEL)
+        logger.info("Local Whisper model loaded successfully")
         return _whisper_model
     except ImportError:
         logger.error("openai-whisper not installed. Run: pip install openai-whisper")
         return None
     except Exception as e:
-        logger.error(f"Error loading Whisper model: {e}")
+        logger.error(f"Error loading local Whisper model: {e}")
         return None
 
 
-def transcribe_audio(file_path: Path, language: Optional[str] = None) -> Optional[str]:
+async def _transcribe_with_openai(file_path: Path) -> Optional[str]:
     """
-    Transcribe audio file using Whisper.
+    Transcribe audio file using OpenAI Whisper API.
+
+    Args:
+        file_path: Path to the audio file.
+
+    Returns:
+        Transcribed text or None if transcription fails.
+    """
+    client = _get_openai_client()
+    if not client:
+        return None
+
+    try:
+        logger.info(f"Transcribing with OpenAI API: {file_path}")
+
+        with open(file_path, 'rb') as audio_file:
+            kwargs = {"model": WHISPER_MODEL, "file": audio_file}
+            if WHISPER_LANGUAGE:
+                kwargs["language"] = WHISPER_LANGUAGE
+
+            response = await client.audio.transcriptions.create(**kwargs)
+
+        transcript = response.text.strip() if response.text else None
+
+        if transcript:
+            logger.info(f"OpenAI transcription complete: {len(transcript)} characters")
+        else:
+            logger.warning("OpenAI transcription returned empty text")
+
+        return transcript
+    except Exception as e:
+        logger.error(f"Error with OpenAI transcription {file_path}: {e}")
+        return None
+
+
+def _transcribe_local(file_path: Path, language: Optional[str] = None) -> Optional[str]:
+    """
+    Transcribe audio file using local Whisper model (fallback).
 
     Args:
         file_path: Path to the audio file.
@@ -104,12 +170,12 @@ def transcribe_audio(file_path: Path, language: Optional[str] = None) -> Optiona
     Returns:
         Transcribed text or None if transcription fails.
     """
-    model = _get_whisper_model()
+    model = _get_local_whisper_model()
     if model is None:
         return None
 
     try:
-        logger.info(f"Transcribing audio file: {file_path}")
+        logger.info(f"Transcribing with local Whisper: {file_path}")
 
         # Transcribe with options
         options = {
@@ -122,19 +188,29 @@ def transcribe_audio(file_path: Path, language: Optional[str] = None) -> Optiona
         transcript = result.get('text', '').strip()
 
         if transcript:
-            logger.info(f"Transcription complete: {len(transcript)} characters")
+            logger.info(f"Local transcription complete: {len(transcript)} characters")
         else:
-            logger.warning("Transcription returned empty text")
+            logger.warning("Local transcription returned empty text")
 
         return transcript if transcript else None
     except Exception as e:
-        logger.error(f"Error transcribing audio {file_path}: {e}")
+        logger.error(f"Error with local transcription {file_path}: {e}")
         return None
 
 
-def process_audio(file_path: Path, file_id: str) -> dict:
+# Keep old function name for backwards compatibility (deprecated)
+def transcribe_audio(file_path: Path, language: Optional[str] = None) -> Optional[str]:
+    """Deprecated: Use process_audio() instead. This is the local-only transcription."""
+    return _transcribe_local(file_path, language)
+
+
+async def process_audio(file_path: Path, file_id: str) -> dict:
     """
     Process an audio file: transcribe and save transcript.
+
+    Uses OpenAI Whisper API by default.
+    Set USE_LOCAL_WHISPER=true to force local model.
+    Falls back to local Whisper if API fails or no API key is configured.
 
     Args:
         file_path: Path to the audio file.
@@ -150,8 +226,19 @@ def process_audio(file_path: Path, file_id: str) -> dict:
         'error': None
     }
 
-    # Transcribe audio
-    transcript = transcribe_audio(file_path)
+    transcript = None
+
+    # Try OpenAI API first (unless local is forced)
+    if not USE_LOCAL_WHISPER:
+        try:
+            transcript = await _transcribe_with_openai(file_path)
+        except Exception as e:
+            logger.warning(f"OpenAI transcription failed, falling back to local: {e}")
+
+    # Fallback to local Whisper if needed
+    if not transcript:
+        transcript = _transcribe_local(file_path, WHISPER_LANGUAGE)
+
     if transcript:
         # Save transcript to file
         transcript_path = output_dir / f"{file_id}_transcript.txt"
