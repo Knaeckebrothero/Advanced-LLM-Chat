@@ -457,10 +457,15 @@ class FessiAgent:
 
         # If no attachments, return plain text
         if not has_images and not has_documents and not has_audio:
-            # Add note if images were provided but processing is disabled
+            # Add image placeholders with file IDs when image processing is disabled
+            # This allows the agent to use the get_file_content tool to analyze them
             if images and not is_image_processing_enabled():
-                image_count = len(images)
-                image_note = f"\n\n[Note: {image_count} image(s) attached but image processing is disabled]"
+                image_placeholders = []
+                for img in images:
+                    file_id = img.get('fileId', 'unknown')
+                    name = img.get('name', 'Unknown image')
+                    image_placeholders.append(f"[Attached Image: {name} (fileId: {file_id})]")
+                image_note = "\n\n" + "\n".join(image_placeholders)
                 return text + image_note
             return text
 

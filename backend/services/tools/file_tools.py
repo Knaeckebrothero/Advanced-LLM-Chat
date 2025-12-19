@@ -5,7 +5,7 @@ Allows the agent to retrieve content from files shared earlier in the conversati
 """
 
 import logging
-from typing import Optional, List, Union
+from typing import Optional, List
 
 from langchain_core.tools import tool
 
@@ -26,12 +26,19 @@ async def get_file_content(
     - Look up specific information from a document
     - Analyze images that were shared previously
 
-    For specific questions about file content, use the 'query' parameter
-    to get a targeted answer without loading the entire file.
+    The tool always returns text content:
+    - For text files: Returns the file content directly
+    - For images: Returns a visual description (cached, or generated on demand)
+    - For PDFs: Returns extracted text plus visual descriptions of pages
+    - For audio: Returns the transcript
+
+    Use the 'query' parameter to ask specific questions about visual content.
+    This passes your question to a vision model for targeted analysis.
 
     Args:
         file_id: The file identifier shown in the attachment placeholder (e.g., "abc123")
         query: Optional question about the file (e.g., "What is the total revenue?")
+               For images/PDFs, this enables targeted visual analysis.
         pages: For PDFs, specific pages to retrieve as a list (e.g., [1, 3, 5])
 
     Returns:
@@ -39,33 +46,31 @@ async def get_file_content(
         and/or visual descriptions.
     """
     from ..file_retrieval_service import get_file_retrieval_service
-    
+
     logger.info(f"get_file_content called: file_id={file_id}, query={query}, pages={pages}")
-    
+
     service = get_file_retrieval_service()
+    # Always force text mode - tools return strings, not raw images
     result = await service.get_content(
         file_id=file_id,
         query=query,
-        pages=pages
+        pages=pages,
+        model_receives_images=False  # Force text descriptions for tool output
     )
     
     if result.error:
         logger.warning(f"File retrieval error for {file_id}: {result.error}")
         return f"[Error: {result.error}]"
     
-    # Build response
+    # Build response - always text since we force model_receives_images=False
     response_parts = []
-    
+
     if result.text:
         response_parts.append(result.text)
-    
+
+    # Add visual description if different from main text (e.g., for PDFs with both)
     if result.description and result.description != result.text:
         response_parts.append(f"\n[Visual Description]\n{result.description}")
-    
-    if result.images:
-        # For multimodal models, images are handled separately
-        # Here we just note that images are available
-        response_parts.append(f"\n[{len(result.images)} image(s) available]")
     
     if not response_parts:
         return "[No content found for this file]"
