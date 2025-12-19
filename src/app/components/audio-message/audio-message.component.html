@@ -34,7 +34,7 @@
 
     <!-- Time display -->
     <span class="time-display">
-      {{ formatTime(currentTime) }} / {{ duration > 0 ? formatTime(duration) : displayDuration }}
+      {{ formatTime(currentTime) }} / {{ hasValidDuration ? formatTime(duration) : displayDuration }}
     </span>
   </div>
 
