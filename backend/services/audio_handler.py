@@ -34,12 +34,16 @@ _whisper_model = None
 
 def is_audio(mime_type: str) -> bool:
     """Check if the MIME type is a supported audio format."""
-    return mime_type.lower() in SUPPORTED_AUDIO_TYPES
+    # Handle MIME types with parameters (e.g., "audio/webm;codecs=opus")
+    base_mime = mime_type.lower().split(';')[0].strip()
+    return base_mime in SUPPORTED_AUDIO_TYPES
 
 
 def get_audio_type(mime_type: str) -> Optional[str]:
     """Get the audio type from MIME type."""
-    return SUPPORTED_AUDIO_TYPES.get(mime_type.lower())
+    # Handle MIME types with parameters (e.g., "audio/webm;codecs=opus")
+    base_mime = mime_type.lower().split(';')[0].strip()
+    return SUPPORTED_AUDIO_TYPES.get(base_mime)
 
 
 def get_file_path(file_id: str) -> Optional[Path]:
