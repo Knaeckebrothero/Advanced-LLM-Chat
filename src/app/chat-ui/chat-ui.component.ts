@@ -351,8 +351,6 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       filePreviews[0].name.includes('Voice message');
 
     if (isVoiceMessageBatch) {
-      // Voice messages are pre-uploaded by inputfield component
-      // They come in their own batch and should be sent immediately
       const voiceFile = filePreviews[0];
 
       // Skip if already marked as sent (prevent double-send)
@@ -362,11 +360,15 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       (voiceFile as any).isSent = true;
 
       try {
-        // Get transcript - should already be set from upload
-        const transcript = voiceFile.transcript || 'Voice message';
-
-        // Send as a text message with the audio file as attachment
-        await this.chatState.sendMessageWithFiles(transcript, [voiceFile]);
+        // If still uploading, wait for transcript before sending to AI
+        if (voiceFile.uploadStatus === 'uploading') {
+          // Show message immediately with placeholder, then wait for transcript
+          await this.handleVoiceMessageWithPendingTranscript(voiceFile);
+        } else {
+          // Transcript already available (or upload failed)
+          const transcript = voiceFile.transcript || 'Voice message';
+          await this.chatState.sendMessageWithFiles(transcript, [voiceFile]);
+        }
 
         this.shouldScrollToBottom = true;
         this.wasNearBottom = true;
@@ -379,6 +381,54 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       // Regular file attachments - add to pending files for manual send
       this.pendingFiles = filePreviews;
     }
+  }
+
+  // Handle voice message when transcript is still pending (upload in progress)
+  private async handleVoiceMessageWithPendingTranscript(voiceFile: FilePreview): Promise<void> {
+    // Show message immediately with "Transcribing..." placeholder
+    const placeholderText = '🎤 Transcribing voice message...';
+
+    // Create and display message locally first (don't sync to backend yet)
+    await this.chatState.addLocalVoiceMessage(placeholderText, voiceFile);
+
+    // Wait for upload to complete (poll for transcript)
+    const transcript = await this.waitForTranscript(voiceFile, 30000); // 30 second timeout
+
+    // Update message with real transcript and trigger AI response
+    await this.chatState.updateVoiceMessageAndRespond(voiceFile, transcript);
+  }
+
+  // Wait for transcript to become available
+  private waitForTranscript(voiceFile: FilePreview, timeoutMs: number): Promise<string> {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const checkInterval = 200; // Check every 200ms
+
+      const check = () => {
+        // Check if transcript is ready
+        if (voiceFile.transcript) {
+          resolve(voiceFile.transcript);
+          return;
+        }
+
+        // Check if upload failed
+        if (voiceFile.uploadStatus === 'failed') {
+          resolve('Voice message (transcription failed)');
+          return;
+        }
+
+        // Check timeout
+        if (Date.now() - startTime > timeoutMs) {
+          resolve('Voice message');
+          return;
+        }
+
+        // Keep checking
+        setTimeout(check, checkInterval);
+      };
+
+      check();
+    });
   }
 
   // SIMPLIFIED: Camera is now handled by the input component directly

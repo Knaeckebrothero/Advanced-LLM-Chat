@@ -1,8 +1,13 @@
-<div class="audio-message">
+<div class="audio-message" [class.is-transcribing]="isTranscribing">
   <!-- Header with icon and title -->
   <div class="audio-header">
     <mat-icon class="audio-icon">mic</mat-icon>
     <span class="audio-title">Voice message ({{ displayDuration }})</span>
+    <!-- Transcribing indicator -->
+    <span *ngIf="isTranscribing" class="transcribing-badge">
+      <mat-spinner diameter="14"></mat-spinner>
+      <span>Transcribing...</span>
+    </span>
   </div>
 
   <!-- Audio player -->
@@ -11,15 +16,16 @@
     <button mat-icon-button
             class="play-button"
             (click)="togglePlay()"
-            [disabled]="isLoading || audioError"
+            [disabled]="isLoading || audioError || isTranscribing"
             [attr.aria-label]="isPlaying ? 'Pause' : 'Play'">
       <mat-icon *ngIf="isLoading">hourglass_empty</mat-icon>
-      <mat-icon *ngIf="!isLoading && !audioError">{{ isPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
+      <mat-icon *ngIf="!isLoading && !audioError && !isTranscribing">{{ isPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
       <mat-icon *ngIf="audioError">error_outline</mat-icon>
+      <mat-icon *ngIf="isTranscribing && !isLoading">hourglass_empty</mat-icon>
     </button>
 
     <!-- Progress bar -->
-    <div class="progress-container" (click)="onSeek($event)">
+    <div class="progress-container" (click)="onSeek($event)" [class.disabled]="isTranscribing">
       <div class="progress-track">
         <div class="progress-fill" [style.width.%]="progressPercent"></div>
         <div class="progress-thumb" [style.left.%]="progressPercent"></div>
@@ -33,7 +39,7 @@
   </div>
 
   <!-- Error state -->
-  <div *ngIf="audioError" class="audio-error">
+  <div *ngIf="audioError && !isTranscribing" class="audio-error">
     <span>Failed to load audio</span>
     <button mat-button color="primary" (click)="retryLoad()">
       <mat-icon>refresh</mat-icon>
@@ -41,20 +47,31 @@
     </button>
   </div>
 
-  <!-- Transcript toggle -->
-  <button mat-button
-          class="transcript-toggle"
-          (click)="toggleTranscript()"
-          [disabled]="isLoadingTranscript">
-    <mat-icon>{{ showTranscript ? 'expand_less' : 'expand_more' }}</mat-icon>
-    {{ showTranscript ? 'Hide transcript' : 'Show transcript' }}
-    <mat-icon *ngIf="isLoadingTranscript" class="loading-spinner">hourglass_empty</mat-icon>
-  </button>
+  <!-- Upload pending/failed state -->
+  <div *ngIf="isUploadPending || isUploadFailed" class="upload-status">
+    <mat-icon *ngIf="isUploadPending">cloud_off</mat-icon>
+    <mat-icon *ngIf="isUploadFailed" class="error-icon">error_outline</mat-icon>
+    <span *ngIf="isUploadPending">Waiting for connection...</span>
+    <span *ngIf="isUploadFailed">{{ attachment.error || 'Upload failed' }}</span>
+  </div>
 
-  <!-- Transcript content -->
-  <div *ngIf="showTranscript" class="transcript-container" [@expandCollapse]>
-    <div class="transcript-divider"></div>
-    <p class="transcript-text">{{ loadedTranscript || 'No transcript available' }}</p>
+  <!-- Transcript section (auto-shown when transcribing completes) -->
+  <div class="transcript-section" *ngIf="!isTranscribing">
+    <!-- Transcript toggle -->
+    <button mat-button
+            class="transcript-toggle"
+            (click)="toggleTranscript()"
+            [disabled]="isLoadingTranscript">
+      <mat-icon>{{ showTranscript ? 'expand_less' : 'expand_more' }}</mat-icon>
+      {{ showTranscript ? 'Hide transcript' : 'Show transcript' }}
+      <mat-icon *ngIf="isLoadingTranscript" class="loading-spinner">hourglass_empty</mat-icon>
+    </button>
+
+    <!-- Transcript content -->
+    <div *ngIf="showTranscript" class="transcript-container">
+      <div class="transcript-divider"></div>
+      <p class="transcript-text">{{ loadedTranscript || 'No transcript available' }}</p>
+    </div>
   </div>
 
   <!-- Hidden audio element -->

@@ -28,6 +28,19 @@
   color: var(--text-primary, inherit);
 }
 
+.transcribing-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--audio-icon-color, #1976d2);
+  margin-left: auto;
+
+  span {
+    opacity: 0.9;
+  }
+}
+
 .audio-player-container {
   display: flex;
   align-items: center;
@@ -54,6 +67,11 @@
   align-items: center;
   cursor: pointer;
   padding: 0 4px;
+
+  &.disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 }
 
 .progress-track {
@@ -112,6 +130,48 @@
 
   span {
     flex: 1;
+  }
+}
+
+.upload-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: rgba(128, 128, 128, 0.1);
+  color: var(--text-secondary, rgba(128, 128, 128, 0.8));
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .error-icon {
+    color: #f44336;
+  }
+}
+
+.transcript-section {
+  display: flex;
+  flex-direction: column;
+}
+
+// Transcribing state - pulse animation
+.audio-message.is-transcribing {
+  .audio-icon {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
 

@@ -507,15 +507,53 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
         // Create file preview from recording result (now async to include base64)
         const filePreview = await this.fileHandlingService.createAudioFilePreview(result);
 
-        // Upload voice message immediately (don't add to preview)
-        await this.uploadFilesImmediately([filePreview]);
+        // Set status to UPLOADING (not PENDING) for immediate display
+        filePreview.uploadStatus = UploadStatus.UPLOADING;
 
-        // Emit voice file directly for immediate sending (bypass preview display)
-        // We emit as a separate array so it goes straight to send, not to preview
+        // Emit voice file immediately for instant display in chat
+        // The message will show with "Transcribing..." indicator
         this.filesSelected.emit([filePreview]);
+
+        // Upload in background - will update filePreview with fileId and transcript
+        this.uploadVoiceMessageInBackground(filePreview);
       }
     } catch (error) {
       console.error('Error stopping recording:', error);
+    }
+  }
+
+  // Upload voice message in background and notify when complete
+  private async uploadVoiceMessageInBackground(filePreview: FilePreview): Promise<void> {
+    try {
+      // Check if backend is available
+      const backendAvailable = await this.isBackendAvailable();
+
+      if (!backendAvailable) {
+        filePreview.uploadStatus = UploadStatus.PENDING;
+        filePreview.error = 'Waiting for connection';
+        console.log('Backend not available, voice message marked as pending');
+        return;
+      }
+
+      // Upload the file
+      const uploadResults = await this.apiService.uploadFiles([filePreview]);
+
+      if (uploadResults.length > 0) {
+        const result = uploadResults[0];
+        filePreview.uploadStatus = UploadStatus.COMPLETED;
+        filePreview.id = result.fileId;
+        filePreview.error = undefined;
+
+        // Store transcript for audio files
+        if (result.transcript) {
+          filePreview.transcript = result.transcript;
+          console.log('Voice message transcribed:', filePreview.name, result.transcript.substring(0, 50) + '...');
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading voice message:', error);
+      filePreview.uploadStatus = UploadStatus.FAILED;
+      filePreview.error = 'Upload failed';
     }
   }
 

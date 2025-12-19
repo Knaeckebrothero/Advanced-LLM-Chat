@@ -1,8 +1,9 @@
-import { Component, Input, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ViewChild, ElementRef, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
-import { IFilePreview, FileType } from '../../data/models';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { IFilePreview, FileType, UploadStatus } from '../../data/models';
 import { ApiService } from '../../services/api.service';
 
 /**
@@ -15,12 +16,13 @@ import { ApiService } from '../../services/api.service';
   imports: [
     CommonModule,
     MatIconModule,
-    MatButtonModule
+    MatButtonModule,
+    MatProgressSpinnerModule
   ],
   templateUrl: './audio-message.component.html',
   styleUrls: ['./audio-message.component.scss']
 })
-export class AudioMessageComponent implements OnInit, OnDestroy {
+export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
   @Input() attachment!: IFilePreview;
   @Input() transcript?: string;
   @Input() messageId?: number;
@@ -44,6 +46,19 @@ export class AudioMessageComponent implements OnInit, OnDestroy {
   audioUrl: string | null = null;
   private objectUrl: string | null = null;
 
+  // Upload status helpers
+  get isTranscribing(): boolean {
+    return this.attachment?.uploadStatus === UploadStatus.UPLOADING;
+  }
+
+  get isUploadPending(): boolean {
+    return this.attachment?.uploadStatus === UploadStatus.PENDING;
+  }
+
+  get isUploadFailed(): boolean {
+    return this.attachment?.uploadStatus === UploadStatus.FAILED;
+  }
+
   constructor(private apiService: ApiService) {}
 
   ngOnInit(): void {
@@ -56,6 +71,27 @@ export class AudioMessageComponent implements OnInit, OnDestroy {
     this.initializeAudioUrl();
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    // React to attachment changes (e.g., when transcript becomes available)
+    if (changes['attachment'] && !changes['attachment'].firstChange) {
+      const newAttachment = changes['attachment'].currentValue;
+      if (newAttachment?.transcript && !this.loadedTranscript) {
+        this.loadedTranscript = newAttachment.transcript;
+      }
+      // Re-initialize audio URL if needed
+      if (!this.audioUrl && newAttachment?.base64Data) {
+        this.initializeAudioUrl();
+      }
+    }
+
+    // React to transcript input changes
+    if (changes['transcript'] && !changes['transcript'].firstChange) {
+      if (changes['transcript'].currentValue) {
+        this.loadedTranscript = changes['transcript'].currentValue;
+      }
+    }
+  }
+
   /**
    * Initialize audio URL from available sources:
    * 1. Local File object (best quality, works offline)
@@ -63,21 +99,33 @@ export class AudioMessageComponent implements OnInit, OnDestroy {
    * 3. Backend API (fallback, requires network)
    */
   private initializeAudioUrl(): void {
+    console.log('AudioMessage: Initializing audio URL', {
+      hasFile: !!this.attachment.file,
+      fileSize: this.attachment.file?.size,
+      hasBase64: !!this.attachment.base64Data,
+      base64Length: this.attachment.base64Data?.length,
+      attachmentId: this.attachment.id,
+      uploadStatus: this.attachment.uploadStatus
+    });
+
     // Priority 1: Local file object
     if (this.attachment.file && this.attachment.file.size > 0) {
       this.objectUrl = URL.createObjectURL(this.attachment.file);
       this.audioUrl = this.objectUrl;
+      console.log('AudioMessage: Using File object URL');
       return;
     }
 
     // Priority 2: Base64 data (stored for offline playback)
     if (this.attachment.base64Data) {
       this.audioUrl = this.attachment.base64Data;
+      console.log('AudioMessage: Using base64 data URL, prefix:', this.attachment.base64Data.substring(0, 50));
       return;
     }
 
     // Priority 3: Will be loaded from backend on first play via loadAudio()
     // audioUrl remains null, will be loaded when user clicks play
+    console.log('AudioMessage: No local audio source, will load from backend on play');
   }
 
   ngOnDestroy(): void {
