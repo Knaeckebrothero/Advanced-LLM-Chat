@@ -3,8 +3,11 @@
  *
  * This file implements the IMessage interface from models/.
  * Uses a hybrid approach with TypeScript discriminated unions
- * to support multiple message types (text, voice, agent) while maintaining
+ * to support multiple message types (text, agent) while maintaining
  * type safety and backwards compatibility.
+ *
+ * Note: Voice messages are now handled as text messages with audio file attachments.
+ * The transcript is stored in the text content, and the audio file is an attachment.
  */
 
 import {
@@ -12,7 +15,6 @@ import {
   IMessageMetadata,
   IMessageContent,
   ITextContent,
-  IVoiceContent,
   IAgentContent,
   IAgentStep,
   AgentStepType,
@@ -23,7 +25,6 @@ import { IFilePreview, UploadStatus, FileType } from '../models';
 
 // Re-export types from models for backwards compatibility
 export type { ITextContent as TextContent } from '../models';
-export type { IVoiceContent as VoiceContent } from '../models';
 export type { IAgentContent as AgentContent } from '../models';
 export type { IAgentStep as AgentStep } from '../models';
 export type { AgentStepType, AgentStatus, AgentDisplayMode } from '../models';
@@ -174,24 +175,6 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
     });
   }
 
-  static createVoice(
-    metadata: IMessageMetadata,
-    audioData: string,
-    duration: number,
-    mimeType: string,
-    transcript?: string,
-    waveform?: number[]
-  ): Message<IVoiceContent> {
-    return new Message(metadata, {
-      type: 'voice',
-      audioData,
-      duration,
-      mimeType,
-      transcript,
-      waveform
-    });
-  }
-
   static createAgent(
     conversationId: string,
     steps: IAgentStep[] = [],
@@ -232,16 +215,7 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
       rating: data.rating !== undefined ? data.rating : null
     };
 
-    if (data.type === 'voice' && data.audioData) {
-      return Message.createVoice(
-        metadata,
-        data.audioData,
-        data.duration,
-        data.mimeType,
-        data.transcript,
-        data.waveform
-      );
-    } else if (data.type === 'agent') {
+    if (data.type === 'agent') {
       return new Message<IAgentContent>(metadata, {
         type: 'agent',
         steps: data.steps || [],
@@ -298,17 +272,6 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
           ...base,
           content: textContent.content,
           ...(attachmentRefs && attachmentRefs.length > 0 && { attachments: attachmentRefs })
-        };
-
-      case 'voice':
-        const voiceContent = this.content as IVoiceContent;
-        return {
-          ...base,
-          audioData: voiceContent.audioData,
-          duration: voiceContent.duration,
-          mimeType: voiceContent.mimeType,
-          ...(voiceContent.transcript && { transcript: voiceContent.transcript }),
-          ...(voiceContent.waveform && { waveform: voiceContent.waveform })
         };
 
       case 'agent':
@@ -375,10 +338,6 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
 
   isText(): this is Message<ITextContent> {
     return this.content.type === 'text';
-  }
-
-  isVoice(): this is Message<IVoiceContent> {
-    return this.content.type === 'voice';
   }
 
   isAgent(): this is Message<IAgentContent> {
@@ -470,19 +429,11 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
     switch (this.content.type) {
       case 'text':
         return (this.content as ITextContent).content;
-      case 'voice':
-        return `🎤 Voice message (${this.formatDuration((this.content as IVoiceContent).duration)})`;
       case 'agent':
         return (this.content as IAgentContent).finalResponse || `Agent ${(this.content as IAgentContent).status}...`;
       default:
         return 'Unknown message type';
     }
-  }
-
-  private formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   computeHash(): number {
@@ -535,8 +486,6 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
 
     if (data.content) {
       switch (data.content.type) {
-        case 'voice':
-          return new Message<IVoiceContent>(metadata, data.content);
         case 'agent':
           return new Message<IAgentContent>(metadata, {
             type: 'agent',

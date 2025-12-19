@@ -187,20 +187,6 @@ describe('ChatStateService', () => {
       }));
     });
 
-    it('should send voice message', async () => {
-      const mockBlob = new Blob(['audio'], { type: 'audio/webm' });
-      await service.sendVoiceMessage(mockBlob, 5, 'audio/webm', 'Test transcript');
-      
-      expect(mockMessageRepo.save).toHaveBeenCalledWith(jasmine.objectContaining({
-        content: jasmine.objectContaining({
-          type: 'voice',
-          duration: 5,
-          mimeType: 'audio/webm',
-          transcript: 'Test transcript'
-        })
-      }));
-    });
-
     it('should generate AI message', async () => {
       await service.generateMessage('assistant');
       expect(mockApiService.generateMessage).toHaveBeenCalled();

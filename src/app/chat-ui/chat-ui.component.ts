@@ -345,41 +345,28 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
 
   // Handle file attachment request (including voice messages)
   async onFileRequested(filePreviews: FilePreview[]): Promise<void> {
-    // This logic is more complex than dev but should be fine.
-    // It replaces the local array with the full, updated array from the child component.
-    this.pendingFiles = filePreviews;
+    // Check if this is a voice message (single audio file with "Voice message" name)
+    const isVoiceMessageBatch = filePreviews.length === 1 &&
+      filePreviews[0].mimeType.startsWith('audio/') &&
+      filePreviews[0].name.includes('Voice message');
 
-    // Find a voice message that hasn't been marked as 'sent' yet.
-    const voiceFile = this.pendingFiles.find(
-      (fp) =>
-        fp.mimeType.startsWith('audio/') &&
-        fp.name.includes('Voice message') &&
-        !(fp as any).isSent
-    );
+    if (isVoiceMessageBatch) {
+      // Voice messages are pre-uploaded by inputfield component
+      // They come in their own batch and should be sent immediately
+      const voiceFile = filePreviews[0];
 
-    if (voiceFile) {
-      // Mark as sent immediately to prevent re-sending.
+      // Skip if already marked as sent (prevent double-send)
+      if ((voiceFile as any).isSent) {
+        return;
+      }
       (voiceFile as any).isSent = true;
 
       try {
-        // Wait for the file to be uploaded and transcribed
-        // The transcript should already be set by uploadFilesImmediately in the inputfield component
-        // If not uploaded yet, wait a bit for it to complete
-        let waitAttempts = 0;
-        const maxWaitAttempts = 30; // Wait up to 30 seconds for transcription
-        while (!voiceFile.transcript && voiceFile.uploadStatus !== 'completed' && waitAttempts < maxWaitAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          waitAttempts++;
-        }
-
-        // Get transcript - use the one from upload response, or fallback to placeholder
+        // Get transcript - should already be set from upload
         const transcript = voiceFile.transcript || 'Voice message';
 
         // Send as a text message with the audio file as attachment
         await this.chatState.sendMessageWithFiles(transcript, [voiceFile]);
-
-        // After successfully sending, permanently remove it from the pending list.
-        this.pendingFiles = this.pendingFiles.filter(fp => fp.id !== voiceFile.id);
 
         this.shouldScrollToBottom = true;
         this.wasNearBottom = true;
@@ -388,6 +375,9 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
         // Un-mark if sending failed, so it can be retried.
         delete (voiceFile as any).isSent;
       }
+    } else {
+      // Regular file attachments - add to pending files for manual send
+      this.pendingFiles = filePreviews;
     }
   }
 

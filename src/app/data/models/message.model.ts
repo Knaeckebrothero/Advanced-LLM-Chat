@@ -11,7 +11,7 @@ import { IFilePreview } from './file.model';
 // Core Types
 // ============================================================================
 
-export type MessageType = 'text' | 'voice' | 'agent';
+export type MessageType = 'text' | 'agent';
 export type AgentStepType = 'thought' | 'tool_call' | 'tool_result' | 'observation';
 export type AgentStatus = 'thinking' | 'responding' | 'complete' | 'error';
 export type SyncStatus = 'pending' | 'synced' | 'error' | 'local-only';
@@ -49,15 +49,6 @@ export interface ITextContent {
   attachments?: IFilePreview[];
 }
 
-export interface IVoiceContent {
-  type: 'voice';
-  audioData: string;
-  duration: number;
-  mimeType: string;
-  transcript?: string;
-  waveform?: number[];
-}
-
 export interface IAgentStep {
   id: string;
   type: AgentStepType;
@@ -77,7 +68,7 @@ export interface IAgentContent {
   error?: string;
 }
 
-export type IMessageContent = ITextContent | IVoiceContent | IAgentContent;
+export type IMessageContent = ITextContent | IAgentContent;
 
 // ============================================================================
 // Complete Message Interface
@@ -90,5 +81,4 @@ export interface IMessage<T extends IMessageContent = IMessageContent> {
 
 // Convenience type aliases
 export type ITextMessage = IMessage<ITextContent>;
-export type IVoiceMessage = IMessage<IVoiceContent>;
 export type IAgentMessage = IMessage<IAgentContent>;

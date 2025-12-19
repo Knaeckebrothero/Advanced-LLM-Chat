@@ -562,7 +562,7 @@ Component → State Service → Repository → API Service → Backend
 - **Observable Pattern**: RxJS for async operations and state management
 - **Guard Pattern**: Route protection via AuthGuard
 - **Interceptor Pattern**: Automatic auth header injection
-- **Factory Pattern**: Type-safe message creation (Message.createText, Message.createVoice)
+- **Factory Pattern**: Type-safe message creation (Message.createText, Message.createAgent)
 - **Repository Pattern**: Abstraction of data access logic
 - **Discriminated Unions**: Type-safe message content handling
 

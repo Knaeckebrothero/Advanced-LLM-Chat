@@ -1,6 +1,6 @@
 // src/app/chat-ui/chat-ui-message/chat-ui-message.component.ts
 import { Component, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
-import { Message, VoiceContent, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
+import { Message, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
 import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
@@ -74,18 +74,6 @@ export class ChatUiMessageComponent implements OnChanges {
       .replace(this.chatUI.aiName + ':', '') // Remove the AI's name from the message
       .replace(/"/ + this.chatUI.aiName + ':' + /"/, '') // Remove the AI's name from the message
       .replace(/\*(.*?)\*/g, '<em>$1</em>'); // Replace asterix with <em> tags, *text* -> <em>text</em>
-  }
-
-  // Helper to format duration
-  formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  getVoiceMessageUrl(message: Message<VoiceContent>): SafeUrl {
-    const src = `data:${message.content.mimeType};base64,${message.content.audioData}`;
-    return this.sanitizer.bypassSecurityTrustUrl(src);
   }
 
   getAttachmentIcon(type: FileType): string {

@@ -173,7 +173,7 @@ The project follows Git Flow:
 - **TypeScript Strict Mode**: All code must pass strict TypeScript checks - no ESLint configured
 - **Angular Material**: Use existing Material components for UI consistency
 - **State Services**: Prefer injecting state services (`ChatStateService`, `UIStateService`, `SettingsStateService`) over direct repository access
-- **Message Type Safety**: Use factory methods `Message.createText()`, `Message.createVoice()` for type-safe message creation
+- **Message Type Safety**: Use factory methods `Message.createText()`, `Message.createAgent()` for type-safe message creation
 
 ### Data Layer
 - **IndexedDB**: All database operations go through `DbService` - never access IndexedDB directly
@@ -240,10 +240,11 @@ The backend provides these main endpoints (all require session authentication):
 ## Message System
 
 The message system uses a discriminated union pattern with factory methods:
-- **TextContent**: Regular text messages with optional file attachments
-- **VoiceContent**: Audio messages with base64 data, duration, and optional transcript
+- **TextContent**: Regular text messages with optional file attachments (including voice messages)
 - **AgentContent**: Agent responses with reasoning steps and final response
-- Create messages via `Message.createText()` or `Message.createVoice()`
+- Create messages via `Message.createText()` or `Message.createAgent()`
+
+Note: Voice messages are now handled as TextContent with an audio file attachment. The transcript is stored in the text content, and the audio file is an attachment with `FileType.AUDIO`.
 
 ## Agent Streaming Protocol
 

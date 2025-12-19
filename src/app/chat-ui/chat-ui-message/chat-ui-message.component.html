@@ -1,7 +1,7 @@
 <!-- Modern Chat Message Component -->
 <div class="message-row" [class.message-row--user]="message.roleName === 'user'"
   [class.message-row--assistant]="message.roleName !== 'user'"
-  [class.message-row--system]="message.roleName === 'system'" [class.message-row--voice]="message.isVoice()">
+  [class.message-row--system]="message.roleName === 'system'">
 
   <!-- Avatar -->
   <div class="message-avatar" [class.message-avatar--user]="message.roleName === 'user'">
@@ -78,24 +78,6 @@
         <!-- Edit mode - only for text messages -->
         <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
           [innerText]="message.textContent" (blur)="updateContent(editableDiv.innerText)">
-        </div>
-      </ng-container>
-
-      <!-- == VOICE MESSAGE == -->
-      <ng-container *ngIf="message.isVoice()">
-        <div class="voice-message">
-          <div class="voice-header">
-            <mat-icon class="voice-icon">mic</mat-icon>
-            <span class="voice-duration">Voice message ({{ formatDuration(message.content.duration) }})</span>
-          </div>
-          <div *ngIf="message.content.transcript" class="voice-transcript">
-            <em [innerHTML]="formatText(message.content.transcript)"></em>
-          </div>
-          <div class="voice-player">
-            <audio controls class="voice-audio-player" [src]="getVoiceMessageUrl(message)">
-              Your browser does not support the audio element.
-            </audio>
-          </div>
         </div>
       </ng-container>
 

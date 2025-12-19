@@ -11,8 +11,8 @@
   <!-- File preview area (shown when files are selected) -->
   <div class="file-preview-area" *ngIf="filePreviews.length > 0 && !isRecording">
     <a *ngFor="let preview of filePreviews"
-       [href]="preview.type !== 'image' ? createDownloadUrl(preview.file) : preview.preview"
-       [download]="preview.type !== 'image' ? preview.name : null"
+       [href]="preview.type !== 'image' && preview.file ? createDownloadUrl(preview.file) : (preview.preview || '#')"
+       [download]="preview.type !== 'image' && preview.file ? preview.name : null"
        (click)="onAttachmentClick($event, preview)"
        class="file-preview-item"
        [class.is-image]="preview.type === 'image'">

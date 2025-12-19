@@ -504,12 +504,15 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       const result = await this.voiceRecordingService.stopRecording();
 
       if (result) {
-        // Create file preview from recording result
-        const filePreview = this.fileHandlingService.createAudioFilePreview(result);
+        // Create file preview from recording result (now async to include base64)
+        const filePreview = await this.fileHandlingService.createAudioFilePreview(result);
 
-        // Add to file previews
-        this.filePreviews = [...this.filePreviews, filePreview];
-        this.filesSelected.emit(this.filePreviews);
+        // Upload voice message immediately (don't add to preview)
+        await this.uploadFilesImmediately([filePreview]);
+
+        // Emit voice file directly for immediate sending (bypass preview display)
+        // We emit as a separate array so it goes straight to send, not to preview
+        this.filesSelected.emit([filePreview]);
       }
     } catch (error) {
       console.error('Error stopping recording:', error);

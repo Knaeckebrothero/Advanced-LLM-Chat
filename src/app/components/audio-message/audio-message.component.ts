@@ -52,11 +52,32 @@ export class AudioMessageComponent implements OnInit, OnDestroy {
       this.loadedTranscript = this.transcript;
     }
 
-    // If local file is available, create URL from it
+    // Try to get audio URL from various sources
+    this.initializeAudioUrl();
+  }
+
+  /**
+   * Initialize audio URL from available sources:
+   * 1. Local File object (best quality, works offline)
+   * 2. Base64 data (works after deserialization from IndexedDB)
+   * 3. Backend API (fallback, requires network)
+   */
+  private initializeAudioUrl(): void {
+    // Priority 1: Local file object
     if (this.attachment.file && this.attachment.file.size > 0) {
       this.objectUrl = URL.createObjectURL(this.attachment.file);
       this.audioUrl = this.objectUrl;
+      return;
     }
+
+    // Priority 2: Base64 data (stored for offline playback)
+    if (this.attachment.base64Data) {
+      this.audioUrl = this.attachment.base64Data;
+      return;
+    }
+
+    // Priority 3: Will be loaded from backend on first play via loadAudio()
+    // audioUrl remains null, will be loaded when user clicks play
   }
 
   ngOnDestroy(): void {
