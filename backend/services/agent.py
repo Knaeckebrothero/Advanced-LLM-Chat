@@ -6,7 +6,7 @@ This agent uses Neo4j tools to answer waste disposal questions with multi-step r
 
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, BaseMessage
 from typing import TypedDict, Annotated, Sequence, AsyncGenerator, Union, Optional
 import operator
 import json
@@ -15,6 +15,7 @@ import uuid
 import logging
 
 from .tools.neo4j_tools import get_all_tools
+from .tools.file_tools import get_file_content
 from ..models.message import AgentStep
 from .image_handler import (
     prepare_image_for_llm,
@@ -61,7 +62,28 @@ Du hast Zugang zu einer Wissensdatenbank mit Informationen über:
 - "Was gehört in den Gelben Sack?" -> Nutze get_disposal_method_details
 - "Wo ist der nächste Wertstoffhof?" -> Nutze find_nearby_recycling_centers
 
-You are Fessi, a friendly waste disposal assistant for Frankfurt am Main. Help users dispose of waste correctly using your knowledge database tools. Respond in the same language as the user."""
+## Datei-Zugriff:
+Wenn Nutzer Dateien (Bilder, PDFs, Dokumente) teilen, siehst du in der aktuellen Nachricht den vollständigen Inhalt.
+In Folge-Nachrichten werden Dateien als Platzhalter angezeigt:
+
+[Attachment: report.pdf (fileId: abc123) - 5 pages, PDF document]
+
+Um auf früher geteilte Dateien zuzugreifen, nutze das get_file_content Tool:
+- get_file_content(file_id="abc123") - Gesamten Inhalt abrufen
+- get_file_content(file_id="abc123", query="Was ist der Umsatz?") - Spezifische Frage stellen
+- get_file_content(file_id="abc123", pages=[1, 3]) - Bestimmte Seiten abrufen (für PDFs)
+
+You are Fessi, a friendly waste disposal assistant for Frankfurt am Main. Help users dispose of waste correctly using your knowledge database tools. Respond in the same language as the user.
+
+## File Access:
+When users share files (images, PDFs, documents), you see full content in the current message.
+In follow-up messages, files appear as placeholders like:
+[Attachment: report.pdf (fileId: abc123) - 5 pages, PDF document]
+
+To access previously shared files, use the get_file_content tool:
+- get_file_content(file_id="abc123") - retrieve full content
+- get_file_content(file_id="abc123", query="What is the revenue?") - ask specific question
+- get_file_content(file_id="abc123", pages=[1, 3]) - retrieve specific pages"""
 
 
 class FessiAgent:
@@ -74,7 +96,8 @@ class FessiAgent:
         Args:
             llm: Optional LLM instance. If not provided, will be loaded from llm_provider.
         """
-        self.tools = get_all_tools()
+        # Get Neo4j tools and add file retrieval tool
+        self.tools = get_all_tools() + [get_file_content]
 
         # Import here to avoid circular imports
         if llm is None:
@@ -284,7 +307,8 @@ class FessiAgent:
         user_message: str,
         images: Optional[list[dict]] = None,
         documents: Optional[list[dict]] = None,
-        audio: Optional[list[dict]] = None
+        audio: Optional[list[dict]] = None,
+        conversation_history: Optional[list[BaseMessage]] = None
     ) -> AsyncGenerator[tuple[str, Union[AgentStep, str]], None]:
         """
         Stream both reasoning steps and response tokens.
@@ -297,14 +321,22 @@ class FessiAgent:
             images: Optional list of image attachments with fileId and mimeType.
             documents: Optional list of document attachments with fileId, mimeType, and name.
             audio: Optional list of audio attachments with fileId and name.
+            conversation_history: Optional list of previous messages (with placeholders for old attachments).
 
         Yields:
             Tuples of (type, data) where type is "step" or "token".
         """
         # Build message content - multi-modal if images/documents/audio are provided
         message_content = self._build_message_content(user_message, images, documents, audio)
+
+        # Build messages list: conversation history + current message
+        messages = []
+        if conversation_history:
+            messages.extend(conversation_history)  # Previous messages with placeholders
+        messages.append(HumanMessage(content=message_content))  # Latest with full content
+
         initial_state: AgentState = {
-            "messages": [HumanMessage(content=message_content)],
+            "messages": messages,
             "steps": [],
             "final_response": ""
         }
@@ -395,7 +427,8 @@ class FessiAgent:
             "get_disposal_method_details": "Retrieving Details",
             "find_nearby_recycling_centers": "Searching Locations",
             "get_waste_category_info": "Exploring Categories",
-            "answer_waste_faq": "Searching FAQs"
+            "answer_waste_faq": "Searching FAQs",
+            "get_file_content": "Retrieving File Content"
         }
         return titles.get(tool_name, tool_name)
 

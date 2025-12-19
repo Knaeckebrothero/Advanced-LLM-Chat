@@ -31,6 +31,8 @@ from backend.config import DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DE
 from backend.services.agent import create_fessi_agent
 from backend.services.llm_provider import is_provider_available
 from backend.services.image_handler import extract_image_attachments, extract_document_attachments, extract_audio_attachments
+from backend.services.conversation_history import ConversationHistoryBuilder
+from backend.models.attachments import AttachmentType
 
 router = APIRouter(prefix="/api/message", tags=["Message"])
 
@@ -835,8 +837,27 @@ async def stream_generate(
         }
 
         try:
-            # Get the last user message from the conversation (including attachments)
-            user_message, image_attachments, document_attachments, audio_attachments = await _get_last_user_message(request_body.conversationId)
+            # Build conversation history with placeholders for previous attachments
+            history_builder = ConversationHistoryBuilder(db)
+            history_messages, available_attachments = await history_builder.build_history(
+                request_body.conversationId,
+                limit=20,
+                include_latest_attachments=True
+            )
+
+            if not history_messages:
+                yield {
+                    "event": "error",
+                    "data": json.dumps({"error": "No messages found in conversation"})
+                }
+                return
+
+            # Get latest user message text (for logging/validation)
+            user_message = ""
+            if history_messages:
+                latest = history_messages[-1]
+                if hasattr(latest, 'content'):
+                    user_message = latest.content if isinstance(latest.content, str) else str(latest.content)
 
             if not user_message:
                 yield {
@@ -845,30 +866,53 @@ async def stream_generate(
                 }
                 return
 
+            # Filter attachments by type from available_attachments (for latest message processing)
+            image_attachments = [
+                {"fileId": att.file_id, "mimeType": att.mime_type, "name": att.file_name}
+                for att in available_attachments
+                if att.attachment_type == AttachmentType.IMAGE
+            ]
+            document_attachments = [
+                {"fileId": att.file_id, "mimeType": att.mime_type, "name": att.file_name}
+                for att in available_attachments
+                if att.attachment_type == AttachmentType.PDF
+            ]
+            audio_attachments = [
+                {"fileId": att.file_id, "mimeType": att.mime_type, "name": att.file_name}
+                for att in available_attachments
+                if att.attachment_type == AttachmentType.AUDIO
+            ]
+
             # Log if attachments are found
             if image_attachments:
-                crud_logger.info(f"Found {len(image_attachments)} image attachment(s) in message")
+                crud_logger.info(f"Found {len(image_attachments)} image attachment(s) in conversation")
             if document_attachments:
-                crud_logger.info(f"Found {len(document_attachments)} document attachment(s) in message")
+                crud_logger.info(f"Found {len(document_attachments)} document attachment(s) in conversation")
             if audio_attachments:
-                crud_logger.info(f"Found {len(audio_attachments)} audio attachment(s) in message")
+                crud_logger.info(f"Found {len(audio_attachments)} audio attachment(s) in conversation")
+            if available_attachments:
+                crud_logger.info(f"Total available attachments for file retrieval: {len(available_attachments)}")
 
             # Check if we have an LLM provider configured
             use_agent = is_provider_available("openai") or is_provider_available("anthropic")
 
             if use_agent:
                 # Use the real LangGraph agent
-                crud_logger.info(f"Using LangGraph agent for message: {user_message[:50]}...")
+                crud_logger.info(f"Using LangGraph agent for message: {user_message[:50] if len(user_message) > 50 else user_message}...")
 
                 try:
                     agent = create_fessi_agent()
 
-                    # Stream reasoning steps and response using astream_full (with attachments if available)
+                    # Get conversation history without the latest message (it will be built with attachments)
+                    conversation_history = history_messages[:-1] if len(history_messages) > 1 else None
+
+                    # Stream reasoning steps and response using astream_full
                     async for event_type, event_data in agent.astream_full(
                         user_message,
                         images=image_attachments,
                         documents=document_attachments,
-                        audio=audio_attachments
+                        audio=audio_attachments,
+                        conversation_history=conversation_history
                     ):
                         if event_type == "step":
                             step_dict = event_data.model_dump()

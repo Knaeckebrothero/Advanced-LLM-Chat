@@ -48,6 +48,7 @@ EXPECTED_TABLES = [
     "sessions",
     "guest_usage",
     "user_settings",
+    "file_description_cache",
 ]
 
 
