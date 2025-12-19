@@ -37,19 +37,29 @@ class VisionHelper:
 
     def __init__(self):
         """Initialize the Vision Helper with configuration from environment."""
-        # Load vision-specific config
-        api_key = os.getenv("OPENAI_API_KEY", "")
+        # Load vision-specific config (separate from primary LLM)
+        # This allows using a different provider for vision tasks (e.g., OpenAI gpt-4o)
+        # while the primary agent uses a text-only model on a custom deployment
+        primary_key = os.getenv("OPENAI_API_KEY", "")
         primary_base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
+        # Vision-specific overrides (fall back to primary OpenAI config)
+        self.api_key = os.getenv("VISION_API_KEY", primary_key)
         self.api_base = os.getenv("VISION_BASE_URL", primary_base)
         self.model = os.getenv("VISION_MODEL", "gpt-4o-mini")
 
+        if not self.api_key:
+            logger.warning("No VISION_API_KEY or OPENAI_API_KEY configured - vision tasks will fail")
+
         self.client = AsyncOpenAI(
-            api_key=api_key,
+            api_key=self.api_key,
             base_url=self.api_base
         )
 
-        logger.info(f"VisionHelper initialized: model={self.model}, base_url={self.api_base}")
+        # Log configuration (hiding API key)
+        key_source = "VISION_API_KEY" if os.getenv("VISION_API_KEY") else "OPENAI_API_KEY"
+        base_source = "VISION_BASE_URL" if os.getenv("VISION_BASE_URL") else "OPENAI_BASE_URL"
+        logger.info(f"VisionHelper initialized: model={self.model}, base_url={self.api_base} (from {base_source}), api_key from {key_source}")
 
     async def describe_image(
         self,

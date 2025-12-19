@@ -52,14 +52,14 @@ FILESYSTEM_PATH = os.getenv("FILESYSTEM_PATH", ".filesystem")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
 # Image processing configuration for LLM
-# Set to 'yes' to pass images to vision-capable models
-# Set to 'no' to skip images or include a note that an image was attached
-MODEL_RECEIVE_IMAGES = os.getenv("MODEL_RECEIVE_IMAGES", "yes").lower() == "yes"
+# Set to 'true' to pass images to vision-capable models
+# Set to 'false' to use text descriptions instead
+MODEL_RECEIVE_IMAGES = os.getenv("MODEL_RECEIVE_IMAGES", "false").lower() == "true"
 
 # PDF page images for LLM (vision-capable models only)
-# Set to 'yes' to send PDF page images along with extracted text
-# Set to 'no' to send extracted text only
-MODEL_RECEIVE_IMAGES_PDF = os.getenv("MODEL_RECEIVE_IMAGES_PDF", "yes").lower() == "yes"
+# Set to 'true' to send PDF page images along with extracted text
+# Set to 'false' to send extracted text only
+MODEL_RECEIVE_IMAGES_PDF = os.getenv("MODEL_RECEIVE_IMAGES_PDF", "false").lower() == "true"
 
 # Files directory for uploaded files
 FILES_DIR = os.getenv("FILES_DIR", "./files")
