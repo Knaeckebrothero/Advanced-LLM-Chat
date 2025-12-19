@@ -272,8 +272,13 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
 
   // Get progress percentage
   get progressPercent(): number {
-    if (!this.duration) return 0;
+    if (!this.duration || !Number.isFinite(this.duration)) return 0;
     return (this.currentTime / this.duration) * 100;
+  }
+
+  // Check if duration is valid (finite number > 0)
+  get hasValidDuration(): boolean {
+    return this.duration > 0 && Number.isFinite(this.duration);
   }
 
   // Toggle transcript visibility
