@@ -119,7 +119,7 @@ async def upload_files(
             elif is_audio(file.content_type):
                 logger.info(f"Processing audio file: {file_id}")
                 try:
-                    result = process_audio(file_path, file_id)
+                    result = await process_audio(file_path, file_id)
                     if result.get('transcript'):
                         file_response.transcript = result['transcript']
                         logger.info(f"Audio transcribed: {len(result['transcript'])} characters")
