@@ -8,7 +8,7 @@ with descriptive placeholders, while the latest message includes full content.
 
 import json
 import logging
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Any
 
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
@@ -17,8 +17,8 @@ from ..models.attachments import (
     AttachmentType,
     get_attachment_type
 )
-from ..config import FILES_DIR, MODEL_RECEIVE_IMAGES, MODEL_RECEIVE_IMAGES_PDF
-from .document_handler import get_pdf_page_paths, get_file_path
+from ..config import MODEL_RECEIVE_IMAGES, MODEL_RECEIVE_IMAGES_PDF
+from .document_handler import get_pdf_page_paths
 from .image_handler import prepare_image_for_llm, prepare_document_for_llm
 from .audio_handler import prepare_audio_for_llm
 
