@@ -178,9 +178,12 @@ class Neo4jDatabase:
         Returns:
             List of dictionaries representing the query results.
         """
+        log.debug(f"Executing Cypher query with params: {list((params or {}).keys())}")
         with self.session() as session:
             result = session.run(cypher, params or {})
-            return [dict(record) for record in result]
+            results = [dict(record) for record in result]
+            log.debug(f"Query returned {len(results)} results")
+            return results
 
     async def aquery(self, cypher: str, params: dict = None) -> list:
         """
@@ -193,10 +196,12 @@ class Neo4jDatabase:
         Returns:
             List of dictionaries representing the query results.
         """
+        log.debug(f"Executing async Cypher query with params: {list((params or {}).keys())}")
         driver = await self.get_async_driver()
         async with driver.session() as session:
             result = await session.run(cypher, params or {})
             records = await result.data()
+            log.debug(f"Async query returned {len(records)} results")
             return records
 
     # =========================================================================
@@ -212,8 +217,10 @@ class Neo4jDatabase:
         """
         try:
             self.driver.verify_connectivity()
+            log.debug("Neo4j connectivity verified")
             return True
-        except Exception:
+        except Exception as e:
+            log.debug(f"Neo4j connectivity check failed: {e}")
             return False
 
     def get_stats(self) -> dict:
@@ -223,6 +230,7 @@ class Neo4jDatabase:
         Returns:
             Dictionary with connection status and node counts.
         """
+        log.debug("Getting knowledge graph statistics")
         try:
             result = self.query("""
                 MATCH (n)
@@ -238,12 +246,14 @@ class Neo4jDatabase:
             rel_result = self.query("MATCH ()-[r]->() RETURN count(r) as count")
             rel_count = rel_result[0]["count"] if rel_result else 0
 
+            log.info(f"Knowledge graph stats: {sum(node_counts.values())} nodes, {rel_count} relationships")
             return {
                 "connected": True,
                 "node_counts": node_counts,
                 "relationship_count": rel_count
             }
         except Exception as e:
+            log.warning(f"Failed to get knowledge graph stats: {e}")
             return {
                 "connected": False,
                 "error": str(e)
@@ -264,6 +274,7 @@ class Neo4jDatabase:
         Returns:
             List of matching items with disposal methods and locations.
         """
+        log.debug(f"Searching waste items for: '{search_term}' (limit={limit})")
         query = """
         MATCH (item:WasteItem)
         WHERE toLower(item.name) CONTAINS toLower($search)
@@ -302,9 +313,10 @@ class Neo4jDatabase:
             for result in results:
                 result["locations"] = [loc for loc in result.get("locations", []) if loc.get("name")]
                 result["faqs"] = [faq for faq in result.get("faqs", []) if faq.get("question")]
+            log.info(f"Found {len(results)} waste items matching '{search_term}'")
             return results
         except Exception as e:
-            log.error(f"Error searching waste item: {e}")
+            log.error(f"Error searching waste item '{search_term}': {e}")
             return []
 
     def get_disposal_method(self, method_name: str) -> Optional[dict]:
@@ -317,6 +329,7 @@ class Neo4jDatabase:
         Returns:
             Disposal method details or None if not found.
         """
+        log.debug(f"Getting disposal method: '{method_name}'")
         query = """
         MATCH (method:DisposalMethod)
         WHERE toLower(method.name) CONTAINS toLower($search)
@@ -338,10 +351,12 @@ class Neo4jDatabase:
             if results:
                 result = results[0]
                 result["locations"] = [loc for loc in result.get("locations", []) if loc.get("name")]
+                log.debug(f"Found disposal method: {result.get('name')}")
                 return result
+            log.debug(f"Disposal method not found: '{method_name}'")
             return None
         except Exception as e:
-            log.error(f"Error getting disposal method: {e}")
+            log.error(f"Error getting disposal method '{method_name}': {e}")
             return None
 
     def get_recycling_centers(self, city: str = "Frankfurt") -> list[dict]:
@@ -354,6 +369,7 @@ class Neo4jDatabase:
         Returns:
             List of recycling center details.
         """
+        log.debug(f"Getting recycling centers in: '{city}'")
         query = """
         MATCH (loc:Location)
         WHERE toLower(loc.city) CONTAINS toLower($city)
@@ -368,9 +384,11 @@ class Neo4jDatabase:
         ORDER BY loc.name
         """
         try:
-            return self.query(query, {"city": city})
+            results = self.query(query, {"city": city})
+            log.info(f"Found {len(results)} recycling centers in '{city}'")
+            return results
         except Exception as e:
-            log.error(f"Error getting recycling centers: {e}")
+            log.error(f"Error getting recycling centers in '{city}': {e}")
             return []
 
     def get_waste_category(self, category_name: str) -> Optional[dict]:
@@ -383,6 +401,7 @@ class Neo4jDatabase:
         Returns:
             Category details with items and FAQs or None if not found.
         """
+        log.debug(f"Getting waste category: '{category_name}'")
         query = """
         MATCH (cat:WasteCategory)
         WHERE toLower(cat.name) CONTAINS toLower($search)
@@ -411,10 +430,12 @@ class Neo4jDatabase:
                 result = results[0]
                 result["items"] = [item for item in result.get("items", []) if item.get("item")]
                 result["faqs"] = [faq for faq in result.get("faqs", []) if faq.get("question")]
+                log.debug(f"Found category: {result.get('category_name')} with {len(result.get('items', []))} items")
                 return result
+            log.debug(f"Waste category not found: '{category_name}'")
             return None
         except Exception as e:
-            log.error(f"Error getting waste category: {e}")
+            log.error(f"Error getting waste category '{category_name}': {e}")
             return None
 
     def search_faqs(self, topic: str, limit: int = 5) -> list[dict]:
@@ -428,6 +449,7 @@ class Neo4jDatabase:
         Returns:
             List of matching FAQ entries.
         """
+        log.debug(f"Searching FAQs for: '{topic}' (limit={limit})")
         query = """
         MATCH (faq:FAQ)
         WHERE toLower(faq.question) CONTAINS toLower($search)
@@ -439,9 +461,11 @@ class Neo4jDatabase:
         LIMIT $limit
         """
         try:
-            return self.query(query, {"search": topic, "limit": limit})
+            results = self.query(query, {"search": topic, "limit": limit})
+            log.debug(f"Found {len(results)} FAQs matching '{topic}'")
+            return results
         except Exception as e:
-            log.error(f"Error searching FAQs: {e}")
+            log.error(f"Error searching FAQs for '{topic}': {e}")
             return []
 
     def get_all_categories(self) -> list[dict]:
@@ -451,6 +475,7 @@ class Neo4jDatabase:
         Returns:
             List of all categories with basic info.
         """
+        log.debug("Getting all waste categories")
         query = """
         MATCH (cat:WasteCategory)
         OPTIONAL MATCH (item:WasteItem)-[:BELONGS_TO]->(cat)
@@ -461,7 +486,9 @@ class Neo4jDatabase:
         ORDER BY cat.name
         """
         try:
-            return self.query(query)
+            results = self.query(query)
+            log.debug(f"Retrieved {len(results)} waste categories")
+            return results
         except Exception as e:
             log.error(f"Error getting categories: {e}")
             return []
@@ -473,6 +500,7 @@ class Neo4jDatabase:
         Returns:
             List of all disposal methods with basic info.
         """
+        log.debug("Getting all disposal methods")
         query = """
         MATCH (method:DisposalMethod)
         OPTIONAL MATCH (item:WasteItem)-[:DISPOSED_VIA]->(method)
@@ -485,7 +513,9 @@ class Neo4jDatabase:
         ORDER BY method.name
         """
         try:
-            return self.query(query)
+            results = self.query(query)
+            log.debug(f"Retrieved {len(results)} disposal methods")
+            return results
         except Exception as e:
             log.error(f"Error getting disposal methods: {e}")
             return []

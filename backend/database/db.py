@@ -268,10 +268,16 @@ class Database:
         Returns:
             User dictionary or None if not found.
         """
+        log.debug(f"Getting user by id: {user_id}")
         with self.connection() as conn:
             stmt = select(users).where(users.c.id == user_id)
             result = conn.execute(stmt).fetchone()
-            return self._row_to_dict(result)
+            user = self._row_to_dict(result)
+            if user:
+                log.debug(f"Found user: {user.get('email')}")
+            else:
+                log.debug(f"User not found: {user_id}")
+            return user
 
     def get_user_by_email(self, email: str) -> Optional[dict]:
         """
@@ -283,10 +289,16 @@ class Database:
         Returns:
             User dictionary or None if not found.
         """
+        log.debug(f"Getting user by email: {email}")
         with self.connection() as conn:
             stmt = select(users).where(users.c.email.ilike(email))
             result = conn.execute(stmt).fetchone()
-            return self._row_to_dict(result)
+            user = self._row_to_dict(result)
+            if user:
+                log.debug(f"Found user id: {user.get('id')}")
+            else:
+                log.debug(f"User not found: {email}")
+            return user
 
     def create_user(self, email: str, name: str = None) -> dict:
         """
@@ -317,6 +329,7 @@ class Database:
         Returns:
             Updated user dictionary or None if not found.
         """
+        log.debug(f"Updating user {user_id}: name={name}, email={email}")
         values = {}
         if name is not None:
             values['name'] = name
@@ -324,11 +337,14 @@ class Database:
             values['email'] = email
 
         if not values:
+            log.debug("No values to update")
             return self.get_user_by_id(user_id)
 
         with self.connection() as conn:
             stmt = update(users).where(users.c.id == user_id).values(**values).returning(users)
             result = conn.execute(stmt).fetchone()
+            if result:
+                log.info(f"Updated user: {user_id}")
             return self._row_to_dict(result)
 
     def delete_user(self, user_id: int) -> bool:
@@ -341,10 +357,16 @@ class Database:
         Returns:
             True if deleted, False if not found.
         """
+        log.debug(f"Deleting user: {user_id}")
         with self.connection() as conn:
             stmt = delete(users).where(users.c.id == user_id)
             result = conn.execute(stmt)
-            return result.rowcount > 0
+            deleted = result.rowcount > 0
+            if deleted:
+                log.info(f"Deleted user: {user_id}")
+            else:
+                log.debug(f"User not found for deletion: {user_id}")
+            return deleted
 
     # =========================================================================
     # Conversation CRUD Operations
@@ -367,6 +389,7 @@ class Database:
         Returns:
             Conversation dictionary or None if not found.
         """
+        log.debug(f"Getting conversation: {conversation_id}, user_id: {user_id}")
         with self.connection() as conn:
             if include_message_count:
                 if user_id is not None:
@@ -387,7 +410,12 @@ class Database:
                     stmt = stmt.where(conversations.c.userId == user_id)
                 result = conn.execute(stmt).fetchone()
 
-            return self._row_to_dict(result)
+            conv = self._row_to_dict(result)
+            if conv:
+                log.debug(f"Found conversation: {conversation_id}")
+            else:
+                log.debug(f"Conversation not found: {conversation_id}")
+            return conv
 
     def get_conversations_by_user(self, user_id: int) -> list[dict]:
         """
@@ -399,6 +427,7 @@ class Database:
         Returns:
             List of conversation dictionaries.
         """
+        log.debug(f"Getting conversations for user: {user_id}")
         with self.connection() as conn:
             stmt = (
                 select(conversations)
@@ -406,7 +435,9 @@ class Database:
                 .order_by(conversations.c.updatedAt.desc())
             )
             results = conn.execute(stmt).fetchall()
-            return [self._row_to_dict(row) for row in results]
+            conv_list = [self._row_to_dict(row) for row in results]
+            log.debug(f"Found {len(conv_list)} conversations for user {user_id}")
+            return conv_list
 
     def create_conversation(
         self,
@@ -462,6 +493,7 @@ class Database:
         Returns:
             Updated conversation dictionary or None if not found.
         """
+        log.debug(f"Updating conversation {conversation_id}: name={name}, version={version}")
         values = {}
         if name is not None:
             values['name'] = name
@@ -471,6 +503,7 @@ class Database:
             values['lastModified'] = last_modified
 
         if not values:
+            log.debug("No values to update")
             return self.get_conversation_by_id(conversation_id, user_id)
 
         with self.connection() as conn:
@@ -479,6 +512,8 @@ class Database:
                 stmt = stmt.where(conversations.c.userId == user_id)
             stmt = stmt.values(**values).returning(conversations)
             result = conn.execute(stmt).fetchone()
+            if result:
+                log.info(f"Updated conversation: {conversation_id}")
             return self._row_to_dict(result)
 
     def delete_conversation(self, conversation_id: str, user_id: int = None) -> bool:
@@ -513,10 +548,13 @@ class Database:
         Returns:
             User ID or None if conversation not found.
         """
+        log.debug(f"Getting owner for conversation: {conversation_id}")
         with self.connection() as conn:
             stmt = select(conversations.c.userId).where(conversations.c.id == conversation_id)
             result = conn.execute(stmt).fetchone()
-            return result[0] if result else None
+            owner_id = result[0] if result else None
+            log.debug(f"Conversation {conversation_id} owner: {owner_id}")
+            return owner_id
 
     # =========================================================================
     # Message CRUD Operations
@@ -533,13 +571,19 @@ class Database:
         Returns:
             Message dictionary or None if not found.
         """
+        log.debug(f"Getting message: {message_id} from conversation {conversation_id}")
         with self.connection() as conn:
             stmt = select(messages).where(
                 (messages.c.id == message_id) &
                 (messages.c.conversationId == conversation_id)
             )
             result = conn.execute(stmt).fetchone()
-            return self._row_to_dict(result)
+            msg = self._row_to_dict(result)
+            if msg:
+                log.debug(f"Found message: {message_id}")
+            else:
+                log.debug(f"Message not found: {message_id}")
+            return msg
 
     def get_messages_by_conversation(
         self,
@@ -560,6 +604,7 @@ class Database:
         Returns:
             List of message dictionaries.
         """
+        log.debug(f"Getting messages for {conversation_id}: before={before_timestamp}, after={after_timestamp}, limit={limit}")
         with self.connection() as conn:
             if before_timestamp is not None:
                 query = self._load_query("complex.sql", "get_messages_before_timestamp")
@@ -582,7 +627,9 @@ class Database:
                 )
                 results = conn.execute(stmt).fetchall()
 
-            return [self._row_to_dict(row) for row in results]
+            msg_list = [self._row_to_dict(row) for row in results]
+            log.debug(f"Retrieved {len(msg_list)} messages for conversation {conversation_id}")
+            return msg_list
 
     def get_message_count(self, conversation_id: str) -> int:
         """
@@ -595,12 +642,15 @@ class Database:
             Number of messages.
         """
         from sqlalchemy import func
+        log.debug(f"Getting message count for conversation: {conversation_id}")
         with self.connection() as conn:
             stmt = select(func.count(messages.c.id)).where(
                 messages.c.conversationId == conversation_id
             )
             result = conn.execute(stmt).scalar()
-            return result or 0
+            count = result or 0
+            log.debug(f"Message count for {conversation_id}: {count}")
+            return count
 
     def create_message(
         self,
@@ -665,6 +715,7 @@ class Database:
         Returns:
             Updated message dictionary or None if version mismatch/not found.
         """
+        log.debug(f"Updating message {message_id}: version={version}")
         with self.connection() as conn:
             values = {
                 'content': content,
@@ -684,6 +735,10 @@ class Database:
                 .returning(messages)
             )
             result = conn.execute(stmt).fetchone()
+            if result:
+                log.debug(f"Updated message: {message_id}")
+            else:
+                log.warning(f"Message update failed (version mismatch or not found): {message_id}")
             return self._row_to_dict(result)
 
     def update_message_rating(
@@ -703,6 +758,7 @@ class Database:
         Returns:
             Updated message dictionary or None if not found.
         """
+        log.debug(f"Updating message rating: {message_id}, rating={rating}")
         with self.connection() as conn:
             stmt = (
                 update(messages)
@@ -714,6 +770,8 @@ class Database:
                 .returning(messages)
             )
             result = conn.execute(stmt).fetchone()
+            if result:
+                log.info(f"Updated message rating: {message_id} -> {rating}")
             return self._row_to_dict(result)
 
     def delete_message(self, message_id: int, conversation_id: str) -> bool:
@@ -727,13 +785,19 @@ class Database:
         Returns:
             True if deleted, False if not found.
         """
+        log.debug(f"Deleting message: {message_id}")
         with self.connection() as conn:
             stmt = delete(messages).where(
                 (messages.c.id == message_id) &
                 (messages.c.conversationId == conversation_id)
             )
             result = conn.execute(stmt)
-            return result.rowcount > 0
+            deleted = result.rowcount > 0
+            if deleted:
+                log.info(f"Deleted message: {message_id}")
+            else:
+                log.debug(f"Message not found for deletion: {message_id}")
+            return deleted
 
     def delete_messages_by_conversation(self, conversation_id: str) -> int:
         """
@@ -745,10 +809,14 @@ class Database:
         Returns:
             Number of messages deleted.
         """
+        log.debug(f"Deleting all messages for conversation: {conversation_id}")
         with self.connection() as conn:
             stmt = delete(messages).where(messages.c.conversationId == conversation_id)
             result = conn.execute(stmt)
-            return result.rowcount
+            count = result.rowcount
+            if count > 0:
+                log.info(f"Deleted {count} messages from conversation {conversation_id}")
+            return count
 
     def get_message_version(self, message_id: int, conversation_id: str) -> Optional[int]:
         """
@@ -761,13 +829,16 @@ class Database:
         Returns:
             Version number or None if not found.
         """
+        log.debug(f"Getting version for message: {message_id}")
         with self.connection() as conn:
             stmt = select(messages.c.version).where(
                 (messages.c.id == message_id) &
                 (messages.c.conversationId == conversation_id)
             )
             result = conn.execute(stmt).fetchone()
-            return result[0] if result else None
+            version = result[0] if result else None
+            log.debug(f"Message {message_id} version: {version}")
+            return version
 
     def get_recent_messages_for_context(
         self,
@@ -784,13 +855,16 @@ class Database:
         Returns:
             List of message dictionaries (id, roleName, content, time, type).
         """
+        log.debug(f"Getting recent messages for context: {conversation_id}, limit={limit}")
         with self.connection() as conn:
             query = self._load_query("complex.sql", "get_recent_messages_for_context")
             results = conn.execute(
                 text(query),
                 {"conversation_id": conversation_id, "limit": limit}
             ).fetchall()
-            return [self._row_to_dict(row) for row in results]
+            msg_list = [self._row_to_dict(row) for row in results]
+            log.debug(f"Retrieved {len(msg_list)} messages for LLM context")
+            return msg_list
 
     # =========================================================================
     # Agent Message Operations
@@ -866,6 +940,7 @@ class Database:
         Returns:
             Updated message dictionary or None if not found.
         """
+        log.debug(f"Updating agent message {message_id}: status={status}")
         import time as time_module
         values = {"lastModified": int(time_module.time())}
         if final_response is not None:
@@ -888,6 +963,8 @@ class Database:
                 .returning(messages)
             )
             result = conn.execute(stmt).fetchone()
+            if result:
+                log.debug(f"Updated agent message: {message_id}")
             return self._row_to_dict(result)
 
     # =========================================================================
@@ -904,13 +981,19 @@ class Database:
         Returns:
             Session dictionary or None if not found/expired.
         """
+        log.debug(f"Getting session: {session_key[:8]}...")
         with self.connection() as conn:
             stmt = select(sessions).where(
                 (sessions.c.session_key == session_key) &
                 (sessions.c.expires_at > datetime.utcnow())
             )
             result = conn.execute(stmt).fetchone()
-            return self._row_to_dict(result)
+            session = self._row_to_dict(result)
+            if session:
+                log.debug(f"Found valid session for user {session.get('user_id')}")
+            else:
+                log.debug("Session not found or expired")
+            return session
 
     def create_session(
         self,
@@ -958,6 +1041,7 @@ class Database:
         Returns:
             True if updated, False if not found.
         """
+        log.debug(f"Updating session activity: {session_key[:8]}...")
         with self.connection() as conn:
             stmt = (
                 update(sessions)
@@ -965,7 +1049,10 @@ class Database:
                 .values(last_activity=datetime.utcnow())
             )
             result = conn.execute(stmt)
-            return result.rowcount > 0
+            updated = result.rowcount > 0
+            if not updated:
+                log.debug("Session not found for activity update")
+            return updated
 
     def delete_session(self, session_key: str) -> bool:
         """
@@ -977,10 +1064,16 @@ class Database:
         Returns:
             True if deleted, False if not found.
         """
+        log.debug(f"Deleting session: {session_key[:8]}...")
         with self.connection() as conn:
             stmt = delete(sessions).where(sessions.c.session_key == session_key)
             result = conn.execute(stmt)
-            return result.rowcount > 0
+            deleted = result.rowcount > 0
+            if deleted:
+                log.debug("Session deleted")
+            else:
+                log.debug("Session not found for deletion")
+            return deleted
 
     def delete_expired_sessions(self) -> int:
         """
@@ -1007,10 +1100,14 @@ class Database:
         Returns:
             Number of sessions deleted.
         """
+        log.debug(f"Deleting all sessions for user: {user_id}")
         with self.connection() as conn:
             stmt = delete(sessions).where(sessions.c.user_id == user_id)
             result = conn.execute(stmt)
-            return result.rowcount
+            count = result.rowcount
+            if count > 0:
+                log.info(f"Deleted {count} sessions for user {user_id}")
+            return count
 
     # =========================================================================
     # Guest Usage CRUD Operations
@@ -1026,10 +1123,14 @@ class Database:
         Returns:
             Guest usage dictionary or None if not found.
         """
+        log.debug(f"Getting guest usage for IP: {ip_address}")
         with self.connection() as conn:
             stmt = select(guest_usage).where(guest_usage.c.ip_address == ip_address)
             result = conn.execute(stmt).fetchone()
-            return self._row_to_dict(result)
+            usage = self._row_to_dict(result)
+            if usage:
+                log.debug(f"Guest usage: count={usage.get('request_count')}")
+            return usage
 
     def create_or_update_guest_usage(
         self,
@@ -1081,15 +1182,19 @@ class Database:
         Returns:
             Updated guest usage dictionary.
         """
+        log.debug(f"Incrementing guest usage for IP: {ip_address}")
         now = datetime.utcnow()
         current = self.get_guest_usage(ip_address)
 
         if current is None:
+            log.debug(f"Creating new guest usage record for {ip_address}")
             return self.create_or_update_guest_usage(ip_address, 1, now)
 
+        new_count = current['request_count'] + 1
+        log.debug(f"Incrementing guest usage to {new_count} for {ip_address}")
         return self.create_or_update_guest_usage(
             ip_address,
-            current['request_count'] + 1,
+            new_count,
             now
         )
 
@@ -1103,6 +1208,7 @@ class Database:
         Returns:
             Updated guest usage dictionary.
         """
+        log.debug(f"Resetting guest usage for IP: {ip_address}")
         return self.create_or_update_guest_usage(ip_address, 0, datetime.utcnow())
 
     # =========================================================================
@@ -1119,10 +1225,16 @@ class Database:
         Returns:
             User settings dictionary or None if not found.
         """
+        log.debug(f"Getting settings for user: {user_id}")
         with self.connection() as conn:
             stmt = select(user_settings).where(user_settings.c.user_id == user_id)
             result = conn.execute(stmt).fetchone()
-            return self._row_to_dict(result)
+            settings = self._row_to_dict(result)
+            if settings:
+                log.debug(f"Found settings: theme={settings.get('theme')}, language={settings.get('language')}")
+            else:
+                log.debug(f"No settings found for user {user_id}")
+            return settings
 
     def upsert_user_settings(self, user_id: int, theme: str, language: str) -> dict:
         """
@@ -1136,6 +1248,7 @@ class Database:
         Returns:
             The user settings dictionary.
         """
+        log.debug(f"Upserting settings for user {user_id}: theme={theme}, language={language}")
         with self.connection() as conn:
             # Try to update first
             stmt = (
@@ -1148,12 +1261,16 @@ class Database:
 
             if result is None:
                 # Insert if not exists
+                log.debug(f"Creating new settings for user {user_id}")
                 stmt = insert(user_settings).values(
                     user_id=user_id,
                     theme=theme,
                     language=language,
                 ).returning(user_settings)
                 result = conn.execute(stmt).fetchone()
+                log.info(f"Created settings for user {user_id}")
+            else:
+                log.debug(f"Updated settings for user {user_id}")
 
             return self._row_to_dict(result)
 
@@ -1169,11 +1286,16 @@ class Database:
         Returns:
             The cached description or None if not found.
         """
+        log.debug(f"Getting cache entry: {cache_key[:16]}...")
         with self.connection() as conn:
             stmt = select(file_description_cache.c.description).where(
                 file_description_cache.c.cache_key == cache_key
             )
             result = conn.execute(stmt).fetchone()
+            if result:
+                log.debug("Cache hit")
+            else:
+                log.debug("Cache miss")
             return result[0] if result else None
 
     def set_cache_entry(
@@ -1192,6 +1314,7 @@ class Database:
             description: The generated description.
             query: Optional query used for the description.
         """
+        log.debug(f"Setting cache entry for file: {file_id}")
         with self.connection() as conn:
             # Use upsert pattern (ON CONFLICT DO UPDATE)
             from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -1205,6 +1328,7 @@ class Database:
                 set_={'description': description}
             )
             conn.execute(stmt)
+            log.debug(f"Cached description for file {file_id}")
 
     def delete_cache_by_file(self, file_id: str) -> int:
         """
@@ -1216,9 +1340,13 @@ class Database:
         Returns:
             Number of entries deleted.
         """
+        log.debug(f"Deleting cache entries for file: {file_id}")
         with self.connection() as conn:
             stmt = delete(file_description_cache).where(
                 file_description_cache.c.file_id == file_id
             )
             result = conn.execute(stmt)
-            return result.rowcount
+            count = result.rowcount
+            if count > 0:
+                log.debug(f"Deleted {count} cache entries for file {file_id}")
+            return count
