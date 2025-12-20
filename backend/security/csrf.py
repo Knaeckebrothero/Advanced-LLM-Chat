@@ -1,9 +1,12 @@
 """
 CSRF (Cross-Site Request Forgery) protection.
 """
+import logging
 import secrets
 from fastapi import Request
 from backend.security.logging import log_security_event
+
+log = logging.getLogger(__name__)
 
 
 def generate_csrf_token() -> str:
@@ -40,11 +43,13 @@ async def validate_csrf_token(request: Request) -> bool:
     """
     # Skip CSRF validation for safe methods
     if request.method in ["GET", "HEAD", "OPTIONS"]:
+        log.debug(f"CSRF skipped for safe method: {request.method} {request.url.path}")
         return True
 
     # Skip CSRF validation for authentication endpoints
     if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout",
                             "/api/auth/refresh-session"]:
+        log.debug(f"CSRF skipped for auth endpoint: {request.url.path}")
         return True
 
     # Get CSRF token from cookie
@@ -74,5 +79,7 @@ async def validate_csrf_token(request: Request) -> bool:
             "header_token_length": len(csrf_token_header),
             "session_cookie_present": "session" in request.cookies
         }, request)
+    else:
+        log.debug(f"CSRF validation passed: {request.method} {request.url.path}")
 
     return is_valid

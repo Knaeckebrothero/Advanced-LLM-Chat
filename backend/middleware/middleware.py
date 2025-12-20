@@ -1,6 +1,7 @@
 """
 HTTP middleware for logging, CSRF protection, and security headers.
 """
+import logging
 import os
 import time
 import secrets
@@ -9,6 +10,8 @@ from fastapi.responses import JSONResponse
 from backend.security.csrf import validate_csrf_token
 from backend.security.logging import crud_logger
 from backend.config import CORS_ORIGINS
+
+log = logging.getLogger(__name__)
 
 
 async def logging_middleware(request: Request, call_next):
@@ -28,6 +31,7 @@ async def logging_middleware(request: Request, call_next):
     # Skip logging for OPTIONS requests and non-CRUD endpoints
     if request.method == "OPTIONS" or (
             not request.url.path.startswith("/api/message") and not request.url.path.startswith("/api/conversation")):
+        log.debug(f"Skipping CRUD logging for {request.method} {request.url.path}")
         return await call_next(request)
 
     # Log request
@@ -75,22 +79,25 @@ async def csrf_protection_middleware(request: Request, call_next):
     """
     # Skip CSRF for OPTIONS requests (CORS preflight)
     if request.method == "OPTIONS":
+        log.debug(f"Skipping CSRF for OPTIONS preflight: {request.url.path}")
         response = await call_next(request)
         return response
 
     # Validate CSRF token
     if not await validate_csrf_token(request):
+        origin = request.headers.get("origin", "unknown")
+        log.warning(f"CSRF validation failed for {request.method} {request.url.path} from origin: {origin}")
         response = JSONResponse(
             content={"error": "CSRF validation failed"},
             status_code=403
         )
         # Add CORS headers to error response
-        origin = request.headers.get("origin")
         if origin in CORS_ORIGINS:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
         return response
 
+    log.debug(f"CSRF validation passed for {request.method} {request.url.path}")
     response = await call_next(request)
     return response
 
@@ -141,6 +148,7 @@ async def add_security_headers(request: Request, call_next):
 
     if is_swagger_ui:
         # Special CSP for Swagger UI to allow CDN resources
+        log.debug(f"Applying Swagger UI CSP policy for {request.url.path}")
         csp_directives = [
             "default-src 'self' https://cdn.jsdelivr.net https://fastapi.tiangolo.com",
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
@@ -155,6 +163,7 @@ async def add_security_headers(request: Request, call_next):
         ]
     elif is_dev:
         # Development CSP - more permissive for Angular CLI
+        log.debug(f"Applying development CSP policy for {request.url.path}")
         csp_directives = [
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # Required for Angular dev mode
@@ -170,6 +179,7 @@ async def add_security_headers(request: Request, call_next):
     else:
         # Production CSP - stricter but still Angular-compatible
         # Note: Moving to nonce-based CSP requires Angular build configuration changes
+        log.debug(f"Applying production CSP policy with nonce for {request.url.path}")
         csp_directives = [
             "default-src 'self'",
             f"script-src 'self' 'nonce-{csp_nonce}' 'strict-dynamic'",  # Nonce-based with strict-dynamic

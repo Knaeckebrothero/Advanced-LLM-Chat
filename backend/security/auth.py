@@ -2,6 +2,7 @@
 Authentication and session management.
 """
 import asyncio
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, UTC
@@ -9,6 +10,8 @@ from typing import Optional, Dict
 from fastapi import Request, HTTPException, Depends
 from backend.database import db
 from backend.security.csrf import generate_csrf_token
+
+log = logging.getLogger(__name__)
 
 # Session storage (in-memory cache for tracking active sessions)
 sessions: Dict[str, dict] = {}
@@ -55,6 +58,7 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
     :rtype: tuple[str, str]
     """
     if regenerate_from:
+        log.debug(f"Regenerating session for user_id={user_id}")
         delete_session(regenerate_from)
 
     session_key = generate_session_key()
@@ -74,6 +78,9 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
         csrf_token=csrf_token
     )
 
+    user_type = "guest" if is_guest else "user"
+    log.info(f"Session created for {user_type} user_id={user_id}, expires_in={session_timeout}h")
+
     return session_key, csrf_token
 
 
@@ -91,16 +98,19 @@ def validate_session(session_key: str) -> Optional[dict]:
     :rtype: Optional[dict]
     """
     if not session_key:
+        log.debug("Session validation failed: no session key provided")
         return None
 
     # Get session from database (already filters expired sessions)
     session = db.get_session(session_key)
 
     if not session:
+        log.debug("Session validation failed: session not found or expired")
         return None
 
     # Update last activity timestamp
     db.update_session_activity(session_key)
+    log.debug(f"Session validated for user_id={session['user_id']}")
 
     # Calculate time until expiry
     expires_at = session['expires_at']
@@ -137,6 +147,7 @@ def delete_session(session_key: str):
     :type session_key: str
     :return: None
     """
+    log.debug("Session deleted")
     db.delete_session(session_key)
 
 
@@ -155,10 +166,12 @@ async def get_current_user(request: Request) -> dict:
     """
     session_key = request.cookies.get("session")
     if not session_key:
+        log.debug(f"Authentication failed: no session cookie for {request.url.path}")
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     user_info = validate_session(session_key)
     if not user_info:
+        log.debug(f"Authentication failed: invalid session for {request.url.path}")
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
     return user_info
@@ -192,9 +205,10 @@ async def cleanup_expired_sessions():
         try:
             # Clean expired sessions using the new Database method
             db.delete_expired_sessions()
+            log.debug("Expired sessions cleanup completed")
 
         except Exception as e:
-            print(f"Error cleaning up sessions: {e}")
+            log.error(f"Error cleaning up sessions: {e}")
 
         # Run every hour
         await asyncio.sleep(3600)
@@ -218,14 +232,19 @@ def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: 
     """
     # Guest users can access any conversation (for offline mode)
     if is_guest:
+        log.debug(f"Guest access granted to conversation {conversation_id}")
         return True
 
     owner_id = db.get_conversation_owner(conversation_id)
 
     if owner_id is None:
+        log.debug(f"Conversation {conversation_id} not found")
         return False
 
-    return owner_id == user_id
+    is_owner = owner_id == user_id
+    if not is_owner:
+        log.warning(f"Access denied: user_id={user_id} attempted to access conversation {conversation_id} owned by {owner_id}")
+    return is_owner
 
 
 async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
@@ -265,11 +284,13 @@ async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depe
 
         if now - last_request_at > limit_duration:
             # Reset counter
+            log.debug(f"Rate limit counter reset for guest IP {ip_address}")
             db.reset_guest_usage(ip_address)
         elif usage["request_count"] >= max_requests:
             reset_time = last_request_at + limit_duration
             retry_after_seconds = (reset_time - now).total_seconds()
             headers = {"Retry-After": str(int(retry_after_seconds))}
+            log.warning(f"Rate limit exceeded for guest IP {ip_address}: {usage['request_count']}/{max_requests}")
             raise HTTPException(
                 status_code=429,
                 detail=f"Too many requests. Please try again after {reset_time.isoformat()}",
@@ -277,5 +298,7 @@ async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depe
             )
         else:
             db.increment_guest_usage(ip_address)
+            log.debug(f"Guest request count: {usage['request_count'] + 1}/{max_requests} for IP {ip_address}")
     else:
         db.increment_guest_usage(ip_address)
+        log.debug(f"First guest request tracked for IP {ip_address}")
