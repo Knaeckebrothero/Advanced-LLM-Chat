@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List
 
-from ..config import FILES_DIR, MODEL_RECEIVE_IMAGES
+from ..config import MODEL_RECEIVE_IMAGES
 from .document_handler import (
     get_file_path,
     get_extracted_text,

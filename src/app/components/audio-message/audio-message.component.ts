@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { IFilePreview, FileType, UploadStatus } from '../../data/models';
+import { IFilePreview, UploadStatus } from '../../data/models';
 import { ApiService } from '../../services/api.service';
 
 /**
