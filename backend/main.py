@@ -2,6 +2,7 @@
 Main FastAPI application setup.
 """
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
@@ -9,6 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Import configuration
 from backend.config import CORS_ORIGINS, USE_DEV_CERTS, HOST, PORT
+
+# Import logging module to initialize centralized logging
+# This must happen before other backend imports that use logging
+import backend.security.logging  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 # Import database
 from backend.database import db
@@ -94,20 +101,13 @@ docs.create_docs_routes(app)
 # Development certificate setup
 ssl_config = {}
 if USE_DEV_CERTS:
-    print("Starting in development mode with auto-generated certificates...")
+    logger.info("Starting in development mode with auto-generated certificates...")
     cert_file, key_file = setup_development_certificates()
 
-    print(f"""
-    [SSL] Development HTTPS certificates generated!
-
-    To trust these certificates in development:
-    1. Certificate Authority (CA) file: devcerts/ca.pem (import this into your browser/system)
-    2. Server certificate file: {cert_file}
-    3. You might need to add an exception in your browser for localhost.
-    4. For Angular development, you might need to set NODE_TLS_REJECT_UNAUTHORIZED='0' in your environment.
-
-    [WARNING] These are self-signed certificates for development only! Do not use in production.
-    """)
+    logger.info("Development HTTPS certificates generated!")
+    logger.info(f"CA file: devcerts/ca.pem (import into browser/system to trust)")
+    logger.info(f"Server certificate: {cert_file}")
+    logger.warning("Self-signed certificates for development only! Do not use in production.")
 
     ssl_config = {
         "ssl_keyfile": key_file,
@@ -119,15 +119,13 @@ if __name__ == "__main__":
     import uvicorn
 
     run_args = {"host": HOST, "port": PORT, "reload": True}
+    protocol = "https" if ssl_config else "http"
     if ssl_config:
         run_args.update(ssl_config)
-        print(f"[SERVER] Starting server at https://{HOST}:{PORT}")
-        print(f"[API] OpenAPI schema available at: https://{HOST}:{PORT}{app.openapi_url}")
-        print(f"[DOCS] Swagger UI available at: https://{HOST}:{PORT}/api/docs")
-    else:
-        print(f"[SERVER] Starting server at http://{HOST}:{PORT}")
-        print(f"[API] OpenAPI schema available at: http://{HOST}:{PORT}{app.openapi_url}")
-        print(f"[DOCS] Swagger UI available at: http://{HOST}:{PORT}/api/docs")
+
+    logger.info(f"Starting server at {protocol}://{HOST}:{PORT}")
+    logger.info(f"OpenAPI schema available at: {protocol}://{HOST}:{PORT}{app.openapi_url}")
+    logger.info(f"Swagger UI available at: {protocol}://{HOST}:{PORT}/api/docs")
 
     current_script_name = Path(__file__).stem
     uvicorn.run(f"{current_script_name}:app", **run_args)

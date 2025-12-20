@@ -4,6 +4,8 @@ Configuration constants and settings for the backend application.
 import os
 from dotenv import load_dotenv, find_dotenv
 
+# TODO: Change this to a propper .cfg or .toml based config with a config loader!
+
 # Load environment variables
 load_dotenv(find_dotenv())
 
@@ -77,3 +79,11 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")
 WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", None)  # Optional: 'en', 'de', etc.
 USE_LOCAL_WHISPER = os.getenv("USE_LOCAL_WHISPER", "false").lower() == "true"
 LOCAL_WHISPER_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "base")  # tiny, base, small, medium, large
+
+# Logging configuration
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FILE_LEVEL = os.getenv("LOG_FILE_LEVEL", "DEBUG").upper()
+LOG_FORMAT = os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+LOG_DATE_FORMAT = os.getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S")
+LOG_DIRECTORY = os.getenv("LOG_DIRECTORY", os.path.join(FILESYSTEM_PATH, "logs"))
+LOG_FILE = os.getenv("LOG_FILE", "application.log")

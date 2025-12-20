@@ -6,41 +6,75 @@ import logging
 import os
 from datetime import datetime, UTC
 from fastapi import Request
-from backend.config import FILESYSTEM_PATH
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+from backend.config import (
+    LOG_LEVEL, LOG_FILE_LEVEL, LOG_FORMAT,
+    LOG_DATE_FORMAT, LOG_DIRECTORY, LOG_FILE
 )
 
-# Main application logger
+
+def configure_logging():
+    """
+    Configures the root logger with console and file handlers.
+    This function sets up centralized logging for the entire application.
+    After calling this, any module can use logging.getLogger(__name__)
+    to get a properly configured logger.
+    """
+    # Create logs directory if it doesn't exist
+    os.makedirs(LOG_DIRECTORY, exist_ok=True)
+
+    # Get the root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)  # Capture all, handlers filter by level
+
+    # Clear any existing handlers to avoid duplicates on re-import
+    root_logger.handlers.clear()
+
+    # Create formatter
+    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    # File handler for main application log
+    log_file_path = os.path.join(LOG_DIRECTORY, LOG_FILE)
+    file_handler = logging.FileHandler(log_file_path)
+    file_handler.setLevel(getattr(logging, LOG_FILE_LEVEL, logging.DEBUG))
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+    # Log startup message
+    root_logger.info(f"Logging configured: console={LOG_LEVEL}, file={LOG_FILE_LEVEL}")
+
+
+# Configure logging when this module is imported
+configure_logging()
+
+# Main application logger for this module
 logger = logging.getLogger(__name__)
 
-# Security logger with separate handler
+# Security logger with separate file handler
 security_logger = logging.getLogger("security")
 security_logger.setLevel(logging.WARNING)
 
-# CRUD operations logger
+# CRUD operations logger with separate file handler
 crud_logger = logging.getLogger("crud")
 crud_logger.setLevel(logging.INFO)
 
-# Create a file handler for security events
-logs_dir = os.path.join(FILESYSTEM_PATH, 'logs')
-os.makedirs(logs_dir, exist_ok=True)
-security_log_path = os.path.join(logs_dir, 'security.log')
+# Create file handlers for specialized loggers
+# These write to their own files in addition to the main application log
+security_log_path = os.path.join(LOG_DIRECTORY, 'security.log')
 security_handler = logging.FileHandler(security_log_path)
-security_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-))
+security_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
 security_logger.addHandler(security_handler)
 
-# Create a file handler for CRUD operations
-crud_log_path = os.path.join(logs_dir, 'crud_operations.log')
+crud_log_path = os.path.join(LOG_DIRECTORY, 'crud_operations.log')
 crud_handler = logging.FileHandler(crud_log_path)
 crud_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'
+    '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s',
+    datefmt=LOG_DATE_FORMAT
 ))
 crud_logger.addHandler(crud_handler)
 
