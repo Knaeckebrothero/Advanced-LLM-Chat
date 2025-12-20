@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import FILES_DIR, MODEL_RECEIVE_IMAGES, MODEL_RECEIVE_IMAGES_PDF
+from .file_utils import get_file_path, SUPPORTED_AUDIO_TYPES, is_audio
 
 logger = logging.getLogger(__name__)
 
@@ -26,27 +27,6 @@ SUPPORTED_IMAGE_TYPES = {
 def is_image_processing_enabled() -> bool:
     """Check if image processing is enabled via environment variable."""
     return MODEL_RECEIVE_IMAGES
-
-
-def get_file_path(file_id: str) -> Optional[Path]:
-    """
-    Find a file in the files directory by its ID (without extension).
-
-    Args:
-        file_id: The file ID (filename without extension).
-
-    Returns:
-        Path to the file if found, None otherwise.
-    """
-    files_dir = Path(FILES_DIR)
-    if not files_dir.exists():
-        return None
-
-    for file_path in files_dir.iterdir():
-        if file_path.is_file() and file_path.stem == file_id:
-            return file_path
-
-    return None
 
 
 def get_mime_type(file_path: Path) -> str:
@@ -281,25 +261,7 @@ def prepare_document_for_llm(file_id: str, mime_type: str, name: str) -> Optiona
     return result if result['text'] or result['images'] else None
 
 
-# Audio handling functions
-
-SUPPORTED_AUDIO_TYPES = {
-    'audio/webm': 'webm',
-    'audio/ogg': 'ogg',
-    'audio/mp4': 'm4a',
-    'audio/mpeg': 'mp3',
-    'audio/wav': 'wav',
-    'audio/x-wav': 'wav',
-    'audio/mp3': 'mp3',
-    'audio/m4a': 'm4a',
-}
-
-
-def is_audio(mime_type: str) -> bool:
-    """Check if the MIME type is a supported audio format."""
-    # Handle MIME types with parameters (e.g., "audio/webm;codecs=opus")
-    base_mime = mime_type.lower().split(';')[0].strip()
-    return base_mime in SUPPORTED_AUDIO_TYPES
+# Audio handling functions (SUPPORTED_AUDIO_TYPES and is_audio imported from file_utils)
 
 
 def extract_audio_attachments(content: dict | str) -> list[dict]:

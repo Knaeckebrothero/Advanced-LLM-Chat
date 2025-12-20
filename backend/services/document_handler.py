@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import FILES_DIR
+from .file_utils import get_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -31,27 +32,6 @@ def is_document(mime_type: str) -> bool:
 def get_document_type(mime_type: str) -> Optional[str]:
     """Get the document type from MIME type."""
     return SUPPORTED_DOCUMENT_TYPES.get(mime_type.lower())
-
-
-def get_file_path(file_id: str) -> Optional[Path]:
-    """
-    Find a file in the files directory by its ID (without extension).
-
-    Args:
-        file_id: The file ID (filename without extension).
-
-    Returns:
-        Path to the file if found, None otherwise.
-    """
-    files_dir = Path(FILES_DIR)
-    if not files_dir.exists():
-        return None
-
-    for file_path in files_dir.iterdir():
-        if file_path.is_file() and file_path.stem == file_id:
-            return file_path
-
-    return None
 
 
 def extract_pdf_text(file_path: Path) -> Optional[str]:
