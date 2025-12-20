@@ -3,10 +3,13 @@
 Shared file handling utilities used across multiple service modules.
 """
 
+import logging
 from pathlib import Path
 from typing import Optional
 
 from ..config import FILES_DIR
+
+log = logging.getLogger(__name__)
 
 
 # Supported audio MIME types
@@ -34,12 +37,15 @@ def get_file_path(file_id: str) -> Optional[Path]:
     """
     files_dir = Path(FILES_DIR)
     if not files_dir.exists():
+        log.debug(f"Files directory does not exist: {FILES_DIR}")
         return None
 
     for file_path in files_dir.iterdir():
         if file_path.is_file() and file_path.stem == file_id:
+            log.debug(f"Found file: {file_path}")
             return file_path
 
+    log.debug(f"File not found: {file_id}")
     return None
 
 

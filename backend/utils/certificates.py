@@ -1,8 +1,11 @@
 """
 SSL certificate generation utilities.
 """
+import logging
 import trustme
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 def setup_development_certificates():
@@ -18,6 +21,7 @@ def setup_development_certificates():
         (as `.pem` file) and private server key (as `.key` file).
     :rtype: tuple[str, str]
     """
+    log.debug("Generating development SSL certificates...")
     ca = trustme.CA()
     server_cert = ca.issue_cert("localhost")
     cert_dir = Path("devcerts")
@@ -27,4 +31,5 @@ def setup_development_certificates():
     server_cert.private_key_pem.write_to_path(cert_dir / "server.key")
     ca.cert_pem.write_to_path(cert_dir / "ca.pem")
 
+    log.info(f"Development SSL certificates created in {cert_dir}")
     return str(cert_dir / "server.pem"), str(cert_dir / "server.key")

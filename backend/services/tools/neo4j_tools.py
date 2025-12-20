@@ -4,8 +4,11 @@ LangChain tools for querying the Fessi waste disposal knowledge graph.
 These tools allow the agent to search for waste disposal information in Neo4j.
 """
 
+import logging
 from langchain_core.tools import tool
 from backend.database.neo4j_db import neo4j_db
+
+log = logging.getLogger(__name__)
 
 
 @tool
@@ -51,13 +54,16 @@ def search_waste_disposal(waste_item: str) -> dict:
     LIMIT 5
     """
     try:
+        log.debug(f"Searching waste disposal for: '{waste_item}'")
         results = neo4j_db.query(query, {"search": waste_item})
         # Filter out empty location/faq entries
         for result in results:
             result["locations"] = [loc for loc in result.get("locations", []) if loc.get("name")]
             result["faqs"] = [faq for faq in result.get("faqs", []) if faq.get("question")]
+        log.info(f"Found {len(results)} waste disposal results for '{waste_item}'")
         return {"results": results}
     except Exception as e:
+        log.error(f"Error searching waste disposal for '{waste_item}': {e}")
         return {"error": str(e), "results": []}
 
 
@@ -88,12 +94,17 @@ def get_disposal_method_details(method_name: str) -> dict:
     LIMIT 1
     """
     try:
+        log.debug(f"Getting disposal method details for: '{method_name}'")
         results = neo4j_db.query(query, {"search": method_name})
         if results:
             # Filter out empty location entries
             results[0]["locations"] = [loc for loc in results[0].get("locations", []) if loc.get("name")]
+            log.info(f"Found disposal method: {results[0].get('name', method_name)}")
+        else:
+            log.debug(f"No disposal method found for: '{method_name}'")
         return {"results": results}
     except Exception as e:
+        log.error(f"Error getting disposal method details for '{method_name}': {e}")
         return {"error": str(e), "results": []}
 
 
@@ -121,9 +132,12 @@ def find_nearby_recycling_centers(city: str = "Frankfurt") -> dict:
     ORDER BY loc.name
     """
     try:
+        log.debug(f"Finding recycling centers in: '{city}'")
         results = neo4j_db.query(query, {"city": city})
+        log.info(f"Found {len(results)} recycling centers in '{city}'")
         return {"results": results}
     except Exception as e:
+        log.error(f"Error finding recycling centers in '{city}': {e}")
         return {"error": str(e), "results": []}
 
 
@@ -160,13 +174,18 @@ def get_waste_category_info(category: str) -> dict:
     LIMIT 1
     """
     try:
+        log.debug(f"Getting waste category info for: '{category}'")
         results = neo4j_db.query(query, {"search": category})
         if results:
             # Filter out empty item and faq entries
             results[0]["items"] = [item for item in results[0].get("items", []) if item.get("item")]
             results[0]["faqs"] = [faq for faq in results[0].get("faqs", []) if faq.get("question")]
+            log.info(f"Found category '{results[0].get('category_name', category)}' with {len(results[0].get('items', []))} items")
+        else:
+            log.debug(f"No waste category found for: '{category}'")
         return {"results": results}
     except Exception as e:
+        log.error(f"Error getting waste category info for '{category}': {e}")
         return {"error": str(e), "results": []}
 
 
@@ -191,9 +210,12 @@ def answer_waste_faq(question_topic: str) -> dict:
     LIMIT 5
     """
     try:
+        log.debug(f"Searching FAQs for: '{question_topic}'")
         results = neo4j_db.query(query, {"search": question_topic})
+        log.info(f"Found {len(results)} FAQ results for '{question_topic}'")
         return {"results": results}
     except Exception as e:
+        log.error(f"Error searching FAQs for '{question_topic}': {e}")
         return {"error": str(e), "results": []}
 
 

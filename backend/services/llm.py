@@ -1,9 +1,12 @@
 """
 LLM (Large Language Model) service operations.
 """
+import logging
 import uuid
 import replicate
 from backend.database import db
+
+log = logging.getLogger(__name__)
 
 
 def generate_conversation_id() -> str:
@@ -54,20 +57,15 @@ async def generate_llm_response(prompt: str, temperature: float, top_p: float, s
                 "system_prompt": system_prompt,
             }
         )
-        print("\n".join([
-            f"LLM Input:",
-            f"  model = {model}",
-            f"  temp = {temperature}",
-            f"  top_p = {top_p}",
-            f"  system_prompt = {system_prompt}",
-            "  prompt:",
-            prompt
-        ]))
+        log.debug(f"LLM request: model={model}, temp={temperature}, top_p={top_p}")
+        log.debug(f"System prompt: {system_prompt[:100]}..." if len(system_prompt) > 100 else f"System prompt: {system_prompt}")
 
         # Replicate returns a generator, collect all parts of the streamed response
-        return "".join(output)
+        response = "".join(output)
+        log.info(f"LLM response generated: {len(response)} characters")
+        return response
     except Exception as e:
-        print(f"Error generating response: {str(e)}")
+        log.error(f"Error generating LLM response: {e}")
         return "I apologize, but I encountered an error generating a response."
 
 
@@ -98,7 +96,8 @@ async def get_conversation_context(conversation_id: str, limit: int = 5) -> str:
         for msg in reversed(messages):
             context.append(f"{msg['roleName']}: {msg['content']}")
 
+        log.debug(f"Retrieved {len(messages)} messages for conversation context: {conversation_id}")
         return "\n".join(context)
     except Exception as e:
-        print(f"Error getting conversation context: {str(e)}")
+        log.error(f"Error getting conversation context for {conversation_id}: {e}")
         return ""

@@ -2,8 +2,11 @@
 Hash utility functions.
 """
 import hashlib
+import logging
 import sqlite3
 from typing import List
+
+log = logging.getLogger(__name__)
 
 
 def generate_hash(messages: List[sqlite3.Row]) -> int:
@@ -20,6 +23,7 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
     :rtype: int
     """
     if not messages:
+        log.debug("No messages provided for hash generation, returning 0")
         return 0
 
     hash_value = 0
@@ -36,7 +40,7 @@ def generate_hash(messages: List[sqlite3.Row]) -> int:
         hash_chars += content[0] + content[-1] + str(len(content))
 
     hash_value %= (2 ** 32)
-    print(f"Generated hashsum: {hash_value} string rep: {hash_chars}")
+    log.debug(f"Generated hashsum: {hash_value} (string rep: {hash_chars})")
     return hash_value
 
 
@@ -51,4 +55,6 @@ def generate_sha256_hash(content: str) -> str:
     :return: The SHA-256 hash of the input string in hexadecimal format.
     :rtype: str
     """
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+    hash_result = hashlib.sha256(content.encode('utf-8')).hexdigest()
+    log.debug(f"Generated SHA-256 hash: {hash_result[:16]}... (content length: {len(content)})")
+    return hash_result

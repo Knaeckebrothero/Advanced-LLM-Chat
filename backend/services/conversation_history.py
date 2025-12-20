@@ -36,11 +36,12 @@ class ConversationHistoryBuilder:
     def __init__(self, db):
         """
         Initialize the conversation history builder.
-        
+
         Args:
             db: Database interface for retrieving messages.
         """
         self.db = db
+        logger.debug("ConversationHistoryBuilder initialized")
 
     def _find_latest_user_message_idx(self, messages: List[dict]) -> int:
         """Find the index of the most recent user message in the list."""
@@ -106,6 +107,7 @@ class ConversationHistoryBuilder:
         attachments: List[dict]
     ) -> List[dict]:
         """Build LangChain-compatible multimodal content blocks with text and images."""
+        logger.debug(f"Building multimodal content with {len(attachments)} attachments")
         content_blocks = []
         additional_text_parts = [text]
         
@@ -172,9 +174,10 @@ class ConversationHistoryBuilder:
             Tuple of (messages, available_attachments)
         """
         raw_messages = self.db.get_messages_by_conversation(conversation_id, limit=limit)
-        
+
         # Messages are returned in reverse chronological order, reverse them
         raw_messages = list(reversed(raw_messages))
+        logger.debug(f"Building history for conversation {conversation_id}: {len(raw_messages)} messages")
 
         messages = []
         available_attachments = []
@@ -195,6 +198,7 @@ class ConversationHistoryBuilder:
                 text = self._extract_text(msg)
                 messages.append(AIMessage(content=text))
 
+        logger.debug(f"Built history: {len(messages)} messages, {len(available_attachments)} attachments")
         return messages, available_attachments
 
     async def _process_user_message(
