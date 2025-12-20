@@ -19,59 +19,19 @@ from ..config import (
     USE_LOCAL_WHISPER,
     LOCAL_WHISPER_MODEL,
 )
+from .file_utils import SUPPORTED_AUDIO_TYPES, is_audio, get_file_path, get_audio_extension
 
 logger = logging.getLogger(__name__)
-
-# Supported audio MIME types
-SUPPORTED_AUDIO_TYPES = {
-    'audio/webm': 'webm',
-    'audio/ogg': 'ogg',
-    'audio/mp4': 'm4a',
-    'audio/mpeg': 'mp3',
-    'audio/wav': 'wav',
-    'audio/x-wav': 'wav',
-    'audio/mp3': 'mp3',
-    'audio/m4a': 'm4a',
-}
 
 # Lazy-loaded clients
 _openai_client: Optional[AsyncOpenAI] = None
 _whisper_model = None  # Local Whisper model (cached after first load)
 
 
-def is_audio(mime_type: str) -> bool:
-    """Check if the MIME type is a supported audio format."""
-    # Handle MIME types with parameters (e.g., "audio/webm;codecs=opus")
-    base_mime = mime_type.lower().split(';')[0].strip()
-    return base_mime in SUPPORTED_AUDIO_TYPES
-
-
+# Re-export for backwards compatibility
 def get_audio_type(mime_type: str) -> Optional[str]:
     """Get the audio type from MIME type."""
-    # Handle MIME types with parameters (e.g., "audio/webm;codecs=opus")
-    base_mime = mime_type.lower().split(';')[0].strip()
-    return SUPPORTED_AUDIO_TYPES.get(base_mime)
-
-
-def get_file_path(file_id: str) -> Optional[Path]:
-    """
-    Find a file in the files directory by its ID (without extension).
-
-    Args:
-        file_id: The file ID (filename without extension).
-
-    Returns:
-        Path to the file if found, None otherwise.
-    """
-    files_dir = Path(FILES_DIR)
-    if not files_dir.exists():
-        return None
-
-    for file_path in files_dir.iterdir():
-        if file_path.is_file() and file_path.stem == file_id:
-            return file_path
-
-    return None
+    return get_audio_extension(mime_type)
 
 
 def _get_openai_client() -> Optional[AsyncOpenAI]:
