@@ -1,6 +1,7 @@
 """
 Authentication API endpoints.
 """
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, UTC
@@ -12,6 +13,7 @@ from backend.security.auth import (
 from backend.security.logging import log_security_event
 from backend.database import db
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
 
@@ -36,10 +38,12 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     :raises HTTPException: If the rate limit is exceeded based on the guest's IP address.
     """
     ip_address = request.ip_address
+    logger.debug(f"Guest login attempt from IP: {ip_address}")
 
     # If IP address is 'unknown', use a fallback
     if ip_address == 'unknown':
         ip_address = f"guest_{secrets.token_hex(4)}"
+        logger.debug(f"Unknown IP, generated fallback identifier: {ip_address}")
 
     now = datetime.now(UTC)
     limit_duration = timedelta(hours=3)
@@ -58,9 +62,11 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
 
         if now - last_request_at > limit_duration:
             # Reset counter
+            logger.debug(f"Rate limit window expired for {ip_address}, resetting counter")
             db.reset_guest_usage(ip_address)
         elif usage["request_count"] >= max_requests:
             reset_time = last_request_at + limit_duration
+            logger.warning(f"Rate limit exceeded for guest IP {ip_address}, count: {usage['request_count']}")
             raise HTTPException(status_code=429,
                                 detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
     else:
@@ -112,6 +118,8 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
         "guest_timeout_hours": guest_timeout_hours
     }, req)
 
+    logger.info(f"Guest login successful - email: {guest_email}, timeout: {guest_timeout_hours}h")
+
     return LoginResponse(
         user=guest_user,
         message="Guest login successful",
@@ -140,7 +148,7 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     :return: A response object containing user data and a success message.
     :rtype: LoginResponse
     """
-    print(f"Login attempt for: {request.email}")
+    logger.debug(f"Mock login attempt for: {request.email}")
 
     # Get existing session to regenerate from
     old_session_key = req.cookies.get("session")
@@ -153,8 +161,10 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
         user_name = request.email.split('@')[0].title()
         user = db.create_user(email=request.email, name=user_name)
         new_user = True
+        logger.info(f"Created new user: {request.email}")
     else:
         new_user = False
+        logger.debug(f"Existing user found: {request.email}")
 
     user_id = user['id']
     user_name = user['name']
@@ -198,6 +208,8 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
         "new_user": new_user
     }, req)
 
+    logger.info(f"Mock login successful - user_id: {user_id}, email: {request.email}, new_user: {new_user}")
+
     return LoginResponse(
         user={
             "id": user_id,
@@ -237,8 +249,12 @@ async def logout(request: Request, response: Response):
                 "user_id": session_data["user_id"],
                 "email": session_data["email"]
             }, request)
+            logger.info(f"User logout - user_id: {session_data['user_id']}, email: {session_data['email']}")
 
         delete_session(session_key)
+        logger.debug("Session deleted")
+    else:
+        logger.debug("Logout called but no session cookie found")
 
     # Delete cookies
     response.delete_cookie(
@@ -285,11 +301,13 @@ async def refresh_session(request: Request, response: Response, current_user: di
     """
     session_key = request.cookies.get("session")
     if not session_key:
+        logger.debug("Session refresh attempted without session cookie")
         raise HTTPException(status_code=401, detail="No session to refresh")
 
     # Check if session is close to expiring (less than 1 hour)
     expires_in = current_user.get("expires_in", 0)
     if expires_in > 3600:  # More than 1 hour remaining
+        logger.debug(f"Session refresh not needed - expires in {expires_in}s")
         return {
             "message": "Session does not need refresh yet",
             "expires_in": expires_in
@@ -337,6 +355,8 @@ async def refresh_session(request: Request, response: Response, current_user: di
     # Also set new CSRF token in response header for backward compatibility
     response.headers["X-CSRF-Token"] = new_csrf_token
 
+    logger.info(f"Session refreshed for user_id: {user_id}, expires in {max_age}s")
+
     return {
         "message": "Session refreshed successfully",
         "expires_in": max_age
@@ -366,12 +386,15 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
              status, and session expiry details.
     :rtype: dict
     """
+    logger.debug(f"Get current user - user_id: {current_user['user_id']}")
+
     # Check if CSRF cookie exists
     csrf_cookie = request.cookies.get("csrf_token")
     csrf_token = current_user.get("csrf_token")
 
     # If we have a CSRF token in session but no cookie, set the cookie
     if csrf_token and not csrf_cookie:
+        logger.debug("CSRF cookie missing, setting from session")
         # Calculate max age based on remaining session time
         expires_in = current_user.get("expires_in", 86400)  # Default to 24 hours
         response.set_cookie(

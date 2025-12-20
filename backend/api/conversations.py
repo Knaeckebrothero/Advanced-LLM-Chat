@@ -2,6 +2,7 @@
 Conversation API endpoints.
 """
 import json
+import logging
 import time
 from typing import List, Optional
 from fastapi import APIRouter, Response, Depends, HTTPException, status
@@ -20,6 +21,7 @@ from backend.security.logging import crud_logger
 from backend.utils.hash import generate_hash, generate_sha256_hash
 from backend.services.llm import generate_conversation_id
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Conversation"])
 
 
@@ -48,11 +50,12 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
         instance of `ErrorResponse` with the error details.
     :rtype: List[ConversationResponse] or ErrorResponse
     """
-    print("Get conversations for user called")
     user_id = current_user['user_id']
+    logger.debug(f"Get conversations called for user_id: {user_id}")
 
     # Guest users don't have server-side conversations
     if current_user.get("is_guest"):
+        logger.debug("Guest user - returning empty conversations")
         response.status_code = status.HTTP_204_NO_CONTENT
         return []
 
@@ -61,8 +64,11 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
         conversations = db.get_conversations_by_user(user_id)
 
         if not conversations:
+            logger.debug(f"No conversations found for user_id: {user_id}")
             response.status_code = status.HTTP_204_NO_CONTENT
             return []
+
+        logger.debug(f"Found {len(conversations)} conversations for user_id: {user_id}")
 
         conversation_responses = []
         for conv in conversations:
@@ -87,10 +93,11 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
                 lastModified=conv['lastModified'] or int(time.time())
             ))
 
+        logger.info(f"Returning {len(conversation_responses)} conversations for user_id: {user_id}")
         return conversation_responses
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Error fetching conversations for user_id {user_id}: {str(e)}", exc_info=True)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
 
@@ -131,12 +138,14 @@ async def get_conversation(conversation_id: str, response: Response, current_use
         operations or processing.
     """
     user_id = current_user['user_id']
+    logger.debug(f"Get conversation {conversation_id} for user_id: {user_id}")
 
     try:
         # Fetch conversation details
         conv = db.get_conversation_by_id(conversation_id, user_id)
 
         if not conv:
+            logger.debug(f"Conversation {conversation_id} not found for user_id: {user_id}")
             response.status_code = status.HTTP_404_NOT_FOUND
             return ErrorResponse(error="Conversation not found")
 
@@ -153,6 +162,8 @@ async def get_conversation(conversation_id: str, response: Response, current_use
         # Parse participants (stored as JSON string)
         participants = json.loads(conv['participants']) if conv['participants'] else []
 
+        logger.debug(f"Returning conversation {conversation_id} with {message_count} messages")
+
         # Return conversation with details
         return ConversationWithDetails(
             id=conv['id'],
@@ -166,7 +177,7 @@ async def get_conversation(conversation_id: str, response: Response, current_use
         )
 
     except Exception as e:
-        print(f"Error fetching conversation: {str(e)}")
+        logger.error(f"Error fetching conversation {conversation_id}: {str(e)}", exc_info=True)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
 
@@ -191,6 +202,8 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     :rtype: Conversation
     """
     user_id = current_user['user_id']
+    logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name}")
+
     participants_json = json.dumps(req.participants)
     new_id = generate_conversation_id()  # Generate UUID
 
@@ -200,6 +213,8 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
         name=req.name,
         participants=participants_json
     )
+
+    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name}")
 
     return Conversation(**new_conv)
 
@@ -230,10 +245,12 @@ async def update_conversation(
     :raises HTTPException: If the conversation does not exist for the user.
     """
     user_id = current_user['user_id']
+    logger.debug(f"Updating conversation {conversation_id} for user_id: {user_id}")
 
     # Check if conversation exists and belongs to user
     existing = db.get_conversation_by_id(conversation_id, user_id)
     if not existing:
+        logger.debug(f"Conversation {conversation_id} not found for update")
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     # Update conversation
@@ -264,12 +281,14 @@ async def delete_conversation(
     :type conversation_id: str
     """
     user_id = current_user['user_id']
+    logger.debug(f"Deleting conversation {conversation_id} for user_id: {user_id}")
 
     # Delete conversation (messages are cascade-deleted via ON DELETE CASCADE)
     deleted = db.delete_conversation(conversation_id, user_id)
 
     if not deleted:
         # Return 204 No Content if conversation doesn't exist
+        logger.debug(f"Conversation {conversation_id} not found for deletion")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     crud_logger.info(f"Conversation {conversation_id} and all messages deleted by user {user_id}")
@@ -310,16 +329,19 @@ async def get_conversation_messages(
         retrieves messages newer than the given timestamp
     :return: A list of messages (formatted as dictionaries) from the requested conversation
     """
-    print(f"Get conversation messages called - after_timestamp: {after_timestamp}")
+    logger.debug(f"Get conversation messages - conversation_id: {conversation_id}, "
+                 f"timestamp: {timestamp}, after_timestamp: {after_timestamp}")
 
     try:
         if not conversation_id or timestamp is None:
+            logger.warning("Missing conversation_id or timestamp in request")
             response.status_code = status.HTTP_400_BAD_REQUEST
             return ErrorResponse(error="Conversation ID and latest timestamp are required")
 
         # Verify ownership (guests can access any conversation)
         if not verify_conversation_ownership(conversation_id, current_user['user_id'],
                                               current_user.get("is_guest", False)):
+            logger.warning(f"Access denied for user {current_user['user_id']} to conversation {conversation_id}")
             response.status_code = status.HTTP_403_FORBIDDEN
             return ErrorResponse(error="Access denied to this conversation")
 
@@ -341,6 +363,7 @@ async def get_conversation_messages(
 
         if messages:
             messages_data = messages
+            logger.debug(f"Retrieved {len(messages)} messages for conversation {conversation_id}")
 
             # For pagination, reverse to get chronological order (already DESC from DB)
             if after_timestamp is None:
@@ -413,9 +436,7 @@ async def get_conversation_messages(
             return []
 
     except Exception as e:
-        print(f"Error in get_conversation_messages: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error in get_conversation_messages for {conversation_id}: {str(e)}", exc_info=True)
         # Return empty list on error to satisfy the response model
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return []

@@ -62,7 +62,7 @@ async def upload_files(
     :raises HTTPException: Raised on validation errors like missing files, files
         exceeding the size limit, or on internal server errors
     """
-    print(f"File upload called with {len(files)} files")
+    logger.info(f"File upload called with {len(files)} files")
 
     try:
         if not files:
@@ -139,7 +139,7 @@ async def upload_files(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error uploading files: {str(e)}")
+        logger.error(f"Error uploading files: {str(e)}")
         raise HTTPException(status_code=500, detail="Error uploading files")
 
 

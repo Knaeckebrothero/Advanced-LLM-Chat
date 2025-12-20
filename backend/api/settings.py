@@ -1,6 +1,7 @@
 """
 Settings API endpoints.
 """
+import logging
 import time
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,6 +9,7 @@ from backend.models.settings import AppSettings, AppSettingsResponse
 from backend.database import db
 from backend.security.auth import get_current_user
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Settings"])
 
 
@@ -34,9 +36,11 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
     :rtype: AppSettingsResponse
     """
     user_id = current_user["user_id"]
+    logger.debug(f"Get settings for user_id: {user_id}")
 
     if current_user.get("is_guest"):
         # Return default settings for guest users with current timestamp
+        logger.debug("Guest user - returning default settings")
         return AppSettingsResponse(
             theme="auto",
             language="en",
@@ -46,6 +50,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
     settings = db.get_user_settings(user_id)
 
     if settings:
+        logger.debug(f"Found settings for user_id {user_id}: theme={settings['theme']}, language={settings['language']}")
         # Convert datetime to Unix timestamp
         updated_at = settings['updated_at']
         if isinstance(updated_at, str):
@@ -61,6 +66,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         )
     else:
         # Fallback defaults if user has no settings yet
+        logger.debug(f"No settings found for user_id {user_id}, returning defaults")
         return AppSettingsResponse(
             theme="auto",
             language="en",
@@ -91,7 +97,10 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
     :rtype: AppSettingsResponse
     """
     user_id = current_user["user_id"]
+    logger.debug(f"Update settings for user_id: {user_id} - theme: {new_settings.theme}, language: {new_settings.language}")
+
     if current_user.get("is_guest"):
+        logger.warning(f"Guest user attempted to save settings")
         raise HTTPException(status_code=403, detail="Guests cannot save settings.")
 
     # Upsert settings using CRUD method
@@ -101,6 +110,8 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         language=new_settings.language
     )
 
+    logger.info(f"Settings updated for user_id {user_id}: theme={new_settings.theme}, language={new_settings.language}")
+
     # Convert datetime to Unix timestamp
     try:
         updated_at = settings['updated_at']
@@ -109,8 +120,9 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         else:
             updated_at_dt = updated_at
         last_updated_ts = int(updated_at_dt.timestamp())
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
         # Fallback to current time if parsing fails
+        logger.warning(f"Failed to parse updated_at timestamp: {e}, using current time")
         last_updated_ts = int(time.time())
 
     return AppSettingsResponse(

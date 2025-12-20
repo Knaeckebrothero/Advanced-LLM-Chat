@@ -1,9 +1,12 @@
 """
 API documentation endpoints (OpenAPI, Swagger UI).
 """
+import logging
 from fastapi import Request, Response, status
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+
+logger = logging.getLogger(__name__)
 
 
 def create_docs_routes(app):
@@ -12,6 +15,7 @@ def create_docs_routes(app):
 
     :param app: The FastAPI application instance
     """
+    logger.debug("Registering documentation routes")
 
     @app.get(app.openapi_url, include_in_schema=False)
     async def custom_openapi():
@@ -26,6 +30,7 @@ def create_docs_routes(app):
         :return: The custom-generated OpenAPI schema as a dictionary.
         :rtype: dict
         """
+        logger.debug("OpenAPI schema requested")
         return get_openapi(
             title=app.title,
             version=app.version,
@@ -48,6 +53,7 @@ def create_docs_routes(app):
         :return: The HTML response content for the Swagger UI.
         :rtype: HTMLResponse
         """
+        logger.debug("Swagger UI requested")
         root_path = req.scope.get("root_path", "").rstrip("/")
         openapi_url = root_path + app.openapi_url
         return get_swagger_ui_html(

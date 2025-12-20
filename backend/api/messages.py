@@ -2,6 +2,7 @@
 Message API endpoints.
 """
 import json
+import logging
 import time
 import asyncio
 import uuid
@@ -34,6 +35,7 @@ from backend.services.image_handler import extract_image_attachments, extract_do
 from backend.services.conversation_history import ConversationHistoryBuilder
 from backend.models.attachments import AttachmentType
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/message", tags=["Message"])
 
 
@@ -50,6 +52,8 @@ def _save_agent_message(
     Extracts agent fields from various input formats and calls
     db.create_agent_message with proper column storage.
     """
+    logger.debug(f"Saving agent message - id: {message_id}, conversation: {conversation_id}")
+
     # Handle different input formats
     if hasattr(content, 'model_dump'):
         agent_data = content.model_dump()
@@ -68,6 +72,8 @@ def _save_agent_message(
     final_response = agent_data.get('finalResponse', '')
     agent_status = agent_data.get('status', 'complete')
     error = agent_data.get('error')
+
+    logger.debug(f"Agent message has {len(steps)} steps, status: {agent_status}")
 
     db.create_agent_message(
         message_id=message_id,
@@ -226,14 +232,17 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
         # Verify ownership
         if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
                                               current_user.get("is_guest", False)):
+            logger.warning(f"Access denied for user {current_user['user_id']} to conversation {request_body.conversationId}")
             response.status_code = status.HTTP_403_FORBIDDEN
             return ErrorResponse(error="Access denied to this conversation")
 
         if not request_body.conversationId:
+            logger.warning("Generate message called without conversation ID")
             response.status_code = status.HTTP_400_BAD_REQUEST
             return ErrorResponse(error="Conversation ID missing or invalid in request")
 
         # Get conversation context for the LLM
+        logger.debug(f"Getting conversation context for {request_body.conversationId}")
         context = await get_conversation_context(request_body.conversationId)
 
         # Generate AI response
@@ -259,6 +268,8 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
             last_modified=current_time
         )
 
+        logger.info(f"Generated message {message_id} - response length: {len(ai_response_content)} chars")
+
         return {
             'id': message_id,
             'conversationId': request_body.conversationId,
@@ -270,7 +281,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
         }
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Error generating message: {str(e)}", exc_info=True)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
 
@@ -775,7 +786,7 @@ async def send_and_generate_message(
         )
 
     except Exception as e:
-        print(f"Error in send_and_generate: {str(e)}")
+        logger.error(f"Error in send_and_generate: {str(e)}", exc_info=True)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return ErrorResponse(error=str(e))
 

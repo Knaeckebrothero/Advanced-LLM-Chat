@@ -77,15 +77,6 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
       const newAttachment = changes['attachment'].currentValue;
       const oldAttachment = changes['attachment'].previousValue;
 
-      console.log('AudioMessage: Attachment changed', {
-        newId: newAttachment?.id,
-        oldId: oldAttachment?.id,
-        newStatus: newAttachment?.uploadStatus,
-        oldStatus: oldAttachment?.uploadStatus,
-        hasFile: !!newAttachment?.file,
-        hasBase64: !!newAttachment?.base64Data
-      });
-
       if (newAttachment?.transcript && !this.loadedTranscript) {
         this.loadedTranscript = newAttachment.transcript;
       }
@@ -120,33 +111,21 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
    * 3. Backend API (fallback, requires network)
    */
   private initializeAudioUrl(): void {
-    console.log('AudioMessage: Initializing audio URL', {
-      hasFile: !!this.attachment.file,
-      fileSize: this.attachment.file?.size,
-      hasBase64: !!this.attachment.base64Data,
-      base64Length: this.attachment.base64Data?.length,
-      attachmentId: this.attachment.id,
-      uploadStatus: this.attachment.uploadStatus
-    });
-
     // Priority 1: Local file object
     if (this.attachment.file && this.attachment.file.size > 0) {
       this.objectUrl = URL.createObjectURL(this.attachment.file);
       this.audioUrl = this.objectUrl;
-      console.log('AudioMessage: Using File object URL');
       return;
     }
 
     // Priority 2: Base64 data (stored for offline playback)
     if (this.attachment.base64Data) {
       this.audioUrl = this.attachment.base64Data;
-      console.log('AudioMessage: Using base64 data URL, prefix:', this.attachment.base64Data.substring(0, 50));
       return;
     }
 
     // Priority 3: Will be loaded from backend on first play via loadAudio()
     // audioUrl remains null, will be loaded when user clicks play
-    console.log('AudioMessage: No local audio source, will load from backend on play');
   }
 
   ngOnDestroy(): void {
@@ -246,25 +225,11 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   onError(event?: Event): void {
-    // Get more details about the error
-    const audioEl = this.audioPlayerRef?.nativeElement;
-    const error = audioEl?.error;
-
-    console.error('AudioMessage: Audio error', {
-      errorCode: error?.code,
-      errorMessage: error?.message,
-      audioUrl: this.audioUrl ? this.audioUrl.substring(0, 100) + '...' : null,
-      attachmentId: this.attachment?.id,
-      networkState: audioEl?.networkState,
-      readyState: audioEl?.readyState
-    });
-
     // Only handle error if we actually have a URL set
     // (avoid error on initial empty src)
     if (this.audioUrl) {
       // If we were using base64 data and it failed, try loading from backend
       if (this.audioUrl.startsWith('data:') && this.attachment?.id && !this.triedBackendFallback) {
-        console.log('AudioMessage: Base64 failed, trying backend fallback');
         this.triedBackendFallback = true;
         this.audioUrl = null;
         this.loadAudio(); // Try loading from backend
