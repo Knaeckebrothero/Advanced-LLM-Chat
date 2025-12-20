@@ -2,7 +2,7 @@
 
 **An intelligent waste disposal assistant for university campuses**
 
-Fessi is a Progressive Web Application (PWA) designed to help campus users identify appropriate disposal methods and locations for various types of waste. Built with Angular 19.2.2 and FastAPI, this chatbot uses a Retrieval-Augmented Generation (RAG) architecture to provide contextually appropriate responses to waste disposal queries.
+Fessi is a Progressive Web Application (PWA) designed to help campus users identify appropriate disposal methods and locations for various types of waste. Built with Angular 19.2.2 and FastAPI, this chatbot uses a LangGraph agent with Neo4j knowledge graph tools to provide accurate, context-aware responses to waste disposal queries.
 
 ## Table of Contents
 
@@ -44,11 +44,11 @@ This project represents a continuation of work initiated in the previous semeste
 ## Features
 
 ### Waste Disposal Assistance
-- **Intelligent Query Processing**: RAG-based responses for waste disposal questions
+- **Intelligent Query Processing**: LangGraph agent with knowledge graph tools for accurate responses
 - **Multi-category Support**: Guidance for recyclables, hazardous materials, electronics, and general waste
 - **Location Guidance**: Information about nearest appropriate disposal locations on campus
 - **Visual Identification**: Upload images of waste items for classification assistance
-- **Voice Queries**: Ask disposal questions using voice input
+- **Voice Queries**: Ask disposal questions using voice input with automatic transcription
 - **Offline Functionality**: Access previous queries and basic guidance without internet
 
 ### Core Chat Features
@@ -83,12 +83,14 @@ This project represents a continuation of work initiated in the previous semeste
 ### Technical Features
 - **Progressive Web App (PWA)**: Installable on mobile devices for on-the-go waste queries
 - **Microservices Architecture**: Dockerized frontend (Angular/nginx) and backend (FastAPI)
-- **RAG Architecture**: Retrieval-Augmented Generation for accurate waste disposal information
+- **LangGraph Agent**: Multi-step reasoning with Neo4j knowledge graph tools
+- **Multi-Provider LLM**: Support for Replicate, OpenAI, Anthropic, and compatible endpoints
+- **Neo4j Knowledge Graph**: Structured waste disposal data (categories, items, locations, FAQs)
 - **State Management**: Reactive state with RxJS observables
 - **Repository Pattern**: Clean separation of data access layers
 - **Offline-First**: IndexedDB with background synchronization
-- **Multi-team Development**: Coordinated development across frontend, backend, design, and data teams
-- **FRA UAS Integration**: Designed for university campus deployment
+- **Vision Support**: Image analysis via multimodal models or separate vision helper
+- **Audio Transcription**: Whisper API or local model for voice queries
 
 ## Use Cases
 
@@ -109,7 +111,10 @@ Fessi is deployed as containerized microservices for easy campus-wide deployment
 ### Prerequisites for Docker Deployment
 
 1. Docker and Docker Compose installed
-2. A Replicate API token (get one at https://replicate.com)
+2. An LLM API token (one of the following):
+   - Replicate API token (https://replicate.com) - default provider
+   - OpenAI API key (https://platform.openai.com) - or compatible endpoint (llama.cpp, Ollama, etc.)
+   - Anthropic API key (https://console.anthropic.com)
 
 ### Quick Start with Docker
 
@@ -184,8 +189,8 @@ Before you begin, ensure you have the following installed:
 - npm (v8.x or higher)
 - Python 3.8+ (for backend)
 - Angular CLI (`npm install -g @angular/cli`)
-- Docker and Docker Compose (for PostgreSQL database)
-- A Replicate API token (for LLM functionality) - get one at https://replicate.com
+- Docker and Docker Compose (for PostgreSQL and Neo4j databases)
+- An LLM API token (Replicate, OpenAI, or Anthropic) - see `.env.example` for options
 
 ## Local Development Setup
 
@@ -283,11 +288,15 @@ pip install -r requirements.txt
 
 #### 3. Create .env File
 
-Create a `.env` file in the root directory with the following content:
+Copy `.env.example` to `.env` and configure your settings:
 
+```bash
+cp .env.example .env
+```
+
+Required settings:
 ```
 USE_DEV_CERTS=True
-REPLICATE_API_TOKEN=your_replicate_api_token_here
 
 # PostgreSQL Configuration
 POSTGRES_HOST=localhost
@@ -295,8 +304,18 @@ POSTGRES_PORT=5432
 POSTGRES_DB=fessi_chat
 POSTGRES_USER=fessi
 POSTGRES_PASSWORD=fessi_dev_password
+
+# LLM Provider - choose one:
+REPLICATE_API_TOKEN=your_token    # Default provider
+# OR
+OPENAI_API_KEY=your_key           # For OpenAI or compatible endpoints
+# OPENAI_BASE_URL=http://localhost:8080/v1  # For llama.cpp, Ollama, etc.
 ```
-**Tip:** You can use the [.env.example](.env.example) file to do so.
+
+Optional settings (see `.env.example` for full list):
+- **Neo4j**: Knowledge graph for waste disposal data
+- **Vision**: Image analysis configuration
+- **Whisper**: Audio transcription (API or local model)
 
 #### 4. Run the Backend
 
@@ -450,15 +469,14 @@ Fessi follows a modern microservices architecture optimized for campus-wide depl
 ```
 ┌─────────────────────────┐         ┌─────────────────────────┐
 │   Fessi Frontend        │         │   Waste Backend         │
-│   (Angular PWA)         │ <-----> │   (FastAPI + RAG)       │
+│   (Angular PWA)         │ <-----> │   (FastAPI + LangGraph) │
 │                         │  HTTPS  │                         │
 │  - Angular 19.2.2       │         │  - FastAPI              │
 │  - TypeScript (strict)  │         │  - PostgreSQL DB        │
-│  - IndexedDB            │         │  - RAG Pipeline         │
-│  - Service Worker       │         │  - Waste Knowledge Base │
-│  - NGX-Translate i18n   │         │  - LLM Integration      │
+│  - IndexedDB            │         │  - Neo4j Knowledge Graph│
+│  - Service Worker       │         │  - LangGraph Agent      │
+│  - NGX-Translate i18n   │         │  - Multi-Provider LLM   │
 │  - Angular Material     │         │  - Session Auth         │
-│  - FRA UAS Branding     │         │  - UUID-based IDs       │
 └─────────────────────────┘         └─────────────────────────┘
         Port 8080                         Port 8443
 ```
@@ -517,7 +535,7 @@ backend/
 ├── api/                   # API route handlers
 │   ├── auth.py            # Authentication endpoints
 │   ├── conversations.py   # Conversation CRUD operations
-│   ├── messages.py        # Message handling and LLM generation
+│   ├── messages.py        # Message handling and SSE streaming
 │   ├── settings.py        # User settings endpoints
 │   ├── files.py           # File upload handling
 │   └── docs.py            # API documentation routes
@@ -525,27 +543,20 @@ backend/
 │   ├── db.py              # SQLAlchemy engine and connection pool setup
 │   ├── db_init.py         # Database initialization and migration script
 │   ├── tables.py          # SQLAlchemy Core table definitions
+│   ├── neo4j_db.py        # Neo4j knowledge graph manager
+│   ├── neo4j_init.py      # Neo4j initialization script
 │   └── queries/           # SQL query files
-│       ├── schema.sql     # Database schema definition
-│       ├── seed.sql       # Test/example data
-│       └── complex.sql    # Complex query templates
 ├── models/                # Pydantic request/response models
-│   ├── auth.py            # Authentication models
-│   ├── conversation.py    # Conversation models
-│   ├── message.py         # Message models
-│   ├── settings.py        # Settings models
-│   └── common.py          # Shared models
 ├── services/
-│   └── llm.py             # LLM integration (Replicate API)
-├── security/
-│   ├── auth.py            # Session management and authentication
-│   ├── csrf.py            # CSRF protection
-│   └── logging.py         # Security logging
-├── middleware/
-│   └── middleware.py      # Request/response middleware
-└── utils/
-    ├── certificates.py    # SSL certificate generation
-    └── hash.py            # Password hashing utilities
+│   ├── llm.py             # Replicate API integration
+│   ├── llm_provider.py    # Multi-provider LLM abstraction (OpenAI, Anthropic, Replicate)
+│   ├── agent.py           # LangGraph agent with multi-step reasoning
+│   ├── neo4j_service.py   # Neo4j graph database operations
+│   ├── image_handler.py   # Image/document processing for vision models
+│   └── tools/             # LangChain tools for knowledge graph queries
+├── security/              # Auth, CSRF, logging
+├── middleware/            # Request/response middleware
+└── utils/                 # Certificates, hashing
 
 start_backend.py           # Entry point script for running the server
 ```
@@ -569,9 +580,10 @@ Component → State Service → Repository → API Service → Backend
 ### Docker Deployment
 - **Frontend Container**: nginx:alpine serving production Angular build
 - **Backend Container**: python:3.11-slim running FastAPI with uvicorn
-- **Database Container**: PostgreSQL 15 for persistent data storage
+- **PostgreSQL Container**: PostgreSQL 15 for persistent data storage
+- **Neo4j Container**: Neo4j for knowledge graph (waste categories, disposal methods, locations)
 - **Network**: Shared Docker network for inter-container communication
-- **Volumes**: Persistent storage for PostgreSQL data and uploaded files
+- **Volumes**: Persistent storage for database data and uploaded files
 
 ## API Endpoints
 
@@ -591,7 +603,8 @@ The Fessi backend provides REST API endpoints optimized for waste disposal queri
 
 ### Waste Queries
 - `POST /api/message/send` - Submit waste disposal query
-- `POST /api/message/generate` - Generate disposal guidance via RAG
+- `POST /api/message/generate` - Generate disposal guidance via LangGraph agent
+- `GET /api/message/stream-generate` - SSE endpoint for streaming agent responses with reasoning steps
 - `POST /api/message/send-and-generate` - Combined query and response
 - `PATCH /api/message/patch` - Update/refine query
 - `DELETE /api/message/delete/{conversation_id}/{message_id}` - Delete query
@@ -607,8 +620,13 @@ The Fessi backend provides REST API endpoints optimized for waste disposal queri
 - `POST /api/files/upload` - Upload waste item images for identification
 - `GET /api/files/{file_id}` - Retrieve uploaded waste images
 
-### WebSocket
-- `WS /ws` - WebSocket connection for streaming waste disposal guidance
+### Agent Streaming (SSE)
+The `/api/message/stream-generate` endpoint uses Server-Sent Events with these event types:
+- `message_start` - Message metadata (messageId, conversationId, roleName, time, type)
+- `step` - Agent reasoning step (thought, tool_call, tool_result, observation)
+- `token` - Individual text tokens for the final response
+- `done` - Signals completion
+- `error` - Error information
 
 ## Troubleshooting
 
@@ -637,14 +655,6 @@ export NODE_TLS_REJECT_UNAUTHORIZED=0
 **Important:** Only use this setting in development, never in production.
 
 ### Database Connection Issues
-
-If you encounter database issues:
-1. Check that PostgreSQL is running: `docker ps | grep postgres`
-2. Verify connection: `docker exec -it fessi-postgres psql -U fessi -d fessi_chat -c "SELECT 1"`
-3. Check PostgreSQL logs: `docker logs fessi-postgres`
-4. Reset database: `cd docker && docker-compose down -v postgres && docker-compose up -d postgres`
-
-### PostgreSQL Connection Issues
 
 1. **Check PostgreSQL is running**:
    ```bash
