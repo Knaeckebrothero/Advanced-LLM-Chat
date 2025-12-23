@@ -41,6 +41,7 @@ python start_backend.py --reload     # With auto-reload for development
 cd docker && docker-compose stop             # Stop all databases
 python backend/app_init.py --force-reset --seed  # Reset and reseed all databases
 python backend/app_init.py --skip-neo4j --seed   # Skip Neo4j initialization
+python backend/app_init.py --prod            # Production migration (add missing columns, skip Neo4j)
 
 # Backend testing (tests are in root tests/ directory)
 pytest                            # Run all tests

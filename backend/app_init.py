@@ -26,6 +26,9 @@ Usage:
 
     # Setup filesystem only (no database, no certs)
     python backend/app_init.py --setup-only
+
+    # Production mode: migrate PostgreSQL schema only (skips Neo4j)
+    python backend/app_init.py --prod
 """
 import argparse
 import logging
@@ -84,6 +87,9 @@ Examples:
   python backend/app_init.py --seed             # Initialize with test data
   python backend/app_init.py --skip-db          # Skip database setup
   python backend/app_init.py --setup-only       # Filesystem only
+  python backend/app_init.py --prod             # Production migration (PostgreSQL only)
+
+Flags execute in order: --prod -> --force-reset -> --seed
         """,
     )
     parser.add_argument(
@@ -116,6 +122,11 @@ Examples:
         action="store_true",
         help="Skip Neo4j knowledge graph initialization",
     )
+    parser.add_argument(
+        "--prod",
+        action="store_true",
+        help="Production mode: migrate PostgreSQL schema only (skips Neo4j)",
+    )
     return parser.parse_args()
 
 
@@ -129,8 +140,6 @@ def get_filesystem_dirs() -> list[Path]:
     return [
         FILESYSTEM_DIR,
         FILESYSTEM_DIR / "logs",
-        FILESYSTEM_DIR / "uploads",
-        FILESYSTEM_DIR / "exports",
     ]
 
 
@@ -238,7 +247,7 @@ def setup_ssl_certificates(logger: logging.Logger) -> bool:
         return False
 
 
-def run_db_init(logger: logging.Logger, force_reset: bool = False, seed: bool = False) -> bool:
+def run_db_init(logger: logging.Logger, force_reset: bool = False, seed: bool = False, prod: bool = False) -> bool:
     """
     Run the database initialization script.
 
@@ -246,6 +255,7 @@ def run_db_init(logger: logging.Logger, force_reset: bool = False, seed: bool = 
         logger: Logger instance.
         force_reset: If True, drop all tables and recreate.
         seed: If True, insert test data.
+        prod: If True, run production migration (add missing columns).
 
     Returns:
         True if successful, False otherwise.
@@ -266,6 +276,7 @@ def run_db_init(logger: logging.Logger, force_reset: bool = False, seed: bool = 
         args.password = os.getenv("POSTGRES_PASSWORD", "")
         args.force_reset = force_reset
         args.seed = seed
+        args.prod = prod
 
         # Create a sub-logger for db_init
         db_logger = logging.getLogger("db_init")
@@ -402,8 +413,14 @@ def main() -> int:
     logger = setup_logging()
     args = parse_args()
 
+    # Production mode automatically skips Neo4j
+    if args.prod:
+        args.skip_neo4j = True
+
     logger.info("")
     logger.info("=== Fessi Backend Initialization ===")
+    if args.prod:
+        logger.info("    (Production migration mode - Neo4j skipped)")
     logger.info("")
 
     # Calculate total steps based on flags
@@ -461,7 +478,7 @@ def main() -> int:
         current_step += 1
         logger.info("")
         logger.info(f"[{current_step}/{total_steps}] Initializing PostgreSQL database...")
-        if not run_db_init(logger, args.force_reset, args.seed):
+        if not run_db_init(logger, args.force_reset, args.seed, args.prod):
             logger.error("")
             logger.error("PostgreSQL initialization failed. Aborting.")
             return 1

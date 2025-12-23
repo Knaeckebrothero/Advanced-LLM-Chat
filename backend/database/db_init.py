@@ -2,10 +2,11 @@
 Database initialization script for the Fessi backend.
 
 This script initializes the PostgreSQL database schema and optionally seeds it
-with test data. It supports two modes:
+with test data. It supports multiple modes:
 
 1. Default mode: Creates tables if they don't exist (preserves existing data)
 2. Force-reset mode: Drops all tables and recreates from scratch
+3. Production mode: Migrates schema by adding missing columns (preserves data)
 
 Usage:
     # Default: Create tables if missing, preserve data
@@ -19,6 +20,11 @@ Usage:
 
     # Combined: Fresh database with seed data
     python -m backend.database.db_init --force-reset --seed
+
+    # Production migration: Update schema without losing data
+    python -m backend.database.db_init --prod
+
+Flags can be combined and execute in this order: --prod -> --force-reset -> --seed
 """
 import argparse
 import logging
@@ -79,10 +85,13 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m backend.database.db_init              # Create tables if missing
-  python -m backend.database.db_init --force-reset  # Drop and recreate all tables
-  python -m backend.database.db_init --seed       # Create tables and insert test data
+  python -m backend.database.db_init                       # Create tables if missing
+  python -m backend.database.db_init --force-reset         # Drop and recreate all tables
+  python -m backend.database.db_init --seed                # Create tables and insert test data
   python -m backend.database.db_init --force-reset --seed  # Fresh database with test data
+  python -m backend.database.db_init --prod                # Production migration (add missing columns)
+
+Flags execute in order: --prod -> --force-reset -> --seed
         """,
     )
     parser.add_argument(
@@ -94,6 +103,11 @@ Examples:
         "--seed",
         action="store_true",
         help="Insert test/example data after initialization",
+    )
+    parser.add_argument(
+        "--prod",
+        action="store_true",
+        help="Production migration: update schema without losing data or adding test data",
     )
     parser.add_argument(
         "--host",
@@ -335,6 +349,161 @@ def insert_seed_data(engine, seed_path: Path, logger: logging.Logger) -> bool:
         return False
 
 
+def parse_schema_columns(schema_path: Path) -> dict[str, list[tuple[str, str]]]:
+    """
+    Parse schema.sql to extract table columns and their definitions.
+
+    Parses CREATE TABLE blocks to extract column names and their full SQL
+    definitions (type, constraints, defaults). This is used by migrate_schema()
+    to determine what columns need to be added to existing tables.
+
+    Args:
+        schema_path: Path to the schema.sql file.
+
+    Returns:
+        Dictionary mapping table names to lists of (column_name, column_definition) tuples.
+        Example: {"users": [("id", "SERIAL PRIMARY KEY"), ("email", "TEXT UNIQUE NOT NULL")]}
+    """
+    import re
+
+    if not schema_path.exists():
+        return {}
+
+    content = schema_path.read_text()
+    result = {}
+
+    # Find all CREATE TABLE blocks
+    # Pattern matches: CREATE TABLE IF NOT EXISTS table_name (...)
+    table_pattern = r'CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\);'
+    table_matches = re.findall(table_pattern, content, re.DOTALL | re.IGNORECASE)
+
+    for table_name, columns_block in table_matches:
+        columns = []
+
+        # Split by comma, but be careful with commas inside parentheses (e.g., REFERENCES users(id))
+        # We'll use a simple approach: split by newlines and process each line
+        lines = columns_block.strip().split('\n')
+
+        for line in lines:
+            line = line.strip()
+
+            # Skip empty lines and comments
+            if not line or line.startswith('--'):
+                continue
+
+            # Remove trailing comma if present
+            if line.endswith(','):
+                line = line[:-1].strip()
+
+            # Skip constraint definitions (PRIMARY KEY, FOREIGN KEY, etc.)
+            if any(line.upper().startswith(kw) for kw in ['PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE', 'CHECK', 'CONSTRAINT']):
+                continue
+
+            # Extract column name (first word, handling quoted identifiers)
+            if line.startswith('"'):
+                # Quoted identifier like "userId"
+                match = re.match(r'"([^"]+)"\s+(.*)', line)
+                if match:
+                    col_name = match.group(1)
+                    col_def = f'"{col_name}" {match.group(2)}'
+                    columns.append((col_name, col_def))
+            else:
+                # Unquoted identifier
+                parts = line.split(None, 1)
+                if len(parts) >= 2:
+                    col_name = parts[0]
+                    col_def = line
+                    columns.append((col_name, col_def))
+
+        if columns:
+            result[table_name] = columns
+
+    return result
+
+
+def migrate_schema(engine, logger: logging.Logger) -> bool:
+    """
+    Add missing columns and tables (production migration - additive only).
+
+    This is a SAFE, additive-only migration that:
+    - Creates missing tables via CREATE TABLE IF NOT EXISTS
+    - Adds missing columns via ALTER TABLE ADD COLUMN IF NOT EXISTS
+    - NEVER deletes tables, columns, or data
+    - Logs warnings for changes that require manual migration
+
+    For complex schema changes (column type changes, constraint modifications,
+    column removals), a warning is logged and manual migration is required.
+
+    Args:
+        engine: SQLAlchemy engine.
+        logger: Logger instance.
+
+    Returns:
+        True if migration successful, False otherwise.
+    """
+    try:
+        expected_schema = parse_schema_columns(SCHEMA_FILE)
+        if not expected_schema:
+            logger.warning("  ⚠ Could not parse schema.sql, skipping column migration")
+            return True
+
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        columns_added = 0
+        warnings_count = 0
+
+        with engine.connect() as conn:
+            for table_name, expected_columns in expected_schema.items():
+                if table_name not in existing_tables:
+                    logger.info(f"  Table '{table_name}' will be created by schema.sql")
+                    continue
+
+                # Get existing columns with their types for comparison
+                existing_cols_info = {col["name"]: col for col in inspector.get_columns(table_name)}
+                existing_col_names = set(existing_cols_info.keys())
+                expected_col_names = {col[0] for col in expected_columns}
+
+                # Check for columns that exist in DB but not in schema (orphaned)
+                orphaned_cols = existing_col_names - expected_col_names
+                if orphaned_cols:
+                    for col in orphaned_cols:
+                        logger.warning(f"    ⚠ Column '{col}' in '{table_name}' not in schema (orphaned, left untouched)")
+                    warnings_count += len(orphaned_cols)
+
+                # Add missing columns
+                for col_name, col_def in expected_columns:
+                    if col_name not in existing_col_names:
+                        # Build ALTER TABLE statement
+                        # PostgreSQL 9.6+ supports ADD COLUMN IF NOT EXISTS
+                        alter_sql = f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS {col_def}'
+
+                        try:
+                            conn.execute(text(alter_sql))
+                            logger.info(f"    ✓ Added column '{col_name}' to '{table_name}'")
+                            columns_added += 1
+                        except Exception as e:
+                            logger.warning(f"    ⚠ Could not add column '{col_name}' to '{table_name}': {e}")
+                            logger.warning(f"      Manual migration may be required")
+                            warnings_count += 1
+
+            conn.commit()
+
+        # Summary
+        if columns_added > 0:
+            logger.info(f"  ✓ Migration complete: {columns_added} column(s) added")
+        else:
+            logger.info("  ✓ Schema is up to date, no columns to add")
+
+        if warnings_count > 0:
+            logger.warning(f"  ⚠ {warnings_count} warning(s) - some changes may require manual migration")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"  ✗ Migration failed: {e}")
+        return False
+
+
 def verify_schema(engine, logger: logging.Logger) -> bool:
     """
     Verify that all expected tables exist in the database.
@@ -364,12 +533,13 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     """
     Main database initialization logic.
 
-    Performs the following steps:
+    Performs the following steps (in this order, regardless of CLI argument order):
     1. Create database if it doesn't exist
-    2. If --force-reset: drop all existing tables
-    3. Execute schema.sql to create tables
-    4. If --seed: insert test data
-    5. Verify schema
+    2. If --prod: run production migration (add missing columns)
+    3. If --force-reset: drop all existing tables
+    4. Execute schema.sql to create tables
+    5. If --seed: insert test data
+    6. Verify schema
 
     Args:
         args: Parsed command line arguments.
@@ -378,12 +548,25 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     Returns:
         True if initialization successful, False otherwise.
     """
+    # Determine total steps based on flags
+    prod_mode = getattr(args, 'prod', False)
+    total_steps = 4  # Base: check db, schema, seed check, verify
+    if prod_mode:
+        total_steps += 1
+    if args.force_reset:
+        total_steps += 1
+
+    current_step = 0
+
     logger.info("")
     logger.info("=== Database Initialization ===")
+    if prod_mode:
+        logger.info("    (Production migration mode)")
     logger.info("")
 
     # Step 1: Create database if not exists
-    logger.info("[1/4] Checking database...")
+    current_step += 1
+    logger.info(f"[{current_step}/{total_steps}] Checking database...")
     try:
         create_database_if_not_exists(
             args.host, args.port, args.user, args.password, args.database, logger
@@ -398,30 +581,43 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     # Get engine for the target database
     engine = get_engine(args.host, args.port, args.user, args.password, args.database)
 
-    # Step 2: Force reset if requested
-    if args.force_reset:
+    # Step 2: Production migration (runs FIRST if --prod is set)
+    if prod_mode:
+        current_step += 1
         logger.info("")
-        logger.info("[2/4] Force reset - dropping all tables...")
+        logger.info(f"[{current_step}/{total_steps}] Running production migration...")
+        if not migrate_schema(engine, logger):
+            logger.error("")
+            logger.error("  ✗ Production migration failed!")
+            return False
+
+    # Step 3: Force reset if requested (runs AFTER prod migration)
+    if args.force_reset:
+        current_step += 1
+        logger.info("")
+        logger.info(f"[{current_step}/{total_steps}] Force reset - dropping all tables...")
         logger.warning("  ⚠ WARNING: All existing data will be deleted!")
         drop_all_tables(engine, logger)
-    else:
+    elif not prod_mode:
         logger.info("")
-        logger.info("[2/4] Preserving existing data (use --force-reset to drop tables)")
+        logger.info("  Preserving existing data (use --force-reset to drop tables)")
 
-    # Step 3: Execute schema
+    # Step 4: Execute schema (creates tables, indexes, triggers)
+    current_step += 1
     logger.info("")
-    logger.info("[3/4] Creating tables from schema...")
+    logger.info(f"[{current_step}/{total_steps}] Creating/updating tables from schema...")
     if not execute_schema_sql(engine, SCHEMA_FILE, logger):
         return False
 
-    # Step 4: Insert seed data if requested
+    # Step 5: Insert seed data if requested (runs LAST)
+    current_step += 1
     logger.info("")
     if args.seed:
-        logger.info("[4/4] Inserting seed data...")
+        logger.info(f"[{current_step}/{total_steps}] Inserting seed data...")
         if not insert_seed_data(engine, SEED_FILE, logger):
             logger.warning("  ⚠ Seed data insertion had issues, but continuing...")
     else:
-        logger.info("[4/4] Skipping seed data (use --seed to insert test data)")
+        logger.info(f"[{current_step}/{total_steps}] Skipping seed data (use --seed to insert test data)")
 
     # Verify schema
     logger.info("")

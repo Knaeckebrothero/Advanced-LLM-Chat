@@ -256,6 +256,29 @@ docker logs fessi-postgres
 cd docker && docker-compose down -v postgres
 docker-compose up -d postgres
 python backend/app_init.py --force-reset --seed
+
+# Production migration (update schema without losing data)
+python backend/app_init.py --prod
+```
+
+#### Production Migration (`--prod`)
+
+The `--prod` flag performs a safe, additive-only schema migration:
+
+- **Creates** missing tables (via `CREATE TABLE IF NOT EXISTS`)
+- **Adds** missing columns to existing tables (via `ALTER TABLE ADD COLUMN IF NOT EXISTS`)
+- **Never deletes** tables, columns, or data
+- **Skips Neo4j** automatically (Neo4j is managed separately in production)
+- **Warns** about orphaned columns or changes requiring manual migration
+
+This is ideal for production deployments where you need to update the schema without losing existing data:
+
+```bash
+# Safe production upgrade
+python backend/app_init.py --prod
+
+# Flags can be combined (execute in order: --prod -> --force-reset -> --seed)
+python backend/app_init.py --prod --seed  # Migrate schema, then add test data
 ```
 
 ## Installation

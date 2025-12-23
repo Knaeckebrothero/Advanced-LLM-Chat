@@ -55,28 +55,11 @@ configure_logging()
 # Main application logger for this module
 logger = logging.getLogger(__name__)
 
-# Security logger with separate file handler
+# Security logger - logs propagate to root logger (application.log)
 security_logger = logging.getLogger("security")
-security_logger.setLevel(logging.WARNING)
 
-# CRUD operations logger with separate file handler
-crud_logger = logging.getLogger("backend.middleware.crud")
-crud_logger.setLevel(logging.INFO)
-
-# Create file handlers for specialized loggers
-# These write to their own files in addition to the main application log
-security_log_path = os.path.join(LOG_DIRECTORY, 'security.log')
-security_handler = logging.FileHandler(security_log_path)
-security_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
-security_logger.addHandler(security_handler)
-
-crud_log_path = os.path.join(LOG_DIRECTORY, 'crud_operations.log')
-crud_handler = logging.FileHandler(crud_log_path)
-crud_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s',
-    datefmt=LOG_DATE_FORMAT
-))
-crud_logger.addHandler(crud_handler)
+# CRUD operations logger - logs propagate to root logger (application.log)
+crud_logger = logging.getLogger("crud")
 
 
 def log_security_event(event_type: str, details: dict, request: Request = None):

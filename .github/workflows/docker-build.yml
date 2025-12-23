@@ -232,7 +232,7 @@ jobs:
             db-init:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${IMAGE_TAG}
               container_name: fessi-db-init
-              command: ["python", "-m", "backend.app_init", "--seed"]
+              command: ["python", "-m", "backend.app_init", "--prod"]
               environment:
                 - POSTGRES_HOST=postgres
                 - POSTGRES_PORT=5432
@@ -355,7 +355,7 @@ jobs:
 
           - **postgres**: PostgreSQL 16 database for conversations and messages
           - **neo4j**: Neo4j 5.15 knowledge graph for waste disposal information
-          - **db-init**: One-time initialization container (seeds databases)
+          - **db-init**: Database initialization container (creates/updates schema, no test data)
           - **frontend**: Angular web application
           - **backend**: FastAPI backend with LangGraph agent
 
