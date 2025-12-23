@@ -4,10 +4,16 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (gcc for native extensions, libpq for psycopg2)
+# Install system dependencies
+# - gcc: for native Python extensions
+# - libpq-dev: for psycopg2 PostgreSQL driver
+# - ffmpeg: for openai-whisper audio transcription
+# - poppler-utils: for pdf2image PDF processing
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    ffmpeg \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

@@ -44,6 +44,30 @@ services:
       - app-network
     restart: unless-stopped
 
+  db-init:
+    build:
+      context: ../
+      dockerfile: docker/backend.Dockerfile
+    container_name: fessi-db-init
+    command: ["python", "-m", "backend.app_init", "--seed"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=fessi_chat
+      - POSTGRES_USER=fessi
+      - POSTGRES_PASSWORD=fessi_dev_password
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=fessi_neo4j_dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: "no"
+
   frontend:
     build:
       context: ../
@@ -55,6 +79,7 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
+      - API_URL=${API_URL:-https://localhost:8443}
     depends_on:
       - backend
     networks:
@@ -70,23 +95,42 @@ services:
       - "8443:8443"
     restart: unless-stopped
     environment:
+      # SSL/TLS
       - USE_DEV_CERTS=True
-      - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN}
+      # PostgreSQL
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_DB=fessi_chat
       - POSTGRES_USER=fessi
       - POSTGRES_PASSWORD=fessi_dev_password
+      # Neo4j
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=fessi_neo4j_dev
+      # LLM Provider (uncomment and configure as needed)
+      # - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Vision/Multimodal
+      - MODEL_RECEIVE_IMAGES=${MODEL_RECEIVE_IMAGES:-false}
+      - MODEL_RECEIVE_IMAGES_PDF=${MODEL_RECEIVE_IMAGES_PDF:-false}
+      - VISION_BASE_URL=${VISION_BASE_URL:-}
+      - VISION_MODEL=${VISION_MODEL:-gpt-4o-mini}
+      # Audio Transcription
+      - USE_LOCAL_WHISPER=${USE_LOCAL_WHISPER:-false}
+      - LOCAL_WHISPER_MODEL=${LOCAL_WHISPER_MODEL:-base}
+      - WHISPER_BASE_URL=${WHISPER_BASE_URL:-}
+      - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/.filesystem
     depends_on:
-      postgres:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
       - app-network
 
@@ -98,4 +142,3 @@ volumes:
   postgres_data:
   neo4j_data:
   neo4j_logs:
-

@@ -49,5 +49,9 @@ RUN echo "OK" > /usr/share/nginx/html/health
 # Expose port 80
 EXPOSE 80
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Default API URL (can be overridden at runtime)
+ENV API_URL=https://localhost:8443
+
+# Start nginx with runtime environment variable substitution
+# envsubst replaces ${API_URL} in env.template.js and writes to env.js
+CMD ["/bin/sh", "-c", "envsubst < /usr/share/nginx/html/assets/env.template.js > /usr/share/nginx/html/assets/env.js && exec nginx -g 'daemon off;'"]

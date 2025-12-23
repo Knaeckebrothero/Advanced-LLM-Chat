@@ -88,6 +88,9 @@ NEO4J_PASSWORD=fessi_neo4j_dev
 cd docker
 docker-compose up -d --build              # Build and run locally
 docker-compose -f docker-compose.prod.yml up -d  # Use pre-built images from ghcr.io
+
+# Deploy to a remote server (set API_URL to backend address)
+API_URL=https://192.168.1.50:8443 docker-compose up -d
 ```
 
 ## Architecture Overview

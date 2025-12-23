@@ -1,7 +1,9 @@
 // src/environments/environment.ts (development environment)
+// Runtime configuration is loaded from assets/env.js (see index.html)
+// For Docker deployments, env.js is generated at container startup from env.template.js
 export const environment = {
   production: false,
-  apiUrl: 'https://localhost:8443',  // Change to 'http://localhost:8443' if you don't want to use https for development
+  apiUrl: (window as any)['env']?.['apiUrl'] || 'https://localhost:8443',
   auth: {
     // Switch providers via environment
     provider: 'mock', // 'mock' | 'auth0' | 'okta' | 'azure' | etc.

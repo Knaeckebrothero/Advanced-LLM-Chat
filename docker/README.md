@@ -21,7 +21,13 @@ This directory contains the Docker configuration for containerizing both the Ang
 Create a `.env` file in the docker directory:
 
 ```bash
-REPLICATE_API_TOKEN=your_replicate_api_token_here
+# Required: At least one LLM provider
+OPENAI_API_KEY=your_openai_api_key_here
+# Or use Replicate
+# REPLICATE_API_TOKEN=your_replicate_api_token_here
+
+# Optional: Set API_URL if backend is on a different host
+# API_URL=https://192.168.1.50:8443
 ```
 
 ### 2. Build and run with Docker Compose
@@ -93,6 +99,27 @@ docker pull ghcr.io/Knaeckebrothero/fessi-backend:develop-latest
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
+## Runtime Configuration
+
+The frontend container supports runtime environment variable injection. This allows you to configure the API URL without rebuilding the image.
+
+### How it works
+
+1. At container startup, `envsubst` substitutes `${API_URL}` in `/assets/env.template.js`
+2. The result is written to `/assets/env.js`
+3. Angular loads this config before bootstrapping
+
+### Deploying to a remote server
+
+```bash
+# Set the API_URL to your backend's address
+API_URL=https://my-server.example.com:8443 docker-compose up -d
+
+# Or add to .env file
+echo "API_URL=https://my-server.example.com:8443" >> .env
+docker-compose up -d
+```
+
 ## Container Details
 
 ### Frontend Container
@@ -104,6 +131,7 @@ docker-compose -f docker-compose.prod.yml up -d
   - Static asset caching
   - Security headers configured
   - SPA routing handled correctly
+  - Runtime environment variable injection via `envsubst`
 
 ### Backend Container
 - **Base Image**: python:3.11-slim
@@ -131,6 +159,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ### Frontend
 - `NODE_ENV`: Set to "production" for production builds
+- `API_URL`: Backend API endpoint (default: `https://localhost:8443`). Set this to the backend's address when deploying to a remote server.
 
 ## Production Deployment
 
