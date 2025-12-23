@@ -2,6 +2,14 @@
 -- This file contains test data for development and testing purposes.
 -- Run with: python -m backend.database.db_init --seed
 
+-- name: seed_guest_user
+-- Guest user placeholder (ID 0) for guest sessions
+-- This must exist for guest session FK constraint
+INSERT INTO users (id, email, name)
+OVERRIDING SYSTEM VALUE
+VALUES (0, 'guest@guest.local', 'Guest User')
+ON CONFLICT (id) DO NOTHING;
+
 -- name: seed_users
 -- Test users for development
 INSERT INTO users (email, name) VALUES

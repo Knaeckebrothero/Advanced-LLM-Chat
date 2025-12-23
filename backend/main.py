@@ -117,8 +117,14 @@ if USE_DEV_CERTS:
 # Main entry point for running the Uvicorn server
 if __name__ == "__main__":
     import uvicorn
+    from backend.security.logging import get_uvicorn_log_config
 
-    run_args = {"host": HOST, "port": PORT, "reload": True}
+    run_args = {
+        "host": HOST,
+        "port": PORT,
+        "reload": True,
+        "log_config": get_uvicorn_log_config(),
+    }
     protocol = "https" if ssl_config else "http"
     if ssl_config:
         run_args.update(ssl_config)

@@ -499,12 +499,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Set up basic logging for early errors before main() configures it
+    init_logger = logging.getLogger(__name__)
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("")
-        print("Initialization cancelled by user.")
+        init_logger.info("")
+        init_logger.info("Initialization cancelled by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        init_logger.error(f"Unexpected error: {e}")
         sys.exit(1)

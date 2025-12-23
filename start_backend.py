@@ -9,10 +9,14 @@ Or with custom options:
     python start_backend.py --host 0.0.0.0 --port 8443
 """
 import argparse
+import logging
 import uvicorn
 
 from backend.config import USE_DEV_CERTS, HOST, PORT
+from backend.security.logging import get_uvicorn_log_config
 from backend.utils.certificates import setup_development_certificates
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -27,7 +31,7 @@ def main():
     protocol = "http"
 
     if USE_DEV_CERTS and not args.no_ssl:
-        print("Setting up development SSL certificates...")
+        logger.info("Setting up development SSL certificates...")
         cert_file, key_file = setup_development_certificates()
         ssl_config = {
             "ssl_keyfile": key_file,
@@ -35,14 +39,15 @@ def main():
         }
         protocol = "https"
 
-    print(f"Starting server at {protocol}://{args.host}:{args.port}")
-    print(f"API docs available at {protocol}://{args.host}:{args.port}/api/docs")
+    logger.info(f"Starting server at {protocol}://{args.host}:{args.port}")
+    logger.info(f"API docs available at {protocol}://{args.host}:{args.port}/api/docs")
 
     uvicorn.run(
         "backend.main:app",
         host=args.host,
         port=args.port,
         reload=args.reload,
+        log_config=get_uvicorn_log_config(),
         **ssl_config
     )
 

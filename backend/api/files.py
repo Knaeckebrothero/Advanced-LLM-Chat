@@ -71,8 +71,8 @@ async def upload_files(
         uploaded_files = []
         max_file_size = 10 * 1024 * 1024  # 10MB limit per file
 
-        # Ensure files directory exists
-        FILES_DIR.mkdir(exist_ok=True)
+        # Ensure files directory exists (including parent directories)
+        FILES_DIR.mkdir(parents=True, exist_ok=True)
 
         for file in files:
             # Read file to check size and content

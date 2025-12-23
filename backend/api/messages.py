@@ -106,14 +106,18 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
 
     try:
         if not request_body.content:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Message content cannot be empty")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message content cannot be empty"
+            )
 
         # Verify ownership
         if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
                                               current_user.get("is_guest", False)):
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return ErrorResponse(error="Access denied to this conversation")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
 
         message_id = int(time.time() * 1000)
 
@@ -204,10 +208,14 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
         crud_logger.info(f"Message sent successfully - Message ID: {message_id}")
         return {"id": message_id}
 
+    except HTTPException:
+        raise
     except Exception as e:
         crud_logger.error(f"Error sending message: {str(e)}", exc_info=True)
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=f"Failed to send message: {str(e)}. Please try again later.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send message: {str(e)}. Please try again later."
+        )
 
 
 @router.post("/generate",
@@ -233,13 +241,17 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
         if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
                                               current_user.get("is_guest", False)):
             logger.warning(f"Access denied for user {current_user['user_id']} to conversation {request_body.conversationId}")
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return ErrorResponse(error="Access denied to this conversation")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
 
         if not request_body.conversationId:
             logger.warning("Generate message called without conversation ID")
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Conversation ID missing or invalid in request")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Conversation ID missing or invalid in request"
+            )
 
         # Get conversation context for the LLM
         logger.debug(f"Getting conversation context for {request_body.conversationId}")
@@ -280,10 +292,14 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
             'lastModified': current_time
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating message: {str(e)}", exc_info=True)
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
 @router.patch("/patch",
@@ -307,27 +323,34 @@ async def patch_message(request_body: MessagePatch, response: Response,
 
     try:
         if not request_body.id:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Message ID missing")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message ID missing"
+            )
 
         # Verify ownership
         if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
                                               current_user.get("is_guest", False)):
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return ErrorResponse(error="Access denied to this conversation")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
 
         # First check current version
         current_version = db.get_message_version(request_body.id, request_body.conversationId)
 
         if current_version is None:
-            response.status_code = status.HTTP_404_NOT_FOUND
-            return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
+            )
 
         # Check for version conflict
         if current_version != request_body.version:
-            response.status_code = status.HTTP_409_CONFLICT
-            return ErrorResponse(
-                error=f"Version conflict: current version is {current_version}, provided version is {request_body.version}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Version conflict: current version is {current_version}, provided version is {request_body.version}"
+            )
 
         # Update with version increment
         updated_message = db.update_message(
@@ -339,8 +362,10 @@ async def patch_message(request_body: MessagePatch, response: Response,
         )
 
         if not updated_message:
-            response.status_code = status.HTTP_409_CONFLICT
-            return ErrorResponse(error="Version conflict during update")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Version conflict during update"
+            )
 
         # Parse content based on type
         message_type = updated_message.get('type') or 'text'
@@ -369,10 +394,14 @@ async def patch_message(request_body: MessagePatch, response: Response,
             rating=updated_message.get('rating')
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         crud_logger.error(f"Error patching message: {str(e)}", exc_info=True)
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=f"Failed to update message: {str(e)}. Please refresh and try again.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update message: {str(e)}. Please refresh and try again."
+        )
 
 
 @router.delete("/delete/{conversation_id}/{message_id}",
@@ -394,31 +423,39 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
 
     try:
         if not conversation_id or not message_id:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return Response(status_code=status.HTTP_400_BAD_REQUEST,
-                            content="Conversation ID or Message ID missing")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Conversation ID or Message ID missing"
+            )
 
         # Verify ownership
         if not verify_conversation_ownership(conversation_id, current_user['user_id'],
                                               current_user.get("is_guest", False)):
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return ErrorResponse(error="Access denied to this conversation")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
 
         deleted = db.delete_message(message_id, conversation_id)
 
         if not deleted:
             crud_logger.warning(f"Message not found for deletion - Message ID: {message_id}")
-            response.status_code = status.HTTP_404_NOT_FOUND
-            return Response(status_code=status.HTTP_404_NOT_FOUND, content="Message not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
+            )
 
         crud_logger.info(f"Message deleted successfully - Message ID: {message_id}")
         return None
 
+    except HTTPException:
+        raise
     except Exception as e:
         crud_logger.error(f"Error deleting message: {str(e)}", exc_info=True)
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(
-            error=f"Failed to delete message: {str(e)}. Please check your connection and try again.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete message: {str(e)}. Please check your connection and try again."
+        )
 
 
 @router.post("/rate",
@@ -442,14 +479,18 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
     try:
         # Validate rating value (None is allowed to remove rating)
         if request_body.rating is not None and request_body.rating not in [0, 1]:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Rating must be 0 (thumbs down), 1 (thumbs up), or null to remove rating")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rating must be 0 (thumbs down), 1 (thumbs up), or null to remove rating"
+            )
 
         # Verify ownership
         if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
                                               current_user.get("is_guest", False)):
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return ErrorResponse(error="Access denied to this conversation")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
 
         # Update the rating
         updated_message = db.update_message_rating(
@@ -459,8 +500,10 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
         )
 
         if not updated_message:
-            response.status_code = status.HTTP_404_NOT_FOUND
-            return ErrorResponse(error="Message not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
+            )
 
         # Parse content based on type
         message_type = updated_message.get('type') or 'text'
@@ -489,10 +532,14 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
             rating=updated_message.get('rating')
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         crud_logger.error(f"Error rating message: {str(e)}", exc_info=True)
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=f"Failed to rate message: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rate message: {str(e)}"
+        )
 
 
 @router.post("/regenerate",
@@ -627,8 +674,10 @@ async def send_and_generate_message(
     try:
         if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
                                               current_user.get("is_guest", False)):
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return ErrorResponse(error="Access denied to this conversation")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
 
         user_message_id = int(time.time() * 1000)
         content_str = ""
@@ -785,10 +834,14 @@ async def send_and_generate_message(
             aiMessage=ai_message_response
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in send_and_generate: {str(e)}", exc_info=True)
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
 @router.post("/stream-generate",

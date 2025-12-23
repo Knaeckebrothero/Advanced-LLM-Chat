@@ -335,15 +335,19 @@ async def get_conversation_messages(
     try:
         if not conversation_id or timestamp is None:
             logger.warning("Missing conversation_id or timestamp in request")
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return ErrorResponse(error="Conversation ID and latest timestamp are required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Conversation ID and latest timestamp are required"
+            )
 
         # Verify ownership (guests can access any conversation)
         if not verify_conversation_ownership(conversation_id, current_user['user_id'],
                                               current_user.get("is_guest", False)):
             logger.warning(f"Access denied for user {current_user['user_id']} to conversation {conversation_id}")
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return ErrorResponse(error="Access denied to this conversation")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
 
         # Different queries for incremental sync vs pagination
         if after_timestamp is not None:

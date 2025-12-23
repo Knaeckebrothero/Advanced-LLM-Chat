@@ -60,7 +60,7 @@ security_logger = logging.getLogger("security")
 security_logger.setLevel(logging.WARNING)
 
 # CRUD operations logger with separate file handler
-crud_logger = logging.getLogger("crud")
+crud_logger = logging.getLogger("backend.middleware.crud")
 crud_logger.setLevel(logging.INFO)
 
 # Create file handlers for specialized loggers
@@ -114,3 +114,59 @@ def log_security_event(event_type: str, details: dict, request: Request = None):
         }
 
     security_logger.warning(json.dumps(log_entry))
+
+
+def get_uvicorn_log_config() -> dict:
+    """
+    Returns a logging configuration dictionary for Uvicorn that matches
+    the application's logging format.
+
+    This ensures all logs (application, uvicorn lifecycle, and access logs)
+    use the same consistent format.
+
+    Returns:
+        Dictionary compatible with uvicorn's log_config parameter.
+    """
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": LOG_FORMAT,
+                "datefmt": LOG_DATE_FORMAT,
+            },
+            "access": {
+                "format": LOG_FORMAT,
+                "datefmt": LOG_DATE_FORMAT,
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "level": "INFO",
+                "handlers": ["default"],
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "handlers": ["access"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }

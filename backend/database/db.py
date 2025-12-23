@@ -220,6 +220,63 @@ class Database:
             return None
         return dict(row._mapping)
 
+    def _split_sql_statements(self, sql: str) -> list[str]:
+        """
+        Split SQL text into individual statements, respecting dollar-quoted strings.
+
+        PostgreSQL uses $$ or $tag$ for quoting function bodies. This method
+        correctly handles semicolons inside those quoted sections.
+
+        Args:
+            sql: SQL text containing one or more statements.
+
+        Returns:
+            List of individual SQL statements.
+        """
+        statements = []
+        current = []
+        in_dollar_quote = False
+        dollar_tag = ""
+        i = 0
+
+        while i < len(sql):
+            char = sql[i]
+
+            # Check for dollar quote start/end
+            if char == '$':
+                # Look for dollar quote tag (e.g., $$ or $tag$)
+                j = i + 1
+                while j < len(sql) and (sql[j].isalnum() or sql[j] == '_'):
+                    j += 1
+                if j < len(sql) and sql[j] == '$':
+                    tag = sql[i:j + 1]
+                    if not in_dollar_quote:
+                        in_dollar_quote = True
+                        dollar_tag = tag
+                    elif tag == dollar_tag:
+                        in_dollar_quote = False
+                        dollar_tag = ""
+                    current.append(tag)
+                    i = j + 1
+                    continue
+
+            # Handle semicolons (statement separator) only outside quotes
+            if char == ';' and not in_dollar_quote:
+                stmt = ''.join(current).strip()
+                if stmt:
+                    statements.append(stmt)
+                current = []
+            else:
+                current.append(char)
+            i += 1
+
+        # Add final statement if any
+        stmt = ''.join(current).strip()
+        if stmt:
+            statements.append(stmt)
+
+        return statements
+
     def init_tables(self) -> None:
         """
         Create all database tables if they don't exist.
@@ -244,8 +301,8 @@ class Database:
             for block in blocks:
                 block = block.strip()
                 if block:
-                    # Execute each statement in the block
-                    statements = [s.strip() for s in block.split(';') if s.strip()]
+                    # Split statements carefully, respecting dollar-quoted strings
+                    statements = self._split_sql_statements(block)
                     for stmt in statements:
                         try:
                             conn.execute(text(stmt))
