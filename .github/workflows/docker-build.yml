@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - develop
+      - main
   pull_request:
     branches:
       - develop
+      - main
 
 env:
   REGISTRY: ghcr.io
@@ -164,7 +166,7 @@ jobs:
   create-deployment-artifacts:
     needs: [build-and-push-frontend, build-and-push-backend]
     runs-on: ubuntu-latest
-    if: success()
+    if: github.event_name != 'pull_request'
 
     steps:
       - name: Create deployment artifacts
@@ -172,8 +174,19 @@ jobs:
           echo "Creating deployment directory..."
           mkdir -p deployment
 
-          # Create a complete docker-compose template with PostgreSQL, Neo4j, and init container
-          cat > deployment/docker-compose.yml << 'EOF'
+          # Determine image tag based on branch
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            IMAGE_TAG="latest"
+            ENV_TYPE="production"
+          else
+            IMAGE_TAG="develop-latest"
+            ENV_TYPE="development"
+          fi
+
+          echo "Building deployment artifacts for: $ENV_TYPE (tag: $IMAGE_TAG)"
+
+          # Create docker-compose.yml with appropriate tag
+          cat > deployment/docker-compose.yml << EOF
           version: '3.8'
 
           services:
@@ -181,15 +194,15 @@ jobs:
               image: postgres:16-alpine
               container_name: fessi-postgres
               ports:
-                - "${POSTGRES_PORT:-5432}:5432"
+                - "\${POSTGRES_PORT:-5432}:5432"
               environment:
-                - POSTGRES_USER=${POSTGRES_USER:-fessi}
-                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_password}
-                - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
+                - POSTGRES_USER=\${POSTGRES_USER:-fessi}
+                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-fessi_password}
+                - POSTGRES_DB=\${POSTGRES_DB:-fessi_chat}
               volumes:
                 - postgres_data:/var/lib/postgresql/data
               healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fessi} -d ${POSTGRES_DB:-fessi_chat}"]
+                test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-fessi} -d \${POSTGRES_DB:-fessi_chat}"]
                 interval: 5s
                 timeout: 5s
                 retries: 5
@@ -201,7 +214,7 @@ jobs:
               image: neo4j:5.15-community
               container_name: fessi-neo4j
               environment:
-                - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-fessi_neo4j}
+                - NEO4J_AUTH=\${NEO4J_USER:-neo4j}/\${NEO4J_PASSWORD:-fessi_neo4j}
                 - NEO4J_PLUGINS=["apoc"]
                 - NEO4J_dbms_security_procedures_unrestricted=apoc.*
               volumes:
@@ -217,18 +230,18 @@ jobs:
               restart: unless-stopped
 
             db-init:
-              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${IMAGE_TAG}
               container_name: fessi-db-init
               command: ["python", "-m", "backend.app_init", "--seed"]
               environment:
                 - POSTGRES_HOST=postgres
                 - POSTGRES_PORT=5432
-                - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
-                - POSTGRES_USER=${POSTGRES_USER:-fessi}
-                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_password}
+                - POSTGRES_DB=\${POSTGRES_DB:-fessi_chat}
+                - POSTGRES_USER=\${POSTGRES_USER:-fessi}
+                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-fessi_password}
                 - NEO4J_URI=bolt://neo4j:7687
-                - NEO4J_USER=${NEO4J_USER:-neo4j}
-                - NEO4J_PASSWORD=${NEO4J_PASSWORD:-fessi_neo4j}
+                - NEO4J_USER=\${NEO4J_USER:-neo4j}
+                - NEO4J_PASSWORD=\${NEO4J_PASSWORD:-fessi_neo4j}
               depends_on:
                 postgres:
                   condition: service_healthy
@@ -239,24 +252,24 @@ jobs:
               restart: "no"
 
             frontend:
-              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:develop-latest
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${IMAGE_TAG}
               container_name: fessi-frontend
               ports:
-                - "${FRONTEND_PORT:-8080}:80"
+                - "\${FRONTEND_PORT:-8080}:80"
               restart: unless-stopped
               environment:
                 - NODE_ENV=production
-                - API_URL=${API_URL:-https://localhost:8443}
+                - API_URL=\${API_URL:-https://localhost:8443}
               depends_on:
                 - backend
               networks:
                 - app-network
 
             backend:
-              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:develop-latest
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${IMAGE_TAG}
               container_name: fessi-backend
               ports:
-                - "${BACKEND_PORT:-8443}:8443"
+                - "\${BACKEND_PORT:-8443}:8443"
               restart: unless-stopped
               environment:
                 # SSL/TLS
@@ -264,34 +277,34 @@ jobs:
                 # PostgreSQL
                 - POSTGRES_HOST=postgres
                 - POSTGRES_PORT=5432
-                - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
-                - POSTGRES_USER=${POSTGRES_USER:-fessi}
-                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_password}
+                - POSTGRES_DB=\${POSTGRES_DB:-fessi_chat}
+                - POSTGRES_USER=\${POSTGRES_USER:-fessi}
+                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-fessi_password}
                 # Neo4j
                 - NEO4J_URI=bolt://neo4j:7687
-                - NEO4J_USER=${NEO4J_USER:-neo4j}
-                - NEO4J_PASSWORD=${NEO4J_PASSWORD:-fessi_neo4j}
+                - NEO4J_USER=\${NEO4J_USER:-neo4j}
+                - NEO4J_PASSWORD=\${NEO4J_PASSWORD:-fessi_neo4j}
                 # LLM Provider
-                - LLM_PROVIDER=${LLM_PROVIDER:-}
-                - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
-                - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-                - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
-                - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-                - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-                - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
+                - LLM_PROVIDER=\${LLM_PROVIDER:-}
+                - REPLICATE_API_TOKEN=\${REPLICATE_API_TOKEN:-}
+                - OPENAI_API_KEY=\${OPENAI_API_KEY:-}
+                - OPENAI_MODEL=\${OPENAI_MODEL:-gpt-4o-mini}
+                - OPENAI_BASE_URL=\${OPENAI_BASE_URL:-}
+                - ANTHROPIC_API_KEY=\${ANTHROPIC_API_KEY:-}
+                - ANTHROPIC_MODEL=\${ANTHROPIC_MODEL:-}
                 # Vision/Multimodal
-                - MODEL_RECEIVE_IMAGES=${MODEL_RECEIVE_IMAGES:-false}
-                - MODEL_RECEIVE_IMAGES_PDF=${MODEL_RECEIVE_IMAGES_PDF:-false}
-                - VISION_BASE_URL=${VISION_BASE_URL:-}
-                - VISION_MODEL=${VISION_MODEL:-gpt-4o-mini}
+                - MODEL_RECEIVE_IMAGES=\${MODEL_RECEIVE_IMAGES:-false}
+                - MODEL_RECEIVE_IMAGES_PDF=\${MODEL_RECEIVE_IMAGES_PDF:-false}
+                - VISION_BASE_URL=\${VISION_BASE_URL:-}
+                - VISION_MODEL=\${VISION_MODEL:-gpt-4o-mini}
                 # Audio Transcription
-                - USE_LOCAL_WHISPER=${USE_LOCAL_WHISPER:-false}
-                - LOCAL_WHISPER_MODEL=${LOCAL_WHISPER_MODEL:-base}
-                - WHISPER_BASE_URL=${WHISPER_BASE_URL:-}
-                - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
-                - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-}
+                - USE_LOCAL_WHISPER=\${USE_LOCAL_WHISPER:-false}
+                - LOCAL_WHISPER_MODEL=\${LOCAL_WHISPER_MODEL:-base}
+                - WHISPER_BASE_URL=\${WHISPER_BASE_URL:-}
+                - WHISPER_MODEL=\${WHISPER_MODEL:-whisper-1}
+                - WHISPER_LANGUAGE=\${WHISPER_LANGUAGE:-}
                 # Logging
-                - LOG_LEVEL=${LOG_LEVEL:-INFO}
+                - LOG_LEVEL=\${LOG_LEVEL:-INFO}
               volumes:
                 - filesystem_data:/app/.filesystem
               depends_on:
@@ -311,8 +324,12 @@ jobs:
           EOF
 
           # Create deployment instructions
-          cat > deployment/README.md << 'EOF'
+          cat > deployment/README.md << EOF
           # Deployment Instructions
+
+          ## Environment: ${ENV_TYPE^}
+
+          This deployment package uses the \`${IMAGE_TAG}\` image tag.
 
           ## Prerequisites
 
@@ -321,18 +338,18 @@ jobs:
 
           ## Quick Start
 
-          1. Copy the `.env.example` file and fill in your values:
-          ```bash
+          1. Copy the \`.env.example\` file and fill in your values:
+          \`\`\`bash
           cp .env.example .env
           # Edit .env with your credentials
-          ```
+          \`\`\`
 
           2. Pull and run the containers:
-          ```bash
+          \`\`\`bash
           docker-compose up -d
-          ```
+          \`\`\`
 
-          The `db-init` container will automatically initialize the PostgreSQL and Neo4j databases on first run.
+          The \`db-init\` container will automatically initialize the PostgreSQL and Neo4j databases on first run.
 
           ## Services
 
@@ -350,9 +367,15 @@ jobs:
           ## Image Information
 
           - Registry: ${{ env.REGISTRY }}
-          - Frontend Image: ${{ env.IMAGE_NAME }}-frontend
-          - Backend Image: ${{ env.IMAGE_NAME }}-backend
-          - Tags: develop-latest
+          - Frontend Image: ${{ env.IMAGE_NAME }}-frontend:${IMAGE_TAG}
+          - Backend Image: ${{ env.IMAGE_NAME }}-backend:${IMAGE_TAG}
+          - Environment: ${ENV_TYPE}
+
+          ## Switching Environments
+
+          To switch between production and development images, change the image tags:
+          - **Production**: Use \`:latest\` tag (built from \`main\` branch)
+          - **Development**: Use \`:develop-latest\` tag (built from \`develop\` branch)
 
           ## Notes
 
@@ -363,7 +386,7 @@ jobs:
           EOF
 
           # Create .env template
-          cat > deployment/.env.example << 'EOF'
+          cat > deployment/.env.example << 'ENVEOF'
           # Copy this file to .env and fill in your values
 
           # ============================================
@@ -417,16 +440,19 @@ jobs:
           # Optional: Logging
           # ============================================
           # LOG_LEVEL=INFO
-          EOF
+          ENVEOF
 
           # List deployment directory contents for verification
           echo "Deployment directory contents:"
           ls -la deployment/
+          echo ""
+          echo "docker-compose.yml image tags:"
+          grep "image:.*fessi" deployment/docker-compose.yml
 
       - name: Upload deployment artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: deployment-artifacts
+          name: deployment-artifacts-${{ github.ref_name }}
           path: deployment/
-          retention-days: 7
+          retention-days: 14
 
