@@ -21,5 +21,31 @@
   "Summary": "Summary",
   "Refresh": "Refresh",
   "Update Summary": "Update Summary",
-  "Logout": "Logout"
+  "Logout": "Logout",
+  "tools": {
+    "Analyzing request...": "Analyzing request...",
+    "Searching Knowledge Base": "Searching Knowledge Base",
+    "Retrieving Details": "Retrieving Details",
+    "Searching Locations": "Searching Locations",
+    "Exploring Categories": "Exploring Categories",
+    "Searching FAQs": "Searching FAQs",
+    "Retrieving File Content": "Retrieving File Content",
+    "Result: Searching Knowledge Base": "Result: Searching Knowledge Base",
+    "Result: Retrieving Details": "Result: Retrieving Details",
+    "Result: Searching Locations": "Result: Searching Locations",
+    "Result: Exploring Categories": "Result: Exploring Categories",
+    "Result: Searching FAQs": "Result: Searching FAQs",
+    "Result: Retrieving File Content": "Result: Retrieving File Content",
+    "Generating Response": "Generating Response",
+    "Processing Request": "Processing Request",
+    "Response Generated": "Response Generated",
+    "Error": "Error"
+  },
+  "tool_content": {
+    "Processing the question and determining next steps.": "Processing the question and determining next steps.",
+    "Creating the final response based on gathered information.": "Creating the final response based on gathered information.",
+    "Analyzing message and preparing response...": "Analyzing message and preparing response...",
+    "Response has been successfully generated.": "Response has been successfully generated.",
+    "An error occurred:": "An error occurred:"
+  }
 }
