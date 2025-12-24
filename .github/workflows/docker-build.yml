@@ -447,7 +447,7 @@ jobs:
           ls -la deployment/
           echo ""
           echo "docker-compose.yml image tags:"
-          grep "image:.*fessi" deployment/docker-compose.yml
+          grep "image:" deployment/docker-compose.yml || true
 
       - name: Upload deployment artifacts
         uses: actions/upload-artifact@v4
