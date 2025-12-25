@@ -16,7 +16,12 @@ DEFAULT_TOP_P = 0.5
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant!"
 
 # CORS configuration
+# Can be set via CORS_ORIGINS env var as comma-separated list
+# Example: CORS_ORIGINS=http://10.18.2.105:8200,https://example.com
+_cors_env = os.getenv('CORS_ORIGINS', '')
 CORS_ORIGINS = [
+    origin.strip() for origin in _cors_env.split(',') if origin.strip()
+] if _cors_env else [
     "http://localhost:4200",  # Angular default
     "http://localhost:8080",  # Common dev port
     "https://localhost:4200",
