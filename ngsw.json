@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1766567158715,
+  "timestamp": 1766656984284,
   "index": "/Fessi/index.html",
   "assetGroups": [
     {
@@ -30,6 +30,7 @@
       "urls": [
         "/Fessi/assets/background/dark-mode-bg.svg",
         "/Fessi/assets/background/light-mode-bg.svg",
+        "/Fessi/assets/env.template.js",
         "/Fessi/assets/i18n/de.json",
         "/Fessi/assets/i18n/en.json",
         "/Fessi/assets/icons/android/android-launchericon-144-144.png",
@@ -164,6 +165,7 @@
   "hashTable": {
     "/Fessi/assets/background/dark-mode-bg.svg": "4e968e5cfb1e6fb995b6b9463b86af8219f378ed",
     "/Fessi/assets/background/light-mode-bg.svg": "ee2c13835257adab2b72ad39a07a5fb0cf3e47de",
+    "/Fessi/assets/env.template.js": "f9935f6e30672e3d9cff426e7f9eb356fd63aed1",
     "/Fessi/assets/i18n/de.json": "d46fda75c85279ecef5b21e7b3b3a1877d5c1840",
     "/Fessi/assets/i18n/en.json": "1390d59dd9096d8487c125a60bfdda1473825d6c",
     "/Fessi/assets/icons/android/android-launchericon-144-144.png": "bd65dc0cea24b97d4daaec997864c42cc099f153",
