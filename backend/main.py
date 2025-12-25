@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import configuration
-from backend.config import CORS_ORIGINS, USE_DEV_CERTS, HOST, PORT
+from backend.config import CORS_ORIGINS, USE_DEV_CERTS, SSL_CERTFILE, SSL_KEYFILE, HOST, PORT
 
 # Import logging module to initialize centralized logging
 # This must happen before other backend imports that use logging
@@ -98,9 +98,17 @@ app.include_router(files.router)
 # Register documentation routes (these need to be registered last as they use the app directly)
 docs.create_docs_routes(app)
 
-# Development certificate setup
+# SSL/TLS certificate setup
 ssl_config = {}
-if USE_DEV_CERTS:
+if SSL_CERTFILE and SSL_KEYFILE:
+    # Use externally provided certificates (production or shared volume)
+    logger.info(f"Using external SSL certificates: {SSL_CERTFILE}")
+    ssl_config = {
+        "ssl_keyfile": SSL_KEYFILE,
+        "ssl_certfile": SSL_CERTFILE,
+    }
+elif USE_DEV_CERTS:
+    # Auto-generate development certificates
     logger.info("Starting in development mode with auto-generated certificates...")
     cert_file, key_file = setup_development_certificates()
 

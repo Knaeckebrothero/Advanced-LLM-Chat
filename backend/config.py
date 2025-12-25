@@ -47,6 +47,8 @@ NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD', 'fessi_neo4j_dev')
 
 # SSL/TLS configuration
 USE_DEV_CERTS = os.getenv("USE_DEV_CERTS") == "True"
+SSL_CERTFILE = os.getenv("SSL_CERTFILE")  # Path to certificate file (overrides USE_DEV_CERTS)
+SSL_KEYFILE = os.getenv("SSL_KEYFILE")    # Path to private key file (overrides USE_DEV_CERTS)
 
 # Server configuration
 HOST = os.getenv("HOST", "localhost")
