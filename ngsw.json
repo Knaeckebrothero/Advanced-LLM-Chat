@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1766674611073,
+  "timestamp": 1766928760759,
   "index": "/Fessi/index.html",
   "assetGroups": [
     {
@@ -13,7 +13,7 @@
       "urls": [
         "/Fessi/favicon.ico",
         "/Fessi/index.html",
-        "/Fessi/main-VQKQT5GI.js",
+        "/Fessi/main-CBJYZXD5.js",
         "/Fessi/manifest.webmanifest",
         "/Fessi/polyfills-FFHMD2TL.js",
         "/Fessi/styles-D5K4VVCA.css"
@@ -166,8 +166,8 @@
     "/Fessi/assets/background/dark-mode-bg.svg": "4e968e5cfb1e6fb995b6b9463b86af8219f378ed",
     "/Fessi/assets/background/light-mode-bg.svg": "ee2c13835257adab2b72ad39a07a5fb0cf3e47de",
     "/Fessi/assets/env.template.js": "f9935f6e30672e3d9cff426e7f9eb356fd63aed1",
-    "/Fessi/assets/i18n/de.json": "d46fda75c85279ecef5b21e7b3b3a1877d5c1840",
-    "/Fessi/assets/i18n/en.json": "1390d59dd9096d8487c125a60bfdda1473825d6c",
+    "/Fessi/assets/i18n/de.json": "9dae65455bbf8488c23bad6acc8958d32971f711",
+    "/Fessi/assets/i18n/en.json": "b6ecec34553e928390f613f8dece4986456282bb",
     "/Fessi/assets/icons/android/android-launchericon-144-144.png": "bd65dc0cea24b97d4daaec997864c42cc099f153",
     "/Fessi/assets/icons/android/android-launchericon-192-192.png": "11861cbe8768158ef24238e0ae202fecfa956df9",
     "/Fessi/assets/icons/android/android-launchericon-48-48.png": "6ad9790c4ff86210cfc75be735a526dbecfe393f",
@@ -293,8 +293,8 @@
     "/Fessi/assets/icons/windows11/Wide310x150Logo.scale-200.png": "f4259e1a5817777fa48fc3974810fb6c594218e1",
     "/Fessi/assets/icons/windows11/Wide310x150Logo.scale-400.png": "c4be8c1b69ca5dd43c2aa04cbfb4a77592b0f222",
     "/Fessi/favicon.ico": "b63eea61d27b9799bb9d3e0413eeac3164294568",
-    "/Fessi/index.html": "763847c52017e43516fc677f3ed0492a6176ac65",
-    "/Fessi/main-VQKQT5GI.js": "5b18cd530f799833d08bf3ccdecc359a10ffdfb7",
+    "/Fessi/index.html": "c8d6f793196120118f0103a6009662659b0f7e44",
+    "/Fessi/main-CBJYZXD5.js": "fb8c21fce482bc0e5e9d5d52026e29412797f1ee",
     "/Fessi/manifest.webmanifest": "9861049b3afccfa4df5a1e268e63aac910dbd7e1",
     "/Fessi/polyfills-FFHMD2TL.js": "f49b49a155bc7d192db62a4c15d0a612b460a667",
     "/Fessi/styles-D5K4VVCA.css": "42af946b25c6dcdc45dc6121e0bab91e2e827596"
