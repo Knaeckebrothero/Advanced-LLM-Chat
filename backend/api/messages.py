@@ -38,7 +38,10 @@ from backend.services.tts_handler import (
     generate_speech,
     get_tts_audio_path,
     get_cached_tts_audio,
+    get_cached_preprocessed_text,
+    cache_preprocessed_text,
 )
+from backend.services.tts_preprocessor import preprocess_for_tts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/message", tags=["Message"])
@@ -1196,9 +1199,27 @@ async def generate_tts(
                 detail="Message has no text content"
             )
 
+        # Preprocess text for TTS (converts markdown, tables, code to speakable prose)
+        final_text = text_content
+
+        # Check for cached preprocessed text first
+        preprocessed = get_cached_preprocessed_text(message_id, conversation_id)
+        if preprocessed:
+            crud_logger.info(f"Using cached preprocessed text for message {message_id}")
+            final_text = preprocessed
+        else:
+            # Try to generate preprocessed text
+            preprocessed = await preprocess_for_tts(text_content)
+            if preprocessed:
+                final_text = preprocessed
+                cache_preprocessed_text(message_id, conversation_id, preprocessed)
+                crud_logger.info(f"Generated and cached preprocessed text for message {message_id}")
+            else:
+                crud_logger.debug(f"Using original text for message {message_id} (preprocessing skipped or failed)")
+
         # Generate TTS audio and save to cache
         audio_path = get_tts_audio_path(message_id, conversation_id)
-        audio_bytes = await generate_speech(text_content, language, audio_path)
+        audio_bytes = await generate_speech(final_text, language, audio_path)
 
         if not audio_bytes:
             raise HTTPException(

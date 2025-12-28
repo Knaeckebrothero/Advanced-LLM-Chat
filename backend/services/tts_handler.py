@@ -18,6 +18,7 @@ from ..config import (
     TTS_VOICE_EN,
     TTS_VOICE_DE,
     TTS_TIMEOUT,
+    TTS_PREPROCESS_VERSION,
 )
 
 logger = logging.getLogger(__name__)
@@ -172,3 +173,69 @@ def delete_cached_tts_audio(message_id: int, conversation_id: str) -> bool:
             logger.error(f"Error deleting cached TTS audio: {e}")
 
     return False
+
+
+def get_preprocessed_text_path(message_id: int, conversation_id: str) -> Path:
+    """
+    Get the path where preprocessed TTS text would be stored.
+
+    Uses a versioned filename to allow cache invalidation when prompt changes.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+
+    Returns:
+        Path to the preprocessed text file.
+    """
+    return Path(FILES_DIR) / f"tts_{conversation_id}_{message_id}_preprocessed_{TTS_PREPROCESS_VERSION}.txt"
+
+
+def get_cached_preprocessed_text(message_id: int, conversation_id: str) -> Optional[str]:
+    """
+    Get cached preprocessed text for a message if it exists.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+
+    Returns:
+        Preprocessed text or None if not cached.
+    """
+    text_path = get_preprocessed_text_path(message_id, conversation_id)
+
+    if text_path.exists():
+        try:
+            with open(text_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            logger.debug(f"Loaded cached preprocessed text for message {message_id}")
+            return text
+        except Exception as e:
+            logger.error(f"Error reading cached preprocessed text: {e}")
+
+    return None
+
+
+def cache_preprocessed_text(message_id: int, conversation_id: str, text: str) -> bool:
+    """
+    Cache preprocessed text for a message.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+        text: The preprocessed text to cache.
+
+    Returns:
+        True if cached successfully, False otherwise.
+    """
+    text_path = get_preprocessed_text_path(message_id, conversation_id)
+
+    try:
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(text_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        logger.debug(f"Cached preprocessed text for message {message_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error caching preprocessed text: {e}")
+        return False

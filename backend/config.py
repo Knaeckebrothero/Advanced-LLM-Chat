@@ -97,6 +97,12 @@ TTS_VOICE_EN = os.getenv("TTS_VOICE_EN", "nova")  # Voice for English
 TTS_VOICE_DE = os.getenv("TTS_VOICE_DE", "onyx")  # Voice for German
 TTS_TIMEOUT = float(os.getenv("TTS_TIMEOUT", "120"))  # Timeout for TTS requests
 
+# TTS Preprocessing Configuration
+# Preprocesses text through LLM before TTS to improve audio quality
+# Removes markdown, converts tables to prose, summarizes code blocks
+TTS_PREPROCESS_ENABLED = os.getenv("TTS_PREPROCESS_ENABLED", "true").lower() == "true"
+TTS_PREPROCESS_VERSION = "v1"  # Increment to invalidate cached preprocessed text
+
 # LLM Agent Timeout
 # Increase for slow models (CPU inference, model loading time)
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))  # Timeout for LLM chat requests
