@@ -78,14 +78,28 @@ FILES_DIR = os.getenv("FILES_DIR", "./files")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 VISION_BASE_URL = os.getenv("VISION_BASE_URL", OPENAI_BASE_URL)
 VISION_MODEL = os.getenv("VISION_MODEL", "gpt-4o-mini")
+VISION_TIMEOUT = float(os.getenv("VISION_TIMEOUT", "120"))  # Timeout for vision requests
 
 # OpenAI Audio/Whisper Configuration
 # WHISPER_BASE_URL allows deploying Whisper on a separate server/GPU from other models
 WHISPER_BASE_URL = os.getenv("WHISPER_BASE_URL", OPENAI_BASE_URL)
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")
 WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", None)  # Optional: 'en', 'de', etc.
+WHISPER_TIMEOUT = float(os.getenv("WHISPER_TIMEOUT", "120"))  # Timeout for transcription requests
 USE_LOCAL_WHISPER = os.getenv("USE_LOCAL_WHISPER", "false").lower() == "true"
 LOCAL_WHISPER_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "base")  # tiny, base, small, medium, large
+
+# Text-to-Speech Configuration
+# TTS_BASE_URL allows deploying TTS on a separate server/GPU from other models
+TTS_BASE_URL = os.getenv("TTS_BASE_URL", OPENAI_BASE_URL)
+TTS_MODEL = os.getenv("TTS_MODEL", "tts-1")  # tts-1 (fast) or tts-1-hd (quality)
+TTS_VOICE_EN = os.getenv("TTS_VOICE_EN", "nova")  # Voice for English
+TTS_VOICE_DE = os.getenv("TTS_VOICE_DE", "onyx")  # Voice for German
+TTS_TIMEOUT = float(os.getenv("TTS_TIMEOUT", "120"))  # Timeout for TTS requests
+
+# LLM Agent Timeout
+# Increase for slow models (CPU inference, model loading time)
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))  # Timeout for LLM chat requests
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

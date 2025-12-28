@@ -17,6 +17,13 @@ export class SettingsStateService {
   private settingsSubject = new BehaviorSubject<AppSettings>(DEFAULT_SETTINGS);
   public settings$ = this.settingsSubject.asObservable();
 
+  /**
+   * Get the current settings value synchronously
+   */
+  getCurrentSettings(): AppSettings {
+    return this.settingsSubject.value;
+  }
+
   constructor(
     private repository: SettingsRepository,
     private themeService: ThemeService,

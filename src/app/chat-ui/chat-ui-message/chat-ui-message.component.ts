@@ -1,11 +1,13 @@
 // src/app/chat-ui/chat-ui-message/chat-ui-message.component.ts
-import { Component, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
+import { Component, Input, OnChanges, OnDestroy, SimpleChanges, Renderer2, ViewChild, ElementRef } from '@angular/core';
 import { Message, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
 import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
 import { FilePreviewDialogComponent, FilePreviewDialogData } from '../../components/file-preview-dialog/file-preview-dialog.component';
+import { ApiService } from '../../services/api.service';
+import { SettingsStateService } from '../../services/settings-state.service';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -13,7 +15,7 @@ import { FilePreviewDialogComponent, FilePreviewDialogData } from '../../compone
   styleUrls: ['./chat-ui-message.component.scss'],
   standalone: false
 })
-export class ChatUiMessageComponent implements OnChanges {
+export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Pass the message object from the parent component
   @Input() message!: Message;
   @Input() isLastAiMessage: boolean = false;
@@ -27,8 +29,21 @@ export class ChatUiMessageComponent implements OnChanges {
     private sanitizer: DomSanitizer,
     private chatUI: ChatUiComponent,
     private renderer: Renderer2,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private apiService: ApiService,
+    private settingsState: SettingsStateService
   ) { }
+
+  // TTS Audio Player reference
+  @ViewChild('ttsAudioPlayer') ttsAudioPlayerRef!: ElementRef<HTMLAudioElement>;
+
+  // TTS state
+  ttsAudioUrl: string | null = null;
+  isGeneratingTTS = false;
+  isTTSPlaying = false;
+  ttsCurrentTime = 0;
+  ttsDuration = 0;
+  ttsError = false;
 
   // Copy message content to clipboard
   copyMessage(): void {
@@ -260,5 +275,170 @@ export class ChatUiMessageComponent implements OnChanges {
     if (!response) return '';
     const formatted = this.formatText(response);
     return this.sanitizer.bypassSecurityTrustHtml(formatted);
+  }
+
+  // ===== TTS Methods =====
+
+  /**
+   * Toggle TTS playback - generates audio if not available, or toggles player visibility
+   */
+  async toggleReadOutLoud(): Promise<void> {
+    // If we have an error, retry
+    if (this.ttsError) {
+      this.ttsError = false;
+      this.ttsAudioUrl = null;
+    }
+
+    // If already have audio, toggle player visibility
+    if (this.ttsAudioUrl) {
+      this.closeTTSPlayer();
+      return;
+    }
+
+    this.isGeneratingTTS = true;
+    this.ttsError = false;
+
+    try {
+      // Get current language from settings
+      const settings = this.settingsState.getCurrentSettings();
+      const language = settings?.language || 'en';
+
+      // Generate TTS
+      const audioBlob = await this.apiService.generateTTS(
+        this.message.conversationId,
+        this.message.id!,
+        language
+      );
+
+      // Create object URL
+      this.ttsAudioUrl = URL.createObjectURL(audioBlob);
+
+      // Wait for next tick, then auto-play
+      setTimeout(() => {
+        if (this.ttsAudioPlayerRef?.nativeElement) {
+          this.ttsAudioPlayerRef.nativeElement.play().catch(err => {
+            console.error('Auto-play failed:', err);
+          });
+        }
+      }, 100);
+
+    } catch (error) {
+      console.error('TTS generation failed:', error);
+      this.ttsError = true;
+    } finally {
+      this.isGeneratingTTS = false;
+    }
+  }
+
+  /**
+   * Toggle TTS playback (play/pause)
+   */
+  toggleTTSPlayback(): void {
+    if (this.ttsAudioPlayerRef?.nativeElement) {
+      if (this.isTTSPlaying) {
+        this.ttsAudioPlayerRef.nativeElement.pause();
+      } else {
+        this.ttsAudioPlayerRef.nativeElement.play();
+      }
+    }
+  }
+
+  /**
+   * Close TTS player and clean up
+   */
+  closeTTSPlayer(): void {
+    if (this.ttsAudioPlayerRef?.nativeElement) {
+      this.ttsAudioPlayerRef.nativeElement.pause();
+    }
+    if (this.ttsAudioUrl) {
+      URL.revokeObjectURL(this.ttsAudioUrl);
+      this.ttsAudioUrl = null;
+    }
+    this.isTTSPlaying = false;
+    this.ttsCurrentTime = 0;
+    this.ttsDuration = 0;
+  }
+
+  // TTS Audio event handlers
+  onTTSPlay(): void {
+    this.isTTSPlaying = true;
+  }
+
+  onTTSPause(): void {
+    this.isTTSPlaying = false;
+  }
+
+  onTTSEnded(): void {
+    this.isTTSPlaying = false;
+    this.ttsCurrentTime = 0;
+  }
+
+  onTTSTimeUpdate(event: Event): void {
+    const audio = event.target as HTMLAudioElement;
+    this.ttsCurrentTime = audio.currentTime;
+  }
+
+  onTTSLoadedMetadata(event: Event): void {
+    const audio = event.target as HTMLAudioElement;
+    this.ttsDuration = audio.duration;
+  }
+
+  onTTSError(): void {
+    this.ttsError = true;
+    this.isGeneratingTTS = false;
+  }
+
+  /**
+   * Get TTS progress percentage
+   */
+  get ttsProgressPercent(): number {
+    if (!this.ttsDuration) return 0;
+    return (this.ttsCurrentTime / this.ttsDuration) * 100;
+  }
+
+  /**
+   * Format time in MM:SS
+   */
+  formatTime(seconds: number): string {
+    if (!seconds || !Number.isFinite(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Seek to position in TTS audio
+   */
+  onTTSSeek(event: MouseEvent): void {
+    if (!this.ttsAudioPlayerRef?.nativeElement || !this.ttsDuration) return;
+
+    const progressBar = event.currentTarget as HTMLElement;
+    const rect = progressBar.getBoundingClientRect();
+    const percent = (event.clientX - rect.left) / rect.width;
+    this.ttsAudioPlayerRef.nativeElement.currentTime = percent * this.ttsDuration;
+  }
+
+  /**
+   * Check if TTS is available for this message
+   */
+  get canReadOutLoud(): boolean {
+    // Only for AI messages (not user)
+    if (this.message.roleName === 'user') return false;
+
+    // Must have text content
+    if (this.message.isText()) {
+      return !!(this.message.textContent?.trim());
+    }
+    if (this.message.isAgent()) {
+      return !!(this.message.content?.finalResponse?.trim());
+    }
+    return false;
+  }
+
+  /**
+   * Cleanup on destroy
+   */
+  ngOnDestroy(): void {
+    this.closeTTSPlayer();
   }
 }

@@ -34,6 +34,11 @@ from backend.services.llm_provider import is_provider_available
 from backend.services.image_handler import extract_image_attachments, extract_document_attachments, extract_audio_attachments
 from backend.services.conversation_history import ConversationHistoryBuilder
 from backend.models.attachments import AttachmentType
+from backend.services.tts_handler import (
+    generate_speech,
+    get_tts_audio_path,
+    get_cached_tts_audio,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/message", tags=["Message"])
@@ -1108,6 +1113,114 @@ async def stream_generate(
             }
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/tts/{conversation_id}/{message_id}",
+             responses={
+                 status.HTTP_200_OK: {"content": {"audio/mpeg": {}}, "description": "TTS audio file"},
+                 status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Message has no text content"},
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                 status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Message not found"},
+                 status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "TTS generation failed"}
+             })
+async def generate_tts(
+    conversation_id: str,
+    message_id: int,
+    language: str = "en",
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Generate text-to-speech audio for a message.
+
+    Returns cached audio if available, otherwise generates new audio.
+    The audio is saved for future requests.
+
+    Args:
+        conversation_id: The conversation UUID.
+        message_id: The message ID.
+        language: Language code for voice selection ('en' or 'de').
+
+    Returns:
+        MP3 audio file.
+    """
+    crud_logger.info(
+        f"TTS requested - User: {current_user['user_id']}, Message: {message_id}, Language: {language}"
+    )
+
+    try:
+        # Verify ownership
+        if not verify_conversation_ownership(conversation_id, current_user['user_id'],
+                                              current_user.get("is_guest", False)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this conversation"
+            )
+
+        # Check for cached audio first
+        cached_audio = get_cached_tts_audio(message_id, conversation_id)
+        if cached_audio:
+            crud_logger.info(f"Returning cached TTS audio for message {message_id}")
+            return Response(
+                content=cached_audio,
+                media_type="audio/mpeg",
+                headers={"X-TTS-Cached": "true"}
+            )
+
+        # Get message content from database
+        db_message = db.get_message_by_id(message_id, conversation_id)
+        if not db_message:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+
+        # Extract text content based on message type
+        text_content = ""
+        content_type = db_message.get('type', 'text')
+
+        if content_type == 'agent':
+            # For agent messages, use final_response from JSONB columns
+            text_content = db_message.get('final_response', '') or ''
+        else:
+            # For text messages, parse content (may be JSON with attachments)
+            raw_content = db_message.get('content', '')
+            try:
+                if raw_content.startswith('{'):
+                    content_obj = json.loads(raw_content)
+                    text_content = content_obj.get('content', raw_content)
+                else:
+                    text_content = raw_content
+            except (json.JSONDecodeError, AttributeError):
+                text_content = raw_content
+
+        if not text_content or not text_content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message has no text content"
+            )
+
+        # Generate TTS audio and save to cache
+        audio_path = get_tts_audio_path(message_id, conversation_id)
+        audio_bytes = await generate_speech(text_content, language, audio_path)
+
+        if not audio_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="TTS generation failed"
+            )
+
+        crud_logger.info(f"Generated TTS audio for message {message_id}: {len(audio_bytes)} bytes")
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={"X-TTS-Cached": "false"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        crud_logger.error(f"Error generating TTS: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"TTS generation failed: {str(e)}"
+        )
 
 
 async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict], list[dict], list[dict]]:

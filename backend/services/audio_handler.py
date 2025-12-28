@@ -16,6 +16,7 @@ from ..config import (
     WHISPER_BASE_URL,
     WHISPER_MODEL,
     WHISPER_LANGUAGE,
+    WHISPER_TIMEOUT,
     USE_LOCAL_WHISPER,
     LOCAL_WHISPER_MODEL,
 )
@@ -51,8 +52,8 @@ def _get_openai_client() -> Optional[AsyncOpenAI]:
         logger.info("No OPENAI_API_KEY configured - will use local Whisper for transcription")
         return None
 
-    _openai_client = AsyncOpenAI(api_key=api_key, base_url=WHISPER_BASE_URL)
-    logger.info(f"OpenAI Audio client initialized: model={WHISPER_MODEL}, base_url={WHISPER_BASE_URL}")
+    _openai_client = AsyncOpenAI(api_key=api_key, base_url=WHISPER_BASE_URL, timeout=WHISPER_TIMEOUT)
+    logger.info(f"OpenAI Audio client initialized: model={WHISPER_MODEL}, base_url={WHISPER_BASE_URL}, timeout={WHISPER_TIMEOUT}s")
     return _openai_client
 
 

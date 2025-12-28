@@ -47,5 +47,10 @@
     "Analyzing message and preparing response...": "Analyzing message and preparing response...",
     "Response has been successfully generated.": "Response has been successfully generated.",
     "An error occurred:": "An error occurred:"
+  },
+  "message": {
+    "readOutLoud": "Read out loud",
+    "generatingAudio": "Generating audio...",
+    "ttsError": "Failed to generate audio"
   }
 }

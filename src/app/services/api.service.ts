@@ -490,4 +490,28 @@ export class ApiService {
     }
   }
 
+  /**
+   * Generate text-to-speech audio for a message.
+   * Returns cached audio if available, otherwise generates new.
+   * @param conversationId The conversation ID
+   * @param messageId The message ID
+   * @param language Language code for voice selection ('en' or 'de')
+   * @returns Audio blob (MP3 format)
+   */
+  async generateTTS(conversationId: string, messageId: number, language: string): Promise<Blob> {
+    const endpoint = `${this.baseUrl}/api/message/tts/${conversationId}/${messageId}?language=${language}`;
+
+    try {
+      return await lastValueFrom(
+        this.http.post(endpoint, {}, {
+          ...this.getHttpOptions(),
+          responseType: 'blob'
+        })
+      );
+    } catch (error) {
+      console.error('Error generating TTS:', error);
+      throw error;
+    }
+  }
+
 }

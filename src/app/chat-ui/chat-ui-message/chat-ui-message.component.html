@@ -141,9 +141,62 @@
       </ng-container>
     </div>
 
+    <!-- TTS Audio Player (expandable) -->
+    <div class="tts-player-container" *ngIf="ttsAudioUrl || isGeneratingTTS || ttsError">
+      <!-- Loading state -->
+      <div class="tts-loading" *ngIf="isGeneratingTTS">
+        <mat-spinner diameter="20"></mat-spinner>
+        <span>{{ 'message.generatingAudio' | translate }}</span>
+      </div>
+
+      <!-- Error state -->
+      <div class="tts-error" *ngIf="ttsError && !isGeneratingTTS">
+        <mat-icon>error_outline</mat-icon>
+        <span>{{ 'message.ttsError' | translate }}</span>
+        <button mat-icon-button (click)="toggleReadOutLoud()" class="tts-retry-btn">
+          <mat-icon>refresh</mat-icon>
+        </button>
+      </div>
+
+      <!-- Player -->
+      <div class="tts-player" *ngIf="ttsAudioUrl && !isGeneratingTTS && !ttsError">
+        <button mat-icon-button (click)="toggleTTSPlayback()" class="tts-play-btn">
+          <mat-icon>{{ isTTSPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
+        </button>
+        <div class="tts-progress" (click)="onTTSSeek($event)">
+          <div class="tts-progress-bar" [style.width.%]="ttsProgressPercent"></div>
+        </div>
+        <span class="tts-time">{{ formatTime(ttsCurrentTime) }} / {{ formatTime(ttsDuration) }}</span>
+        <button mat-icon-button (click)="closeTTSPlayer()" class="tts-close-btn">
+          <mat-icon>close</mat-icon>
+        </button>
+        <audio #ttsAudioPlayer
+               [src]="ttsAudioUrl"
+               (play)="onTTSPlay()"
+               (pause)="onTTSPause()"
+               (ended)="onTTSEnded()"
+               (timeupdate)="onTTSTimeUpdate($event)"
+               (loadedmetadata)="onTTSLoadedMetadata($event)"
+               (error)="onTTSError()">
+        </audio>
+      </div>
+    </div>
+
     <!-- Message Actions -->
     <div class="message-actions" [class.message-actions--visible]="editing">
       <ng-container *ngIf="!editing">
+        <!-- Read out loud button - only for AI messages with content -->
+        <button *ngIf="canReadOutLoud"
+                mat-icon-button
+                class="action-btn"
+                [class.action-btn--active]="ttsAudioUrl"
+                (click)="toggleReadOutLoud()"
+                [disabled]="isGeneratingTTS"
+                [title]="'message.readOutLoud' | translate"
+                aria-label="Read message out loud">
+          <mat-icon>volume_up</mat-icon>
+        </button>
+
         <!-- Copy button for AI messages -->
         <button *ngIf="message.roleName !== 'user'" mat-icon-button class="action-btn" (click)="copyMessage()"
           title="Copy" aria-label="Copy message">

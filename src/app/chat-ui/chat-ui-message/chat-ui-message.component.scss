@@ -637,6 +637,135 @@ em {
 }
 
 // ============================================
+// TTS AUDIO PLAYER
+// ============================================
+.tts-player-container {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--theme-hover);
+  border-radius: 12px;
+  border: 1px solid var(--theme-border);
+}
+
+.tts-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--theme-text-secondary);
+  font-size: 14px;
+
+  mat-spinner {
+    ::ng-deep circle {
+      stroke: var(--theme-primary);
+    }
+  }
+}
+
+.tts-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ef4444;
+  font-size: 14px;
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  .tts-retry-btn {
+    margin-left: auto;
+    width: 32px;
+    height: 32px;
+
+    mat-icon {
+      color: var(--theme-primary);
+    }
+
+    &:hover {
+      background-color: var(--theme-active);
+    }
+  }
+}
+
+.tts-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .tts-play-btn {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background: var(--theme-primary);
+    border-radius: 50%;
+
+    mat-icon {
+      color: var(--theme-primary-contrast);
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+    }
+
+    &:hover {
+      transform: scale(1.05);
+    }
+  }
+
+  .tts-progress {
+    flex: 1;
+    height: 6px;
+    background: rgba(128, 128, 128, 0.3);
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+    transition: height 0.15s ease;
+
+    &:hover {
+      height: 8px;
+    }
+
+    .tts-progress-bar {
+      height: 100%;
+      background: var(--theme-primary);
+      border-radius: 3px;
+      transition: width 0.1s linear;
+    }
+  }
+
+  .tts-time {
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+    min-width: 72px;
+    text-align: center;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  }
+
+  .tts-close-btn {
+    width: 28px;
+    height: 28px;
+    opacity: 0.6;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--theme-text-secondary);
+    }
+
+    &:hover {
+      opacity: 1;
+      background-color: var(--theme-hover);
+    }
+  }
+
+  audio {
+    display: none; // Hidden audio element
+  }
+}
+
+// ============================================
 // RESPONSIVE
 // ============================================
 @media (max-width: 768px) {

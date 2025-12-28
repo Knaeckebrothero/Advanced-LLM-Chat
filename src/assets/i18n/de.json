@@ -47,5 +47,10 @@
     "Analyzing message and preparing response...": "Analysiere die Nachricht und bereite eine Antwort vor...",
     "Response has been successfully generated.": "Die Antwort wurde erfolgreich generiert.",
     "An error occurred:": "Ein Fehler ist aufgetreten:"
+  },
+  "message": {
+    "readOutLoud": "Vorlesen",
+    "generatingAudio": "Audio wird generiert...",
+    "ttsError": "Audio konnte nicht generiert werden"
   }
 }

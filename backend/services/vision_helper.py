@@ -44,22 +44,26 @@ class VisionHelper:
         primary_base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
         # Vision-specific overrides (fall back to primary OpenAI config)
+        from ..config import VISION_BASE_URL, VISION_MODEL, VISION_TIMEOUT
+
         self.api_key = os.getenv("VISION_API_KEY", primary_key)
-        self.api_base = os.getenv("VISION_BASE_URL", primary_base)
-        self.model = os.getenv("VISION_MODEL", "gpt-4o-mini")
+        self.api_base = os.getenv("VISION_BASE_URL", VISION_BASE_URL)
+        self.model = VISION_MODEL
+        self.timeout = VISION_TIMEOUT
 
         if not self.api_key:
             logger.warning("No VISION_API_KEY or OPENAI_API_KEY configured - vision tasks will fail")
 
         self.client = AsyncOpenAI(
             api_key=self.api_key,
-            base_url=self.api_base
+            base_url=self.api_base,
+            timeout=self.timeout
         )
 
         # Log configuration (hiding API key)
         key_source = "VISION_API_KEY" if os.getenv("VISION_API_KEY") else "OPENAI_API_KEY"
         base_source = "VISION_BASE_URL" if os.getenv("VISION_BASE_URL") else "OPENAI_BASE_URL"
-        logger.info(f"VisionHelper initialized: model={self.model}, base_url={self.api_base} (from {base_source}), api_key from {key_source}")
+        logger.info(f"VisionHelper initialized: model={self.model}, base_url={self.api_base} (from {base_source}), timeout={self.timeout}s, api_key from {key_source}")
 
     async def describe_image(
         self,

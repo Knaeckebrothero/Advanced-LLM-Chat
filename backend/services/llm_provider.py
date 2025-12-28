@@ -111,7 +111,10 @@ def _get_openai_llm(
     base_url = os.getenv("OPENAI_BASE_URL")
     model = model or os.getenv("OPENAI_MODEL", DEFAULT_MODELS[PROVIDER_OPENAI])
 
-    logger.info(f"Initializing OpenAI LLM with model: {model}")
+    # Import timeout from config
+    from ..config import LLM_TIMEOUT
+
+    logger.info(f"Initializing OpenAI LLM with model: {model}, timeout={LLM_TIMEOUT}s")
     if base_url:
         logger.info(f"Using custom OpenAI base URL: {base_url}")
 
@@ -120,6 +123,7 @@ def _get_openai_llm(
         temperature=temperature,
         api_key=api_key,
         base_url=base_url,
+        request_timeout=LLM_TIMEOUT,
         **kwargs
     )
 
