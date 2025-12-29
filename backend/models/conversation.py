@@ -116,14 +116,21 @@ class ConversationCreateRequest(BaseModel):
 
     This class is used to encapsulate the necessary data for creating a new
     conversation, including the name of the conversation and the list of participants.
+    Optionally, the first message can be provided for AI-generated title creation.
 
-    :ivar name: The name of the conversation to be created.
+    :ivar name: The name of the conversation to be created (fallback if title generation fails).
     :type name: str
     :ivar participants: A list of participants to be included in the conversation.
     :type participants: List[str]
+    :ivar firstMessage: Optional first message content for AI title generation.
+    :type firstMessage: Optional[str]
+    :ivar generateTitle: Whether to generate an AI title from the first message.
+    :type generateTitle: bool
     """
     name: str
     participants: List[str]
+    firstMessage: Optional[str] = None
+    generateTitle: bool = False
 
 
 class ConversationUpdateRequest(BaseModel):

@@ -192,8 +192,11 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     other provided details. The function generates a unique conversation ID, saves the conversation
     into the database, and then retrieves and returns the saved conversation details.
 
+    If generateTitle is True and firstMessage is provided, an AI-generated title will be created
+    based on the first message content.
+
     :param req: An object containing details required to create a conversation, including
-        name and participants.
+        name, participants, and optional title generation fields.
     :type req: ConversationCreateRequest
     :param current_user: A dictionary holding authentication details of the current user,
         injected via dependency.
@@ -204,17 +207,31 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     user_id = current_user['user_id']
     logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name}")
 
+    # Determine conversation name (generate AI title if requested)
+    conversation_name = req.name
+    if req.generateTitle and req.firstMessage:
+        try:
+            from backend.services.title_generator import generate_conversation_title
+            conversation_name = await generate_conversation_title(
+                first_message=req.firstMessage,
+                fallback_title=req.name
+            )
+            logger.info(f"Generated AI title for conversation: {conversation_name}")
+        except Exception as e:
+            logger.error(f"Failed to generate AI title, using provided name: {e}")
+            # Keep conversation_name as req.name (the fallback)
+
     participants_json = json.dumps(req.participants)
     new_id = generate_conversation_id()  # Generate UUID
 
     new_conv = db.create_conversation(
         conversation_id=new_id,
         user_id=user_id,
-        name=req.name,
+        name=conversation_name,
         participants=participants_json
     )
 
-    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name}")
+    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {conversation_name}")
 
     return Conversation(**new_conv)
 

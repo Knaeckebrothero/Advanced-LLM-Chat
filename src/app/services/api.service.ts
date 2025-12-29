@@ -415,10 +415,24 @@ export class ApiService {
     }
   }
 
-  // Create a new conversation
-  async createConversation(conversation: Conversation): Promise<Conversation> {
+  // Create a new conversation with optional AI title generation
+  async createConversation(
+    conversation: Conversation,
+    firstMessage?: string,
+    generateTitle: boolean = false
+  ): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/create`;
-    const body = { name: conversation.name, participants: conversation.participants };
+    const body: Record<string, unknown> = {
+      name: conversation.name,
+      participants: conversation.participants
+    };
+
+    // Add title generation parameters if provided
+    if (firstMessage && generateTitle) {
+      body['firstMessage'] = firstMessage;
+      body['generateTitle'] = true;
+    }
+
     try {
       const responseData = await lastValueFrom(
         this.http.post<any>(endpoint, body, this.getHttpOptions())

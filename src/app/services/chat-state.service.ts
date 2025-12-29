@@ -872,32 +872,42 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Helper: Create conversation from first message
+   * Helper: Create conversation from first message with AI-generated title
    */
-  private async createConversationFromFirstMessage(title: string): Promise<void> {
+  private async createConversationFromFirstMessage(content: string): Promise<void> {
     const backendAvailable = await this.isBackendAvailable();
     let conversation: Conversation;
 
+    // Generate fallback title (truncated message)
+    const fallbackTitle = content.length > 50
+      ? content.substring(0, 47).trim() + '...'
+      : content;
+
     if (!backendAvailable) {
-      // Create local-only conversation with proper UUID
+      // Create local-only conversation with fallback title
       conversation = new Conversation(
         this.dbService.generateUUID(),
         0,
-        title,
+        fallbackTitle,
         ['user', 'Assistant']
       );
     } else {
-      // Try to create on server
-      const newConvData = new Conversation('', 0, title, ['user', 'Assistant']);
+      // Try to create on server with AI title generation
+      const newConvData = new Conversation('', 0, fallbackTitle, ['user', 'Assistant']);
       try {
-        conversation = await this.apiService.createConversation(newConvData);
+        // Request AI title generation from backend
+        conversation = await this.apiService.createConversation(
+          newConvData,
+          content,  // firstMessage for AI title generation
+          true      // generateTitle flag
+        );
       } catch (error) {
         console.error('Failed to create conversation on server:', error);
-        // Fallback to local with UUID
+        // Fallback to local with truncated title
         conversation = new Conversation(
           this.dbService.generateUUID(),
           0,
-          title,
+          fallbackTitle,
           ['user', 'Assistant']
         );
       }

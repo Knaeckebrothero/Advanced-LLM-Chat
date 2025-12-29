@@ -16,6 +16,7 @@ import logging
 
 from .tools.neo4j_tools import get_all_tools
 from .tools.file_tools import get_file_content
+from .tools.web_search_tools import get_web_search_tool
 from ..models.message import AgentStep
 from .image_handler import (
     prepare_image_for_llm,
@@ -50,6 +51,8 @@ Du hast Zugang zu einer Wissensdatenbank mit Informationen über:
 - Standorte von Wertstoffhöfen in Frankfurt
 - Häufig gestellte Fragen (FAQs)
 
+Du kannst auch das Internet durchsuchen für aktuelle Informationen (falls die Websuche aktiviert ist).
+
 ## Anweisungen:
 1. Nutze die verfügbaren Tools, um genaue Informationen abzurufen
 2. Antworte immer auf Deutsch, es sei denn, der Nutzer spricht Englisch
@@ -73,7 +76,7 @@ Um auf früher geteilte Dateien zuzugreifen, nutze das get_file_content Tool:
 - get_file_content(file_id="abc123", query="Was ist der Umsatz?") - Spezifische Frage stellen
 - get_file_content(file_id="abc123", pages=[1, 3]) - Bestimmte Seiten abrufen (für PDFs)
 
-You are Fessi, a friendly waste disposal assistant for Frankfurt am Main. Help users dispose of waste correctly using your knowledge database tools. Respond in the same language as the user.
+You are Fessi, a friendly waste disposal assistant for Frankfurt am Main. Help users dispose of waste correctly using your knowledge database tools. You can also search the web for current information when needed. Respond in the same language as the user.
 
 ## File Access:
 When users share files (images, PDFs, documents), you see full content in the current message.
@@ -98,6 +101,11 @@ class FessiAgent:
         """
         # Get Neo4j tools and add file retrieval tool
         self.tools = get_all_tools() + [get_file_content]
+
+        # Add web search tool if configured
+        web_search = get_web_search_tool()
+        if web_search:
+            self.tools.append(web_search)
 
         # Import here to avoid circular imports
         if llm is None:
@@ -428,7 +436,8 @@ class FessiAgent:
             "find_nearby_recycling_centers": "Searching Locations",
             "get_waste_category_info": "Exploring Categories",
             "answer_waste_faq": "Searching FAQs",
-            "get_file_content": "Retrieving File Content"
+            "get_file_content": "Retrieving File Content",
+            "tavily_search_results_json": "Searching the Web"
         }
         return titles.get(tool_name, tool_name)
 

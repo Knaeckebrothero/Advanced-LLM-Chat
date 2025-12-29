@@ -24,10 +24,12 @@ neo4j>=5.0.0
 
 # LangChain & LangGraph (for agent)
 langchain-core>=0.3.0
+langchain-community>=0.3.0
 langgraph>=0.2.0
 langchain-openai>=0.2.0
 langchain-anthropic>=0.2.0
 langsmith>=0.1.131
+tavily-python>=0.5.0
 
 # Document Processing
 pdfplumber>=0.10.0
