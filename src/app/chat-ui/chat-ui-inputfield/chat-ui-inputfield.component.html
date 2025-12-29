@@ -152,9 +152,20 @@
         <mat-icon>send</mat-icon>
       </button>
 
-      <!-- Microphone button when input is empty -->
+      <!-- Stop button when AI is streaming -->
       <button
-        *ngIf="!hasContent"
+        *ngIf="!hasContent && isStreaming"
+        mat-icon-button
+        class="action-button stop-button"
+        (click)="stopRequested.emit()"
+        aria-label="Stop generating"
+        matTooltip="Stop generating">
+        <mat-icon>stop</mat-icon>
+      </button>
+
+      <!-- Microphone button when input is empty and not streaming -->
+      <button
+        *ngIf="!hasContent && !isStreaming"
         mat-icon-button
         class="action-button mic-button"
         (click)="startRecording()"

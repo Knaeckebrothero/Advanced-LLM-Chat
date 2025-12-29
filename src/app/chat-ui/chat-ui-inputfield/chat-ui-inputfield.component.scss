@@ -451,6 +451,28 @@ a.file-preview-item {
     }
   }
 
+  &.stop-button {
+    background-color: rgba(239, 68, 68, 0.1) !important;
+    transition: all 0.2s ease;
+
+    .mat-icon {
+      color: #ef4444;
+    }
+
+    &:hover {
+      background-color: rgba(239, 68, 68, 0.2) !important;
+      transform: scale(1.05);
+
+      .mat-icon {
+        color: #dc2626;
+      }
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+  }
+
   &.camera-button,
   &.attachment-button {
     &:hover {

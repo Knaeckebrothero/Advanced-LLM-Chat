@@ -26,10 +26,12 @@
   <app-chat-ui-inputfield
     [externalFiles]="pendingFiles"
     [isMobile]="isMobileDevice()"
+    [isStreaming]="(isStreaming$ | async) ?? false"
     (messageSent)="onMessageSent($event)"
     (audioRequested)="onAudioRequested()"
     (filesSelected)="onFileRequested($event)"
     (cameraRequested)="onCameraRequested()"
-    (locationRequested)="onLocationRequested()">
+    (locationRequested)="onLocationRequested()"
+    (stopRequested)="cancelStreaming()">
   </app-chat-ui-inputfield>
 </div>
