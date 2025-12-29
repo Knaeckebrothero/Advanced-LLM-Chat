@@ -55,7 +55,7 @@ HOST = os.getenv("HOST", "localhost")
 PORT = int(os.getenv("PORT", "8443"))
 
 # Filesystem configuration
-FILESYSTEM_PATH = os.getenv("FILESYSTEM_PATH", ".filesystem")
+FILESYSTEM_PATH = os.getenv("FILESYSTEM_PATH", "filesystem")
 
 # Replicate API configuration
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
