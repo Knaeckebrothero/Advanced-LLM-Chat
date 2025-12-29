@@ -30,7 +30,8 @@
             <!-- Audio attachments use the AudioMessageComponent -->
             <!-- For voice messages: transcript is in attachment.transcript (new) or message.textContent (synced) -->
             <app-audio-message *ngIf="attachment.type === 'audio'" [attachment]="attachment"
-              [transcript]="attachment.transcript || message.textContent" [messageId]="message.id" [conversationId]="message.conversationId">
+              [transcript]="attachment.transcript || message.textContent" [messageId]="message.id"
+              [conversationId]="message.conversationId">
             </app-audio-message>
 
             <!-- Non-audio attachments -->
@@ -170,14 +171,8 @@
         <button mat-icon-button (click)="closeTTSPlayer()" class="tts-close-btn">
           <mat-icon>close</mat-icon>
         </button>
-        <audio #ttsAudioPlayer
-               [src]="ttsAudioUrl"
-               (play)="onTTSPlay()"
-               (pause)="onTTSPause()"
-               (ended)="onTTSEnded()"
-               (timeupdate)="onTTSTimeUpdate($event)"
-               (loadedmetadata)="onTTSLoadedMetadata($event)"
-               (error)="onTTSError()">
+        <audio #ttsAudioPlayer [src]="ttsAudioUrl" (play)="onTTSPlay()" (pause)="onTTSPause()" (ended)="onTTSEnded()"
+          (timeupdate)="onTTSTimeUpdate($event)" (loadedmetadata)="onTTSLoadedMetadata($event)" (error)="onTTSError()">
         </audio>
       </div>
     </div>
@@ -186,14 +181,9 @@
     <div class="message-actions" [class.message-actions--visible]="editing">
       <ng-container *ngIf="!editing">
         <!-- Read out loud button - only for AI messages with content -->
-        <button *ngIf="canReadOutLoud"
-                mat-icon-button
-                class="action-btn"
-                [class.action-btn--active]="ttsAudioUrl"
-                (click)="toggleReadOutLoud()"
-                [disabled]="isGeneratingTTS"
-                [title]="'message.readOutLoud' | translate"
-                aria-label="Read message out loud">
+        <button *ngIf="canReadOutLoud" mat-icon-button class="action-btn" [class.action-btn--active]="ttsAudioUrl"
+          (click)="toggleReadOutLoud()" [disabled]="isGeneratingTTS" [title]="'message.readOutLoud' | translate"
+          aria-label="Read message out loud">
           <mat-icon>volume_up</mat-icon>
         </button>
 

@@ -42,12 +42,6 @@ cd docker && docker-compose stop             # Stop all databases
 python backend/app_init.py --force-reset --seed  # Reset and reseed all databases
 python backend/app_init.py --skip-neo4j --seed   # Skip Neo4j initialization
 python backend/app_init.py --prod            # Production migration (add missing columns, skip Neo4j)
-
-# Backend testing (tests are in root tests/ directory)
-pytest                            # Run all tests
-pytest -v                         # Verbose output
-pytest tests/test_api.py          # Run specific test file
-pytest tests/test_api.py -k "test_name"  # Run specific test by name
 ```
 
 ### Environment Configuration
@@ -82,6 +76,19 @@ NEO4J_PASSWORD=fessi_neo4j_dev
 # Audio Transcription (optional)
 # USE_LOCAL_WHISPER=false      # Set true for local Whisper model
 # LOCAL_WHISPER_MODEL=base     # tiny, base, small, medium, large
+
+# Text-to-Speech (optional)
+# TTS_MODEL=tts-1              # tts-1 (fast) or tts-1-hd (quality)
+# TTS_VOICE_EN=nova            # Voice for English
+# TTS_VOICE_DE=onyx            # Voice for German
+# TTS_PREPROCESS_ENABLED=true  # LLM preprocessing for markdown/code to speech-friendly text
+
+# External SSL certificates (optional - overrides USE_DEV_CERTS)
+# SSL_CERTFILE=/path/to/cert.pem
+# SSL_KEYFILE=/path/to/key.pem
+
+# Dynamic CORS origins (optional - comma-separated list)
+# CORS_ORIGINS=https://example.com,http://10.0.0.1:8080
 ```
 
 ### Docker Development
@@ -132,6 +139,10 @@ backend/
 ├── services/
 │   ├── llm_provider.py   # Multi-provider LLM abstraction
 │   ├── agent.py          # LangGraph agent with Neo4j tools
+│   ├── vision_helper.py  # Image analysis for text-only models
+│   ├── audio_handler.py  # Whisper transcription (API or local)
+│   ├── tts_handler.py    # Text-to-speech generation
+│   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
 │   └── tools/            # LangChain tools for knowledge graph
 ├── security/         # Auth, CSRF, logging
 └── utils/            # Certificates, hashing

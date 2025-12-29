@@ -12,7 +12,7 @@ import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
 import { Observable, Subject, Subscription } from 'rxjs'; // Import Subscription
 import { takeUntil } from 'rxjs/operators';
-import {TranslateModule, TranslatePipe, TranslateService} from '@ngx-translate/core';
+import { TranslateModule, TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ThemeService } from '../services/theme.service'; // <-- IMPORT THEME SERVICE
 
 @Component({
@@ -49,7 +49,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
     private authService: AuthService,
     private translate: TranslateService,
     private themeService: ThemeService // <-- INJECT THEME SERVICE
-  ) {}
+  ) { }
 
   // ... (getUserName, getUserInitials, handleUserClick, openSettings methods remain the same)
   getUserName(): string {
@@ -164,6 +164,10 @@ export class SidebarComponent implements OnInit, OnDestroy {
   createNewConversation(): void {
     this.chatState.createNewConversation();
     this.uiState.closeSidebarOnMobile();
+  }
+
+  closeSidebar(): void {
+    this.uiState.closeSidebar();
   }
 
   navigateTo(route: string): void {

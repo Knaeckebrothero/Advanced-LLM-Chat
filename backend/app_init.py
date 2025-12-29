@@ -49,7 +49,7 @@ load_dotenv(find_dotenv())
 
 # Constants
 BASE_DIR = Path(__file__).parent.parent  # Project root
-FILESYSTEM_DIR = Path(os.getenv("FILESYSTEM_PATH", ".filesystem"))
+FILESYSTEM_DIR = Path(os.getenv("FILESYSTEM_PATH", "filesystem"))  # TODO: Change this to use the .env
 DEVCERTS_DIR = Path("devcerts")
 ENV_EXAMPLE = BASE_DIR / ".env.example"
 ENV_FILE = BASE_DIR / ".env"
