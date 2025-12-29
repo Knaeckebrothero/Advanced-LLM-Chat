@@ -1,0 +1,226 @@
+// Agent Steps Component - Gemini-style collapsible thinking panel
+
+:host {
+  display: block;
+  margin-bottom: 12px;
+}
+
+// Main outer panel (the "Thinking..." wrapper)
+.agent-steps-panel {
+  background-color: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  overflow: hidden;
+
+  &::before {
+    display: none;
+  }
+
+  // Subtle highlight when processing
+  &.is-processing {
+    border-color: var(--theme-primary);
+    border-width: 1px;
+  }
+
+  &.is-error {
+    border-color: var(--theme-error, #ef4444);
+  }
+
+  // Header styling
+  ::ng-deep .mat-expansion-panel-header {
+    padding: 12px 16px;
+    font-family: inherit;
+    height: auto !important;
+
+    .mat-expansion-panel-header-title {
+      display: flex;
+      align-items: center;
+      margin-right: 8px;
+    }
+
+    .mat-expansion-panel-header-description {
+      flex-grow: 0;
+      margin-right: 8px;
+    }
+  }
+
+  .steps-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .header-spinner {
+      flex-shrink: 0;
+    }
+
+    .header-icon {
+      flex-shrink: 0;
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+
+      &.complete {
+        color: var(--theme-success, #10b981);
+      }
+
+      &.error {
+        color: var(--theme-error, #ef4444);
+      }
+    }
+
+    .header-text {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--theme-text);
+    }
+  }
+
+  .step-count {
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+  }
+
+  // Body padding adjustment
+  ::ng-deep .mat-expansion-panel-body {
+    padding: 0 8px 8px;
+  }
+}
+
+// Inner steps list (nested accordion)
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  // Individual step items
+  .step-item {
+    background-color: var(--theme-surface-variant, var(--theme-surface));
+    border: 1px solid var(--theme-border);
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    overflow: hidden;
+
+    &::before {
+      display: none;
+    }
+
+    // Current step highlight (last step while processing)
+    &.step-current {
+      border-color: var(--theme-primary);
+      background-color: var(--theme-surface-highlight, rgba(var(--theme-primary-rgb), 0.05));
+    }
+
+    // Step type icon colors
+    &.step-thought .step-icon-wrapper {
+      background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+    }
+
+    &.step-tool_call .step-icon-wrapper {
+      background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+    }
+
+    &.step-tool_result .step-icon-wrapper {
+      background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+    }
+
+    &.step-observation .step-icon-wrapper {
+      background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%);
+    }
+
+    // Step header
+    ::ng-deep .mat-expansion-panel-header {
+      padding: 8px 12px;
+      font-family: inherit;
+      min-height: 40px;
+      height: auto !important;
+
+      .mat-expansion-panel-header-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-right: 12px;
+
+        .step-icon-wrapper {
+          width: 24px;
+          height: 24px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+
+          mat-icon {
+            color: white;
+            font-size: 14px;
+            width: 14px;
+            height: 14px;
+          }
+        }
+
+        .step-title {
+          font-weight: 500;
+          font-size: 13px;
+          color: var(--theme-text);
+        }
+      }
+
+      .mat-expansion-panel-header-description {
+        .step-duration {
+          font-size: 11px;
+          color: var(--theme-text-secondary);
+          font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+        }
+      }
+    }
+
+    ::ng-deep .mat-expansion-panel-body {
+      padding: 0 12px 12px;
+    }
+
+    // Step content
+    .step-content {
+      .step-code {
+        background: var(--theme-code-bg);
+        padding: 12px;
+        border-radius: 6px;
+        overflow-x: auto;
+        font-size: 12px;
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid var(--theme-border);
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .step-text {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--theme-text);
+      }
+
+      .step-metadata {
+        margin-top: 10px;
+
+        .metadata-json {
+          background: var(--theme-code-bg);
+          padding: 10px;
+          border-radius: 6px;
+          font-size: 11px;
+          max-height: 150px;
+          overflow: auto;
+          font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+          border: 1px solid var(--theme-border);
+        }
+      }
+    }
+  }
+}
+
+// Spinner styling override
+::ng-deep .mat-mdc-progress-spinner {
+  --mdc-circular-progress-active-indicator-color: var(--theme-primary);
+}

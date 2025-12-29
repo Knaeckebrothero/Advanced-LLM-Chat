@@ -1,0 +1,62 @@
+<!-- Gemini-style collapsible thinking panel -->
+<mat-expansion-panel
+  *ngIf="steps.length > 0"
+  [expanded]="isExpanded"
+  (expandedChange)="onExpandedChange($event)"
+  class="agent-steps-panel"
+  [class.is-processing]="isProcessing"
+  [class.is-error]="status === 'error'">
+
+  <!-- Header: Spinner/Icon + Current Action -->
+  <mat-expansion-panel-header>
+    <mat-panel-title>
+      <div class="steps-header">
+        <!-- Spinner when processing -->
+        <mat-spinner *ngIf="isProcessing" diameter="18" class="header-spinner"></mat-spinner>
+        <!-- Checkmark when complete -->
+        <mat-icon *ngIf="!isProcessing && status !== 'error'" class="header-icon complete">check_circle</mat-icon>
+        <!-- Error icon -->
+        <mat-icon *ngIf="status === 'error'" class="header-icon error">error_outline</mat-icon>
+
+        <span class="header-text">{{ headerText }}</span>
+      </div>
+    </mat-panel-title>
+    <mat-panel-description>
+      <span class="step-count">({{ steps.length }} {{ steps.length === 1 ? 'step' : 'steps' }})</span>
+    </mat-panel-description>
+  </mat-expansion-panel-header>
+
+  <!-- Expanded: Nested accordion for individual steps -->
+  <mat-accordion class="steps-list" multi>
+    <mat-expansion-panel
+      *ngFor="let step of steps; trackBy: trackStep; let last = last"
+      [expanded]="false"
+      class="step-item"
+      [class.step-current]="last && isProcessing"
+      [ngClass]="'step-' + step.type">
+
+      <mat-expansion-panel-header>
+        <mat-panel-title>
+          <div class="step-icon-wrapper" [ngClass]="'step-icon--' + step.type">
+            <mat-icon>{{ getStepIcon(step.type) }}</mat-icon>
+          </div>
+          <span class="step-title">{{ 'tools.' + step.title | translate }}</span>
+        </mat-panel-title>
+        <mat-panel-description *ngIf="step.duration">
+          <span class="step-duration">{{ step.duration }}ms</span>
+        </mat-panel-description>
+      </mat-expansion-panel-header>
+
+      <!-- Step content (shown when individual step is expanded) -->
+      <div class="step-content">
+        <pre *ngIf="step.type === 'tool_call' || step.type === 'tool_result'"
+          class="step-code">{{ step.content }}</pre>
+        <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'"
+          class="step-text">{{ 'tool_content.' + step.content | translate }}</p>
+        <div class="step-metadata" *ngIf="step.metadata">
+          <pre class="metadata-json">{{ step.metadata | json }}</pre>
+        </div>
+      </div>
+    </mat-expansion-panel>
+  </mat-accordion>
+</mat-expansion-panel>
