@@ -62,6 +62,9 @@ FILESYSTEM_PATH = os.getenv("FILESYSTEM_PATH", "filesystem")
 # Replicate API configuration
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
+# Tavily Web Search configuration
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+
 # Image processing configuration for LLM
 # Set to 'true' to pass images to vision-capable models
 # Set to 'false' to use text descriptions instead
