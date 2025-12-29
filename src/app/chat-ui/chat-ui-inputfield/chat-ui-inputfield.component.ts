@@ -117,6 +117,10 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   @Output() filesSelected = new EventEmitter<FilePreview[]>();  // Changed from fileRequested
   @Output() cameraRequested = new EventEmitter<void>();
   @Output() locationRequested = new EventEmitter<void>();
+  @Output() stopRequested = new EventEmitter<void>();
+
+  // Input property to track if AI is currently streaming
+  @Input() isStreaming: boolean = false;
 
   // Device capability flags
   hasCamera: boolean = false;

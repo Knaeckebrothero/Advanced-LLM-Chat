@@ -97,7 +97,10 @@ button.delete-button {
 .conversation-content {
   width: 100%;
   text-align: left;
-  
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
   .edit-input {
     width: 100%;
     background-color: var(--theme-input-bg);

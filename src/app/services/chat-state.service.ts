@@ -498,13 +498,41 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Cancel an ongoing streaming response
+   * Cancel an ongoing streaming response.
+   * Saves the partial response if any content was generated.
    */
-  cancelStreaming(): void {
+  async cancelStreaming(): Promise<void> {
+    // Unsubscribe first to stop receiving more tokens
     if (this.streamingSubscription) {
       this.streamingSubscription.unsubscribe();
       this.streamingSubscription = null;
     }
+
+    // Get the current streaming message before clearing
+    const streamingMessage = this.streamingMessage$.getValue();
+
+    // Save partial response if we have any content
+    if (streamingMessage && streamingMessage.content) {
+      const hasContent = streamingMessage.content.content?.trim().length > 0;
+      const hasSteps = streamingMessage.content.steps?.length > 0;
+
+      if (hasContent || hasSteps) {
+        // Mark as complete (user intentionally stopped it)
+        streamingMessage.content.status = 'complete';
+
+        // Save to IndexedDB
+        await this.messageRepository.save(streamingMessage);
+
+        // Update conversation timestamp
+        const conversation = await firstValueFrom(this.activeConversation$);
+        if (conversation && conversation.id !== '0') {
+          conversation.updatedAt = new Date();
+          await this.conversationRepository.save(conversation);
+        }
+      }
+    }
+
+    // Clean up streaming state
     this.isStreaming$.next(false);
     this.streamingMessage$.next(null);
   }
