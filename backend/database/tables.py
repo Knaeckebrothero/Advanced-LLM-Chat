@@ -62,9 +62,9 @@ messages = Table(
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
     Column('rating', Integer),  # 0 (thumbs down), 1 (thumbs up), or NULL
     # Agent message columns (JSONB strategy)
+    # Note: Agent response text is stored in 'content' column (unified with text messages)
     Column('agent_status', Text),  # thinking, responding, complete, error
     Column('agent_steps', JSONB),  # Array of reasoning steps
-    Column('final_response', Text),  # Final response text
     Column('agent_error', Text),  # Error message if status is 'error'
 )
 

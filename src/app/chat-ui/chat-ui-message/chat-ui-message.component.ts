@@ -49,7 +49,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     if (this.message.isText()) {
       textToCopy = this.message.textContent || '';
     } else if (this.message.isAgent()) {
-      textToCopy = this.message.content.finalResponse || '';
+      textToCopy = this.message.content.content || '';
     }
 
     if (textToCopy) {
@@ -82,7 +82,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Getter for agent response content (for ngx-markdown)
   get agentResponseContent(): string {
     if (this.message?.isAgent()) {
-      return this.message.content?.finalResponse || '';
+      return this.message.content?.content || '';
     }
     return '';
   }
@@ -409,7 +409,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
       return !!(this.message.textContent?.trim());
     }
     if (this.message.isAgent()) {
-      return !!(this.message.content?.finalResponse?.trim());
+      return !!(this.message.content?.content?.trim());
     }
     return false;
   }

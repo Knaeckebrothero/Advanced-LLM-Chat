@@ -63,7 +63,7 @@ export interface IAgentStep {
 export interface IAgentContent {
   type: 'agent';
   steps: IAgentStep[];
-  finalResponse: string;
+  content: string;  // Response text (unified with ITextContent)
   status: AgentStatus;
   error?: string;
 }

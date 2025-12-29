@@ -34,9 +34,9 @@ CREATE TABLE IF NOT EXISTS messages (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     rating INTEGER,
     -- Agent message columns (JSONB strategy)
+    -- Note: Agent response text is stored in 'content' column (unified with text messages)
     agent_status TEXT,           -- thinking, responding, complete, error
     agent_steps JSONB,           -- Array of reasoning steps
-    final_response TEXT,         -- Final response text
     agent_error TEXT             -- Error message if status is 'error'
 );
 
