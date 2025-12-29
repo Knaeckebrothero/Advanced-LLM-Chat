@@ -119,7 +119,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       this.streamingMessage$.subscribe(streamingMsg => {
         if (streamingMsg && this.userIsAtBottom) {
           // Get current streaming content length
-          const currentContent = streamingMsg.content?.finalResponse || '';
+          const currentContent = streamingMsg.content?.content || '';
 
           // Only scroll if content has grown (throttle scrolls)
           if (currentContent.length > this.lastStreamingContent.length + 50) {

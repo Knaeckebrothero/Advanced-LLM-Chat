@@ -107,7 +107,7 @@
           </app-agent-steps>
 
           <!-- Final response with streaming cursor -->
-          <div class="agent-response" *ngIf="message.content.finalResponse || message.content.status === 'responding'">
+          <div class="agent-response" *ngIf="message.content.content || message.content.status === 'responding'">
             <markdown class="response-text"
               [data]="agentResponseContent"
               clipboard>

@@ -430,8 +430,8 @@ export class ChatStateService implements OnDestroy {
         break;
 
       case 'token':
-        // Append the token to the final response
-        message.content.finalResponse += event.data as string;
+        // Append the token to the response content
+        message.content.content += event.data as string;
         message.content.status = 'responding';
         break;
 

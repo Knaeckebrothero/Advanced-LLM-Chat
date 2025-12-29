@@ -88,7 +88,7 @@ def _save_agent_message(
         conversation_id=conversation_id,
         role_name=role_name,
         time=msg_time,
-        final_response=final_response,
+        content=final_response,  # Response text (unified with text messages)
         status=agent_status,
         error=error,
         steps=steps
@@ -1079,7 +1079,7 @@ async def stream_generate(
                 conversation_id=request_body.conversationId,
                 role_name=request_body.aiParticipant,
                 time=current_time,
-                final_response=final_response,
+                content=final_response,  # Response text (unified with text messages)
                 status='complete',
                 steps=steps  # Stored as JSONB array
             )
@@ -1104,7 +1104,7 @@ async def stream_generate(
                 conversation_id=request_body.conversationId,
                 role_name=request_body.aiParticipant,
                 time=current_time,
-                final_response=final_response,
+                content=final_response,  # Response text (unified with text messages)
                 status='error',
                 error=str(e),
                 steps=steps
@@ -1174,24 +1174,20 @@ async def generate_tts(
         if not db_message:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
 
-        # Extract text content based on message type
+        # Extract text content from unified 'content' column
+        # Both text and agent messages now store response in 'content'
         text_content = ""
-        content_type = db_message.get('type', 'text')
+        raw_content = db_message.get('content', '')
 
-        if content_type == 'agent':
-            # For agent messages, use final_response from JSONB columns
-            text_content = db_message.get('final_response', '') or ''
-        else:
-            # For text messages, parse content (may be JSON with attachments)
-            raw_content = db_message.get('content', '')
-            try:
-                if raw_content.startswith('{'):
-                    content_obj = json.loads(raw_content)
-                    text_content = content_obj.get('content', raw_content)
-                else:
-                    text_content = raw_content
-            except (json.JSONDecodeError, AttributeError):
+        # Text messages may have JSON with attachments, need to parse
+        try:
+            if raw_content.startswith('{'):
+                content_obj = json.loads(raw_content)
+                text_content = content_obj.get('content', raw_content)
+            else:
                 text_content = raw_content
+        except (json.JSONDecodeError, AttributeError):
+            text_content = raw_content
 
         if not text_content or not text_content.strip():
             raise HTTPException(

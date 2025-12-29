@@ -37,6 +37,7 @@ GROUP BY c.id;
 
 -- name: get_messages_before_timestamp
 -- Get messages before a given timestamp (pagination going back in time)
+-- Note: Agent response is now in 'content' column (unified with text messages)
 SELECT
     id,
     "conversationId",
@@ -50,7 +51,6 @@ SELECT
     rating,
     agent_status,
     agent_steps,
-    final_response,
     agent_error
 FROM messages
 WHERE "conversationId" = :conversation_id AND time < :before_timestamp
@@ -59,6 +59,7 @@ LIMIT :limit;
 
 -- name: get_messages_after_timestamp
 -- Get messages after a given timestamp (incremental sync)
+-- Note: Agent response is now in 'content' column (unified with text messages)
 SELECT
     id,
     "conversationId",
@@ -72,7 +73,6 @@ SELECT
     rating,
     agent_status,
     agent_steps,
-    final_response,
     agent_error
 FROM messages
 WHERE "conversationId" = :conversation_id AND time > :after_timestamp
@@ -80,6 +80,7 @@ ORDER BY time ASC;
 
 -- name: get_recent_messages_for_context
 -- Get recent messages for LLM context building
+-- Note: Agent response is now in 'content' column (unified with text messages)
 SELECT
     id,
     "roleName",
@@ -88,7 +89,6 @@ SELECT
     type,
     agent_status,
     agent_steps,
-    final_response,
     agent_error
 FROM messages
 WHERE "conversationId" = :conversation_id

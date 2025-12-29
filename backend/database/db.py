@@ -933,7 +933,7 @@ class Database:
         conversation_id: str,
         role_name: str,
         time: int,
-        final_response: str,
+        content: str,
         status: str = 'complete',
         error: str = None,
         steps: list = None
@@ -946,7 +946,7 @@ class Database:
             conversation_id: The conversation's UUID.
             role_name: Message sender role (e.g., 'Assistant').
             time: Unix timestamp when created.
-            final_response: The final response text.
+            content: The response text (unified with text messages).
             status: Agent status ('thinking', 'responding', 'complete', 'error').
             error: Error message if status is 'error'.
             steps: List of AgentStep dictionaries.
@@ -960,14 +960,13 @@ class Database:
                 id=message_id,
                 conversationId=conversation_id,
                 roleName=role_name,
-                content='',  # Empty for agent messages using new schema
+                content=content,  # Response text (unified with text messages)
                 time=time,
                 type='agent',
                 version=1,
                 lastModified=time,
                 agent_status=status,
                 agent_steps=steps,  # Stored directly as JSONB
-                final_response=final_response,
                 agent_error=error
             ).returning(messages)
             result = conn.execute(stmt).fetchone()
@@ -978,7 +977,7 @@ class Database:
         self,
         message_id: int,
         conversation_id: str,
-        final_response: str = None,
+        content: str = None,
         status: str = None,
         error: str = None,
         steps: list = None
@@ -989,7 +988,7 @@ class Database:
         Args:
             message_id: The message's ID.
             conversation_id: The conversation's UUID.
-            final_response: New final response text (optional).
+            content: New response text (optional).
             status: New status (optional).
             error: New error message (optional).
             steps: New steps list (optional).
@@ -1000,8 +999,8 @@ class Database:
         log.debug(f"Updating agent message {message_id}: status={status}")
         import time as time_module
         values = {"lastModified": int(time_module.time())}
-        if final_response is not None:
-            values["final_response"] = final_response
+        if content is not None:
+            values["content"] = content
         if status is not None:
             values["agent_status"] = status
         if error is not None:

@@ -379,13 +379,13 @@ async def get_conversation_messages(
                     # Transform JSONB columns to frontend-expected format
                     # Steps come directly as array from JSONB
                     msg['steps'] = msg.get('agent_steps', [])
-                    msg['finalResponse'] = msg.get('final_response', '')
+                    # Response text is now in unified 'content' column
+                    msg['finalResponse'] = msg.get('content', '')
                     msg['status'] = msg.get('agent_status', 'complete')
                     msg['error'] = msg.get('agent_error')
 
                     # Clean up internal column names
                     msg.pop('agent_steps', None)
-                    msg.pop('final_response', None)
                     msg.pop('agent_status', None)
                     msg.pop('agent_error', None)
                 elif msg.get('type') == 'text' or not msg.get('type'):

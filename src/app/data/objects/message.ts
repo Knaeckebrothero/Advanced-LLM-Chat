@@ -178,7 +178,7 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
   static createAgent(
     conversationId: string,
     steps: IAgentStep[] = [],
-    finalResponse: string = '',
+    content: string = '',
     status: AgentStatus = 'thinking'
   ): Message<IAgentContent> {
     return new Message(
@@ -192,7 +192,7 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
       {
         type: 'agent',
         steps,
-        finalResponse,
+        content,
         status,
       }
     );
@@ -216,10 +216,11 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
     };
 
     if (data.type === 'agent') {
+      // API sends 'finalResponse', we store as 'content' internally
       return new Message<IAgentContent>(metadata, {
         type: 'agent',
         steps: data.steps || [],
-        finalResponse: data.finalResponse || data.content || '',
+        content: data.finalResponse || data.content || '',
         status: data.status || 'complete',
         error: data.error
       });
@@ -279,7 +280,7 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
         return {
           ...base,
           steps: agentContent.steps,
-          finalResponse: agentContent.finalResponse,
+          finalResponse: agentContent.content,  // Map internal 'content' to API 'finalResponse'
           status: agentContent.status,
           ...(agentContent.error && { error: agentContent.error })
         };
@@ -430,7 +431,7 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
       case 'text':
         return (this.content as ITextContent).content;
       case 'agent':
-        return (this.content as IAgentContent).finalResponse || `Agent ${(this.content as IAgentContent).status}...`;
+        return (this.content as IAgentContent).content || `Agent ${(this.content as IAgentContent).status}...`;
       default:
         return 'Unknown message type';
     }
@@ -487,10 +488,11 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
     if (data.content) {
       switch (data.content.type) {
         case 'agent':
+          // Handle both 'content' (new) and 'finalResponse' (legacy) for backwards compatibility
           return new Message<IAgentContent>(metadata, {
             type: 'agent',
             steps: data.content.steps || [],
-            finalResponse: data.content.finalResponse || '',
+            content: data.content.content || data.content.finalResponse || '',
             status: data.content.status || 'complete',
             error: data.content.error
           });
