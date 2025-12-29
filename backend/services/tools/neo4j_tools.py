@@ -7,6 +7,7 @@ These tools allow the agent to search for waste disposal information in Neo4j.
 import logging
 from langchain_core.tools import tool
 from backend.database.neo4j_db import neo4j_db
+from backend.config import NEO4J_REQUIRE_DISPOSAL_METHOD
 
 log = logging.getLogger(__name__)
 
@@ -21,17 +22,19 @@ def search_waste_disposal(waste_item: str) -> dict:
     Returns:
         Disposal information including methods and locations
     """
-    query = """
+    # Use MATCH or OPTIONAL MATCH for disposal methods based on config
+    disposal_match = "MATCH" if NEO4J_REQUIRE_DISPOSAL_METHOD else "OPTIONAL MATCH"
+    query = f"""
     MATCH (item:WasteItem)
     WHERE toLower(item.name) CONTAINS toLower($search)
        OR toLower(item.name_de) CONTAINS toLower($search)
        OR ANY(ex IN item.examples WHERE toLower(ex) CONTAINS toLower($search))
-    MATCH (item)-[r:DISPOSED_VIA]->(method:DisposalMethod)
+    {disposal_match} (item)-[r:DISPOSED_VIA]->(method:DisposalMethod)
     OPTIONAL MATCH (method)-[:AVAILABLE_AT]->(loc:Location)
     OPTIONAL MATCH (item)-[:HAS_FAQ]->(faq:FAQ)
     RETURN item.name as item_name,
            item.name_de as item_name_de,
-           collect(DISTINCT {
+           collect(DISTINCT {{
              method: method.name,
              method_de: method.name_de,
              type: method.type,
@@ -39,17 +42,17 @@ def search_waste_disposal(waste_item: str) -> dict:
              frequency: method.frequency,
              instructions: method.instructions,
              priority: r.priority
-           }) as disposal_methods,
-           collect(DISTINCT {
+           }}) as disposal_methods,
+           collect(DISTINCT {{
              name: loc.name,
              address: loc.address,
              hours: loc.hours,
              phone: loc.phone
-           }) as locations,
-           collect(DISTINCT {
+           }}) as locations,
+           collect(DISTINCT {{
              question: faq.question_de,
              answer: faq.answer_de
-           }) as faqs
+           }}) as faqs
     ORDER BY item.name
     LIMIT 5
     """

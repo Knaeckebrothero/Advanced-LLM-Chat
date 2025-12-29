@@ -44,6 +44,8 @@ DATABASE_URL = os.getenv('DATABASE_URL', None)
 NEO4J_URI = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
 NEO4J_USER = os.getenv('NEO4J_USER', 'neo4j')
 NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD', 'fessi_neo4j_dev')
+# When true, only waste items with disposal methods will be returned
+NEO4J_REQUIRE_DISPOSAL_METHOD = os.getenv("NEO4J_REQUIRE_DISPOSAL_METHOD", "false").lower() == "true"
 
 # SSL/TLS configuration
 USE_DEV_CERTS = os.getenv("USE_DEV_CERTS") == "True"
