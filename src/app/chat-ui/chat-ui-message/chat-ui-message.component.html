@@ -74,8 +74,11 @@
         </div>
 
         <!-- Display formatted message when not editing (only if not a voice message with just transcript) -->
-        <div *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()" class="message-text"
-          [innerHTML]="formattedTextContent"></div>
+        <markdown *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()"
+          class="message-text"
+          [data]="messageTextContent"
+          clipboard>
+        </markdown>
 
         <!-- Edit mode - only for text messages -->
         <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
@@ -129,7 +132,10 @@
 
           <!-- Final response with streaming cursor -->
           <div class="agent-response" *ngIf="message.content.finalResponse || message.content.status === 'responding'">
-            <div class="response-text" [innerHTML]="formatAgentResponse(message.content.finalResponse)"></div>
+            <markdown class="response-text"
+              [data]="agentResponseContent"
+              clipboard>
+            </markdown>
             <span class="streaming-cursor" *ngIf="message.content.status === 'responding'"></span>
           </div>
 
