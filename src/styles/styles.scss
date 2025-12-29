@@ -238,3 +238,153 @@ body.theme-initialized {
     box-shadow: none !important;
   }
 }
+
+// ============================================
+// NGX-MARKDOWN CLIPBOARD BUTTON STYLES
+// ============================================
+.markdown-clipboard-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  z-index: 10;
+}
+
+.markdown-clipboard-toolbar.hover {
+  opacity: 1;
+  visibility: visible;
+}
+
+.markdown-clipboard-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--theme-surface);
+  color: var(--theme-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  backdrop-filter: blur(4px);
+
+  &:hover {
+    background-color: var(--theme-hover);
+    color: var(--theme-text);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  &.copied {
+    color: var(--theme-primary);
+  }
+}
+
+// ============================================
+// PRISM SYNTAX HIGHLIGHTING - THEME VARIABLES
+// ============================================
+
+// Light theme colors (GitHub-style)
+.theme-light {
+  --prism-background: #f6f8fa;
+  --prism-text: #24292e;
+  --prism-comment: #6a737d;
+  --prism-keyword: #d73a49;
+  --prism-string: #032f62;
+  --prism-function: #6f42c1;
+  --prism-number: #005cc5;
+  --prism-operator: #d73a49;
+  --prism-class: #22863a;
+  --prism-variable: #e36209;
+  --prism-punctuation: #24292e;
+}
+
+// Dark theme colors (VS Code-style)
+.theme-dark {
+  --prism-background: #1e1e1e;
+  --prism-text: #d4d4d4;
+  --prism-comment: #6a9955;
+  --prism-keyword: #569cd6;
+  --prism-string: #ce9178;
+  --prism-function: #dcdcaa;
+  --prism-number: #b5cea8;
+  --prism-operator: #d4d4d4;
+  --prism-class: #4ec9b0;
+  --prism-variable: #9cdcfe;
+  --prism-punctuation: #d4d4d4;
+}
+
+// Apply theme variables to Prism classes
+code[class*="language-"],
+pre[class*="language-"] {
+  color: var(--prism-text);
+  background: var(--prism-background);
+  text-shadow: none;
+}
+
+pre[class*="language-"] {
+  position: relative;
+  padding: 1em;
+  margin: 0.5em 0;
+  overflow: auto;
+  border-radius: 8px;
+}
+
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: var(--prism-comment);
+}
+
+.token.punctuation {
+  color: var(--prism-punctuation);
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol {
+  color: var(--prism-number);
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin {
+  color: var(--prism-string);
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+  color: var(--prism-operator);
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: var(--prism-keyword);
+}
+
+.token.function,
+.token.class-name {
+  color: var(--prism-function);
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  color: var(--prism-variable);
+}

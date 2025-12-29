@@ -1,13 +1,12 @@
-import { Component, Input, OnChanges, OnDestroy, SimpleChanges, Renderer2, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { Component, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
 import { Message, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
-import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
+import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
 import { FilePreviewDialogComponent, FilePreviewDialogData } from '../../components/file-preview-dialog/file-preview-dialog.component';
 import { ApiService } from '../../services/api.service';
 import { SettingsStateService } from '../../services/settings-state.service';
-import { MarkdownService } from '../../services/markdown.service';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -15,7 +14,7 @@ import { MarkdownService } from '../../services/markdown.service';
   styleUrls: ['./chat-ui-message.component.scss'],
   standalone: false
 })
-export class ChatUiMessageComponent implements OnChanges, OnDestroy, AfterViewChecked {
+export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Pass the message object from the parent component
   @Input() message!: Message;
   @Input() isLastAiMessage: boolean = false;
@@ -23,18 +22,14 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy, AfterViewCh
   // Variables
   editing: boolean = false;
   backupContent!: string;
-  formattedTextContent: SafeHtml = '';
-  private buttonsInjected = false;
+  messageTextContent: string = '';
 
   constructor(
     private sanitizer: DomSanitizer,
     private chatUI: ChatUiComponent,
-    private renderer: Renderer2,
     private dialog: MatDialog,
     private apiService: ApiService,
-    private settingsState: SettingsStateService,
-    private markdownService: MarkdownService,
-    private elementRef: ElementRef
+    private settingsState: SettingsStateService
   ) { }
 
   // TTS Audio Player reference
@@ -69,7 +64,6 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy, AfterViewCh
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['message']) {
-      this.buttonsInjected = false; // Reset to allow button re-injection
       this.updateFormattedContent();
     }
   }
@@ -77,22 +71,20 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy, AfterViewCh
   private updateFormattedContent() {
     if (this.message && this.message.isText()) {
       const textContent = this.message.getDisplayContent();
-      this.formattedTextContent = this.formatText(textContent);
+      // Apply user/AI name replacements - markdown will be parsed by ngx-markdown
+      this.messageTextContent = textContent
+        .replace(/\{\{user\}\}/g, this.chatUI.userName)
+        .replace(this.chatUI.aiName + ':', '')
+        .replace(/"/ + this.chatUI.aiName + ':' + /"/, '');
     }
   }
 
-  // Helper to format text content with markdown and replacements
-  formatText(text: string): SafeHtml {
-    if (!text) return '';
-
-    // Apply user/AI name replacements before markdown parsing
-    let processedText = text
-      .replace(/\{\{user\}\}/g, this.chatUI.userName)
-      .replace(this.chatUI.aiName + ':', '')
-      .replace(/"/ + this.chatUI.aiName + ':' + /"/, '');
-
-    // Parse markdown
-    return this.markdownService.parse(processedText);
+  // Getter for agent response content (for ngx-markdown)
+  get agentResponseContent(): string {
+    if (this.message?.isAgent()) {
+      return this.message.content?.finalResponse || '';
+    }
+    return '';
   }
 
   getAttachmentIcon(type: FileType): string {
@@ -274,12 +266,6 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy, AfterViewCh
     return step.id;
   }
 
-  // Format agent final response with markdown
-  formatAgentResponse(response: string): SafeHtml {
-    if (!response) return '';
-    return this.markdownService.parse(response);
-  }
-
   // ===== TTS Methods =====
 
   /**
@@ -436,231 +422,6 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy, AfterViewCh
       return !!(this.message.content?.finalResponse?.trim());
     }
     return false;
-  }
-
-  // ===== Copy/Download Buttons for Tables & Code Blocks =====
-
-  ngAfterViewChecked(): void {
-    // Only try to inject if not already done and message exists
-    if (!this.buttonsInjected && this.message) {
-      this.injectCopyDownloadButtons();
-    }
-  }
-
-  private injectCopyDownloadButtons(): void {
-    const hostElement = this.elementRef.nativeElement;
-    let elementsProcessed = 0;
-
-    // Inject buttons for tables (check for tables that aren't already wrapped)
-    const tables = hostElement.querySelectorAll('.message-text table, .response-text table');
-    tables.forEach((table: HTMLTableElement) => {
-      if (!table.parentElement?.classList.contains('table-wrapper')) {
-        this.wrapTableWithButtons(table);
-        elementsProcessed++;
-      }
-    });
-
-    // Inject buttons for code blocks (check for pre that aren't already wrapped)
-    const codeBlocks = hostElement.querySelectorAll('.message-text pre, .response-text pre');
-    codeBlocks.forEach((pre: HTMLPreElement) => {
-      if (!pre.parentElement?.classList.contains('code-wrapper')) {
-        this.wrapCodeBlockWithButtons(pre);
-        elementsProcessed++;
-      }
-    });
-
-    // Check if raw message content SHOULD have tables/code blocks
-    const rawContent = this.getRawMessageContent();
-    const contentHasCodeBlocks = /```[\s\S]*?```/.test(rawContent);
-    const contentHasTables = /\|.+\|/.test(rawContent) && /\|[-:]+\|/.test(rawContent);
-
-    // Check if DOM has any tables/code (wrapped or not)
-    const domHasTables = tables.length > 0;
-    const domHasCodeBlocks = codeBlocks.length > 0;
-
-    // Only mark as injected if:
-    // 1. We processed some elements, OR
-    // 2. Content doesn't expect tables/code AND DOM has none (nothing to do), OR
-    // 3. Content expects tables/code AND DOM has them all wrapped already
-    const allTablesWrapped = !hostElement.querySelectorAll('.message-text table:not(.table-wrapper table), .response-text table:not(.table-wrapper table)').length;
-    const allCodeWrapped = !hostElement.querySelectorAll('.message-text pre:not(.code-wrapper pre), .response-text pre:not(.code-wrapper pre)').length;
-
-    if (elementsProcessed > 0) {
-      // We processed elements, mark as done
-      this.buttonsInjected = true;
-    } else if (!contentHasCodeBlocks && !contentHasTables) {
-      // Content has no code/tables, nothing to inject
-      this.buttonsInjected = true;
-    } else if ((contentHasTables === domHasTables) && (contentHasCodeBlocks === domHasCodeBlocks) && allTablesWrapped && allCodeWrapped) {
-      // DOM matches expectations and everything is wrapped
-      this.buttonsInjected = true;
-    }
-    // Otherwise, keep buttonsInjected = false to retry on next check
-  }
-
-  /** Get raw message content for pattern checking */
-  private getRawMessageContent(): string {
-    if (this.message.isText()) {
-      return this.message.textContent || '';
-    }
-    if (this.message.isAgent()) {
-      return this.message.content?.finalResponse || '';
-    }
-    return '';
-  }
-
-  private wrapTableWithButtons(table: HTMLTableElement): void {
-    const wrapper = this.renderer.createElement('div');
-    this.renderer.addClass(wrapper, 'table-wrapper');
-
-    const buttonContainer = this.renderer.createElement('div');
-    this.renderer.addClass(buttonContainer, 'copy-download-buttons');
-
-    // Copy button
-    const copyBtn = this.createActionButton('content_copy', 'Copy as CSV', () => this.copyTableAsCSV(table));
-    // Download button
-    const downloadBtn = this.createActionButton('download', 'Download CSV', () => this.downloadTableAsCSV(table));
-
-    this.renderer.appendChild(buttonContainer, copyBtn);
-    this.renderer.appendChild(buttonContainer, downloadBtn);
-
-    // Wrap table
-    const parent = table.parentNode;
-    this.renderer.insertBefore(parent, wrapper, table);
-    this.renderer.appendChild(wrapper, table);
-    this.renderer.appendChild(wrapper, buttonContainer);
-  }
-
-  private wrapCodeBlockWithButtons(pre: HTMLPreElement): void {
-    const wrapper = this.renderer.createElement('div');
-    this.renderer.addClass(wrapper, 'code-wrapper');
-
-    const buttonContainer = this.renderer.createElement('div');
-    this.renderer.addClass(buttonContainer, 'copy-download-buttons');
-
-    // Get language from class if available
-    const code = pre.querySelector('code');
-    const langClass = code?.className.match(/language-(\w+)/);
-    const language = langClass ? langClass[1] : 'txt';
-
-    // Copy button
-    const copyBtn = this.createActionButton('content_copy', 'Copy code', () => this.copyCodeBlock(pre));
-    // Download button
-    const downloadBtn = this.createActionButton('download', 'Download', () => this.downloadCodeBlock(pre, language));
-
-    this.renderer.appendChild(buttonContainer, copyBtn);
-    this.renderer.appendChild(buttonContainer, downloadBtn);
-
-    // Wrap code block
-    const parent = pre.parentNode;
-    this.renderer.insertBefore(parent, wrapper, pre);
-    this.renderer.appendChild(wrapper, pre);
-    this.renderer.appendChild(wrapper, buttonContainer);
-  }
-
-  private createActionButton(icon: string, title: string, onClick: () => void): HTMLButtonElement {
-    const button = this.renderer.createElement('button');
-    this.renderer.addClass(button, 'action-icon-btn');
-    this.renderer.setAttribute(button, 'title', title);
-    this.renderer.setAttribute(button, 'type', 'button');
-
-    // Create icon span (using mat-icon text content approach)
-    const iconSpan = this.renderer.createElement('span');
-    this.renderer.addClass(iconSpan, 'material-icons');
-    const iconText = this.renderer.createText(icon);
-    this.renderer.appendChild(iconSpan, iconText);
-    this.renderer.appendChild(button, iconSpan);
-
-    this.renderer.listen(button, 'click', (event: Event) => {
-      event.stopPropagation();
-      onClick();
-    });
-
-    return button;
-  }
-
-  private copyTableAsCSV(table: HTMLTableElement): void {
-    const csv = this.tableToCSV(table);
-    navigator.clipboard.writeText(csv).then(() => {
-      console.log('Table copied as CSV');
-    }).catch(err => {
-      console.error('Failed to copy table:', err);
-    });
-  }
-
-  private downloadTableAsCSV(table: HTMLTableElement): void {
-    const csv = this.tableToCSV(table);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    this.downloadBlob(blob, 'table-export.csv');
-  }
-
-  private copyCodeBlock(pre: HTMLPreElement): void {
-    const code = pre.querySelector('code');
-    const text = code?.textContent || pre.textContent || '';
-    navigator.clipboard.writeText(text).then(() => {
-      console.log('Code copied to clipboard');
-    }).catch(err => {
-      console.error('Failed to copy code:', err);
-    });
-  }
-
-  private downloadCodeBlock(pre: HTMLPreElement, language: string): void {
-    const code = pre.querySelector('code');
-    const text = code?.textContent || pre.textContent || '';
-
-    // Map common languages to file extensions
-    const extMap: { [key: string]: string } = {
-      javascript: 'js', typescript: 'ts', python: 'py', java: 'java',
-      csharp: 'cs', cpp: 'cpp', c: 'c', ruby: 'rb', go: 'go',
-      rust: 'rs', php: 'php', swift: 'swift', kotlin: 'kt',
-      html: 'html', css: 'css', json: 'json', xml: 'xml',
-      yaml: 'yaml', markdown: 'md', sql: 'sql', bash: 'sh', shell: 'sh'
-    };
-    const ext = extMap[language.toLowerCase()] || language || 'txt';
-
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
-    this.downloadBlob(blob, `code-export.${ext}`);
-  }
-
-  private tableToCSV(table: HTMLTableElement): string {
-    const rows: string[] = [];
-
-    // Process header rows
-    const headerRow = table.querySelector('thead tr');
-    if (headerRow) {
-      const cells = Array.from(headerRow.querySelectorAll('th, td'));
-      rows.push(cells.map(cell => this.escapeCSVCell(cell.textContent || '')).join(','));
-    }
-
-    // Process body rows
-    const bodyRows = table.querySelectorAll('tbody tr');
-    bodyRows.forEach(row => {
-      const cells = Array.from(row.querySelectorAll('td, th'));
-      rows.push(cells.map(cell => this.escapeCSVCell(cell.textContent || '')).join(','));
-    });
-
-    return rows.join('\n');
-  }
-
-  private escapeCSVCell(value: string): string {
-    // Remove extra whitespace
-    value = value.trim();
-    // Escape quotes and wrap in quotes if needed
-    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
-  }
-
-  private downloadBlob(blob: Blob, filename: string): void {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   }
 
   /**

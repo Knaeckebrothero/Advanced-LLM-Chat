@@ -43,6 +43,7 @@ import { CommonModule } from '@angular/common';
 import { AuthInterceptor } from './auth/auth.interceptor';
 import { TranslateLoader, TranslateModule } from "@ngx-translate/core";
 import { TranslateHttpLoader } from "@ngx-translate/http-loader";
+import { MarkdownModule, MARKED_OPTIONS } from 'ngx-markdown';
 
 
 // Routes
@@ -104,6 +105,15 @@ export function HttpLoaderFactory(http: HttpClient) {
         useFactory: HttpLoaderFactory,
         deps: [HttpClient]
       }
+    }),
+    MarkdownModule.forRoot({
+      markedOptions: {
+        provide: MARKED_OPTIONS,
+        useValue: {
+          gfm: true,
+          breaks: true,
+        },
+      },
     })
   ],
   providers: [
