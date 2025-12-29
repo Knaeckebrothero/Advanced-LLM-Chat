@@ -98,37 +98,13 @@
             </div>
           </div>
 
-          <!-- Collapsible reasoning steps -->
-          <div class="agent-steps-container" *ngIf="message.content.steps.length > 0">
-            <mat-accordion class="agent-steps" multi>
-              <mat-expansion-panel *ngFor="let step of message.content.steps; trackBy: trackStep" [expanded]="false"
-                class="agent-step" [ngClass]="'step-' + step.type">
-                <mat-expansion-panel-header>
-                  <mat-panel-title>
-                    <div class="step-icon-wrapper" [ngClass]="'step-icon--' + step.type">
-                      <mat-icon>{{ getStepIcon(step.type) }}</mat-icon>
-                    </div>
-                    <span class="step-title">{{ 'tools.' + step.title | translate }}</span>
-                  </mat-panel-title>
-                  <mat-panel-description *ngIf="step.duration">
-                    <span class="step-duration">{{ step.duration }}ms</span>
-                  </mat-panel-description>
-                </mat-expansion-panel-header>
-
-                <div class="step-content">
-                  <pre *ngIf="step.type === 'tool_call' || step.type === 'tool_result'"
-                    class="step-code">{{ step.content }}</pre>
-                  <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'" class="step-text">{{
-                    'tool_content.' + step.content | translate }}</p>
-
-                  <!-- Tool-specific metadata display -->
-                  <div class="step-metadata" *ngIf="step.metadata">
-                    <pre class="metadata-json">{{ step.metadata | json }}</pre>
-                  </div>
-                </div>
-              </mat-expansion-panel>
-            </mat-accordion>
-          </div>
+          <!-- Collapsible reasoning steps (Gemini-style) -->
+          <app-agent-steps
+            *ngIf="message.content.steps.length > 0"
+            [steps]="message.content.steps"
+            [status]="message.content.status"
+            (expandedChange)="onStepsExpandedChange($event)">
+          </app-agent-steps>
 
           <!-- Final response with streaming cursor -->
           <div class="agent-response" *ngIf="message.content.finalResponse || message.content.status === 'responding'">

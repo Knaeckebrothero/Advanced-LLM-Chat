@@ -1,5 +1,5 @@
 import { Component, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
-import { Message, AgentStep, AgentStepType, AgentStatus } from '../../data/objects/message';
+import { Message, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
@@ -239,17 +239,6 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
   // ===== Agent Message Helper Methods =====
 
-  // Get icon for agent step type
-  getStepIcon(type: AgentStepType): string {
-    const icons: Record<AgentStepType, string> = {
-      thought: 'psychology',
-      tool_call: 'build',
-      tool_result: 'check_circle',
-      observation: 'visibility',
-    };
-    return icons[type] || 'circle';
-  }
-
   // Get status text for agent status
   getStatusText(status: AgentStatus): string {
     const texts: Record<AgentStatus, string> = {
@@ -261,9 +250,10 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     return texts[status];
   }
 
-  // TrackBy function for agent steps
-  trackStep(index: number, step: AgentStep): string {
-    return step.id;
+  // Handle steps panel expansion change (for future scroll handling)
+  onStepsExpandedChange(expanded: boolean): void {
+    // Can be used to trigger scroll behavior when panel is expanded
+    console.debug('Agent steps panel expanded:', expanded);
   }
 
   // ===== TTS Methods =====

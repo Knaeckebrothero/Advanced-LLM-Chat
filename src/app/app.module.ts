@@ -9,6 +9,7 @@ import { AuthGuard } from './auth/auth.guard';
 import { LoginComponent } from './login/login.component';
 import { ChatUiInputfieldComponent } from './chat-ui/chat-ui-inputfield/chat-ui-inputfield.component';
 import { AudioMessageComponent } from './components/audio-message/audio-message.component';
+import { AgentStepsComponent } from './chat-ui/chat-ui-message/agent-steps/agent-steps.component';
 
 // Services
 import { AuthService } from './auth/auth.service';
@@ -64,6 +65,7 @@ export function HttpLoaderFactory(http: HttpClient) {
     AppComponent,
     ChatUiComponent,
     ChatUiMessageComponent,
+    AgentStepsComponent,
     MetricsComponent,
     StatusBarComponent,
     AuthCallbackComponent,
