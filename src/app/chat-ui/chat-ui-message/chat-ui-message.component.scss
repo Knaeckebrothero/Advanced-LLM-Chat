@@ -273,17 +273,15 @@
     }
 
     // Tables - Modern design with clear borders, compact margin
+    // Scrollable on mobile for tables that exceed viewport width
     table {
-      width: auto;
-      min-width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
       margin: 0.35em 0;
       font-size: 0.9em;
-      display: table;
       border: 2px solid var(--theme-border);
       border-radius: 10px;
-      overflow: hidden;
       background-color: var(--theme-surface);
 
       thead {
@@ -1004,5 +1002,40 @@ em {
   .attachment-item.is-image {
     width: 120px;
     height: 120px;
+  }
+
+  // Mobile-specific table and code block optimizations
+  .message-body {
+    ::ng-deep .message-text,
+    ::ng-deep .response-text {
+      // Tables - more compact on mobile
+      table {
+        font-size: 0.85em;
+
+        thead th {
+          padding: 10px 12px;
+        }
+
+        tbody td {
+          padding: 8px 12px;
+        }
+      }
+
+      // Code blocks - more compact on mobile
+      pre {
+        padding: 12px;
+        font-size: 0.8em;
+
+        code {
+          font-size: 0.85em;
+        }
+      }
+
+      // Inline code - slightly smaller
+      code {
+        font-size: 0.85em;
+        padding: 0.1em 0.3em;
+      }
+    }
   }
 }

@@ -336,6 +336,7 @@ OPENAI_API_KEY=your_key           # For OpenAI or compatible endpoints
 ```
 
 Optional settings (see `.env.example` for full list):
+- **Tavily**: Web search tool for the agent (`TAVILY_API_KEY`)
 - **Neo4j**: Knowledge graph for waste disposal data
 - **Vision**: Image analysis configuration
 - **Whisper**: Audio transcription (API or local model)

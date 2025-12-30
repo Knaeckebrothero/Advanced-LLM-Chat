@@ -47,9 +47,12 @@ python backend/app_init.py --prod            # Production migration (add missing
 ### Environment Configuration
 Copy `.env.example` to `.env` and configure:
 ```bash
-# Required
+# Required (at least one LLM provider)
 REPLICATE_API_TOKEN=your_token_here
 USE_DEV_CERTS=True
+
+# Web Search Tool (optional - enables agent web search capability)
+# TAVILY_API_KEY=your_tavily_key
 
 # PostgreSQL (required)
 POSTGRES_HOST=localhost
@@ -114,6 +117,7 @@ Service-oriented architecture with clear separation of concerns:
 - **Core Services**:
   - `ApiService`: Backend communication with retry logic and interceptors
   - `StreamingService`: SSE connection handling for agent response streaming
+  - `ChatService`: Orchestrates message sending, AI generation, and streaming
   - `DbService`: IndexedDB operations for offline storage (in `src/app/data/`)
   - `AuthService`: Authentication state and session management (in `src/app/auth/`)
   - `ThemeService`: Theme management with system preference detection
@@ -138,12 +142,12 @@ backend/
 ├── models/           # Pydantic request/response models
 ├── services/
 │   ├── llm_provider.py   # Multi-provider LLM abstraction
-│   ├── agent.py          # LangGraph agent with Neo4j tools
+│   ├── agent.py          # LangGraph agent with Neo4j and web search tools
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation
 │   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
-│   └── tools/            # LangChain tools for knowledge graph
+│   └── tools/            # LangChain tools (knowledge graph, web search)
 ├── security/         # Auth, CSRF, logging
 └── utils/            # Certificates, hashing
 ```
