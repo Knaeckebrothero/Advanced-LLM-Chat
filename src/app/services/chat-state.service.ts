@@ -872,7 +872,7 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Helper: Create conversation from first message with AI-generated title
+   * Helper: Create conversation from first message with async AI-generated title
    */
   private async createConversationFromFirstMessage(content: string): Promise<void> {
     const backendAvailable = await this.isBackendAvailable();
@@ -892,15 +892,13 @@ export class ChatStateService implements OnDestroy {
         ['user', 'Assistant']
       );
     } else {
-      // Try to create on server with AI title generation
+      // Create conversation on server with fallback title (fast)
       const newConvData = new Conversation('', 0, fallbackTitle, ['user', 'Assistant']);
       try {
-        // Request AI title generation from backend
-        conversation = await this.apiService.createConversation(
-          newConvData,
-          content,  // firstMessage for AI title generation
-          true      // generateTitle flag
-        );
+        conversation = await this.apiService.createConversation(newConvData);
+
+        // Fire off async title generation (don't await - runs in background)
+        this.generateTitleAsync(conversation.id, content);
       } catch (error) {
         console.error('Failed to create conversation on server:', error);
         // Fallback to local with truncated title
@@ -917,6 +915,22 @@ export class ChatStateService implements OnDestroy {
     this.isNewConversation$.next(false);
     this.activeConversationId$.next(conversation.id);
     this.uiState.setActiveConversation(conversation.id);
+  }
+
+  /**
+   * Generate AI title for conversation asynchronously and update sidebar
+   */
+  private generateTitleAsync(conversationId: string, firstMessage: string): void {
+    this.apiService.generateConversationTitle(conversationId, firstMessage)
+      .then(async (updatedConversation) => {
+        // Update local cache and IndexedDB with the new title (backend already updated)
+        await this.conversationRepository.save(updatedConversation);
+        console.log(`Conversation title updated to: ${updatedConversation.name}`);
+      })
+      .catch((error) => {
+        // Silently fail - fallback title is already in place
+        console.warn('Failed to generate AI title:', error);
+      });
   }
 
   /**

@@ -40,7 +40,7 @@
           <div class="step-icon-wrapper" [ngClass]="'step-icon--' + step.type">
             <mat-icon>{{ getStepIcon(step.type) }}</mat-icon>
           </div>
-          <span class="step-title">{{ 'tools.' + step.title | translate }}</span>
+          <span class="step-title">{{ step.title }}</span>
         </mat-panel-title>
         <mat-panel-description *ngIf="step.duration">
           <span class="step-duration">{{ step.duration }}ms</span>
@@ -52,7 +52,7 @@
         <pre *ngIf="step.type === 'tool_call' || step.type === 'tool_result'"
           class="step-code">{{ step.content }}</pre>
         <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'"
-          class="step-text">{{ 'tool_content.' + step.content | translate }}</p>
+          class="step-text">{{ step.content }}</p>
         <div class="step-metadata" *ngIf="step.metadata">
           <pre class="metadata-json">{{ step.metadata | json }}</pre>
         </div>
