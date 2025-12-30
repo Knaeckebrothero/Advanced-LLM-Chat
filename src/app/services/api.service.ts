@@ -415,24 +415,10 @@ export class ApiService {
     }
   }
 
-  // Create a new conversation with optional AI title generation
-  async createConversation(
-    conversation: Conversation,
-    firstMessage?: string,
-    generateTitle: boolean = false
-  ): Promise<Conversation> {
+  // Create a new conversation
+  async createConversation(conversation: Conversation): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/create`;
-    const body: Record<string, unknown> = {
-      name: conversation.name,
-      participants: conversation.participants
-    };
-
-    // Add title generation parameters if provided
-    if (firstMessage && generateTitle) {
-      body['firstMessage'] = firstMessage;
-      body['generateTitle'] = true;
-    }
-
+    const body = { name: conversation.name, participants: conversation.participants };
     try {
       const responseData = await lastValueFrom(
         this.http.post<any>(endpoint, body, this.getHttpOptions())
@@ -440,6 +426,21 @@ export class ApiService {
       return Conversation.fromApiResponse(responseData);
     } catch (error) {
       console.error('Error creating conversation:', error);
+      throw error;
+    }
+  }
+
+  // Generate AI title for a conversation (async, fire-and-forget friendly)
+  async generateConversationTitle(conversationId: string, firstMessage: string): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/${conversationId}/generate-title`;
+    const body = { firstMessage };
+    try {
+      const responseData = await lastValueFrom(
+        this.http.post<any>(endpoint, body, this.getHttpOptions())
+      );
+      return Conversation.fromApiResponse(responseData);
+    } catch (error) {
+      console.error('Error generating conversation title:', error);
       throw error;
     }
   }

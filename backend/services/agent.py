@@ -430,6 +430,11 @@ class FessiAgent:
 
     def _get_tool_title(self, tool_name: str) -> str:
         """Get English title for a tool (frontend handles localization)."""
+        # Strip common prefixes from tool names (e.g., "tools." from LangChain)
+        clean_name = tool_name
+        if clean_name.startswith("tools."):
+            clean_name = clean_name[6:]
+
         titles = {
             "search_waste_disposal": "Searching Knowledge Base",
             "get_disposal_method_details": "Retrieving Details",
@@ -439,7 +444,7 @@ class FessiAgent:
             "get_file_content": "Retrieving File Content",
             "tavily_search_results_json": "Searching the Web"
         }
-        return titles.get(tool_name, tool_name)
+        return titles.get(clean_name, clean_name)
 
     def _build_message_content(
         self,

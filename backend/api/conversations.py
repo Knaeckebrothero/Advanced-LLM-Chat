@@ -6,6 +6,7 @@ import logging
 import time
 from typing import List, Optional
 from fastapi import APIRouter, Response, Depends, HTTPException, status
+from pydantic import BaseModel
 from backend.models.common import ErrorResponse
 from backend.models.conversation import (
     Conversation,
@@ -192,11 +193,8 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     other provided details. The function generates a unique conversation ID, saves the conversation
     into the database, and then retrieves and returns the saved conversation details.
 
-    If generateTitle is True and firstMessage is provided, an AI-generated title will be created
-    based on the first message content.
-
     :param req: An object containing details required to create a conversation, including
-        name, participants, and optional title generation fields.
+        name and participants.
     :type req: ConversationCreateRequest
     :param current_user: A dictionary holding authentication details of the current user,
         injected via dependency.
@@ -207,33 +205,71 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     user_id = current_user['user_id']
     logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name}")
 
-    # Determine conversation name (generate AI title if requested)
-    conversation_name = req.name
-    if req.generateTitle and req.firstMessage:
-        try:
-            from backend.services.title_generator import generate_conversation_title
-            conversation_name = await generate_conversation_title(
-                first_message=req.firstMessage,
-                fallback_title=req.name
-            )
-            logger.info(f"Generated AI title for conversation: {conversation_name}")
-        except Exception as e:
-            logger.error(f"Failed to generate AI title, using provided name: {e}")
-            # Keep conversation_name as req.name (the fallback)
-
     participants_json = json.dumps(req.participants)
     new_id = generate_conversation_id()  # Generate UUID
 
     new_conv = db.create_conversation(
         conversation_id=new_id,
         user_id=user_id,
-        name=conversation_name,
+        name=req.name,
         participants=participants_json
     )
 
-    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {conversation_name}")
+    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name}")
 
     return Conversation(**new_conv)
+
+
+class GenerateTitleRequest(BaseModel):
+    """Request body for title generation."""
+    firstMessage: str
+
+
+@router.post("/conversation/{conversation_id}/generate-title",
+             response_model=Conversation)
+async def generate_title(
+        conversation_id: str,
+        req: GenerateTitleRequest,
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    Generate an AI title for a conversation based on the first message.
+    This endpoint is designed to be called asynchronously after conversation creation.
+
+    :param conversation_id: The conversation to update with the generated title.
+    :param req: Request containing the first message for title generation.
+    :param current_user: The authenticated user.
+    :return: The updated conversation with the new title.
+    """
+    user_id = current_user['user_id']
+    logger.debug(f"Generating title for conversation {conversation_id}")
+
+    # Verify conversation exists and belongs to user
+    existing = db.get_conversation_by_id(conversation_id, user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    try:
+        from backend.services.title_generator import generate_conversation_title
+        new_title = await generate_conversation_title(
+            first_message=req.firstMessage,
+            fallback_title=existing['name']
+        )
+        logger.info(f"Generated AI title for conversation {conversation_id}: {new_title}")
+    except Exception as e:
+        logger.error(f"Failed to generate title: {e}")
+        # Return existing conversation without changes
+        return Conversation(**existing)
+
+    # Update conversation with new title
+    updated_conv = db.update_conversation(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        name=new_title
+    )
+
+    crud_logger.info(f"Conversation {conversation_id} title updated to '{new_title}'")
+    return Conversation(**updated_conv)
 
 
 @router.patch("/conversation/{conversation_id}",
