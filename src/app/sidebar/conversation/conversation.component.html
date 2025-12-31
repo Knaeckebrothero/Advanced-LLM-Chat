@@ -7,7 +7,7 @@
           (touchstart)="onPressStart($event)"
           (touchend)="onPressEnd()">
     <div class="conversation-content">
-      <span *ngIf="!editing">{{ conversation.name }}</span>
+      <span *ngIf="!editing" [title]="conversation.name">{{ conversation.name }}</span>
       <input *ngIf="editing"
              #editInput
              class="edit-input"

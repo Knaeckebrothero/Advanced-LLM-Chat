@@ -35,12 +35,18 @@ async def generate_conversation_title(
         fallback_title = _truncate_title(first_message)
 
     try:
-        from .llm_provider import get_llm
+        from .llm_provider import get_llm, wrap_system_prompt_with_reasoning
 
         llm = get_llm(temperature=0.3)
 
+        # Wrap system message with auxiliary reasoning level
+        wrapped_system_msg = wrap_system_prompt_with_reasoning(
+            "You generate concise conversation titles.",
+            auxiliary=True
+        )
+
         messages = [
-            SystemMessage(content="You generate concise conversation titles."),
+            SystemMessage(content=wrapped_system_msg),
             HumanMessage(content=TITLE_PROMPT.format(message=first_message[:500]))
         ]
 

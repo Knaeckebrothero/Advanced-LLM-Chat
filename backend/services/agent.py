@@ -24,6 +24,7 @@ from .image_handler import (
     prepare_document_for_llm,
     prepare_audio_for_llm
 )
+from .llm_provider import wrap_system_prompt_with_reasoning
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,9 @@ class FessiAgent:
         # Define the agent node that calls the LLM
         def call_model(state: AgentState) -> dict:
             """Call the LLM with the current messages."""
-            messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(state["messages"])
+            # Wrap system prompt with reasoning level (OpenAI only)
+            wrapped_prompt = wrap_system_prompt_with_reasoning(SYSTEM_PROMPT, auxiliary=False)
+            messages = [SystemMessage(content=wrapped_prompt)] + list(state["messages"])
             response = self.llm_with_tools.invoke(messages)
             return {"messages": [response]}
 

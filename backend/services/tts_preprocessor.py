@@ -14,9 +14,9 @@ suitable for text-to-speech. Handles:
 import logging
 from typing import Optional
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
-from .llm_provider import get_llm
+from .llm_provider import get_llm, wrap_system_prompt_with_reasoning
 from ..config import TTS_PREPROCESS_ENABLED
 
 logger = logging.getLogger(__name__)
@@ -114,11 +114,20 @@ async def preprocess_for_tts(text: str) -> Optional[str]:
         # Get the configured LLM with lower temperature for consistency
         llm = get_llm(temperature=0.3)
 
-        # Create the prompt
-        message = HumanMessage(content=TTS_PREPROCESS_PROMPT + text)
+        # Wrap preprocessing prompt with auxiliary reasoning level
+        wrapped_prompt = wrap_system_prompt_with_reasoning(
+            TTS_PREPROCESS_PROMPT,
+            auxiliary=True
+        )
+
+        # Use SystemMessage for instruction, HumanMessage for text
+        messages = [
+            SystemMessage(content=wrapped_prompt),
+            HumanMessage(content=text)
+        ]
 
         # Invoke the LLM
-        response = await llm.ainvoke([message])
+        response = await llm.ainvoke(messages)
 
         processed_text = response.content
 

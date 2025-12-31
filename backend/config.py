@@ -112,6 +112,31 @@ TTS_PREPROCESS_VERSION = "v1"  # Increment to invalidate cached preprocessed tex
 # Increase for slow models (CPU inference, model loading time)
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))  # Timeout for LLM chat requests
 
+# Reasoning Level Configuration (OpenAI only)
+# Controls reasoning effort for main agent and auxiliary tasks
+# Valid values: "low", "medium", "high"
+REASONING_LEVEL = os.getenv("REASONING_LEVEL", "medium")
+AUXILIARY_REASONING_LEVEL = os.getenv("AUXILIARY_REASONING_LEVEL", "low")
+
+# Validate reasoning levels
+def _validate_reasoning_level(level: str, var_name: str) -> str:
+    """Validate and normalize reasoning level value."""
+    valid_levels = {"low", "medium", "high"}
+    normalized = level.lower().strip()
+    if normalized not in valid_levels:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"{var_name}='{level}' is invalid. "
+            f"Valid values: {', '.join(sorted(valid_levels))}. Defaulting to 'medium'."
+        )
+        return "medium"
+    return normalized
+
+# Apply validation
+REASONING_LEVEL = _validate_reasoning_level(REASONING_LEVEL, "REASONING_LEVEL")
+AUXILIARY_REASONING_LEVEL = _validate_reasoning_level(AUXILIARY_REASONING_LEVEL, "AUXILIARY_REASONING_LEVEL")
+
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FILE_LEVEL = os.getenv("LOG_FILE_LEVEL", "DEBUG").upper()

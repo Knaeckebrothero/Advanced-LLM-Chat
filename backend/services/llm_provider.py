@@ -8,6 +8,7 @@ import os
 import logging
 from typing import Optional
 from langchain_core.language_models.chat_models import BaseChatModel
+from ..config import LLM_TIMEOUT, REASONING_LEVEL, AUXILIARY_REASONING_LEVEL
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,53 @@ DEFAULT_MODELS = {
     PROVIDER_OPENAI: "gpt-4o-mini",
     PROVIDER_ANTHROPIC: "claude-3-haiku-20240307"
 }
+
+
+def wrap_system_prompt_with_reasoning(
+    system_prompt: str,
+    auxiliary: bool = False,
+    provider: Optional[str] = None
+) -> str:
+    """
+    Wrap a system prompt with OpenAI reasoning level directive.
+
+    OpenAI models support reasoning level directives in the format:
+    "Reasoning: {level}\n\n{original_prompt}"
+
+    Only applies to OpenAI provider. For other providers, returns prompt unchanged.
+
+    Args:
+        system_prompt: Original system prompt content.
+        auxiliary: If True, uses AUXILIARY_REASONING_LEVEL; else uses REASONING_LEVEL.
+        provider: LLM provider name. If None, auto-detects from env.
+
+    Returns:
+        System prompt with reasoning level prepended (OpenAI only).
+    """
+    # Determine provider (same logic as get_llm)
+    resolved_provider = provider or os.getenv("LLM_PROVIDER")
+
+    if not resolved_provider:
+        # Auto-detect based on API keys
+        if os.getenv("OPENAI_API_KEY"):
+            resolved_provider = PROVIDER_OPENAI
+        elif os.getenv("ANTHROPIC_API_KEY"):
+            resolved_provider = PROVIDER_ANTHROPIC
+
+    resolved_provider = resolved_provider.lower() if resolved_provider else ""
+
+    # Only apply to OpenAI
+    if resolved_provider != PROVIDER_OPENAI:
+        logger.debug(f"Reasoning level not applied (provider: {resolved_provider})")
+        return system_prompt
+
+    # Select reasoning level based on task type
+    reasoning_level = AUXILIARY_REASONING_LEVEL if auxiliary else REASONING_LEVEL
+
+    logger.debug(f"Applying reasoning level '{reasoning_level}' (auxiliary={auxiliary})")
+
+    # Prepend reasoning level
+    return f"Reasoning: {reasoning_level}\n\n{system_prompt}"
 
 
 def get_llm(
