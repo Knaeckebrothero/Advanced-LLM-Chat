@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, OnDestroy, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
 import { Message, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { MatDialog } from '@angular/material/dialog';
@@ -19,6 +19,9 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   @Input() message!: Message;
   @Input() isLastAiMessage: boolean = false;
 
+  // Event emitter for agent steps expansion (for scroll adjustment)
+  @Output() stepsExpanded = new EventEmitter<{ expanded: boolean; messageElement: HTMLElement }>();
+
   // Variables
   editing: boolean = false;
   backupContent!: string;
@@ -29,7 +32,8 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     private chatUI: ChatUiComponent,
     private dialog: MatDialog,
     private apiService: ApiService,
-    private settingsState: SettingsStateService
+    private settingsState: SettingsStateService,
+    private elementRef: ElementRef
   ) { }
 
   // TTS Audio Player reference
@@ -250,10 +254,13 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     return texts[status];
   }
 
-  // Handle steps panel expansion change (for future scroll handling)
+  // Handle steps panel expansion change - emit event for scroll adjustment
   onStepsExpandedChange(expanded: boolean): void {
-    // Can be used to trigger scroll behavior when panel is expanded
-    console.debug('Agent steps panel expanded:', expanded);
+    // Emit event with the message element for scroll adjustment
+    this.stepsExpanded.emit({
+      expanded,
+      messageElement: this.elementRef.nativeElement
+    });
   }
 
   // ===== TTS Methods =====

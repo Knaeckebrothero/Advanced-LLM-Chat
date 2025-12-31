@@ -43,6 +43,12 @@
   position: relative;
   z-index: 2;
 
+  // Smooth momentum scrolling on iOS
+  -webkit-overflow-scrolling: touch;
+
+  // Prevent scroll chaining to parent (iOS rubber-banding fix)
+  overscroll-behavior: contain;
+
   // Modern scrollbar styling
   &::-webkit-scrollbar {
     width: 8px;

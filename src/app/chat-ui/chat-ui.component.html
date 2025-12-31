@@ -14,11 +14,13 @@
     </div>
     <app-chat-ui-message *ngFor="let message of messages | async; let i = index"
                          [message]="message"
-                         [isLastAiMessage]="isLastAiMessage(message, i)"></app-chat-ui-message>
+                         [isLastAiMessage]="isLastAiMessage(message, i)"
+                         (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
     <!-- Streaming message (displayed separately from persisted messages) -->
     <app-chat-ui-message *ngIf="streamingMessage$ | async as streamingMessage"
                          [message]="streamingMessage"
-                         [isLastAiMessage]="true"></app-chat-ui-message>
+                         [isLastAiMessage]="true"
+                         (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
   </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
     <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>
