@@ -38,23 +38,23 @@ describe('ApiService - CSRF Protection', () => {
 
   it('should include CSRF token in request headers', async () => {
     const mockCsrfToken = 'test-csrf-token-12345';
-    
+
     // Set CSRF token
     (service as any).csrfToken = mockCsrfToken;
 
     // Make a request that would trigger CSRF token inclusion
-    const promise = service.getLLMs();
+    const promise = service.getSettings();
 
     // Expect the request
-    const req = httpMock.expectOne(req => req.url.includes('/api/llms'));
-    
+    const req = httpMock.expectOne(req => req.url.includes('/api/settings'));
+
     // Verify CSRF token is in headers
     expect(req.request.headers.get('X-CSRF-Token')).toBe(mockCsrfToken);
     expect(req.request.headers.get('Content-Type')).toBe('application/json');
     expect(req.request.withCredentials).toBe(true);
 
     // Respond to complete the request
-    req.flush(['model1', 'model2']);
+    req.flush({ theme: 'light', language: 'en' });
 
     await promise;
   });

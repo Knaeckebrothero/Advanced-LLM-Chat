@@ -1,51 +1,46 @@
 import { TestBed } from '@angular/core/testing';
-import { of, throwError, map } from 'rxjs';
-import { SettingsStateService, AppSettings } from './settings-state.service';
-import { SettingsRepository, SettingsWithMetadata } from '../repositories/settings.repository';
+import { of } from 'rxjs';
+import { SettingsStateService } from './settings-state.service';
+import { SettingsRepository } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
-import { Settings } from '../models/settings.model';
+import { TranslateService } from '@ngx-translate/core';
+import { AppSettings } from '../models/settings.model';
+import { Language, Theme } from '../models/enum';
 
 describe('SettingsStateService', () => {
   let service: SettingsStateService;
   let mockSettingsRepo: jasmine.SpyObj<SettingsRepository>;
   let mockThemeService: jasmine.SpyObj<ThemeService>;
+  let mockTranslateService: jasmine.SpyObj<TranslateService>;
 
-  const mockSettings: SettingsWithMetadata = {
-    model: 'openai/gpt-4o',
-    temperature: 0.7,
-    top_p: 0.9,
-    systemPrompt: 'Test prompt',
-    darkMode: 1,
-    languageIsEnglish: 1,
-    id: 'settings-1',
-    timestamp: new Date(),
-    syncHash: 'hash123'
+  const mockSettings: AppSettings = {
+    theme: Theme.Dark,
+    language: Language.English,
+    lastUpdated: Date.now()
   };
 
   beforeEach(() => {
     // Create mock services
-    mockSettingsRepo = jasmine.createSpyObj('SettingsRepository', 
-      ['getCurrent', 'save', 'sync', 'getAll']);
-    mockThemeService = jasmine.createSpyObj('ThemeService', 
+    mockSettingsRepo = jasmine.createSpyObj('SettingsRepository',
+      ['getSettings', 'saveSettings']);
+    mockThemeService = jasmine.createSpyObj('ThemeService',
       ['setTheme', 'getCurrentTheme']);
+    mockTranslateService = jasmine.createSpyObj('TranslateService',
+      ['use']);
+
     // Set up default mock returns
-    mockSettingsRepo.getCurrent.and.returnValue(of(mockSettings));
-    mockSettingsRepo.save.and.returnValue(Promise.resolve(mockSettings));
-    mockSettingsRepo.sync.and.returnValue(Promise.resolve({ success: true, itemsUpdated: 1 }));
-    mockSettingsRepo.getAll.and.returnValue(of([mockSettings]));
-    // Create a proper spy with syncing$ as a property
-    Object.defineProperty(mockSettingsRepo, 'syncing$', {
-      get: jasmine.createSpy('syncing$').and.returnValue(of(false))
-    });
+    mockSettingsRepo.getSettings.and.returnValue(Promise.resolve(mockSettings));
+    mockSettingsRepo.saveSettings.and.returnValue(Promise.resolve());
 
     TestBed.configureTestingModule({
       providers: [
         SettingsStateService,
         { provide: SettingsRepository, useValue: mockSettingsRepo },
-        { provide: ThemeService, useValue: mockThemeService }
+        { provide: ThemeService, useValue: mockThemeService },
+        { provide: TranslateService, useValue: mockTranslateService }
       ]
     });
-    
+
     service = TestBed.inject(SettingsStateService);
   });
 
@@ -54,198 +49,80 @@ describe('SettingsStateService', () => {
   });
 
   describe('Settings Loading', () => {
-    it('should load current settings on init', (done) => {
-      service.settings.subscribe(settings => {
-        expect(settings).toEqual(jasmine.objectContaining({
-          ...mockSettings,
-          isEnglish: true,
-          isDarkMode: true
-        }));
+    it('should load settings on initialization', async () => {
+      // Wait for async initialization
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSettingsRepo.getSettings).toHaveBeenCalled();
+      expect(mockThemeService.setTheme).toHaveBeenCalledWith(Theme.Dark);
+      expect(mockTranslateService.use).toHaveBeenCalledWith(Language.English);
+    });
+
+    it('should expose settings via settings$ observable', (done) => {
+      service.settings$.subscribe(settings => {
+        expect(settings).toBeTruthy();
         done();
       });
     });
 
-    it('should enrich settings with computed properties', (done) => {
-      service.settings.subscribe(settings => {
-        expect(settings?.isEnglish).toBe(true);
-        expect(settings?.isDarkMode).toBe(true);
-        done();
-      });
-    });
-
-    it('should handle null settings', () => {
-      mockSettingsRepo.getCurrent.and.returnValue(of(null));
-      const newService = new SettingsStateService(mockSettingsRepo, mockThemeService);
-      
-      newService.settings.subscribe(settings => {
-        expect(settings).toBeNull();
-      });
-    });
-
-    it('should apply theme when settings change', () => {
-      expect(mockThemeService.setTheme).toHaveBeenCalledWith('dark');
-    });
-
-    it('should apply light theme when darkMode is 0', () => {
-      const lightSettings = { ...mockSettings, darkMode: 0 };
-      mockSettingsRepo.getCurrent.and.returnValue(of(lightSettings));
-      
-      const newService = new SettingsStateService(mockSettingsRepo, mockThemeService);
-      expect(mockThemeService.setTheme).toHaveBeenCalledWith('light');
+    it('should provide current settings synchronously', () => {
+      const current = service.getCurrentSettings();
+      expect(current).toBeTruthy();
     });
   });
 
-  describe('Settings Operations', () => {
-    it('should save settings', async () => {
-      const updates: Partial<Settings> = { temperature: 0.5 };
-      const result = await service.saveSettings(updates);
-      
-      expect(mockSettingsRepo.save).toHaveBeenCalledWith(jasmine.objectContaining({
-        ...mockSettings,
-        temperature: 0.5
-      }));
-      expect(result).toBeUndefined();
+  describe('Settings Updates', () => {
+    it('should update settings', async () => {
+      const updates: Partial<AppSettings> = { theme: Theme.Light };
+      await service.updateSettings(updates);
+
+      expect(mockSettingsRepo.saveSettings).toHaveBeenCalled();
+      expect(mockThemeService.setTheme).toHaveBeenCalledWith(Theme.Light);
     });
 
-    it('should handle save errors', async () => {
-      mockSettingsRepo.save.and.returnValue(Promise.reject(new Error('Save failed')));
-      
+    it('should update language when changed', async () => {
+      const updates: Partial<AppSettings> = { language: Language.German };
+      await service.updateSettings(updates);
+
+      expect(mockTranslateService.use).toHaveBeenCalledWith(Language.German);
+    });
+
+    it('should handle save errors gracefully', async () => {
+      mockSettingsRepo.saveSettings.and.returnValue(
+        Promise.reject(new Error('Save failed'))
+      );
+
+      const updates: Partial<AppSettings> = { theme: Theme.Light };
+
       try {
-        await service.saveSettings({ temperature: 0.5 });
+        await service.updateSettings(updates);
         fail('Should have thrown error');
       } catch (error) {
-        expect(service.lastError$.getValue()).toBe('Failed to save settings');
+        expect(error).toBeTruthy();
       }
-    });
-
-    it('should load settings', async () => {
-      await service.loadSettings();
-      expect(mockSettingsRepo.sync).toHaveBeenCalled();
-    });
-
-    it('should handle load errors gracefully', async () => {
-      mockSettingsRepo.sync.and.returnValue(Promise.reject(new Error('Load failed')));
-      
-      try {
-        await service.loadSettings();
-        fail('Should have thrown error');
-      } catch (error) {
-        expect(service.lastError$.getValue()).toBe('Failed to load settings');
-      }
-    });
-  });
-
-  describe('Settings Getters', () => {
-    it('should get specific setting value', (done) => {
-      service.getSetting('temperature').subscribe(value => {
-        expect(value).toBe(0.7);
-        done();
-      });
-    });
-
-    it('should get computed property', (done) => {
-      service.getSetting('isEnglish').subscribe(value => {
-        expect(value).toBe(true);
-        done();
-      });
-    });
-
-    // Note: isEnglish$ and isDarkMode$ are not exposed as public observables
-    // They are available through the enriched settings object
-  });
-
-  describe('Model Management', () => {
-    it('should get available models', async () => {
-      // Mock fetch API
-      spyOn(window, 'fetch').and.returnValue(Promise.resolve(
-        new Response(JSON.stringify(['openai/gpt-4o', 'openai/gpt-3.5-turbo']), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      ));
-      
-      const models = await service.getAvailableModels();
-      expect(models).toEqual(['openai/gpt-4o', 'openai/gpt-3.5-turbo']);
-      expect(window.fetch).toHaveBeenCalledWith('/api/llms', {
-        credentials: 'include'
-      });
-    });
-
-    it('should handle model loading errors', async () => {
-      spyOn(window, 'fetch').and.returnValue(Promise.resolve(
-        new Response('Error', { status: 500 })
-      ));
-      
-      try {
-        await service.getAvailableModels();
-        fail('Should have thrown error');
-      } catch (error) {
-        expect(service.lastError$.getValue()).toBe('Failed to load available models');
-      }
-    });
-  });
-
-  describe('State Management', () => {
-    it('should track loading state', (done) => {
-      service.isLoading$.subscribe(isLoading => {
-        expect(isLoading).toBe(false);
-        done();
-      });
-    });
-
-    it('should track syncing state', (done) => {
-      service.isSyncing$.subscribe(isSyncing => {
-        expect(isSyncing).toBe(false);
-        done();
-      });
-    });
-
-    it('should clear errors', () => {
-      service.lastError$.next('Test error');
-      // clearError method doesn't exist - errors are cleared automatically
-      expect(service.lastError$.getValue()).toBeNull();
     });
   });
 
   describe('Error Handling', () => {
-    it('should set error messages for various operations', async () => {
-      mockSettingsRepo.save.and.returnValue(Promise.reject(new Error('Network error')));
-      
-      await service.saveSettings({}).catch(() => {});
-      expect(service.lastError$.getValue()).toBe('Failed to save settings');
-      
-      // clearError method doesn't exist - errors are cleared automatically
-      
-      spyOn(window, 'fetch').and.returnValue(Promise.reject(new Error('Network error')));
-      await service.getAvailableModels().catch(() => {});
-      expect(service.lastError$.getValue()).toBe('Failed to load available models');
-    });
-  });
+    it('should use default settings if initial load fails', async () => {
+      mockSettingsRepo.getSettings.and.returnValue(
+        Promise.reject(new Error('Load failed'))
+      );
 
-  describe('Observable Streams', () => {
-    it('should provide settings as observable', (done) => {
-      service.settings.subscribe(settings => {
-        expect(settings).toBeDefined();
-        expect(settings?.model).toBe('openai/gpt-4o');
-        done();
-      });
-    });
+      // Create a new service instance to trigger initialization
+      const newService = new SettingsStateService(
+        mockSettingsRepo,
+        mockThemeService,
+        mockTranslateService
+      );
 
-    it('should share settings stream across subscribers', () => {
-      let count = 0;
-      mockSettingsRepo.getCurrent.and.returnValue(of(mockSettings).pipe(
-        // This would be called twice if not shared
-        map(s => { count++; return s; })
-      ));
+      // Wait for async initialization
+      await new Promise(resolve => setTimeout(resolve, 10));
 
-      const newService = new SettingsStateService(mockSettingsRepo, mockThemeService);
-      
-      // Subscribe twice
-      newService.settings.subscribe();
-      newService.settings.subscribe();
-      
-      // Should only increment once due to shareReplay
-      expect(count).toBe(1);
+      const current = newService.getCurrentSettings();
+      expect(current).toBeTruthy();
+      expect(current.theme).toBe(Theme.Auto);
+      expect(current.language).toBe(Language.English);
     });
   });
 });

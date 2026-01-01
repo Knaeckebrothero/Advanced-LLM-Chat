@@ -60,7 +60,7 @@ describe('ChatStateService', () => {
     mockMessageRepo.uploadPendingFiles.and.returnValue(Promise.resolve());
     
     mockApiService.generateMessage.and.returnValue(Promise.resolve(mockMessages[1]));
-    mockApiService.uploadFiles.and.returnValue(Promise.resolve(['https://example.com/file']));
+    mockApiService.uploadFiles.and.returnValue(Promise.resolve([{fileId: 'file-1'}]));
     mockApiService.patchMessage.and.returnValue(Promise.resolve(mockMessages[0]));
 
     TestBed.configureTestingModule({
