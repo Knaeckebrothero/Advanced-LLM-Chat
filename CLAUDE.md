@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 Angular 19.2.2 PWA with FastAPI backend for a waste disposal assistant chatbot (Fessi). Uses microservices architecture with:
-- **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, ngx-translate for i18n (German/English)
+- **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, SCSS styling, ngx-translate for i18n (German/English)
 - **Backend**: FastAPI with PostgreSQL for persistence, Neo4j knowledge graph for waste disposal data, LangGraph agent with multi-step reasoning
 - **LLM Integration**: Multi-provider support (Replicate, OpenAI, Anthropic) with SSE streaming for agent responses
 
@@ -44,55 +44,21 @@ python backend/app_init.py --skip-neo4j --seed   # Skip Neo4j initialization
 python backend/app_init.py --prod            # Production migration (add missing columns, skip Neo4j)
 ```
 
+**Note:** No Python test framework configured. Backend has no automated tests.
+
 ### Environment Configuration
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env`. Required settings:
 ```bash
-# Required (at least one LLM provider)
-REPLICATE_API_TOKEN=your_token_here
+REPLICATE_API_TOKEN=your_token_here  # Or OPENAI_API_KEY or ANTHROPIC_API_KEY
 USE_DEV_CERTS=True
-
-# Web Search Tool (optional - enables agent web search capability)
-# TAVILY_API_KEY=your_tavily_key
-
-# PostgreSQL (required)
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=fessi_chat
 POSTGRES_USER=fessi
 POSTGRES_PASSWORD=fessi_dev_password
-
-# Neo4j (optional - for knowledge graph)
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=fessi_neo4j_dev
-
-# LLM Provider (optional - defaults to Replicate)
-# LLM_PROVIDER=openai          # or "anthropic"
-# OPENAI_API_KEY=your_key      # Required if using OpenAI
-# OPENAI_MODEL=gpt-4o-mini
-# OPENAI_BASE_URL=http://custom-server:8080/v1  # For llama.cpp or compatible servers
-
-# Vision/Multimodal (optional)
-# MODEL_RECEIVE_IMAGES=false   # Set true if primary model supports vision
-# VISION_MODEL=gpt-4o-mini     # Separate model for image analysis
-
-# Audio Transcription (optional)
-# USE_LOCAL_WHISPER=false      # Set true for local Whisper model
-# LOCAL_WHISPER_MODEL=base     # tiny, base, small, medium, large
-
-# Text-to-Speech (optional)
-# TTS_MODEL=tts-1              # tts-1 (fast) or tts-1-hd (quality)
-# TTS_VOICE_EN=nova            # Voice for English
-# TTS_VOICE_DE=onyx            # Voice for German
-# TTS_PREPROCESS_ENABLED=true  # LLM preprocessing for markdown/code to speech-friendly text
-
-# External SSL certificates (optional - overrides USE_DEV_CERTS)
-# SSL_CERTFILE=/path/to/cert.pem
-# SSL_KEYFILE=/path/to/key.pem
-
-# Dynamic CORS origins (optional - comma-separated list)
-# CORS_ORIGINS=https://example.com,http://10.0.0.1:8080
 ```
+
+See `.env.example` for all optional settings (Neo4j, vision models, Whisper, TTS, web search).
 
 ### Docker Development
 ```bash
