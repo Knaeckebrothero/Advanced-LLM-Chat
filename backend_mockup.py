@@ -2642,13 +2642,11 @@ async def get_conversation_messages(
                     messages_data.reverse()
 
                 # Check if there might be more messages
-                has_more = False
                 if (
                     after_timestamp is None
                     and messages_count > 30
                     and len(messages_data) == 30
                 ):
-                    has_more = True
                     response.status_code = status.HTTP_206_PARTIAL_CONTENT
                 else:
                     response.status_code = status.HTTP_200_OK
@@ -3062,7 +3060,7 @@ async def patch_message(
                         content_obj = json.loads(content)
                         if "content" in content_obj:
                             content = content_obj["content"]
-                except:
+                except (json.JSONDecodeError, TypeError, KeyError):
                     pass  # Use content as-is if not JSON
 
                 crud_logger.info(
@@ -3294,7 +3292,7 @@ async def rate_message(
                         content_obj = json.loads(content)
                         if "content" in content_obj:
                             content = content_obj["content"]
-                except:
+                except (json.JSONDecodeError, TypeError, KeyError):
                     pass  # Use content as-is if not JSON
 
                 rating_text = (
