@@ -15,6 +15,7 @@ import uuid
 import logging
 
 from .tools.neo4j_tools import get_all_tools
+from .tools.barcode_tools import get_barcode_tools
 from .tools.file_tools import get_file_content
 from .tools.web_search_tools import get_web_search_tool
 from ..models.message import AgentStep
@@ -54,6 +55,14 @@ Du hast Zugang zu einer Wissensdatenbank mit Informationen über:
 
 Du kannst auch das Internet durchsuchen für aktuelle Informationen (falls die Websuche aktiviert ist).
 
+## Barcode / Produkterkennung:
+Wenn der Nutzer einen Barcode scannt oder eine EAN-Nummer sendet (z.B. "EAN: 3017620422003"),
+verwende das lookup_product_barcode Tool, um das Produkt zu identifizieren.
+Gib dann Entsorgungshinweise für jede Verpackungskomponente einzeln:
+- z.B. "Glasgefäß → Altglascontainer", "Plastikdeckel → Gelber Sack", "Papier-Etikett → Papiertonne"
+Wenn das Produkt nur über die API gefunden wurde (nicht im Wissensgraphen), nutze die packaging_materials_tags
+um die korrekte Entsorgung abzuleiten. Nutze bei Bedarf zusätzlich search_waste_disposal.
+
 ## Anweisungen:
 1. Nutze die verfügbaren Tools, um genaue Informationen abzurufen
 2. Antworte immer auf Deutsch, es sei denn, der Nutzer spricht Englisch
@@ -79,6 +88,13 @@ Um auf früher geteilte Dateien zuzugreifen, nutze das get_file_content Tool:
 
 You are Fessi, a friendly waste disposal assistant for Frankfurt am Main. Help users dispose of waste correctly using your knowledge database tools. You can also search the web for current information when needed. Respond in the same language as the user.
 
+## Barcode / Product Lookup:
+When a user scans a barcode or sends an EAN number (e.g., "EAN: 3017620422003"),
+use the lookup_product_barcode tool to identify the product. Then provide disposal
+instructions for each packaging component separately (e.g., "Glass jar → Glass container",
+"Plastic lid → Yellow bag"). If the product was found via API only, use packaging_materials_tags
+to determine disposal. Use search_waste_disposal for additional context if needed.
+
 ## File Access:
 When users share files (images, PDFs, documents), you see full content in the current message.
 In follow-up messages, files appear as placeholders like:
@@ -100,8 +116,8 @@ class FessiAgent:
         Args:
             llm: Optional LLM instance. If not provided, will be loaded from llm_provider.
         """
-        # Get Neo4j tools and add file retrieval tool
-        self.tools = get_all_tools() + [get_file_content]
+        # Get Neo4j tools, barcode tools, and file retrieval tool
+        self.tools = get_all_tools() + get_barcode_tools() + [get_file_content]
 
         # Add web search tool if configured
         web_search = get_web_search_tool()
@@ -445,6 +461,7 @@ class FessiAgent:
             "get_waste_category_info": "Exploring Categories",
             "answer_waste_faq": "Searching FAQs",
             "get_file_content": "Retrieving File Content",
+            "lookup_product_barcode": "Looking Up Product Barcode",
             "tavily_search_results_json": "Searching the Web"
         }
         return titles.get(clean_name, clean_name)

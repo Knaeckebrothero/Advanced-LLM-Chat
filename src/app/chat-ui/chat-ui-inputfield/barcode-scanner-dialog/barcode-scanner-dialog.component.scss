@@ -1,0 +1,298 @@
+.dialog-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #000;
+  color: white;
+  overflow: hidden;
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 10;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.scanner-icon {
+  font-size: 24px;
+  width: 24px;
+  height: 24px;
+}
+
+.close-button {
+  color: white;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+// Scanner viewport fills remaining space
+.scanner-viewport {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+// The html5-qrcode library renders into this div
+.scanner-region {
+  width: 100%;
+  height: 100%;
+
+  // Override html5-qrcode default styles
+  ::ng-deep {
+    video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      border: none !important;
+    }
+
+    // Hide the built-in file scan UI
+    #qr-shaded-region {
+      border: none !important;
+    }
+
+    // Style the scan region box
+    img[alt="Info icon"] {
+      display: none !important;
+    }
+  }
+}
+
+// Scan guide text
+.scan-guide {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 5;
+
+  p {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    white-space: nowrap;
+    margin: 0;
+  }
+}
+
+// Detection feedback overlay
+.detection-feedback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 10;
+  animation: fadeIn 0.2s ease;
+
+  .success-icon {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    color: #4caf50;
+    animation: scaleIn 0.3s ease;
+  }
+
+  .detected-ean {
+    font-size: 24px;
+    font-weight: 600;
+    margin-top: 16px;
+    font-family: monospace;
+    letter-spacing: 2px;
+  }
+}
+
+// Error state
+.scanner-error {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.9);
+  padding: 32px;
+  text-align: center;
+  z-index: 10;
+
+  .error-icon {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    color: #ef5350;
+    margin-bottom: 16px;
+  }
+
+  p {
+    font-size: 16px;
+    margin: 0 0 24px 0;
+    max-width: 300px;
+    line-height: 1.5;
+  }
+
+  .error-close-button {
+    color: white;
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+// Loading state
+.scanner-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.7);
+
+  .loading-icon {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  p {
+    font-size: 14px;
+    margin: 0;
+  }
+}
+
+// Non-blocking error toast (shown over scanner when capture fails)
+.scanner-error-toast {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  padding: 10px 20px;
+  border-radius: 20px;
+  z-index: 5;
+  animation: fadeIn 0.2s ease;
+
+  .error-toast-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    color: #ffa726;
+  }
+
+  p {
+    font-size: 13px;
+    margin: 0;
+    white-space: nowrap;
+  }
+}
+
+// Footer
+.dialog-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 10;
+}
+
+.cancel-button {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 16px;
+
+  &:hover {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.capture-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border-radius: 20px;
+  padding: 0 16px;
+  height: 40px;
+
+  &:hover:not([disabled]) {
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  &[disabled] {
+    opacity: 0.6;
+  }
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  .capture-spinner {
+    ::ng-deep circle {
+      stroke: white;
+    }
+  }
+}
+
+// Animations
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+// Mobile responsiveness
+@media (max-width: 768px) {
+  .dialog-header {
+    padding: 8px 12px;
+  }
+
+  .header-title {
+    font-size: 16px;
+  }
+
+  .scan-guide {
+    bottom: 60px;
+  }
+}

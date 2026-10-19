@@ -246,7 +246,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   }
 
   // Handle file menu item clicks
-  handleFileMenuClick(action: 'file' | 'camera' | 'location'): void {
+  handleFileMenuClick(action: 'file' | 'camera' | 'location' | 'barcode'): void {
     switch(action) {
       case 'file':
         // Trigger the hidden file input
@@ -258,7 +258,32 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       case 'location':
         this.handleLocationClick();
         break;
+      case 'barcode':
+        this.openBarcodeScanner();
+        break;
     }
+  }
+
+  // Open barcode scanner dialog
+  async openBarcodeScanner(): Promise<void> {
+    const { BarcodeScannerDialogComponent } = await import(
+      './barcode-scanner-dialog/barcode-scanner-dialog.component'
+    );
+
+    const dialogRef = this.dialog.open(BarcodeScannerDialogComponent, {
+      panelClass: 'barcode-scanner-dialog',
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      width: '100vw',
+      height: '100vh',
+      hasBackdrop: false,
+    });
+
+    dialogRef.afterClosed().subscribe((ean: string | null) => {
+      if (ean) {
+        this.messageSent.emit(`EAN: ${ean}`);
+      }
+    });
   }
 
   // Handle direct camera button click

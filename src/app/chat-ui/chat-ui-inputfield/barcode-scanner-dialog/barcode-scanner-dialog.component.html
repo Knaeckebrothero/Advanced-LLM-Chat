@@ -1,0 +1,71 @@
+<div class="dialog-container">
+  <!-- Header -->
+  <div class="dialog-header">
+    <div class="header-title">
+      <mat-icon class="scanner-icon">qr_code_scanner</mat-icon>
+      <span>{{ 'Scan Barcode' | translate }}</span>
+    </div>
+    <button mat-icon-button
+            class="close-button"
+            (click)="cancel()"
+            aria-label="Close scanner">
+      <mat-icon>close</mat-icon>
+    </button>
+  </div>
+
+  <!-- Scanner viewport -->
+  <div class="scanner-viewport">
+    <!-- html5-qrcode renders the video element inside this div -->
+    <div id="barcode-scanner-region" class="scanner-region"></div>
+
+    <!-- Scan guide (shown while actively scanning) -->
+    <div class="scan-guide" *ngIf="scanning && !detectedCode && !error">
+      <p>{{ 'Point camera at barcode' | translate }}</p>
+    </div>
+
+    <!-- Detection feedback -->
+    <div class="detection-feedback" *ngIf="detectedCode">
+      <mat-icon class="success-icon">check_circle</mat-icon>
+      <p class="detected-ean">{{ detectedCode }}</p>
+    </div>
+
+    <!-- Error state (non-blocking, shown as toast over the scanner) -->
+    <div class="scanner-error-toast" *ngIf="error && scanning">
+      <mat-icon class="error-toast-icon">info</mat-icon>
+      <p>{{ error }}</p>
+    </div>
+
+    <!-- Error state (blocking, no camera) -->
+    <div class="scanner-error" *ngIf="error && !scanning">
+      <mat-icon class="error-icon">videocam_off</mat-icon>
+      <p>{{ error }}</p>
+      <button mat-stroked-button (click)="cancel()" class="error-close-button">
+        {{ 'Close' | translate }}
+      </button>
+    </div>
+
+    <!-- Loading state -->
+    <div class="scanner-loading" *ngIf="!scanning && !error && !detectedCode">
+      <mat-icon class="loading-icon">videocam</mat-icon>
+      <p>{{ 'Starting camera...' | translate }}</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="dialog-footer">
+    <button mat-button (click)="cancel()" class="cancel-button">
+      {{ 'Cancel' | translate }}
+    </button>
+
+    <!-- Capture button: server-side fallback when live scan doesn't detect -->
+    <button *ngIf="scanning && !detectedCode"
+            mat-flat-button
+            class="capture-button"
+            [disabled]="capturing"
+            (click)="captureAndScan()">
+      <mat-spinner *ngIf="capturing" diameter="20" class="capture-spinner"></mat-spinner>
+      <mat-icon *ngIf="!capturing">photo_camera</mat-icon>
+      <span *ngIf="!capturing">{{ 'Capture' | translate }}</span>
+    </button>
+  </div>
+</div>

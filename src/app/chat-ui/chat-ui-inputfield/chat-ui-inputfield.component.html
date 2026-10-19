@@ -117,6 +117,11 @@
       </button>
       <!-- Attachment menu -->
       <mat-menu #attachmentMenu="matMenu" class="attachment-menu">
+        <!-- Barcode scanner option (only shown if device has camera) -->
+        <button *ngIf="hasCamera" mat-menu-item (click)="handleFileMenuClick('barcode')">
+          <mat-icon>qr_code_scanner</mat-icon>
+          <span>{{ 'Scan Barcode' | translate }}</span>
+        </button>
         <!-- Camera option (only shown if device has camera) - using label for mobile, button for desktop -->
         <label *ngIf="hasCamera && isMobile" mat-menu-item for="cameraInputId" class="file-upload-label">
           <mat-icon>photo_camera</mat-icon>

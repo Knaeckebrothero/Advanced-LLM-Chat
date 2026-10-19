@@ -15,6 +15,14 @@ export interface UploadedFileResponse {
   transcript?: string;  // Present only for audio files
 }
 
+/**
+ * Response from barcode scan endpoint
+ */
+export interface BarcodeScanResponse {
+  barcodes: { data: string; format: string }[];
+  scan_duration_ms: number;
+}
+
 
 @Injectable({
   providedIn: 'root'
@@ -501,6 +509,22 @@ export class ApiService {
       );
     } catch (error) {
       console.error('Error fetching file text:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send a base64-encoded image to the backend for server-side barcode decoding.
+   * Used as a fallback when the client-side ZXing decoder fails.
+   */
+  async scanBarcode(imageBase64: string): Promise<BarcodeScanResponse> {
+    const endpoint = `${this.baseUrl}/api/barcode/scan-image`;
+    try {
+      return await lastValueFrom(
+        this.http.post<BarcodeScanResponse>(endpoint, { image: imageBase64 }, this.getHttpOptions())
+      );
+    } catch (error) {
+      console.error('Error scanning barcode:', error);
       throw error;
     }
   }

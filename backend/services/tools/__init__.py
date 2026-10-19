@@ -13,6 +13,7 @@ from .neo4j_tools import (
 )
 
 from .file_tools import get_file_content
+from .barcode_tools import lookup_product_barcode, get_barcode_tools
 
 __all__ = [
     "search_waste_disposal",
@@ -21,5 +22,7 @@ __all__ = [
     "get_waste_category_info",
     "answer_waste_faq",
     "get_all_tools",
-    "get_file_content"
+    "get_file_content",
+    "lookup_product_barcode",
+    "get_barcode_tools"
 ]
