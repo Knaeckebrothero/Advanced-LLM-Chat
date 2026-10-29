@@ -1,6 +1,6 @@
 # backend/services/llm_provider.py
 """
-LLM provider abstraction for the Fessi agent.
+LLM provider abstraction for the chat agent.
 Supports multiple LLM providers (OpenAI, Anthropic) with environment-based configuration.
 """
 

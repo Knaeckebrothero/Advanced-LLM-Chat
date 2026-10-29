@@ -1,4 +1,4 @@
--- Seed Data for Fessi Chat Application
+-- Seed Data for the Advanced LLM Chat application
 -- This file contains test data for development and testing purposes.
 -- Run with: python -m backend.database.db_init --seed
 
@@ -47,7 +47,7 @@ SELECT
     floor(extract(epoch from now()) * 1000)::bigint,
     c.id,
     'assistant',
-    'Welcome to Fessi! I''m your AI assistant for waste disposal questions. How can I help you today?',
+    'Welcome to Advanced LLM Chat! How can I help you today?',
     floor(extract(epoch from now()) * 1000)::bigint,
     'text',
     1,

@@ -1,5 +1,5 @@
 # backend/services/cache/__init__.py
-"""Cache services for the Fessi backend."""
+"""Cache services for the backend."""
 
 from .description_cache import DescriptionCache, get_description_cache
 

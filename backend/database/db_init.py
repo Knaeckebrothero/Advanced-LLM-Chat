@@ -1,5 +1,5 @@
 """
-Database initialization script for the Fessi backend.
+Database initialization script for the Advanced LLM Chat backend.
 
 This script initializes the PostgreSQL database schema and optionally seeds it
 with test data. It supports multiple modes:
@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
         Parsed arguments namespace.
     """
     parser = argparse.ArgumentParser(
-        description="Initialize the Fessi PostgreSQL database.",
+        description="Initialize the Advanced LLM Chat PostgreSQL database.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -122,13 +122,13 @@ Flags execute in order: --prod -> --force-reset -> --seed
     )
     parser.add_argument(
         "--database",
-        default=os.getenv("POSTGRES_DB", "fessi_chat"),
-        help="Database name (default: from .env or fessi_chat)",
+        default=os.getenv("POSTGRES_DB", "llm_chat"),
+        help="Database name (default: from .env or llm_chat)",
     )
     parser.add_argument(
         "--user",
-        default=os.getenv("POSTGRES_USER", "fessi"),
-        help="Database user (default: from .env or fessi)",
+        default=os.getenv("POSTGRES_USER", "llm_chat"),
+        help="Database user (default: from .env or llm_chat)",
     )
     parser.add_argument(
         "--password",

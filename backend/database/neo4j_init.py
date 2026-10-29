@@ -1,15 +1,18 @@
 """
-Neo4j Knowledge Graph initialization script for the Fessi backend.
+Neo4j Knowledge Graph initialization script for the Advanced LLM Chat backend.
 
 This script initializes the Neo4j knowledge graph and optionally seeds it
-with sample data for waste disposal. It supports two modes:
+from a Cypher file (NEO4J_SEED_FILE or --seed-file). It supports two modes:
 
 1. Default mode: Adds seed data if graph is empty
 2. Force-reset mode: Clears all data and re-seeds
 
 Usage:
-    # Default: Seed if empty
+    # Default: Seed if empty (and a seed file is configured)
     python -m backend.database.neo4j_init
+
+    # Seed from a specific file
+    python -m backend.database.neo4j_init --seed-file path/to/seed.cypher
 
     # Force reset: Clear all and re-seed
     python -m backend.database.neo4j_init --force-reset
@@ -30,18 +33,8 @@ from dotenv import load_dotenv, find_dotenv
 # Load environment variables
 load_dotenv(find_dotenv())
 
-# Constants
-QUERIES_DIR = Path(__file__).parent
-SEED_FILE = QUERIES_DIR / "neo4j_seed.cypher"
-
-# Expected node labels for verification
-EXPECTED_LABELS = [
-    "WasteCategory",
-    "WasteItem",
-    "DisposalMethod",
-    "Location",
-    "FAQ",
-]
+# Relative seed file paths are resolved against the repository root
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def setup_logging() -> logging.Logger:
@@ -67,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         Parsed arguments namespace.
     """
     parser = argparse.ArgumentParser(
-        description="Initialize the Fessi Neo4j knowledge graph.",
+        description="Initialize the Neo4j knowledge graph.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -87,6 +80,11 @@ Examples:
         help="Skip seeding (just verify connection)",
     )
     parser.add_argument(
+        "--seed-file",
+        default=os.getenv("NEO4J_SEED_FILE"),
+        help="Cypher file to seed an empty graph with (default: from .env NEO4J_SEED_FILE, none if unset)",
+    )
+    parser.add_argument(
         "--uri",
         default=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
         help="Neo4j connection URI (default: from .env or bolt://localhost:7687)",
@@ -98,7 +96,7 @@ Examples:
     )
     parser.add_argument(
         "--password",
-        default=os.getenv("NEO4J_PASSWORD", "fessi_neo4j_dev"),
+        default=os.getenv("NEO4J_PASSWORD", "llm_chat_neo4j_dev"),
         help="Neo4j password (default: from .env)",
     )
     return parser.parse_args()
@@ -129,7 +127,7 @@ def get_driver(uri: str, user: str, password: str, logger: logging.Logger):
     except ServiceUnavailable as e:
         logger.error(f"  ✗ Neo4j service unavailable at {uri}")
         logger.info("  Hint: Make sure Neo4j is running.")
-        logger.info("  Start with: cd docker && docker-compose up -d neo4j")
+        logger.info("  Start with: cd docker && docker compose --profile graph up -d neo4j")
         raise
     except AuthError as e:
         logger.error(f"  ✗ Neo4j authentication failed for user '{user}'")
@@ -267,33 +265,22 @@ def execute_seed_cypher(driver, seed_path: Path, logger: logging.Logger) -> bool
         return False
 
 
-def verify_graph(driver, logger: logging.Logger) -> bool:
+def summarize_graph(driver, logger: logging.Logger) -> None:
     """
-    Verify that all expected node types exist in the graph.
+    Log the node count per label and the total relationship count.
 
     Args:
         driver: Neo4j Driver instance.
         logger: Logger instance.
-
-    Returns:
-        True if all expected labels exist, False otherwise.
     """
     node_counts = get_node_counts(driver, logger)
+    if not node_counts:
+        logger.info("    Graph is empty")
+    for label, count in sorted(node_counts.items()):
+        logger.info(f"    ✓ {label}: {count} nodes")
 
-    all_present = True
-    for label in EXPECTED_LABELS:
-        count = node_counts.get(label, 0)
-        if count > 0:
-            logger.info(f"    ✓ {label}: {count} nodes")
-        else:
-            logger.error(f"    ✗ {label}: missing")
-            all_present = False
-
-    # Also show relationship count
     rel_count = get_relationship_count(driver)
     logger.info(f"    ✓ Relationships: {rel_count}")
-
-    return all_present
 
 
 def initialize_neo4j(args: argparse.Namespace, logger: logging.Logger) -> bool:
@@ -303,8 +290,8 @@ def initialize_neo4j(args: argparse.Namespace, logger: logging.Logger) -> bool:
     Performs the following steps:
     1. Connect to Neo4j
     2. If --force-reset: clear all data
-    3. If graph is empty or --force-reset: seed data
-    4. Verify graph structure
+    3. If graph is empty or --force-reset: seed data from the seed file (if configured)
+    4. Summarize the graph contents
 
     Args:
         args: Parsed command line arguments.
@@ -342,29 +329,25 @@ def initialize_neo4j(args: argparse.Namespace, logger: logging.Logger) -> bool:
         logger.info("")
         if args.no_seed:
             logger.info("[3/4] Skipping seed data (--no-seed flag)")
+        elif not args.seed_file:
+            logger.info("[3/4] No seed file configured, skipping seed (set NEO4J_SEED_FILE or use --seed-file)")
         elif total_nodes == 0 or args.force_reset:
-            logger.info("[3/4] Seeding knowledge graph...")
-            if not execute_seed_cypher(driver, SEED_FILE, logger):
+            seed_path = Path(args.seed_file)
+            if not seed_path.is_absolute():
+                seed_path = REPO_ROOT / seed_path
+            logger.info(f"[3/4] Seeding knowledge graph from {seed_path}...")
+            if not execute_seed_cypher(driver, seed_path, logger):
                 logger.warning("  ⚠ Seed data insertion had issues, but continuing...")
         else:
             logger.info(f"[3/4] Graph already contains data, skipping seed (use --force-reset to re-seed)")
 
-        # Step 4: Verify graph
+        # Step 4: Summarize graph
         logger.info("")
-        logger.info("[4/4] Verifying knowledge graph...")
-        if not verify_graph(driver, logger):
-            logger.warning("")
-            logger.warning("  ⚠ Some expected node types are missing!")
+        logger.info("[4/4] Knowledge graph contents:")
+        summarize_graph(driver, logger)
 
         logger.info("")
         logger.info("=== Neo4j Initialization Complete ===")
-        logger.info("")
-
-        # Show summary
-        final_counts = get_node_counts(driver, logger)
-        logger.info("Knowledge graph summary:")
-        for label, count in sorted(final_counts.items()):
-            logger.info(f"  - {label}: {count}")
         logger.info("")
 
         return True

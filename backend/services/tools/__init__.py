@@ -1,25 +1,21 @@
 # backend/services/tools/__init__.py
 """
-LangChain tools for the Fessi waste disposal assistant.
+LangChain tools for the chat agent.
 """
 
 from .neo4j_tools import (
-    search_waste_disposal,
-    get_disposal_method_details,
-    find_nearby_recycling_centers,
-    get_waste_category_info,
-    answer_waste_faq,
-    get_all_tools
+    get_graph_schema,
+    search_graph,
+    query_graph,
+    get_graph_tools
 )
 
 from .file_tools import get_file_content
 
 __all__ = [
-    "search_waste_disposal",
-    "get_disposal_method_details",
-    "find_nearby_recycling_centers",
-    "get_waste_category_info",
-    "answer_waste_faq",
-    "get_all_tools",
+    "get_graph_schema",
+    "search_graph",
+    "query_graph",
+    "get_graph_tools",
     "get_file_content"
 ]

@@ -31,8 +31,8 @@ CORS_ORIGINS = [
 # PostgreSQL configuration
 POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')
 POSTGRES_PORT = int(os.getenv('POSTGRES_PORT', '5432'))
-POSTGRES_DB = os.getenv('POSTGRES_DB', 'fessi_chat')
-POSTGRES_USER = os.getenv('POSTGRES_USER', 'fessi')
+POSTGRES_DB = os.getenv('POSTGRES_DB', 'llm_chat')
+POSTGRES_USER = os.getenv('POSTGRES_USER', 'llm_chat')
 POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', '')
 POSTGRES_MIN_CONNECTIONS = int(os.getenv('POSTGRES_MIN_CONNECTIONS', '1'))
 POSTGRES_MAX_CONNECTIONS = int(os.getenv('POSTGRES_MAX_CONNECTIONS', '10'))
@@ -40,12 +40,16 @@ POSTGRES_MAX_CONNECTIONS = int(os.getenv('POSTGRES_MAX_CONNECTIONS', '10'))
 # Database URL (can override individual settings)
 DATABASE_URL = os.getenv('DATABASE_URL', None)
 
-# Neo4j Knowledge Graph configuration
+# Neo4j Knowledge Graph configuration (optional)
+# When enabled, the agent gets read-only tools to inspect, search and query the graph
+NEO4J_ENABLED = os.getenv('NEO4J_ENABLED', 'false').lower() == 'true'
 NEO4J_URI = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
 NEO4J_USER = os.getenv('NEO4J_USER', 'neo4j')
-NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD', 'fessi_neo4j_dev')
-# When true, only waste items with disposal methods will be returned
-NEO4J_REQUIRE_DISPOSAL_METHOD = os.getenv("NEO4J_REQUIRE_DISPOSAL_METHOD", "false").lower() == "true"
+NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD', 'llm_chat_neo4j_dev')
+# Optional Cypher file that app_init uses to seed an empty graph
+NEO4J_SEED_FILE = os.getenv('NEO4J_SEED_FILE')
+# Maximum number of rows a graph tool returns to the agent
+NEO4J_MAX_RESULTS = int(os.getenv('NEO4J_MAX_RESULTS', '25'))
 
 # SSL/TLS configuration
 USE_DEV_CERTS = os.getenv("USE_DEV_CERTS") == "True"

@@ -1,6 +1,6 @@
 # backend/services/tools/web_search_tools.py
 """
-Web search tools for the Fessi agent using Tavily.
+Web search tools for the chat agent using Tavily.
 Allows the agent to search the web for current information.
 """
 

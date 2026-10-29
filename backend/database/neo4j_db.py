@@ -2,17 +2,14 @@
 Neo4j Knowledge Graph Database Manager.
 
 This module provides a Neo4jDatabase class for managing Neo4j connections and
-performing queries on the Fessi waste disposal knowledge graph. It provides
-both synchronous and asynchronous access patterns.
+running queries on the optional knowledge graph. It provides both synchronous
+and asynchronous access patterns.
 
 Example usage:
     from backend.database import neo4j_db
 
-    # Search for waste disposal info
-    results = neo4j_db.search_waste_item("batteries")
-
-    # Get recycling centers
-    locations = neo4j_db.get_recycling_centers("Frankfurt")
+    # Run a read-only query
+    results = neo4j_db.query_read("MATCH (n) RETURN labels(n) AS labels LIMIT 5")
 
     # Check connection status
     if neo4j_db.is_connected():
@@ -20,7 +17,7 @@ Example usage:
 """
 import logging
 from contextlib import contextmanager
-from typing import Optional, Generator
+from typing import Generator
 
 from neo4j import GraphDatabase, AsyncGraphDatabase
 from neo4j.exceptions import ServiceUnavailable, AuthError
@@ -38,8 +35,7 @@ class Neo4jDatabase:
     """
     Neo4j knowledge graph database manager.
 
-    This class provides a clean interface for querying the waste disposal
-    knowledge graph. It supports both synchronous and asynchronous queries
+    This class provides a clean interface for querying the knowledge graph. It supports both synchronous and asynchronous queries
     with lazy driver initialization for efficiency.
 
     Attributes:
@@ -51,7 +47,7 @@ class Neo4jDatabase:
 
     Example:
         db = Neo4jDatabase()
-        results = db.search_waste_item("plastic bottles")
+        results = db.query_read("MATCH (n) RETURN count(n) AS nodes")
     """
 
     def __init__(
@@ -260,265 +256,37 @@ class Neo4jDatabase:
             }
 
     # =========================================================================
-    # Knowledge Graph Query Methods
+    # Read-Only Queries
     # =========================================================================
 
-    def search_waste_item(self, search_term: str, limit: int = 5) -> list[dict]:
+    def query_read(self, cypher: str, params: dict = None, limit: int = None) -> list:
         """
-        Search for waste disposal information by item name.
+        Execute a Cypher query inside a read transaction.
+
+        Neo4j rejects writes (CREATE, MERGE, SET, DELETE, ...) in a read
+        transaction, which makes this safe for queries written by the agent.
 
         Args:
-            search_term: The waste item to search for.
-            limit: Maximum number of results.
+            cypher: The Cypher query string.
+            params: Optional dictionary of query parameters.
+            limit: Optional maximum number of records to return.
 
         Returns:
-            List of matching items with disposal methods and locations.
+            List of dictionaries; nodes and relationships are converted to dicts.
         """
-        log.debug(f"Searching waste items for: '{search_term}' (limit={limit})")
-        query = """
-        MATCH (item:WasteItem)
-        WHERE toLower(item.name) CONTAINS toLower($search)
-           OR toLower(item.name_de) CONTAINS toLower($search)
-           OR ANY(ex IN item.examples WHERE toLower(ex) CONTAINS toLower($search))
-        MATCH (item)-[r:DISPOSED_VIA]->(method:DisposalMethod)
-        OPTIONAL MATCH (method)-[:AVAILABLE_AT]->(loc:Location)
-        OPTIONAL MATCH (item)-[:HAS_FAQ]->(faq:FAQ)
-        RETURN item.name as item_name,
-               item.name_de as item_name_de,
-               collect(DISTINCT {
-                 method: method.name,
-                 method_de: method.name_de,
-                 type: method.type,
-                 color: method.color,
-                 frequency: method.frequency,
-                 instructions: method.instructions,
-                 priority: r.priority
-               }) as disposal_methods,
-               collect(DISTINCT {
-                 name: loc.name,
-                 address: loc.address,
-                 hours: loc.hours,
-                 phone: loc.phone
-               }) as locations,
-               collect(DISTINCT {
-                 question: faq.question_de,
-                 answer: faq.answer_de
-               }) as faqs
-        ORDER BY item.name
-        LIMIT $limit
-        """
-        try:
-            results = self.query(query, {"search": search_term, "limit": limit})
-            # Filter out empty location/faq entries
-            for result in results:
-                result["locations"] = [loc for loc in result.get("locations", []) if loc.get("name")]
-                result["faqs"] = [faq for faq in result.get("faqs", []) if faq.get("question")]
-            log.info(f"Found {len(results)} waste items matching '{search_term}'")
+        def read_records(tx) -> list:
+            records = []
+            for record in tx.run(cypher, params or {}):
+                records.append(record.data())
+                if limit is not None and len(records) >= limit:
+                    break
+            return records
+
+        log.debug(f"Executing read-only Cypher query with params: {list((params or {}).keys())}")
+        with self.session() as session:
+            results = session.execute_read(read_records)
+            log.debug(f"Read query returned {len(results)} results")
             return results
-        except Exception as e:
-            log.error(f"Error searching waste item '{search_term}': {e}")
-            return []
-
-    def get_disposal_method(self, method_name: str) -> Optional[dict]:
-        """
-        Get detailed information about a disposal method.
-
-        Args:
-            method_name: Name of the disposal method.
-
-        Returns:
-            Disposal method details or None if not found.
-        """
-        log.debug(f"Getting disposal method: '{method_name}'")
-        query = """
-        MATCH (method:DisposalMethod)
-        WHERE toLower(method.name) CONTAINS toLower($search)
-           OR toLower(method.name_de) CONTAINS toLower($search)
-        OPTIONAL MATCH (method)-[:AVAILABLE_AT]->(loc:Location)
-        OPTIONAL MATCH (item:WasteItem)-[:DISPOSED_VIA]->(method)
-        RETURN method.name as name,
-               method.name_de as name_de,
-               method.type as type,
-               method.color as color,
-               method.frequency as frequency,
-               method.instructions as instructions,
-               collect(DISTINCT {name: loc.name, address: loc.address, hours: loc.hours, phone: loc.phone}) as locations,
-               collect(DISTINCT item.name_de) as accepted_items
-        LIMIT 1
-        """
-        try:
-            results = self.query(query, {"search": method_name})
-            if results:
-                result = results[0]
-                result["locations"] = [loc for loc in result.get("locations", []) if loc.get("name")]
-                log.debug(f"Found disposal method: {result.get('name')}")
-                return result
-            log.debug(f"Disposal method not found: '{method_name}'")
-            return None
-        except Exception as e:
-            log.error(f"Error getting disposal method '{method_name}': {e}")
-            return None
-
-    def get_recycling_centers(self, city: str = "Frankfurt") -> list[dict]:
-        """
-        Find recycling centers in a city.
-
-        Args:
-            city: City name to search in.
-
-        Returns:
-            List of recycling center details.
-        """
-        log.debug(f"Getting recycling centers in: '{city}'")
-        query = """
-        MATCH (loc:Location)
-        WHERE toLower(loc.city) CONTAINS toLower($city)
-        RETURN loc.name as name,
-               loc.address as address,
-               loc.postal_code as postal_code,
-               loc.city as city,
-               loc.hours as hours,
-               loc.phone as phone,
-               loc.lat as latitude,
-               loc.lng as longitude
-        ORDER BY loc.name
-        """
-        try:
-            results = self.query(query, {"city": city})
-            log.info(f"Found {len(results)} recycling centers in '{city}'")
-            return results
-        except Exception as e:
-            log.error(f"Error getting recycling centers in '{city}': {e}")
-            return []
-
-    def get_waste_category(self, category_name: str) -> Optional[dict]:
-        """
-        Get information about a waste category.
-
-        Args:
-            category_name: Category name to search for.
-
-        Returns:
-            Category details with items and FAQs or None if not found.
-        """
-        log.debug(f"Getting waste category: '{category_name}'")
-        query = """
-        MATCH (cat:WasteCategory)
-        WHERE toLower(cat.name) CONTAINS toLower($search)
-           OR toLower(cat.name_de) CONTAINS toLower($search)
-        OPTIONAL MATCH (item:WasteItem)-[:BELONGS_TO]->(cat)
-        OPTIONAL MATCH (item)-[:DISPOSED_VIA]->(method:DisposalMethod)
-        OPTIONAL MATCH (cat)-[:HAS_FAQ]->(faq:FAQ)
-        WITH cat, item, collect(DISTINCT method.name_de) as methods, faq
-        RETURN cat.name as category_name,
-               cat.name_de as category_name_de,
-               cat.description as description,
-               collect(DISTINCT {
-                 item: item.name_de,
-                 examples: item.examples,
-                 methods: methods
-               }) as items,
-               collect(DISTINCT {
-                 question: faq.question_de,
-                 answer: faq.answer_de
-               }) as faqs
-        LIMIT 1
-        """
-        try:
-            results = self.query(query, {"search": category_name})
-            if results:
-                result = results[0]
-                result["items"] = [item for item in result.get("items", []) if item.get("item")]
-                result["faqs"] = [faq for faq in result.get("faqs", []) if faq.get("question")]
-                log.debug(f"Found category: {result.get('category_name')} with {len(result.get('items', []))} items")
-                return result
-            log.debug(f"Waste category not found: '{category_name}'")
-            return None
-        except Exception as e:
-            log.error(f"Error getting waste category '{category_name}': {e}")
-            return None
-
-    def search_faqs(self, topic: str, limit: int = 5) -> list[dict]:
-        """
-        Search FAQs about waste disposal.
-
-        Args:
-            topic: Topic to search for.
-            limit: Maximum number of results.
-
-        Returns:
-            List of matching FAQ entries.
-        """
-        log.debug(f"Searching FAQs for: '{topic}' (limit={limit})")
-        query = """
-        MATCH (faq:FAQ)
-        WHERE toLower(faq.question) CONTAINS toLower($search)
-           OR toLower(faq.question_de) CONTAINS toLower($search)
-           OR toLower(faq.answer) CONTAINS toLower($search)
-           OR toLower(faq.answer_de) CONTAINS toLower($search)
-        RETURN faq.question_de as question,
-               faq.answer_de as answer
-        LIMIT $limit
-        """
-        try:
-            results = self.query(query, {"search": topic, "limit": limit})
-            log.debug(f"Found {len(results)} FAQs matching '{topic}'")
-            return results
-        except Exception as e:
-            log.error(f"Error searching FAQs for '{topic}': {e}")
-            return []
-
-    def get_all_categories(self) -> list[dict]:
-        """
-        Get all waste categories.
-
-        Returns:
-            List of all categories with basic info.
-        """
-        log.debug("Getting all waste categories")
-        query = """
-        MATCH (cat:WasteCategory)
-        OPTIONAL MATCH (item:WasteItem)-[:BELONGS_TO]->(cat)
-        RETURN cat.name as name,
-               cat.name_de as name_de,
-               cat.description as description,
-               count(item) as item_count
-        ORDER BY cat.name
-        """
-        try:
-            results = self.query(query)
-            log.debug(f"Retrieved {len(results)} waste categories")
-            return results
-        except Exception as e:
-            log.error(f"Error getting categories: {e}")
-            return []
-
-    def get_all_disposal_methods(self) -> list[dict]:
-        """
-        Get all disposal methods.
-
-        Returns:
-            List of all disposal methods with basic info.
-        """
-        log.debug("Getting all disposal methods")
-        query = """
-        MATCH (method:DisposalMethod)
-        OPTIONAL MATCH (item:WasteItem)-[:DISPOSED_VIA]->(method)
-        RETURN method.name as name,
-               method.name_de as name_de,
-               method.type as type,
-               method.color as color,
-               method.frequency as frequency,
-               count(item) as item_count
-        ORDER BY method.name
-        """
-        try:
-            results = self.query(query)
-            log.debug(f"Retrieved {len(results)} disposal methods")
-            return results
-        except Exception as e:
-            log.error(f"Error getting disposal methods: {e}")
-            return []
 
 
 # Singleton instance

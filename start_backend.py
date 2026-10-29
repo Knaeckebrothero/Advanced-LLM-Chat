@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Start the Fessi backend server")
+    parser = argparse.ArgumentParser(description="Start the Advanced LLM Chat backend server")
     parser.add_argument("--host", default=HOST, help=f"Host to bind to (default: {HOST})")
     parser.add_argument("--port", type=int, default=PORT, help=f"Port to bind to (default: {PORT})")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
