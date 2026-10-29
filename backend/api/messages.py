@@ -29,7 +29,7 @@ from backend.security.auth import get_current_user, verify_conversation_ownershi
 from backend.security.logging import crud_logger
 from backend.services.llm import get_conversation_context, generate_llm_response
 from backend.config import DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_SYSTEM_PROMPT
-from backend.services.agent import create_fessi_agent
+from backend.services.agent import create_agent
 from backend.services.llm_provider import is_provider_available
 from backend.services.image_handler import extract_image_attachments, extract_document_attachments, extract_audio_attachments
 from backend.services.conversation_history import ConversationHistoryBuilder
@@ -872,8 +872,8 @@ async def stream_generate(
     - done: Signals completion with the final message ID
     - error: An error occurred during processing
 
-    The agent uses LangGraph to orchestrate multi-step reasoning with Neo4j tools
-    for waste disposal knowledge retrieval.
+    The agent uses LangGraph to orchestrate multi-step reasoning with its tools
+    (file retrieval, web search and the optional Neo4j knowledge graph).
     """
     crud_logger.info(
         f"Stream generate called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -973,7 +973,7 @@ async def stream_generate(
                 crud_logger.info(f"Using LangGraph agent for message: {user_message[:50] if len(user_message) > 50 else user_message}...")
 
                 try:
-                    agent = create_fessi_agent()
+                    agent = create_agent()
 
                     # Get conversation history without the latest message (it will be built with attachments)
                     conversation_history = history_messages[:-1] if len(history_messages) > 1 else None

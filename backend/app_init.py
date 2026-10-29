@@ -1,5 +1,5 @@
 """
-Application initialization script for the Fessi backend.
+Application initialization script for the Advanced LLM Chat backend.
 
 This script initializes the complete application environment including:
 - Filesystem directory structure
@@ -9,7 +9,7 @@ This script initializes the complete application environment including:
 - Neo4j knowledge graph (via neo4j_init.py)
 
 Usage:
-    # Initialize everything (filesystem + database + Neo4j)
+    # Initialize everything (filesystem + database, plus Neo4j if NEO4J_ENABLED=true)
     python backend/app_init.py
 
     # Force reset everything (delete .filesystem, recreate databases)
@@ -78,7 +78,7 @@ def parse_args() -> argparse.Namespace:
         Parsed arguments namespace.
     """
     parser = argparse.ArgumentParser(
-        description="Initialize the Fessi backend application.",
+        description="Initialize the Advanced LLM Chat backend application.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -271,8 +271,8 @@ def run_db_init(logger: logging.Logger, force_reset: bool = False, seed: bool = 
         args = DbInitArgs()
         args.host = os.getenv("POSTGRES_HOST", "localhost")
         args.port = int(os.getenv("POSTGRES_PORT", "5432"))
-        args.database = os.getenv("POSTGRES_DB", "fessi_chat")
-        args.user = os.getenv("POSTGRES_USER", "fessi")
+        args.database = os.getenv("POSTGRES_DB", "llm_chat")
+        args.user = os.getenv("POSTGRES_USER", "llm_chat")
         args.password = os.getenv("POSTGRES_PASSWORD", "")
         args.force_reset = force_reset
         args.seed = seed
@@ -317,9 +317,10 @@ def run_neo4j_init(logger: logging.Logger, force_reset: bool = False, seed: bool
         args = Neo4jInitArgs()
         args.uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
         args.user = os.getenv("NEO4J_USER", "neo4j")
-        args.password = os.getenv("NEO4J_PASSWORD", "fessi_neo4j_dev")
+        args.password = os.getenv("NEO4J_PASSWORD", "llm_chat_neo4j_dev")
         args.force_reset = force_reset
         args.no_seed = not seed
+        args.seed_file = os.getenv("NEO4J_SEED_FILE")
 
         # Create a sub-logger for neo4j_init
         neo4j_logger = logging.getLogger("neo4j_init")
@@ -335,7 +336,7 @@ def run_neo4j_init(logger: logging.Logger, force_reset: bool = False, seed: bool
         return True  # Don't fail the whole init if Neo4j is not available
     except Exception as e:
         logger.warning(f"  ⚠ Error running Neo4j initialization: {e}")
-        logger.info("  Hint: Make sure Neo4j is running: cd docker && docker-compose up -d neo4j")
+        logger.info("  Hint: Make sure Neo4j is running: cd docker && docker compose --profile graph up -d neo4j")
         return True  # Don't fail the whole init if Neo4j is not available
 
 
@@ -417,10 +418,17 @@ def main() -> int:
     if args.prod:
         args.skip_neo4j = True
 
+    # The knowledge graph is optional and off by default
+    neo4j_disabled = os.getenv("NEO4J_ENABLED", "false").lower() != "true"
+    if neo4j_disabled:
+        args.skip_neo4j = True
+
     logger.info("")
-    logger.info("=== Fessi Backend Initialization ===")
+    logger.info("=== Advanced LLM Chat Backend Initialization ===")
     if args.prod:
         logger.info("    (Production migration mode - Neo4j skipped)")
+    elif neo4j_disabled:
+        logger.info("    (Neo4j disabled - set NEO4J_ENABLED=true to initialize the knowledge graph)")
     logger.info("")
 
     # Calculate total steps based on flags

@@ -1,7 +1,8 @@
 # backend/services/agent.py
 """
-LangGraph-based agent for the Fessi waste disposal assistant.
-This agent uses Neo4j tools to answer waste disposal questions with multi-step reasoning.
+LangGraph-based chat agent with multi-step reasoning.
+The agent can read shared files, search the web (if Tavily is configured) and
+query an optional Neo4j knowledge graph (if NEO4J_ENABLED is set).
 """
 
 from langgraph.graph import StateGraph, END
@@ -14,7 +15,8 @@ import time
 import uuid
 import logging
 
-from .tools.neo4j_tools import get_all_tools
+from backend.config import NEO4J_ENABLED
+from .tools.neo4j_tools import get_graph_tools
 from .tools.file_tools import get_file_content
 from .tools.web_search_tools import get_web_search_tool
 from ..models.message import AgentStep
@@ -30,54 +32,16 @@ logger = logging.getLogger(__name__)
 
 # Define the agent state
 class AgentState(TypedDict):
-    """State for the Fessi agent graph."""
+    """State for the chat agent graph."""
     messages: Annotated[Sequence[Union[HumanMessage, AIMessage, SystemMessage, ToolMessage]], operator.add]
     steps: list
     final_response: str
 
 
-# System prompt for the agent (bilingual - German primary, English fallback)
-SYSTEM_PROMPT = """Du bist Fessi, ein freundlicher und hilfsbereiter Assistent für Abfallentsorgung in Frankfurt am Main.
+# System prompt for the agent
+SYSTEM_PROMPT = """You are a helpful and knowledgeable assistant. Answer clearly and accurately, and say so honestly when you don't know something. Respond in the same language as the user.
 
-## Deine Aufgaben:
-- Hilf Nutzern herauszufinden, wie man bestimmte Abfälle richtig entsorgt
-- Gib Informationen über Wertstoffhöfe und Sammelstellen
-- Beantworte Fragen zur Mülltrennung und Recycling
-- Erkläre die verschiedenen Tonnen und Container (Gelber Sack, Biotonne, etc.)
-
-## Verfügbare Tools:
-Du hast Zugang zu einer Wissensdatenbank mit Informationen über:
-- Abfallarten und deren korrekte Entsorgung
-- Entsorgungsmethoden (Tonnen, Container, Wertstoffhöfe)
-- Standorte von Wertstoffhöfen in Frankfurt
-- Häufig gestellte Fragen (FAQs)
-
-Du kannst auch das Internet durchsuchen für aktuelle Informationen (falls die Websuche aktiviert ist).
-
-## Anweisungen:
-1. Nutze die verfügbaren Tools, um genaue Informationen abzurufen
-2. Antworte immer auf Deutsch, es sei denn, der Nutzer spricht Englisch
-3. Sei freundlich, klar und konkret in deinen Antworten
-4. Wenn du keine passende Information findest, sage das ehrlich
-5. Gib bei Bedarf allgemeine Tipps zur Mülltrennung
-
-## Beispiel-Interaktionen:
-- "Wo entsorge ich alte Batterien?" -> Nutze search_waste_disposal
-- "Was gehört in den Gelben Sack?" -> Nutze get_disposal_method_details
-- "Wo ist der nächste Wertstoffhof?" -> Nutze find_nearby_recycling_centers
-
-## Datei-Zugriff:
-Wenn Nutzer Dateien (Bilder, PDFs, Dokumente) teilen, siehst du in der aktuellen Nachricht den vollständigen Inhalt.
-In Folge-Nachrichten werden Dateien als Platzhalter angezeigt:
-
-[Attachment: report.pdf (fileId: abc123) - 5 pages, PDF document]
-
-Um auf früher geteilte Dateien zuzugreifen, nutze das get_file_content Tool:
-- get_file_content(file_id="abc123") - Gesamten Inhalt abrufen
-- get_file_content(file_id="abc123", query="Was ist der Umsatz?") - Spezifische Frage stellen
-- get_file_content(file_id="abc123", pages=[1, 3]) - Bestimmte Seiten abrufen (für PDFs)
-
-You are Fessi, a friendly waste disposal assistant for Frankfurt am Main. Help users dispose of waste correctly using your knowledge database tools. You can also search the web for current information when needed. Respond in the same language as the user.
+Use your tools when they help you give a better answer. If web search is available, use it for current events or facts you are unsure about.
 
 ## File Access:
 When users share files (images, PDFs, documents), you see full content in the current message.
@@ -89,19 +53,30 @@ To access previously shared files, use the get_file_content tool:
 - get_file_content(file_id="abc123", query="What is the revenue?") - ask specific question
 - get_file_content(file_id="abc123", pages=[1, 3]) - retrieve specific pages"""
 
+# Appended to the system prompt when the Neo4j knowledge graph is enabled
+GRAPH_PROMPT = """
 
-class FessiAgent:
-    """LangGraph-based agent for waste disposal assistance."""
+## Knowledge Graph:
+You have read access to a Neo4j knowledge graph. Call get_graph_schema first to learn which node labels, relationship types and properties exist. Then use search_graph to find nodes by text, or query_graph to run a read-only Cypher query."""
+
+
+class ChatAgent:
+    """LangGraph-based chat agent with tool use."""
 
     def __init__(self, llm=None):
         """
-        Initialize the Fessi agent.
+        Initialize the chat agent.
 
         Args:
             llm: Optional LLM instance. If not provided, will be loaded from llm_provider.
         """
-        # Get Neo4j tools and add file retrieval tool
-        self.tools = get_all_tools() + [get_file_content]
+        self.tools = [get_file_content]
+        self.system_prompt = SYSTEM_PROMPT
+
+        # Add the knowledge graph tools if Neo4j is enabled
+        if NEO4J_ENABLED:
+            self.tools.extend(get_graph_tools())
+            self.system_prompt += GRAPH_PROMPT
 
         # Add web search tool if configured
         web_search = get_web_search_tool()
@@ -117,7 +92,7 @@ class FessiAgent:
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         self.graph = self._build_graph()
 
-        logger.info(f"FessiAgent initialized with {len(self.tools)} tools")
+        logger.info(f"ChatAgent initialized with {len(self.tools)} tools")
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state machine."""
@@ -126,7 +101,7 @@ class FessiAgent:
         def call_model(state: AgentState) -> dict:
             """Call the LLM with the current messages."""
             # Wrap system prompt with reasoning level (OpenAI only)
-            wrapped_prompt = wrap_system_prompt_with_reasoning(SYSTEM_PROMPT, auxiliary=False)
+            wrapped_prompt = wrap_system_prompt_with_reasoning(self.system_prompt, auxiliary=False)
             messages = [SystemMessage(content=wrapped_prompt)] + list(state["messages"])
             response = self.llm_with_tools.invoke(messages)
             return {"messages": [response]}
@@ -439,11 +414,9 @@ class FessiAgent:
             clean_name = clean_name[6:]
 
         titles = {
-            "search_waste_disposal": "Searching Knowledge Base",
-            "get_disposal_method_details": "Retrieving Details",
-            "find_nearby_recycling_centers": "Searching Locations",
-            "get_waste_category_info": "Exploring Categories",
-            "answer_waste_faq": "Searching FAQs",
+            "get_graph_schema": "Inspecting Knowledge Graph",
+            "search_graph": "Searching Knowledge Graph",
+            "query_graph": "Querying Knowledge Graph",
             "get_file_content": "Retrieving File Content",
             "tavily_search_results_json": "Searching the Web"
         }
@@ -617,14 +590,14 @@ class FessiAgent:
         return content_blocks
 
 
-def create_fessi_agent(llm=None) -> FessiAgent:
+def create_agent(llm=None) -> ChatAgent:
     """
-    Factory function to create a new Fessi agent instance.
+    Factory function to create a new chat agent instance.
 
     Args:
         llm: Optional LLM instance. If not provided, will use default from llm_provider.
 
     Returns:
-        A configured FessiAgent instance.
+        A configured ChatAgent instance.
     """
-    return FessiAgent(llm=llm)
+    return ChatAgent(llm=llm)

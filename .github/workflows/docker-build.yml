@@ -192,17 +192,17 @@ jobs:
           services:
             postgres:
               image: postgres:16-alpine
-              container_name: fessi-postgres
+              container_name: llm-chat-postgres
               ports:
                 - "\${POSTGRES_PORT:-5432}:5432"
               environment:
-                - POSTGRES_USER=\${POSTGRES_USER:-fessi}
-                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-fessi_password}
-                - POSTGRES_DB=\${POSTGRES_DB:-fessi_chat}
+                - POSTGRES_USER=\${POSTGRES_USER:-llm_chat}
+                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-llm_chat_password}
+                - POSTGRES_DB=\${POSTGRES_DB:-llm_chat}
               volumes:
                 - postgres_data:/var/lib/postgresql/data
               healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-fessi} -d \${POSTGRES_DB:-fessi_chat}"]
+                test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-llm_chat} -d \${POSTGRES_DB:-llm_chat}"]
                 interval: 5s
                 timeout: 5s
                 retries: 5
@@ -212,9 +212,10 @@ jobs:
 
             neo4j:
               image: neo4j:5.15-community
-              container_name: fessi-neo4j
+              profiles: ["graph"]  # optional: start with --profile graph
+              container_name: llm-chat-neo4j
               environment:
-                - NEO4J_AUTH=\${NEO4J_USER:-neo4j}/\${NEO4J_PASSWORD:-fessi_neo4j}
+                - NEO4J_AUTH=\${NEO4J_USER:-neo4j}/\${NEO4J_PASSWORD:-llm_chat_neo4j}
                 - NEO4J_PLUGINS=["apoc"]
                 - NEO4J_dbms_security_procedures_unrestricted=apoc.*
               volumes:
@@ -231,29 +232,31 @@ jobs:
 
             db-init:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${IMAGE_TAG}
-              container_name: fessi-db-init
+              container_name: llm-chat-db-init
               command: ["python", "-m", "backend.app_init", "--prod"]
               environment:
                 - POSTGRES_HOST=postgres
                 - POSTGRES_PORT=5432
-                - POSTGRES_DB=\${POSTGRES_DB:-fessi_chat}
-                - POSTGRES_USER=\${POSTGRES_USER:-fessi}
-                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-fessi_password}
+                - POSTGRES_DB=\${POSTGRES_DB:-llm_chat}
+                - POSTGRES_USER=\${POSTGRES_USER:-llm_chat}
+                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-llm_chat_password}
+                - NEO4J_ENABLED=\${NEO4J_ENABLED:-false}
                 - NEO4J_URI=bolt://neo4j:7687
                 - NEO4J_USER=\${NEO4J_USER:-neo4j}
-                - NEO4J_PASSWORD=\${NEO4J_PASSWORD:-fessi_neo4j}
+                - NEO4J_PASSWORD=\${NEO4J_PASSWORD:-llm_chat_neo4j}
               depends_on:
                 postgres:
                   condition: service_healthy
                 neo4j:
                   condition: service_healthy
+                  required: false
               networks:
                 - app-network
               restart: "no"
 
             frontend:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${IMAGE_TAG}
-              container_name: fessi-frontend
+              container_name: llm-chat-frontend
               ports:
                 - "\${FRONTEND_PORT:-8080}:80"
               restart: unless-stopped
@@ -267,7 +270,7 @@ jobs:
 
             backend:
               image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${IMAGE_TAG}
-              container_name: fessi-backend
+              container_name: llm-chat-backend
               ports:
                 - "\${BACKEND_PORT:-8443}:8443"
               restart: unless-stopped
@@ -277,13 +280,14 @@ jobs:
                 # PostgreSQL
                 - POSTGRES_HOST=postgres
                 - POSTGRES_PORT=5432
-                - POSTGRES_DB=\${POSTGRES_DB:-fessi_chat}
-                - POSTGRES_USER=\${POSTGRES_USER:-fessi}
-                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-fessi_password}
+                - POSTGRES_DB=\${POSTGRES_DB:-llm_chat}
+                - POSTGRES_USER=\${POSTGRES_USER:-llm_chat}
+                - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-llm_chat_password}
                 # Neo4j
+                - NEO4J_ENABLED=\${NEO4J_ENABLED:-false}
                 - NEO4J_URI=bolt://neo4j:7687
                 - NEO4J_USER=\${NEO4J_USER:-neo4j}
-                - NEO4J_PASSWORD=\${NEO4J_PASSWORD:-fessi_neo4j}
+                - NEO4J_PASSWORD=\${NEO4J_PASSWORD:-llm_chat_neo4j}
                 # LLM Provider
                 - LLM_PROVIDER=\${LLM_PROVIDER:-}
                 - REPLICATE_API_TOKEN=\${REPLICATE_API_TOKEN:-}
@@ -349,12 +353,12 @@ jobs:
           docker-compose up -d
           \`\`\`
 
-          The \`db-init\` container will automatically initialize the PostgreSQL and Neo4j databases on first run.
+          The \`db-init\` container will automatically initialize the PostgreSQL database (and Neo4j, if enabled) on first run.
 
           ## Services
 
           - **postgres**: PostgreSQL 16 database for conversations and messages
-          - **neo4j**: Neo4j 5.15 knowledge graph for waste disposal information
+          - **neo4j**: Neo4j 5.15 knowledge graph (optional, enable with the `graph` profile)
           - **db-init**: Database initialization container (creates/updates schema, no test data)
           - **frontend**: Angular web application
           - **backend**: FastAPI backend with LangGraph agent
@@ -408,11 +412,14 @@ jobs:
           # Database Configuration
           # ============================================
           # PostgreSQL
-          POSTGRES_USER=fessi
+          POSTGRES_USER=llm_chat
           POSTGRES_PASSWORD=your_secure_password_here
-          POSTGRES_DB=fessi_chat
+          POSTGRES_DB=llm_chat
 
-          # Neo4j
+          # Neo4j knowledge graph (optional)
+          # To enable it, uncomment both lines below; COMPOSE_PROFILES starts the neo4j service
+          # NEO4J_ENABLED=true
+          # COMPOSE_PROFILES=graph
           NEO4J_USER=neo4j
           NEO4J_PASSWORD=your_neo4j_password_here
 

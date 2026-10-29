@@ -3,17 +3,17 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: fessi-postgres
+    container_name: llm-chat-postgres
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-fessi}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_dev_password}
-      - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
+      - POSTGRES_USER=${POSTGRES_USER:-llm_chat}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llm_chat_dev_password}
+      - POSTGRES_DB=${POSTGRES_DB:-llm_chat}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fessi} -d ${POSTGRES_DB:-fessi_chat}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llm_chat} -d ${POSTGRES_DB:-llm_chat}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,9 +23,10 @@ services:
 
   neo4j:
     image: neo4j:5.15-community
-    container_name: fessi-neo4j
+    profiles: ["graph"]  # optional: start with --profile graph
+    container_name: llm-chat-neo4j
     environment:
-      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-fessi_neo4j_dev}
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-llm_chat_neo4j_dev}
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
     volumes:
@@ -41,30 +42,32 @@ services:
     restart: unless-stopped
 
   db-init:
-    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-backend:${TAG:-develop-latest}
-    container_name: fessi-db-init
+    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/advanced-llm-chat}-backend:${TAG:-develop-latest}
+    container_name: llm-chat-db-init
     command: ["python", "-m", "backend.app_init", "--prod"]
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
-      - POSTGRES_USER=${POSTGRES_USER:-fessi}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_dev_password}
+      - POSTGRES_DB=${POSTGRES_DB:-llm_chat}
+      - POSTGRES_USER=${POSTGRES_USER:-llm_chat}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llm_chat_dev_password}
+      - NEO4J_ENABLED=${NEO4J_ENABLED:-false}
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-fessi_neo4j_dev}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-llm_chat_neo4j_dev}
     depends_on:
       postgres:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+        required: false
     networks:
       - app-network
     restart: "no"
 
   frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-frontend:${TAG:-develop-latest}
-    container_name: fessi-frontend
+    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/advanced-llm-chat}-frontend:${TAG:-develop-latest}
+    container_name: llm-chat-frontend
     ports:
       - "${FRONTEND_PORT:-8080}:80"
     restart: unless-stopped
@@ -77,8 +80,8 @@ services:
       - app-network
 
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/fessi}-backend:${TAG:-develop-latest}
-    container_name: fessi-backend
+    image: ghcr.io/${GITHUB_REPOSITORY:-knaeckebrothero/advanced-llm-chat}-backend:${TAG:-develop-latest}
+    container_name: llm-chat-backend
     ports:
       - "${BACKEND_PORT:-8443}:8443"
     restart: unless-stopped
@@ -88,13 +91,14 @@ services:
       # PostgreSQL
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-fessi_chat}
-      - POSTGRES_USER=${POSTGRES_USER:-fessi}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fessi_dev_password}
+      - POSTGRES_DB=${POSTGRES_DB:-llm_chat}
+      - POSTGRES_USER=${POSTGRES_USER:-llm_chat}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llm_chat_dev_password}
       # Neo4j
+      - NEO4J_ENABLED=${NEO4J_ENABLED:-false}
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-fessi_neo4j_dev}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-llm_chat_neo4j_dev}
       # LLM Provider
       - LLM_PROVIDER=${LLM_PROVIDER:-}
       - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
