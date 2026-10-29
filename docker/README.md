@@ -1,4 +1,4 @@
-# Docker Setup for Fessi
+# Docker Setup
 
 This directory contains the Docker configuration for containerizing both the Angular frontend and Python backend applications.
 
@@ -53,10 +53,10 @@ From the repository root:
 
 ```bash
 # Build the frontend image
-docker build -f docker/Dockerfile -t fessi-frontend:latest .
+docker build -f docker/Dockerfile -t llm-chat-frontend:latest .
 
 # Run the frontend container
-docker run -d -p 8080:80 --name fessi-frontend fessi-frontend:latest
+docker run -d -p 8080:80 --name llm-chat-frontend llm-chat-frontend:latest
 ```
 
 ### Backend Only
@@ -65,15 +65,15 @@ From the repository root:
 
 ```bash
 # Build the backend image
-docker build -f docker/backend.Dockerfile -t fessi-backend:latest .
+docker build -f docker/backend.Dockerfile -t llm-chat-backend:latest .
 
 # Run the backend container
 docker run -d \
   -p 8443:8443 \
   -v $(pwd)/docker/data:/app/data \
   -e REPLICATE_API_TOKEN=your_token_here \
-  --name fessi-backend \
-  fessi-backend:latest
+  --name llm-chat-backend \
+  llm-chat-backend:latest
 ```
 
 ## Accessing the Application
@@ -92,8 +92,8 @@ The GitHub Actions workflow automatically builds and pushes both images:
 
 ```bash
 # Pull the latest images
-docker pull ghcr.io/Knaeckebrothero/fessi-frontend:develop-latest
-docker pull ghcr.io/Knaeckebrothero/fessi-backend:develop-latest
+docker pull ghcr.io/knaeckebrothero/advanced-llm-chat-frontend:develop-latest
+docker pull ghcr.io/knaeckebrothero/advanced-llm-chat-backend:develop-latest
 
 # Run with docker-compose using remote images
 docker-compose -f docker-compose.prod.yml up -d
