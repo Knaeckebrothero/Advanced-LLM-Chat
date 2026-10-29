@@ -1,9 +1,4 @@
 <div class="chat-ui-container">
-  <div class="top-right-logo">
-    <img [src]="isDarkMode ? 'assets/icons/fra_uas_logo_white.png' : 'assets/icons/fra_logo_svg.svg'"
-         alt="Frankfurt University of Applied Sciences Logo" />
-  </div>
-
   <div class="message-container" #messageContainer (scroll)="onScroll($event)">
     <div class="loading-older-messages" *ngIf="isLoadingOlderMessages">
       <mat-spinner diameter="30"></mat-spinner>
