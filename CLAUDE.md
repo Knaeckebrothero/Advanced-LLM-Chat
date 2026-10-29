@@ -4,17 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Angular 19.2.2 PWA with FastAPI backend for a waste disposal assistant chatbot (Fessi). Uses microservices architecture with:
+Advanced LLM Chat: an Angular 19.2.2 PWA with a FastAPI backend for chatting with LLMs. Uses microservices architecture with:
 - **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, SCSS styling, ngx-translate for i18n (German/English)
-- **Backend**: FastAPI with PostgreSQL for persistence, Neo4j knowledge graph for waste disposal data, LangGraph agent with multi-step reasoning
+- **Backend**: FastAPI with PostgreSQL for persistence, LangGraph agent with multi-step reasoning, optional Neo4j knowledge graph (`NEO4J_ENABLED`)
 - **LLM Integration**: Multi-provider support (Replicate, OpenAI, Anthropic) with SSE streaming for agent responses
+
+This repository is the general **upstream**. Adapted versions (e.g. Fessi, a waste disposal assistant) live in separate downstream repositories that merge `upstream/develop`. Keep domain-specific branding, prompts, tools and data out of this repository; add configuration points instead so downstream changes stay small.
 
 ## Essential Commands
 
 ### Frontend Development
 ```bash
 npm start          # Start dev server with SSL (https://localhost:4200)
-npm run build      # Production build (outputs to dist/fessi/browser/)
+npm run build      # Production build (outputs to dist/advanced-llm-chat/browser/)
 npm test           # Run unit tests with Karma/Jasmine
 npm run watch      # Build with watch mode
 npx tsc --noEmit   # Type-check without building (no ESLint configured)
@@ -27,11 +29,11 @@ ng test --include='src/app/services/chat-state.service.spec.ts'
 
 ### Backend Development
 ```bash
-# 1. Start databases (PostgreSQL required, Neo4j optional for knowledge graph)
-cd docker && docker-compose up -d postgres neo4j && cd ..
+# 1. Start PostgreSQL (Neo4j is optional: set NEO4J_ENABLED=true and add `--profile graph neo4j`)
+cd docker && docker compose up -d postgres && cd ..
 
 # 2. Initialize databases and filesystem (first time or after reset)
-python backend/app_init.py --seed    # Creates tables and seeds all databases
+python backend/app_init.py --seed    # Creates tables and seeds the databases (Neo4j only if NEO4J_ENABLED=true)
 
 # 3. Start backend (auto-generates SSL certs on first run)
 python start_backend.py              # Default: https://localhost:8443
@@ -53,9 +55,9 @@ REPLICATE_API_TOKEN=your_token_here  # Or OPENAI_API_KEY or ANTHROPIC_API_KEY
 USE_DEV_CERTS=True
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_DB=fessi_chat
-POSTGRES_USER=fessi
-POSTGRES_PASSWORD=fessi_dev_password
+POSTGRES_DB=llm_chat
+POSTGRES_USER=llm_chat
+POSTGRES_PASSWORD=llm_chat_dev_password
 ```
 
 See `.env.example` for all optional settings (Neo4j, vision models, Whisper, TTS, web search).
@@ -103,17 +105,18 @@ backend/
 ├── database/
 │   ├── db.py         # PostgreSQL database manager (SQLAlchemy)
 │   ├── tables.py     # SQLAlchemy Core table definitions
-│   ├── neo4j_db.py   # Neo4j knowledge graph manager
+│   ├── neo4j_db.py   # Neo4j knowledge graph manager (optional)
+│   ├── neo4j_init.py # Neo4j init, seeds from NEO4J_SEED_FILE
 │   └── queries/      # SQL files (schema.sql, seed.sql)
 ├── models/           # Pydantic request/response models
 ├── services/
 │   ├── llm_provider.py   # Multi-provider LLM abstraction
-│   ├── agent.py          # LangGraph agent with Neo4j and web search tools
+│   ├── agent.py          # LangGraph agent (file, web search and optional graph tools)
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation
 │   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
-│   └── tools/            # LangChain tools (knowledge graph, web search)
+│   └── tools/            # LangChain tools (files, web search, read-only knowledge graph)
 ├── security/         # Auth, CSRF, logging
 └── utils/            # Certificates, hashing
 ```
