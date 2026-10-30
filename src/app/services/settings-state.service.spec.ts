@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject, of } from 'rxjs';
+import { take } from 'rxjs/operators';
 import { SettingsStateService } from './settings-state.service';
 import { SettingsRepository } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
@@ -14,6 +15,7 @@ describe('SettingsStateService', () => {
   let mockThemeService: jasmine.SpyObj<ThemeService>;
   let mockTranslateService: jasmine.SpyObj<TranslateService>;
   let mockAuthService: AuthService;
+  let currentUser$: BehaviorSubject<{ id: number } | null>;
 
   const mockSettings: AppSettings = {
     theme: Theme.Dark,
@@ -24,15 +26,17 @@ describe('SettingsStateService', () => {
   beforeEach(() => {
     // Create mock services
     mockSettingsRepo = jasmine.createSpyObj('SettingsRepository',
-      ['getSettings', 'saveSettings']);
+      ['getSettings', 'getLocalSettings', 'saveSettings']);
     mockThemeService = jasmine.createSpyObj('ThemeService',
       ['setTheme', 'getCurrentTheme']);
     mockTranslateService = jasmine.createSpyObj('TranslateService',
       ['use']);
-    mockAuthService = { currentUser$: new BehaviorSubject(null), isGuest: false } as unknown as AuthService;
+    currentUser$ = new BehaviorSubject<{ id: number } | null>(null);
+    mockAuthService = { currentUser$, isGuest: false } as unknown as AuthService;
 
     // Set up default mock returns
     mockSettingsRepo.getSettings.and.returnValue(Promise.resolve(mockSettings));
+    mockSettingsRepo.getLocalSettings.and.returnValue(Promise.resolve(mockSettings));
     mockSettingsRepo.saveSettings.and.returnValue(Promise.resolve());
 
     TestBed.configureTestingModule({
@@ -53,17 +57,25 @@ describe('SettingsStateService', () => {
   });
 
   describe('Settings Loading', () => {
-    it('should load settings on initialization', async () => {
+    it('should load the local settings on initialization, without asking the backend', async () => {
       // Wait for async initialization
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(mockSettingsRepo.getSettings).toHaveBeenCalled();
+      expect(mockSettingsRepo.getLocalSettings).toHaveBeenCalled();
+      expect(mockSettingsRepo.getSettings).not.toHaveBeenCalled();
       expect(mockThemeService.setTheme).toHaveBeenCalledWith(Theme.Dark);
       expect(mockTranslateService.use).toHaveBeenCalledWith(Language.English);
     });
 
+    it("should load the backend's settings once a session exists", async () => {
+      currentUser$.next({ id: 5 });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSettingsRepo.getSettings).toHaveBeenCalledWith(true);
+    });
+
     it('should expose settings via settings$ observable', (done) => {
-      service.settings$.subscribe(settings => {
+      service.settings$.pipe(take(1)).subscribe(settings => {
         expect(settings).toBeTruthy();
         done();
       });
@@ -109,7 +121,7 @@ describe('SettingsStateService', () => {
 
   describe('Error Handling', () => {
     it('should use default settings if initial load fails', async () => {
-      mockSettingsRepo.getSettings.and.returnValue(
+      mockSettingsRepo.getLocalSettings.and.returnValue(
         Promise.reject(new Error('Load failed'))
       );
 

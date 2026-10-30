@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { distinctUntilChanged, filter, map, skip } from 'rxjs/operators';
+import { distinctUntilChanged, filter, map } from 'rxjs/operators';
 import { SettingsRepository } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
 import { AppSettings } from '../models/settings.model';
@@ -32,21 +32,24 @@ export class SettingsStateService {
     private translate: TranslateService,
     private authService: AuthService
   ) {
-    this.loadInitialSettings();
+    // Apply the settings stored in this browser right away. The backend's follow once a
+    // session exists: asking before that gets a 401, which would open the login page
+    this.loadInitialSettings(false, true);
 
-    // The first load runs before login (it then only finds local settings), so load
-    // again whenever another user logs in, e.g. to apply their theme and background
+    // Load again whenever a user's session starts (the first one, and every later login),
+    // e.g. to apply their theme and background
     this.authService.currentUser$.pipe(
       map(user => user?.id ?? null),
       distinctUntilChanged(),
-      skip(1),
       filter(userId => userId !== null)
     ).subscribe(() => this.loadInitialSettings(!this.authService.isGuest));
   }
 
-  private async loadInitialSettings(preferRemote = false) {
+  private async loadInitialSettings(preferRemote = false, localOnly = false) {
     try {
-      const settings = await this.repository.getSettings(preferRemote);
+      const settings = localOnly
+        ? await this.repository.getLocalSettings()
+        : await this.repository.getSettings(preferRemote);
       this.settingsSubject.next(settings);
       this.themeService.setTheme(settings.theme);
       this.translate.use(settings.language); // ADD THIS LINE

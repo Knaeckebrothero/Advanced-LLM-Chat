@@ -100,6 +100,9 @@ export class AuthService {
       // Even if check fails (e.g., backend down), try guest login
       await this.autoGuestLogin();
     }
+
+    // The first sync, now that the session exists
+    void this.syncEngine.syncNow();
   }
 
   private async autoGuestLogin(): Promise<void> {

@@ -20,6 +20,17 @@ export class SettingsRepository {
    * Load the settings: the server's if they are newer than the local copy (or
    * preferRemote is set, e.g. right after a login), else the local ones.
    */
+  /** The settings stored in this browser, without asking the backend (for the start, before a session exists). */
+  async getLocalSettings(): Promise<AppSettings> {
+    try {
+      const db = await this.dbService.getDb();
+      return (await db.get('settings', SETTINGS_KEY)) || DEFAULT_SETTINGS;
+    } catch (error) {
+      console.warn('Could not fetch local settings from IndexedDB. Using default.', error);
+      return DEFAULT_SETTINGS;
+    }
+  }
+
   async getSettings(preferRemote = false): Promise<AppSettings> {
     const db = await this.dbService.getDb();
     let localSettings: AppSettings | undefined;
