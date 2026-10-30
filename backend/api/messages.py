@@ -32,7 +32,7 @@ from backend.catalog.resolver import (
     resolve_model,
 )
 from backend.services.llm import generate_reply
-from backend.services.conversation_history import ConversationHistoryBuilder
+from backend.services.conversation_history import ConversationHistoryBuilder, history_token_budget
 from backend.models.attachments import AttachmentType
 from backend.services.tts_handler import (
     generate_speech,
@@ -958,13 +958,17 @@ async def stream_generate(
             return
 
         try:
-            # Build conversation history with placeholders for previous attachments
+            tools = default_tools() if config.supports_tools else None
+            system_prompt = _system_prompt(current_user, request_body.conversationId, tools)
+
+            # Build conversation history with placeholders for previous attachments,
+            # as much of it as fits the model's context window
             history_builder = ConversationHistoryBuilder(db)
             history_messages, available_attachments = await history_builder.build_history(
                 request_body.conversationId,
-                limit=20,
                 include_latest_attachments=True,
-                supports_vision=config.supports_vision
+                supports_vision=config.supports_vision,
+                token_budget=history_token_budget(config, system_prompt, tools)
             )
 
             if not history_messages:
@@ -988,9 +992,6 @@ async def stream_generate(
                     for attachment_type in AttachmentType
                 }
                 crud_logger.info(f"Attachments in conversation: {counts}")
-
-            tools = default_tools() if config.supports_tools else None
-            system_prompt = _system_prompt(current_user, request_body.conversationId, tools)
 
             crud_logger.info(
                 f"Running agent with {config.display_name} ({config.provider_name}) on "

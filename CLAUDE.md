@@ -120,7 +120,7 @@ backend/
 │   ├── smoke_test.py     # python -m backend.llm.smoke_test --env | --model <id>
 │   └── tests/            # Offline test scripts (fake OpenAI server, mocked Anthropic API)
 ├── services/
-│   ├── conversation_history.py  # Conversation history in the OpenAI message format
+│   ├── conversation_history.py  # Conversation history in the OpenAI message format, cut to the model's context window
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation

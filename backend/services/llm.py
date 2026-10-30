@@ -7,7 +7,7 @@ from typing import Optional
 
 from backend.database import db
 from backend.llm import ModelConfig, Usage, build_system_prompt, complete
-from .conversation_history import ConversationHistoryBuilder
+from .conversation_history import ConversationHistoryBuilder, history_token_budget
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,6 @@ async def generate_reply(
     config: ModelConfig,
     conversation_id: str,
     system_prompt: Optional[str] = None,
-    limit: int = 20,
     before_message: Optional[dict] = None
 ) -> tuple[str, Usage]:
     """
@@ -42,18 +41,18 @@ async def generate_reply(
     :param config: The model that answers.
     :param conversation_id: The conversation to answer.
     :param system_prompt: Optional system prompt; defaults to the assistant's identity prompt.
-    :param limit: Maximum number of earlier messages sent as context.
     :param before_message: Only use messages before this message row (regenerating it).
     :return: The reply text and the token usage.
     :raises ValueError: If the conversation has no messages.
     """
+    system_prompt = system_prompt or build_system_prompt(None, None)
     history_builder = ConversationHistoryBuilder(db)
     messages, _ = await history_builder.build_history(
         conversation_id,
-        limit=limit,
         include_latest_attachments=True,
         supports_vision=config.supports_vision,
-        before_message=before_message
+        before_message=before_message,
+        token_budget=history_token_budget(config, system_prompt)
     )
     if not messages:
         raise ValueError("No messages found in conversation")
@@ -62,7 +61,7 @@ async def generate_reply(
     reply, usage = await complete(
         config,
         messages,
-        system_prompt=system_prompt or build_system_prompt(None, None)
+        system_prompt=system_prompt
     )
     log.info(f"LLM response generated: {len(reply)} characters")
     return reply, usage

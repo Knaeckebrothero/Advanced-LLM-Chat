@@ -108,6 +108,12 @@ TTS_PREPROCESS_VERSION = "v1"  # Increment to invalidate cached preprocessed tex
 # Increase for slow models (CPU inference, model loading time)
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 
+# Conversation history sent to the model (backend/services/conversation_history.py):
+# the newest messages that fit the model's context window (the catalog's context_window,
+# DEFAULT_CONTEXT_WINDOW for models without one), at most HISTORY_MAX_MESSAGES
+DEFAULT_CONTEXT_WINDOW = int(os.getenv("DEFAULT_CONTEXT_WINDOW", "32768"))
+HISTORY_MAX_MESSAGES = int(os.getenv("HISTORY_MAX_MESSAGES", "1000"))
+
 # Reasoning effort of the environment fallback model (backend/llm/types.py reads these directly):
 # REASONING_LEVEL is the reasoning_effort of the OpenAI environment model for chat answers,
 # AUXILIARY_REASONING_LEVEL the effort for titles and speech preprocessing (Claude: output_config.effort).

@@ -5,12 +5,18 @@ Conversation history builder with placeholder support for file attachments.
 Builds LLM-ready conversation history in the OpenAI Chat Completions message
 format (see backend/llm). Past attachments are replaced with descriptive
 placeholders, while the latest user message includes the full content.
+
+The history holds as many recent messages as fit the model's context window
+(history_token_budget), at most HISTORY_MAX_MESSAGES.
 """
 
 import json
 import logging
 from typing import List, Optional, Tuple, Union
 
+from ..config import DEFAULT_CONTEXT_WINDOW, HISTORY_MAX_MESSAGES
+from ..llm.tools import ToolRegistry
+from ..llm.types import ModelConfig
 from ..models.attachments import (
     AttachmentPlaceholder,
     AttachmentType,
@@ -26,6 +32,46 @@ from .image_handler import (
 from .audio_handler import prepare_audio_for_llm
 
 logger = logging.getLogger(__name__)
+
+# Token estimate without a tokenizer: about 3 characters per token errs on the
+# safe side for most tokenizers and languages (English text is closer to 4)
+CHARS_PER_TOKEN = 3
+MEDIA_PART_TOKENS = 2000       # Estimate per image or audio part
+OUTPUT_RESERVE = 32000         # Kept free for the answer when the model has no max_output_tokens
+TOOL_RESULT_SHARE = 0.1        # Share of the context window kept free for tool results during a run
+MIN_HISTORY_TOKENS = 1024
+
+
+def estimate_tokens(content: Union[str, List[dict], None]) -> int:
+    """Rough token count of a message content (a string or a list of parts)."""
+    if isinstance(content, str):
+        return -(-len(content) // CHARS_PER_TOKEN)
+    if isinstance(content, list):
+        return sum(
+            estimate_tokens(part.get("text", "")) if part.get("type") == "text" else MEDIA_PART_TOKENS
+            for part in content
+        )
+    return 0
+
+
+def history_token_budget(
+    config: ModelConfig,
+    system_prompt: Optional[str] = None,
+    tools: Optional[ToolRegistry] = None
+) -> int:
+    """
+    How many tokens of conversation history a request to this model may carry.
+
+    The context window (DEFAULT_CONTEXT_WINDOW for models without one) minus room
+    for the answer, for tool results during the agent run, and for the system
+    prompt and tool definitions.
+    """
+    window = config.context_window or DEFAULT_CONTEXT_WINDOW
+    output = min(config.max_output_tokens or OUTPUT_RESERVE, window // 4)
+    fixed = estimate_tokens(system_prompt or "")
+    if tools:
+        fixed += estimate_tokens(json.dumps(tools.openai_schemas()))
+    return max(window - output - int(window * TOOL_RESULT_SHARE) - fixed, MIN_HISTORY_TOKENS)
 
 
 class ConversationHistoryBuilder:
@@ -173,10 +219,11 @@ class ConversationHistoryBuilder:
     async def build_history(
         self,
         conversation_id: str,
-        limit: int = 20,
+        limit: int = HISTORY_MAX_MESSAGES,
         include_latest_attachments: bool = True,
         supports_vision: bool = False,
-        before_message: Optional[dict] = None
+        before_message: Optional[dict] = None,
+        token_budget: Optional[int] = None
     ) -> Tuple[List[dict], List[AttachmentPlaceholder]]:
         """
         Build conversation history with placeholders for past attachments.
@@ -187,6 +234,9 @@ class ConversationHistoryBuilder:
             include_latest_attachments: If True, include full content for latest user message
             supports_vision: Whether the model accepts images (ModelConfig.supports_vision)
             before_message: Only include messages before this one (a message row, when regenerating it)
+            token_budget: Drop the oldest messages until the rest fit this many
+                (estimated) tokens; see history_token_budget(). The latest user
+                message is always kept.
 
         Returns:
             Tuple of (messages in the OpenAI message format, available_attachments)
@@ -230,8 +280,28 @@ class ConversationHistoryBuilder:
                 if text and text.strip():
                     messages.append({"role": "assistant", "content": text})
 
+        if token_budget is not None:
+            fitting = self._fit_to_budget(messages, token_budget)
+            if len(fitting) < len(messages):
+                logger.info(f"History of {conversation_id} trimmed to the newest {len(fitting)} of "
+                            f"{len(messages)} messages (budget {token_budget} tokens)")
+            messages = fitting
+
         logger.debug(f"Built history: {len(messages)} messages, {len(available_attachments)} attachments")
         return messages, available_attachments
+
+    @staticmethod
+    def _fit_to_budget(messages: List[dict], token_budget: int) -> List[dict]:
+        """The newest messages that fit token_budget; the latest user message and any after it always stay."""
+        start = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=len(messages))
+        total = sum(estimate_tokens(m["content"]) for m in messages[start:])
+        while start > 0:
+            cost = estimate_tokens(messages[start - 1]["content"])
+            if total + cost > token_budget:
+                break
+            total += cost
+            start -= 1
+        return messages[start:]
 
     async def _process_user_message(
         self,
