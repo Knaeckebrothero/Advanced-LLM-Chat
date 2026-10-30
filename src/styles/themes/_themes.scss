@@ -8,18 +8,15 @@
   $is-dark: $theme-name =='dark';
 
   // Create a full palette map that includes all required hues.
+  // Text on primary and accent uses the theme's contrast color (dark text on the light dark-mode teal).
+  $contrast: map.get($theme-map, 'primary-contrast');
   $primary-color: map.get($theme-map, primary);
   $primary-palette: mat.m2-define-palette((100: $primary-color, 500: $primary-color, 700: $primary-color,
-        contrast: (100: if($is-dark, white, rgba(black, 0.87)),
-          500: if($is-dark, white, rgba(black, 0.87)),
-          700: if($is-dark, white, rgba(black, 0.87)),
-        )));
+        contrast: (100: $contrast, 500: $contrast, 700: $contrast)));
+
   $accent-color: map.get($theme-map, secondary);
   $accent-palette: mat.m2-define-palette((100: $accent-color, 500: $accent-color, 700: $accent-color,
-        contrast: (100: if($is-dark, white, rgba(black, 0.87)),
-          500: if($is-dark, white, rgba(black, 0.87)),
-          700: if($is-dark, white, rgba(black, 0.87)),
-        )));
+        contrast: (100: $contrast, 500: $contrast, 700: $contrast)));
 
   // Define the Material theme
   $material-theme: if($is-dark,

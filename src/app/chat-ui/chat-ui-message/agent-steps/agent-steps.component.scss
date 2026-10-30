@@ -113,7 +113,7 @@
 
     // Step type icon colors
     &.step-thought .step-icon-wrapper {
-      background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+      background: var(--theme-avatar-ai);
     }
 
     &.step-tool_call .step-icon-wrapper {

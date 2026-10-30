@@ -1,8 +1,8 @@
 {
   "name": "Advanced LLM Chat",
   "short_name": "LLM Chat",
-  "theme_color": "#8E9BAC",
-  "background_color": "#474B51",
+  "theme_color": "#0E7468",
+  "background_color": "#111518",
   "display": "standalone",
   "scope": "./",
   "start_url": "./",
