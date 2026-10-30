@@ -1,12 +1,18 @@
 <div class="login-container">
-  <mat-card class="login-card">
+  <mat-card class="login-card" *ngIf="authConfig$ | async as config">
     <mat-card-header>
       <mat-card-title>{{ 'Login' | translate }}</mat-card-title>
-      <mat-card-subtitle>{{ 'Please enter your email to continue' | translate }}</mat-card-subtitle>
+      <mat-card-subtitle *ngIf="config.mode === 'mock'">{{ 'Please enter your email to continue' | translate }}</mat-card-subtitle>
+      <mat-card-subtitle *ngIf="config.mode === 'oidc'">{{ 'Log in with your account to keep your chats' | translate }}</mat-card-subtitle>
     </mat-card-header>
 
     <mat-card-content>
-      <form>
+      <div class="error-message" *ngIf="error">
+        <mat-icon color="warn">error</mat-icon>
+        <span>{{ error | translate }}</span>
+      </div>
+
+      <form *ngIf="config.mode === 'mock'">
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>{{ 'Email' | translate }}</mat-label>
           <input matInput
@@ -23,11 +29,6 @@
           </mat-error>
         </mat-form-field>
 
-        <div class="error-message" *ngIf="error">
-          <mat-icon color="warn">error</mat-icon>
-          <span>{{ error }}</span>
-        </div>
-
         <button
           mat-raised-button
           color="secondary"
@@ -39,6 +40,24 @@
           <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
         </button>
       </form>
+
+      <button
+        *ngIf="config.mode === 'oidc'"
+        mat-raised-button
+        color="secondary"
+        (click)="loginWithProvider()"
+        [disabled]="loading"
+        class="full-width login-button"
+      >
+        <span *ngIf="!loading">{{ 'Log in with' | translate }} {{ config.providerName }}</span>
+        <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
+      </button>
+
+      <p class="login-off" *ngIf="config.mode === 'none'">
+        {{ 'Logging in is turned off on this server. You can keep chatting as a guest.' | translate }}
+      </p>
+
+      <a mat-button routerLink="/" class="full-width guest-link">{{ 'Continue as guest' | translate }}</a>
     </mat-card-content>
   </mat-card>
 </div>

@@ -7,7 +7,7 @@ Already in place:
 - `backend/models/catalog.py`: request and response models of the catalog API
 - `backend/models/message.py`: `MessageUsage`, plus the model and usage fields on messages and stream events
 - `backend/database/queries/schema.sql` and `tables.py`: tables `llm_providers`, `llm_models`, `personas`, and the new columns on `conversations`, `messages` and `user_settings`
-- `backend/config.py`: `MODEL_CATALOG_FILE`, `ADMIN_EMAILS`, `AGENT_MAX_STEPS`
+- `backend/config.py`: `MODEL_CATALOG_FILE`, `ADMIN_EMAILS` (and `OIDC_ADMIN_ROLE`, docs/authentication.md), `AGENT_MAX_STEPS`
 
 ## Runtime (`backend/llm/`)
 
@@ -48,7 +48,7 @@ Built on the official `openai` and `anthropic` SDKs. LangChain and LangGraph are
 - **Visibility:** guests only see and use models and personas with `available_to_guests`. A guest without any guest model gets the environment model, as today. Disabled providers hide their models.
 - **Providers** are defined only by the catalog file (`MODEL_CATALOG_FILE`) and are read-only in the API. Changing one means editing the file and running `app_init` again (Docker's `db-init` does it on every `docker compose up`).
 - **API keys** only come from environment variables: a provider names one in `api_key_env` (it must end in `_KEY` or `_TOKEN`), and its key is `os.getenv(api_key_env)`. Keys are never stored or returned; the API only says whether the variable is set (`apiKeySet`). Databases from before this change keep an unused `api_key_encrypted` column (`ALTER TABLE llm_providers DROP COLUMN api_key_encrypted` removes it).
-- **Admins:** users whose email is in `ADMIN_EMAILS` (and who are not guests). Empty means nobody; the catalog is still seeded from `MODEL_CATALOG_FILE`.
+- **Admins:** with `AUTH_MODE=oidc`, users with `OIDC_ADMIN_ROLE` or a verified email in `ADMIN_EMAILS`; with the mock login, users whose email is in `ADMIN_EMAILS`. Guests never are (docs/authentication.md). Without admins, the catalog is still seeded from `MODEL_CATALOG_FILE`.
 
 ### Personas (agents)
 

@@ -16,6 +16,7 @@ interface User {
   id: number;
   email: string;
   name: string;
+  is_guest?: boolean;
   // Add fields you might get from IDP later
   picture?: string;
   roles?: string[];
@@ -36,10 +37,15 @@ function withAdminFlag(response: MeResponse): User {
   return { ...response.user, isAdmin: response.user.isAdmin ?? response.isAdmin };
 }
 
-interface LoginProvider {
-  type: 'mock' | 'oauth' | 'saml';  // Extensible for future
-  config?: any;
+/** GET /api/auth/config: how users log in on this server (AUTH_MODE); guests can always chat. */
+export interface AuthConfig {
+  mode: 'oidc' | 'mock' | 'none';
+  // The OIDC provider's name for the login button
+  providerName?: string | null;
 }
+
+// The user whose conversations are stored in this browser (IndexedDB)
+const LOCAL_DATA_OWNER_KEY = 'localDataOwner';
 
 @Injectable({
   providedIn: 'root'
@@ -59,11 +65,11 @@ export class AuthService {
   private guestLimitResetTimeSubject = new BehaviorSubject<string | null>(null);
   public guestLimitResetTime$ = this.guestLimitResetTimeSubject.asObservable();
 
+  private authConfigSubject = new BehaviorSubject<AuthConfig>({ mode: 'none' });
+  public authConfig$ = this.authConfigSubject.asObservable();
+
   // Promise to track initialization
   private authInitialized: Promise<void>;
-
-  // TODO: This makes it easy to switch providers later
-  private loginProvider: LoginProvider = { type: 'mock' };
 
   constructor(
     private http: HttpClient,
@@ -85,6 +91,7 @@ export class AuthService {
 
   private async initializeAuthFlow(): Promise<void> {
     console.log('AuthService: Initializing auth flow...');
+    const configLoaded = this.loadAuthConfig();
 
     try {
       // First try to check if user has existing session
@@ -100,9 +107,19 @@ export class AuthService {
       // Even if check fails (e.g., backend down), try guest login
       await this.autoGuestLogin();
     }
+    await configLoaded;
 
     // The first sync, now that the session exists
     void this.syncEngine.syncNow();
+  }
+
+  private async loadAuthConfig(): Promise<void> {
+    try {
+      const config = await lastValueFrom(this.http.get<AuthConfig>(`${this.baseUrl}/api/auth/config`));
+      this.authConfigSubject.next(config);
+    } catch (error) {
+      console.warn('AuthService: Could not load the login options:', error);
+    }
   }
 
   private async autoGuestLogin(): Promise<void> {
@@ -122,6 +139,7 @@ export class AuthService {
       // Every guest session is a new user that only reaches its own conversations, so chats
       // stored in this browser by an earlier (expired) session can't be continued
       await this.clearLocalUserData();
+      this.writeLocalDataOwner(response.body!.user);
 
       this.isGuest = true;
       this.setCurrentUser(response.body!.user);
@@ -159,7 +177,8 @@ export class AuthService {
       this.apiService.extractCsrfToken(response);
 
       if (response && response.body && response.body.user) {
-        this.isGuest = response.body.user.email.includes('guest');
+        this.isGuest = response.body.user.is_guest === true;
+        await this.claimLocalData(response.body.user);
         this.setCurrentUser(withAdminFlag(response.body));
         console.log('AuthService: currentUserSubject updated with user:', response.body.user);
         return true;
@@ -175,20 +194,16 @@ export class AuthService {
     }
   }
 
-  // Generic login method that can handle different providers
-  async login(credentials?: any): Promise<void> {
-    switch (this.loginProvider.type) {
-      case 'mock':
-        await this.mockLogin(credentials.email);
-        break;
-      case 'oauth':
-        // Future: Redirect to OAuth provider
-        this.redirectToOAuthProvider();
-        break;
-      case 'saml':
-        // Future: Handle SAML flow
-        this.initiateSamlLogin();
-        break;
+  /** Log in the way the server allows (GET /api/auth/config): through its OIDC provider, or with the mock login. */
+  async login(credentials?: { email: string }): Promise<void> {
+    const mode = this.authConfigSubject.value.mode;
+    if (mode === 'oidc') {
+      // The backend runs the login with the provider and redirects back to /auth/callback
+      window.location.href = `${this.baseUrl}/api/auth/oidc/login`;
+    } else if (mode === 'mock' && credentials) {
+      await this.mockLogin(credentials.email);
+    } else {
+      throw new Error('Login is turned off on this server');
     }
   }
 
@@ -207,6 +222,7 @@ export class AuthService {
       this.apiService.extractCsrfToken(response);
 
       this.isGuest = false;
+      await this.claimLocalData(response.body!.user);
       this.setCurrentUser(response.body!.user);
       this.router.navigate(['/']);
 
@@ -222,54 +238,45 @@ export class AuthService {
     }
   }
 
-  // Removed skipLogin method as it's now handled automatically
-
-  // Placeholder for OAuth redirect (implement when adding IDP)
-  private redirectToOAuthProvider(): void {
-    // Future implementation:
-    // window.location.href = `${this.baseUrl}/api/auth/oauth/login`;
-    throw new Error('OAuth not implemented yet');
-  }
-
-  // Placeholder for SAML (implement when adding IDP)
-  private initiateSamlLogin(): void {
-    // Future implementation
-    throw new Error('SAML not implemented yet');
-  }
-
-  // Handle OAuth/SAML callback - call this from a callback component
-  async handleAuthCallback(params: any): Promise<void> {
-    try {
-      const response = await lastValueFrom(
-        this.http.post<{ user: User }>(`${this.baseUrl}/api/auth/callback`, params)
-      );
-
-      this.isGuest = false;
-      this.setCurrentUser(response.user);
+  /**
+   * Finish a login through the OIDC provider. The backend has set the session cookie and
+   * redirected the browser to /auth/callback, so the app has just started with the new session.
+   */
+  async completeLogin(): Promise<void> {
+    await this.initializeAuth();
+    if (this.isAuthenticated() && !this.isGuest) {
       this.router.navigate(['/']);
-      this.refreshAdminStatus();
-    } catch (error) {
-      console.error('Auth callback failed:', error);
+      await this.syncEngine.syncNow();
+    } else {
       this.router.navigate(['/login'], { queryParams: { error: 'auth_failed' } });
     }
   }
 
   async logout(): Promise<void> {
+    // After an OIDC login, the provider's session ends too (logoutUrl)
+    let logoutUrl: string | null = null;
     try {
-      await lastValueFrom(
-        this.http.post(`${this.baseUrl}/api/auth/logout`, {}, { withCredentials: true })
+      const response = await lastValueFrom(
+        this.http.post<{ logoutUrl?: string | null }>(`${this.baseUrl}/api/auth/logout`, {}, { withCredentials: true })
       );
+      logoutUrl = response?.logoutUrl ?? null;
     } catch (error) {
       console.error('Logout error:', error);
-    } finally {
-      // Clear all user data before switching to guest
-      console.log('Clearing user data on logout...');
-      await this.clearLocalUserData();
-
-      // After logout, automatically create a new guest session
-      await this.autoGuestLogin();
-      this.router.navigate(['/login']); // Ensure redirection to login page
     }
+
+    // Clear all user data before switching to guest
+    console.log('Clearing user data on logout...');
+    await this.clearLocalUserData();
+
+    if (logoutUrl) {
+      // The provider redirects back to the app, which then starts a guest session
+      window.location.href = logoutUrl;
+      return;
+    }
+
+    // After logout, automatically create a new guest session
+    await this.autoGuestLogin();
+    this.router.navigate(['/login']); // Ensure redirection to login page
   }
 
   /** Remove the conversations, messages and settings stored in this browser, and the repository caches. */
@@ -277,6 +284,32 @@ export class AuthService {
     await this.dbService.clearAllUserData();
     this.conversationRepository.clearCache();
     this.messageRepository.clearAllCaches();
+  }
+
+  /**
+   * The conversations stored in this browser belong to one user: clear them when another
+   * user's session starts (e.g. a guest logs in). Data without a known owner is kept.
+   */
+  private async claimLocalData(user: User): Promise<void> {
+    let owner: string | null = null;
+    try {
+      owner = localStorage.getItem(LOCAL_DATA_OWNER_KEY);
+    } catch {
+      // Storage unavailable: nothing to compare with
+    }
+    if (owner !== null && owner !== String(user.id)) {
+      console.log('AuthService: Another user logged in, clearing the data stored in this browser');
+      await this.clearLocalUserData();
+    }
+    this.writeLocalDataOwner(user);
+  }
+
+  private writeLocalDataOwner(user: User): void {
+    try {
+      localStorage.setItem(LOCAL_DATA_OWNER_KEY, String(user.id));
+    } catch {
+      // Storage unavailable
+    }
   }
 
   // Add method to check specific permissions (useful with IDP)

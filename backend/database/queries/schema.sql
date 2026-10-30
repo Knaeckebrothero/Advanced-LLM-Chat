@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE NOT NULL,
     name TEXT,
     is_guest BOOLEAN DEFAULT FALSE,  -- created per guest login, deleted once its sessions have expired
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    oidc_sub TEXT UNIQUE  -- the OIDC provider's subject id (AUTH_MODE=oidc)
 );
 
 -- name: create_conversations_table
@@ -58,7 +59,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL,
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    csrf_token TEXT
+    csrf_token TEXT,
+    auth_method TEXT,  -- guest, mock or oidc (NULL: sessions from before, guest or mock)
+    is_admin BOOLEAN DEFAULT FALSE,  -- granted at login (OIDC_ADMIN_ROLE)
+    id_token TEXT  -- the OIDC ID token, for logging out at the provider
 );
 
 -- name: create_guest_usage_table

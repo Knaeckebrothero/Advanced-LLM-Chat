@@ -14,7 +14,7 @@ ADMIN_EMAILS containing the admin email, and the test key variable (providers
 only read keys from the environment):
 
     POSTGRES_DB=llm_chat_catalog_test MODEL_CATALOG_FILE= python backend/app_init.py --skip-neo4j --no-certs --seed
-    POSTGRES_DB=llm_chat_catalog_test ADMIN_EMAILS=admin@example.com \
+    POSTGRES_DB=llm_chat_catalog_test ADMIN_EMAILS=admin@example.com AUTH_MODE=mock \
         ZZ_CATALOG_TEST_API_KEY=sk-test-0123456789abcdefWXYZ PORT=8445 python start_backend.py
     POSTGRES_DB=llm_chat_catalog_test python backend/catalog/tests/catalog_api_test.py --base-url https://localhost:8445
 

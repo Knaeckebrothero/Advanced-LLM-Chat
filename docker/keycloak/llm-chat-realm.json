@@ -1,0 +1,42 @@
+{
+  "realm": "llm-chat",
+  "displayName": "Advanced LLM Chat",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": true,
+  "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Manages models and agents in Advanced LLM Chat (OIDC_ADMIN_ROLE)"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "llm-chat",
+      "name": "Advanced LLM Chat",
+      "description": "The chat backend logs users in with this client (docs/authentication.md)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${OIDC_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": false,
+      "redirectUris": ["${OIDC_REDIRECT_URI}"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${FRONTEND_URL}"
+      }
+    }
+  ]
+}

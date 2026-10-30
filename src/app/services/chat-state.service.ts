@@ -214,7 +214,7 @@ export class ChatStateService implements OnDestroy {
       )
       .subscribe(user => {
         // When user changes (after logout/login), reset to new conversation
-        if (user.email.includes('guest')) {
+        if (this.authService.isGuest) {
           console.log('Guest user detected, resetting chat state');
           this.resetState();
         }

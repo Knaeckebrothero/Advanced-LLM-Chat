@@ -134,10 +134,42 @@ LOG_FILE = os.getenv("LOG_FILE", "application.log")
 # Set it to an empty value to disable seeding. Provider API keys always come from the
 # environment variables the providers name (api_key_env).
 MODEL_CATALOG_FILE = os.getenv("MODEL_CATALOG_FILE", "catalog/models.json")
-# Users who may manage the catalog, until roles come from Keycloak (comma-separated emails)
+# Users who may manage the catalog (comma-separated emails). With AUTH_MODE=oidc they
+# count only if the provider says the email is verified; OIDC_ADMIN_ROLE is the usual way there.
 ADMIN_EMAILS = {
     email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()
 }
+
+# Authentication (docs/authentication.md). Guests can always chat; AUTH_MODE decides how
+# everyone else logs in:
+#   oidc: through an OpenID Connect provider such as Keycloak (the OIDC_* settings)
+#   mock: with any email and no password (development only, never on a reachable server)
+#   none: not at all (the default)
+AUTH_MODE = os.getenv("AUTH_MODE", "").strip().lower() or "none"
+SESSION_TIMEOUT_HOURS = int(os.getenv("SESSION_TIMEOUT_HOURS", "24"))
+GUEST_SESSION_TIMEOUT_HOURS = int(os.getenv("GUEST_SESSION_TIMEOUT_HOURS", "6"))
+# The provider's issuer, e.g. https://auth.example.com/realms/home for a Keycloak realm
+OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip().rstrip("/")
+# Where the backend reads the provider's metadata; set it when the backend reaches the
+# provider under another address than the browser (the bundled Keycloak in docker compose)
+OIDC_DISCOVERY_URL = os.getenv("OIDC_DISCOVERY_URL", "").strip() or (
+    f"{OIDC_ISSUER}/.well-known/openid-configuration" if OIDC_ISSUER else "")
+OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()
+OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "").strip()
+OIDC_SCOPES = os.getenv("OIDC_SCOPES", "openid profile email").strip()
+# Roles (Keycloak realm or client roles, or groups) that make a user an admin, or let a user
+# log in at all; empty means no admin role, and everyone the provider accepts may log in
+OIDC_ADMIN_ROLE = os.getenv("OIDC_ADMIN_ROLE", "").strip()
+OIDC_REQUIRED_ROLE = os.getenv("OIDC_REQUIRED_ROLE", "").strip()
+# Shown on the login button ("Log in with Keycloak")
+OIDC_DISPLAY_NAME = os.getenv("OIDC_DISPLAY_NAME", "").strip() or "Keycloak"
+# The backend's public address, which the provider redirects back to after a login; without
+# OIDC_REDIRECT_URI it's API_URL (the backend address the frontend uses) or the request's address
+_api_url = os.getenv("API_URL", "").strip().rstrip("/")
+OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "").strip() or (
+    f"{_api_url}/api/auth/oidc/callback" if _api_url else "")
+# The frontend's address, where a login or logout ends
+FRONTEND_URL = (os.getenv("FRONTEND_URL", "").strip() or (CORS_ORIGINS[0] if _cors_env else "https://localhost:4200")).rstrip("/")
 
 # Agent loop
 # Maximum number of model calls per answer (each tool round counts as one)

@@ -8,6 +8,8 @@ This directory contains the Docker configuration for containerizing both the Ang
 - **backend.Dockerfile**: Python FastAPI backend with SQLite database
 - **nginx.conf**: Nginx configuration optimized for serving Angular SPA
 - **docker-compose.yml**: Docker Compose configuration for running both services
+- **docker-compose.keycloak.yml**: Optional Keycloak for logging in, added to either compose file (see [Login](#login))
+- **keycloak/llm-chat-realm.json**: The Keycloak realm it imports on its first start
 
 ## Prerequisites
 
@@ -119,6 +121,29 @@ API_URL=https://my-server.example.com:8443 docker-compose up -d
 echo "API_URL=https://my-server.example.com:8443" >> .env
 docker-compose up -d
 ```
+
+## Login
+
+Guests can always chat. How everyone else logs in is `AUTH_MODE` (details in
+[docs/authentication.md](../docs/authentication.md)):
+
+- **No login** (the default, `AUTH_MODE=none`): guests only.
+- **Your own OpenID Connect provider**, e.g. an existing Keycloak: set `AUTH_MODE=oidc` and the
+  `OIDC_*` settings in `docker/.env`, and register the client there as the doc describes.
+- **The bundled Keycloak**: set `KEYCLOAK_ADMIN_PASSWORD` and `OIDC_CLIENT_SECRET` in `docker/.env`
+  (e.g. `openssl rand -hex 24`), then add the Keycloak compose file:
+
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up -d
+  ```
+
+  Open the Keycloak console at http://localhost:8180 (user `admin`), switch to the realm
+  `llm-chat`, create users (with "Email verified" on and a password), and give admins the
+  realm role `admin`. The realm is imported on the first start only; change it in the
+  console afterwards. Behind a reverse proxy, set `KEYCLOAK_URL`, `API_URL` and
+  `FRONTEND_URL` to the addresses the browser uses.
+
+`AUTH_MODE=mock` (log in with any email, no password) is for development only.
 
 ## Container Details
 

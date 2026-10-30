@@ -3,12 +3,11 @@ Authentication and session management.
 """
 import asyncio
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta, UTC
 from typing import Optional, Dict
 from fastapi import Request, HTTPException, Depends
-from backend.config import ADMIN_EMAILS
+from backend.config import ADMIN_EMAILS, AUTH_MODE, SESSION_TIMEOUT_HOURS, GUEST_SESSION_TIMEOUT_HOURS
 from backend.database import db
 from backend.security.csrf import generate_csrf_token
 
@@ -38,7 +37,9 @@ def generate_session_key(length=32) -> str:
     return secrets.token_urlsafe(length)
 
 
-def create_session(user_id: int, user_email: str, session_duration_hours=24, is_guest=False, regenerate_from=None) -> tuple[str, str]:
+def create_session(user_id: int, user_email: str, session_duration_hours=SESSION_TIMEOUT_HOURS, is_guest=False,
+                   regenerate_from=None, auth_method: Optional[str] = None, is_admin: bool = False,
+                   id_token: Optional[str] = None) -> tuple[str, str]:
     """
     Creates and stores a new user session in the database. Optionally regenerates a session
     from an existing one by deleting the old session before creation.
@@ -48,13 +49,19 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
     :param user_email: The email address associated with the user's account.
     :type user_email: str
     :param session_duration_hours: The duration in hours for which the session remains valid.
-        Defaults to 24 hours.
+        Defaults to SESSION_TIMEOUT_HOURS (guests: GUEST_SESSION_TIMEOUT_HOURS, passed by guest_login).
     :type session_duration_hours: int
     :param is_guest: Flag indicating whether the session is for a guest user. Defaults to False.
     :type is_guest: bool
     :param regenerate_from: The session key of an existing session to be regenerated. If provided,
         the existing session will be deleted.
     :type regenerate_from: str or None
+    :param auth_method: How the user logged in: guest, mock or oidc (default: guest or mock).
+    :type auth_method: str or None
+    :param is_admin: Whether the login granted admin rights (OIDC_ADMIN_ROLE, see is_admin).
+    :type is_admin: bool
+    :param id_token: The OIDC ID token, for logging out at the provider.
+    :type id_token: str or None
     :return: A tuple containing the new session key and the CSRF token associated with the session.
     :rtype: tuple[str, str]
     """
@@ -64,10 +71,7 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
 
     session_key = generate_session_key()
     csrf_token = generate_csrf_token()
-
-    # Use environment variable for session timeout if available
-    session_timeout = int(os.getenv('SESSION_TIMEOUT_HOURS', str(session_duration_hours)))
-    expires_at = datetime.now(UTC) + timedelta(hours=session_timeout)
+    expires_at = datetime.now(UTC) + timedelta(hours=session_duration_hours)
 
     # Save session to database using the new Database class
     db.create_session(
@@ -76,11 +80,14 @@ def create_session(user_id: int, user_email: str, session_duration_hours=24, is_
         email=user_email,
         expires_at=expires_at,
         is_guest=is_guest,
-        csrf_token=csrf_token
+        csrf_token=csrf_token,
+        auth_method=auth_method or ("guest" if is_guest else "mock"),
+        is_admin=is_admin,
+        id_token=id_token
     )
 
     user_type = "guest" if is_guest else "user"
-    log.info(f"Session created for {user_type} user_id={user_id}, expires_in={session_timeout}h")
+    log.info(f"Session created for {user_type} user_id={user_id}, expires_in={session_duration_hours}h")
 
     return session_key, csrf_token
 
@@ -109,6 +116,14 @@ def validate_session(session_key: str) -> Optional[dict]:
         log.debug("Session validation failed: session not found or expired")
         return None
 
+    # Mock logins only count while mock login is on (sessions from before auth_method
+    # existed are guest or mock sessions)
+    auth_method = session.get("auth_method") or ("guest" if session["is_guest"] else "mock")
+    if auth_method == "mock" and AUTH_MODE != "mock":
+        log.info(f"Mock login session of user_id={session['user_id']} ended, AUTH_MODE is {AUTH_MODE}")
+        db.delete_session(session_key)
+        return None
+
     # Update last activity timestamp
     db.update_session_activity(session_key)
     log.debug(f"Session validated for user_id={session['user_id']}")
@@ -132,7 +147,10 @@ def validate_session(session_key: str) -> Optional[dict]:
         "is_guest": session["is_guest"],
         "csrf_token": session["csrf_token"],
         "expires_at": expires_at.isoformat(),
-        "expires_in": expires_in_seconds
+        "expires_in": expires_in_seconds,
+        "auth_method": auth_method,
+        "is_admin": bool(session.get("is_admin")),
+        "id_token": session.get("id_token")
     }
 
 
@@ -198,19 +216,23 @@ def is_admin(user: Optional[dict]) -> bool:
     """
     Checks whether a user may manage the model catalog.
 
-    Until roles come from Keycloak, admins are the users whose email is listed in
-    ADMIN_EMAILS (case-insensitive). Guests are never admins, and an empty
-    ADMIN_EMAILS means nobody is.
+    An OIDC login grants admin rights when the user has OIDC_ADMIN_ROLE or a verified
+    email in ADMIN_EMAILS (stored on the session, see backend/security/oidc.py). For mock
+    logins, admins are the users whose email is listed in ADMIN_EMAILS (case-insensitive).
+    Guests are never admins.
 
-    :param user: The user dictionary from get_current_user (with `email` and `is_guest`).
+    :param user: The user dictionary from get_current_user (with `email`, `is_guest`,
+        `auth_method` and `is_admin`).
     :type user: Optional[dict]
     :return: True if the user is an admin, otherwise False.
     :rtype: bool
     """
     if not user or user.get("is_guest"):
         return False
+    if user.get("is_admin"):
+        return True
     email = (user.get("email") or "").strip().lower()
-    return bool(email) and email in ADMIN_EMAILS
+    return user.get("auth_method") == "mock" and bool(email) and email in ADMIN_EMAILS
 
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
@@ -244,8 +266,7 @@ async def cleanup_expired_sessions():
             # Clean expired sessions using the new Database method
             db.delete_expired_sessions()
             # Guest users whose sessions are gone, with their conversations
-            guest_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
-            db.delete_stale_guest_users(datetime.utcnow() - timedelta(hours=guest_hours))
+            db.delete_stale_guest_users(datetime.utcnow() - timedelta(hours=GUEST_SESSION_TIMEOUT_HOURS))
             log.debug("Expired sessions cleanup completed")
 
         except Exception as e:

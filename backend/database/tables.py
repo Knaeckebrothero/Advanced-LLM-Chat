@@ -35,6 +35,7 @@ users = Table(
     Column('name', Text),
     Column('is_guest', Boolean, server_default='false'),  # One user per guest login
     Column('created_at', DateTime, server_default=func.now()),
+    Column('oidc_sub', Text, unique=True),  # The OIDC provider's subject id (AUTH_MODE=oidc)
 )
 
 # Conversations table with UUID support
@@ -92,6 +93,9 @@ sessions = Table(
     Column('expires_at', DateTime, nullable=False),
     Column('last_activity', DateTime, server_default=func.now()),
     Column('csrf_token', Text),
+    Column('auth_method', Text),  # guest, mock or oidc (NULL: sessions from before, guest or mock)
+    Column('is_admin', Boolean, server_default='false'),  # Granted at login (OIDC_ADMIN_ROLE)
+    Column('id_token', Text),  # The OIDC ID token, for logging out at the provider
 )
 
 # Guest usage table for rate limiting

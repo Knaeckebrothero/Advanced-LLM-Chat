@@ -110,6 +110,19 @@ services:
       - USE_DEV_CERTS=True
       # Reverse proxy whose X-Forwarded-For header is trusted (guest rate limit by IP)
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      # Authentication (docs/authentication.md): oidc, mock (development only) or none (guests only).
+      # docker-compose.keycloak.yml sets these up for its bundled Keycloak.
+      - AUTH_MODE=${AUTH_MODE:-none}
+      - OIDC_ISSUER=${OIDC_ISSUER:-}
+      - OIDC_DISCOVERY_URL=${OIDC_DISCOVERY_URL:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_ADMIN_ROLE=${OIDC_ADMIN_ROLE:-}
+      - OIDC_REQUIRED_ROLE=${OIDC_REQUIRED_ROLE:-}
+      - OIDC_DISPLAY_NAME=${OIDC_DISPLAY_NAME:-}
+      # The backend's and the frontend's addresses in the browser, where logins return to
+      - API_URL=${API_URL:-https://localhost:8443}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-8080}}
       # PostgreSQL
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

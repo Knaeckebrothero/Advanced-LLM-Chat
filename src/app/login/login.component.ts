@@ -1,6 +1,15 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { AuthService } from '../auth/auth.service';
+import { Observable } from 'rxjs';
+import { AuthConfig, AuthService } from '../auth/auth.service';
+
+// Errors the backend redirects here with after a failed login through the OIDC provider
+const LOGIN_ERRORS: Record<string, string> = {
+  auth_failed: 'Login failed. Please try again.',
+  provider_unavailable: 'The login service is not reachable. Please try again later.',
+  forbidden: 'Your account may not use this app.',
+  email_in_use: 'An account with this email already exists. An admin can link it by marking the email as verified.',
+};
 
 
 @Component({
@@ -14,53 +23,52 @@ export class LoginComponent implements OnInit {
   error: string = '';
   loading: boolean = false;
 
-  // This allows you to easily switch between mock and IDP login
-  useMockLogin: boolean = true; // Set to false when you implement IDP
+  // How users log in on this server: the OIDC provider, the mock login (email only) or not at all
+  authConfig$: Observable<AuthConfig>;
 
   constructor(
     private authService: AuthService,
     private route: ActivatedRoute
-  ) {}
+  ) {
+    this.authConfig$ = this.authService.authConfig$;
+  }
 
   ngOnInit() {
     // Check for error from failed auth callback
     const error = this.route.snapshot.queryParams['error'];
-    if (error === 'auth_failed') {
-      this.error = 'Authentication failed. Please try again.';
+    if (error) {
+      this.error = LOGIN_ERRORS[error] ?? LOGIN_ERRORS['auth_failed'];
     }
   }
 
+  /** The mock login with an email. */
   async login() {
-    if (this.useMockLogin) {
-      if (!this.email) {
-        this.error = 'Please enter an email';
-        return;
-      }
+    if (!this.email) {
+      this.error = 'Please enter an email';
+      return;
+    }
 
-      this.loading = true;
-      this.error = '';
+    this.loading = true;
+    this.error = '';
 
-      try {
-        await this.authService.login({ email: this.email });
-      } catch (error) {
-        this.error = 'Login failed. Please try again.';
-      } finally {
-        this.loading = false;
-      }
-    } else {
-      // For IDP login, just call login without credentials
-      // The auth service will handle the redirect
-      try {
-        await this.authService.login();
-      } catch (error) {
-        this.error = 'Login provider not available';
-      }
+    try {
+      await this.authService.login({ email: this.email });
+    } catch (error) {
+      this.error = LOGIN_ERRORS['auth_failed'];
+    } finally {
+      this.loading = false;
     }
   }
 
-  // Alternative method for IDP login button
-  loginWithProvider() {
+  /** The login through the OIDC provider; the browser leaves the app for the provider's login page. */
+  async loginWithProvider() {
     this.loading = true;
-    this.authService.login();
+    this.error = '';
+    try {
+      await this.authService.login();
+    } catch (error) {
+      this.loading = false;
+      this.error = LOGIN_ERRORS['provider_unavailable'];
+    }
   }
 }

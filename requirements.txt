@@ -12,6 +12,7 @@ anthropic>=2.0.0
 
 # Security
 trustme>=1.1.0
+PyJWT[crypto]>=2.10.0  # Checks the OIDC provider's tokens (AUTH_MODE=oidc)
 
 # Database
 psycopg2-binary>=2.9.9

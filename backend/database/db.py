@@ -451,7 +451,39 @@ class Database:
                 log.debug(f"User not found: {email}")
             return user
 
-    def create_user(self, email: str, name: str = None, is_guest: bool = False) -> dict:
+    def get_user_by_oidc_sub(self, oidc_sub: str) -> Optional[dict]:
+        """
+        Get the user an OIDC login belongs to.
+
+        Args:
+            oidc_sub: The provider's subject id (the ID token's sub claim).
+
+        Returns:
+            User dictionary or None if no user has this subject id.
+        """
+        with self.connection() as conn:
+            stmt = select(users).where(users.c.oidc_sub == oidc_sub)
+            return self._row_to_dict(conn.execute(stmt).fetchone())
+
+    def link_oidc_user(self, user_id: int, oidc_sub: str) -> Optional[dict]:
+        """
+        Link an existing user to an OIDC subject id, so later logins find it by that id.
+
+        Args:
+            user_id: The user's ID.
+            oidc_sub: The provider's subject id.
+
+        Returns:
+            Updated user dictionary or None if not found.
+        """
+        with self.connection() as conn:
+            stmt = update(users).where(users.c.id == user_id).values(oidc_sub=oidc_sub).returning(users)
+            result = conn.execute(stmt).fetchone()
+            if result:
+                log.info(f"Linked user {user_id} to an OIDC login")
+            return self._row_to_dict(result)
+
+    def create_user(self, email: str, name: str = None, is_guest: bool = False, oidc_sub: str = None) -> dict:
         """
         Create a new user.
 
@@ -459,12 +491,14 @@ class Database:
             email: The user's email address.
             name: The user's name (optional).
             is_guest: A user for one guest login; deleted by delete_stale_guest_users().
+            oidc_sub: The OIDC provider's subject id, for users who log in through it.
 
         Returns:
             The created user dictionary.
         """
         with self.connection() as conn:
-            stmt = insert(users).values(email=email, name=name, is_guest=is_guest).returning(users)
+            stmt = insert(users).values(email=email, name=name, is_guest=is_guest,
+                                        oidc_sub=oidc_sub).returning(users)
             result = conn.execute(stmt).fetchone()
             log.info(f"Created user: {email}")
             return self._row_to_dict(result)
@@ -1195,7 +1229,10 @@ class Database:
         email: str,
         expires_at: datetime,
         is_guest: bool = False,
-        csrf_token: str = None
+        csrf_token: str = None,
+        auth_method: str = None,
+        is_admin: bool = False,
+        id_token: str = None
     ) -> dict:
         """
         Create a new session.
@@ -1207,6 +1244,9 @@ class Database:
             expires_at: Session expiration datetime.
             is_guest: Whether this is a guest session.
             csrf_token: CSRF token (optional).
+            auth_method: How the user logged in: guest, mock or oidc.
+            is_admin: Whether the login granted admin rights (OIDC_ADMIN_ROLE).
+            id_token: The OIDC ID token, for logging out at the provider.
 
         Returns:
             The created session dictionary.
@@ -1219,6 +1259,9 @@ class Database:
                 expires_at=expires_at,
                 is_guest=is_guest,
                 csrf_token=csrf_token,
+                auth_method=auth_method,
+                is_admin=is_admin,
+                id_token=id_token,
             ).returning(sessions)
             result = conn.execute(stmt).fetchone()
             log.debug(f"Created session for user {user_id}")

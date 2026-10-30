@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 from backend.database import db
 
 # Import security and utilities
+from backend.config import AUTH_MODE
+from backend.security import oidc
 from backend.security.auth import cleanup_expired_sessions
 from backend.utils.certificates import setup_development_certificates
 
@@ -50,6 +52,10 @@ async def lifespan(app: FastAPI):
     :return: Async generator for managing application lifespan.
     :rtype: AsyncGenerator
     """
+    # Refuse to start with an unknown AUTH_MODE or incomplete OIDC settings
+    oidc.check_config()
+    logging.getLogger(__name__).info(f"Authentication: AUTH_MODE={AUTH_MODE} (guests can always chat)")
+
     # Initialize database tables
     db.init_tables()
 

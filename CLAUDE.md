@@ -51,6 +51,7 @@ python backend/app_init.py --prod            # Production migration (add missing
 **Note:** No Python test framework (pytest) is configured. There are test scripts instead:
 - `python -m backend.llm.tests.run_all`: offline tests of the LLM runtime, history and tools (fake OpenAI server, mocked Anthropic API)
 - `backend/catalog/tests/catalog_api_test.py`: catalog end-to-end test against a backend on its own `*_test` database (see its docstring)
+- `backend/security/tests/oidc_test.py`: login through Keycloak end-to-end, against the bundled Keycloak and a backend in `AUTH_MODE=oidc` on a `*_test` database (see its docstring)
 - `python -m backend.llm.smoke_test --model <id>`: real API calls against one catalog model
 
 ### Environment Configuration
@@ -65,7 +66,9 @@ POSTGRES_USER=llm_chat
 POSTGRES_PASSWORD=llm_chat_dev_password
 ```
 
-Model catalog: providers are defined in `catalog/models.json` (`MODEL_CATALOG_FILE`, the default) and their keys are read only from the env vars they name (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `MODEL_ROUTER_API`/`MODEL_ROUTER_KEY`, ...). `ADMIN_EMAILS` lists the users who may edit models and agents on the Agents page (`/agents`). Restart the backend after changing `.env`.
+Login: `AUTH_MODE` is `oidc` (an OpenID Connect provider such as Keycloak, the `OIDC_*` settings), `mock` (any email, no password: development only, set in the dev `.env`) or `none` (the default: guests only). Guests can always chat. See `docs/authentication.md`, also for the optional bundled Keycloak (`docker/docker-compose.keycloak.yml`).
+
+Model catalog: providers are defined in `catalog/models.json` (`MODEL_CATALOG_FILE`, the default) and their keys are read only from the env vars they name (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `MODEL_ROUTER_API`/`MODEL_ROUTER_KEY`, ...). Admins (who may edit models and agents on the Agents page, `/agents`) are users with `OIDC_ADMIN_ROLE`, or listed in `ADMIN_EMAILS` (with `oidc` only if the email is verified). Restart the backend after changing `.env`.
 
 See `.env.example` for all optional settings (Neo4j, vision models, Whisper, TTS, web search).
 
@@ -134,7 +137,7 @@ backend/
 │   ├── tts_handler.py    # Text-to-speech generation
 │   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
 │   └── tools/            # Tool implementations (files, web search, read-only knowledge graph)
-├── security/         # Auth, CSRF, logging
+├── security/         # Sessions, login through an OIDC provider (oidc.py), CSRF, logging
 └── utils/            # Certificates, hashing
 ```
 
@@ -148,7 +151,7 @@ Located in `src/app/data/objects/`:
 ### Key Patterns
 - **Offline-First**: All data stored in IndexedDB, synced with backend when available
 - **Observable Pattern**: Heavy use of RxJS for async operations and state management
-- **Interceptor Pattern**: Automatic auth header injection via `AuthInterceptor`
+- **Interceptor Pattern**: Automatic auth header injection via `AuthInterceptor`; a 401 outside `/api/auth/me` opens the login page, so nothing may call the API before the AuthService has a session (the first sync and the backend's settings wait for it)
 - **Message System**: Discriminated union types with factory methods `Message.createText()`, `Message.createAgent()`
 
 ## Code Standards

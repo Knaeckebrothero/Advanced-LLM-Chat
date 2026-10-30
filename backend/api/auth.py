@@ -2,11 +2,15 @@
 Authentication API endpoints.
 """
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta, UTC
+from typing import Optional
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
+from fastapi.responses import RedirectResponse
+from backend.config import (AUTH_MODE, FRONTEND_URL, GUEST_SESSION_TIMEOUT_HOURS, OIDC_DISPLAY_NAME,
+                            OIDC_REDIRECT_URI, SESSION_TIMEOUT_HOURS)
 from backend.models.auth import MockLoginRequest, LoginResponse
+from backend.security import oidc
 from backend.security.auth import (
     client_ip, create_session, validate_session, delete_session, get_current_user, is_admin
 )
@@ -15,6 +19,52 @@ from backend.database import db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
+
+# The cookie that keeps a started OIDC login until the provider redirects back
+OIDC_LOGIN_COOKIE = "oidc_login"
+OIDC_COOKIE_PATH = "/api/auth/oidc"
+
+
+def set_session_cookies(response: Response, session_key: str, csrf_token: str, max_age: int) -> None:
+    """
+    Sets the session cookie, the CSRF cookie (double-submit pattern, readable by JS) and
+    the CSRF header after a login or session refresh.
+    """
+    response.set_cookie(
+        key="session",
+        value=session_key,
+        max_age=max_age,
+        httponly=True,  # Prevents JS access
+        secure=True,  # HTTPS only
+        samesite="lax",
+        path="/"
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=csrf_token,
+        max_age=max_age,
+        httponly=False,  # JS needs to read this
+        secure=True,
+        samesite="lax",  # Lax allows cross-site requests from different ports
+        path="/"
+    )
+    # Also set CSRF token in response header for backward compatibility
+    response.headers["X-CSRF-Token"] = csrf_token
+
+
+@router.get("/config",
+            summary="Login Options",
+            description="How users log in on this server (AUTH_MODE: oidc, mock or none); guests can always chat",
+            operation_id="getAuthConfig")
+async def auth_config():
+    """
+    Tells the login page how users log in: through the OIDC provider (`providerName` is
+    shown on its button), with the development mock login, or not at all.
+
+    :return: The mode and, for oidc, the provider's display name.
+    :rtype: dict
+    """
+    return {"mode": AUTH_MODE, "providerName": OIDC_DISPLAY_NAME if AUTH_MODE == "oidc" else None}
 
 
 @router.post("/guest-login",
@@ -83,37 +133,13 @@ async def guest_login(req: Request, response: Response):
     guest_user = {"id": guest["id"], "email": guest_email, "name": "Guest"}
 
     # Use shorter timeout for guest sessions
-    guest_timeout_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
+    guest_timeout_hours = GUEST_SESSION_TIMEOUT_HOURS
 
     # Create new guest session with custom timeout, regenerating old session
     session_key, csrf_token = create_session(guest["id"], guest_email, session_duration_hours=guest_timeout_hours,
-                                              is_guest=True, regenerate_from=old_session_key)
+                                              is_guest=True, regenerate_from=old_session_key, auth_method="guest")
 
-    max_age = guest_timeout_hours * 3600
-
-    response.set_cookie(
-        key="session",
-        value=session_key,
-        max_age=max_age,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        path="/"
-    )
-
-    # Set CSRF token as cookie for double-submit pattern
-    response.set_cookie(
-        key="csrf_token",
-        value=csrf_token,
-        max_age=max_age,
-        httponly=False,  # JS needs to read this
-        secure=True,
-        samesite="lax",  # Lax allows cross-site requests from different ports
-        path="/"
-    )
-
-    # Also set CSRF token in response header for backward compatibility
-    response.headers["X-CSRF-Token"] = csrf_token
+    set_session_cookies(response, session_key, csrf_token, guest_timeout_hours * 3600)
 
     # Log successful guest login
     log_security_event("guest_login_success", {
@@ -134,13 +160,14 @@ async def guest_login(req: Request, response: Response):
 @router.post("/mock-login",
              response_model=LoginResponse,
              summary="Mock Login",
-             description="Mock authentication for testing purposes - creates or retrieves a test user",
+             description="Login with any email and no password, for development (only with AUTH_MODE=mock)",
              operation_id="mockLogin")
 async def mock_login(request: MockLoginRequest, req: Request, response: Response):
     """
     Handles the mock login process for a user by creating or retrieving a user in the database,
     generating a session, and setting appropriate cookies and headers for the client. This
-    endpoint is typically used for testing authentication workflows.
+    endpoint is typically used for testing authentication workflows. It only exists with
+    AUTH_MODE=mock: anyone could log in as anyone with it.
 
     :param request: A validated request object containing mock login details, including the
         user's email.
@@ -151,7 +178,10 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     :type response: Response
     :return: A response object containing user data and a success message.
     :rtype: LoginResponse
+    :raises HTTPException: 404 unless AUTH_MODE is mock.
     """
+    if AUTH_MODE != "mock":
+        raise HTTPException(status_code=404, detail="Mock login is turned off (AUTH_MODE)")
     logger.debug(f"Mock login attempt for: {request.email}")
 
     # Get existing session to regenerate from
@@ -174,36 +204,10 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
     user_name = user['name']
 
     # Create session with is_guest=False for regular users, regenerating old session
-    session_key, csrf_token = create_session(user_id, request.email, is_guest=False, regenerate_from=old_session_key)
+    session_key, csrf_token = create_session(user_id, request.email, is_guest=False, regenerate_from=old_session_key,
+                                              auth_method="mock")
 
-    # Calculate max_age based on session timeout
-    session_timeout_hours = int(os.getenv('SESSION_TIMEOUT_HOURS', '24'))
-    max_age = session_timeout_hours * 3600
-
-    # Set session cookie
-    response.set_cookie(
-        key="session",
-        value=session_key,
-        max_age=max_age,
-        httponly=True,  # Prevents JS access
-        secure=True,  # HTTPS only
-        samesite="lax",
-        path="/"
-    )
-
-    # Set CSRF token as cookie for double-submit pattern
-    response.set_cookie(
-        key="csrf_token",
-        value=csrf_token,
-        max_age=max_age,
-        httponly=False,  # JS needs to read this
-        secure=True,
-        samesite="lax",  # Lax allows cross-site requests from different ports
-        path="/"
-    )
-
-    # Also set CSRF token in response header for backward compatibility
-    response.headers["X-CSRF-Token"] = csrf_token
+    set_session_cookies(response, session_key, csrf_token, SESSION_TIMEOUT_HOURS * 3600)
 
     # Log successful login
     log_security_event("user_login_success", {
@@ -219,10 +223,112 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
             "id": user_id,
             "email": request.email,
             "name": user_name,
-            "isAdmin": is_admin({"email": request.email, "is_guest": False})
+            "isAdmin": is_admin({"email": request.email, "is_guest": False, "auth_method": "mock"})
         },
         message="Mock login successful"
     )
+
+
+def _login_failed(reason: str) -> RedirectResponse:
+    return RedirectResponse(f"{FRONTEND_URL}/login?error={reason}", status_code=302)
+
+
+@router.get("/oidc/login",
+            summary="Log In Through the OIDC Provider",
+            description="Redirects the browser to the OIDC provider's login page (only with AUTH_MODE=oidc)",
+            operation_id="oidcLogin")
+async def oidc_login(req: Request):
+    """
+    Starts a login through the OIDC provider (authorization code flow with PKCE). The state,
+    nonce and PKCE verifier wait in a short-lived cookie for the provider's redirect to
+    oidc_callback.
+
+    :param req: The incoming HTTP request (its address gives the callback URL without OIDC_REDIRECT_URI).
+    :type req: Request
+    :return: A redirect to the provider, or to the login page if the provider can't be reached.
+    :rtype: RedirectResponse
+    :raises HTTPException: 404 unless AUTH_MODE is oidc.
+    """
+    if AUTH_MODE != "oidc":
+        raise HTTPException(status_code=404, detail="Login through an OIDC provider is turned off (AUTH_MODE)")
+    redirect_uri = OIDC_REDIRECT_URI or str(req.url_for("oidc_callback"))
+    try:
+        url, pending = await oidc.authorization_url(redirect_uri)
+    except Exception as e:
+        logger.error(f"Can't start an OIDC login, the provider isn't reachable or misconfigured: {e}")
+        return _login_failed("provider_unavailable")
+
+    response = RedirectResponse(url, status_code=302)
+    response.set_cookie(
+        key=OIDC_LOGIN_COOKIE,
+        value=oidc.encode_pending(pending),
+        max_age=oidc.LOGIN_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="lax",  # Sent along when the provider redirects the browser back
+        path=OIDC_COOKIE_PATH
+    )
+    return response
+
+
+@router.get("/oidc/callback",
+            summary="OIDC Login Callback",
+            description="Where the OIDC provider redirects the browser after a login; ends on the frontend",
+            operation_id="oidcCallback")
+async def oidc_callback(req: Request, code: Optional[str] = None, state: Optional[str] = None,
+                        error: Optional[str] = None):
+    """
+    Finishes a login through the OIDC provider: checks the state, swaps the code for tokens,
+    finds or creates the user (oidc.user_for_login), creates a session like every other
+    login and redirects to the frontend's /auth/callback. A failed or refused login ends on
+    the login page with an error (auth_failed, forbidden or email_in_use).
+
+    :param req: The incoming HTTP request with the pending login's cookie.
+    :type req: Request
+    :param code: The authorization code.
+    :param state: The state from oidc_login.
+    :param error: The provider's error, e.g. access_denied.
+    :return: A redirect to the frontend.
+    :rtype: RedirectResponse
+    :raises HTTPException: 404 unless AUTH_MODE is oidc.
+    """
+    if AUTH_MODE != "oidc":
+        raise HTTPException(status_code=404, detail="Login through an OIDC provider is turned off (AUTH_MODE)")
+    pending = oidc.decode_pending(req.cookies.get(OIDC_LOGIN_COOKIE))
+    try:
+        if error:
+            raise ValueError(f"The provider returned the error {error}")
+        if not pending or not code or not state or not secrets.compare_digest(state, pending["state"]):
+            raise ValueError("The login's state doesn't match (expired, or started in another browser)")
+        login = await oidc.finish_login(code, pending)
+        user = oidc.user_for_login(login)
+    except oidc.LoginRefused as e:
+        logger.warning(f"OIDC login refused ({e.reason}): {e}")
+        log_security_event("oidc_login_refused", {"reason": e.reason, "detail": str(e)}, req)
+        response = _login_failed(e.reason)
+    except Exception as e:
+        logger.warning(f"OIDC login failed: {e}")
+        log_security_event("oidc_login_failed", {"error": str(e)[:300]}, req)
+        response = _login_failed("auth_failed")
+    else:
+        admin = oidc.grants_admin(login)
+        session_key, csrf_token = create_session(
+            user["id"], user["email"], is_guest=False, regenerate_from=req.cookies.get("session"),
+            auth_method="oidc", is_admin=admin, id_token=login.id_token
+        )
+        response = RedirectResponse(f"{FRONTEND_URL}/auth/callback", status_code=302)
+        set_session_cookies(response, session_key, csrf_token, SESSION_TIMEOUT_HOURS * 3600)
+        log_security_event("user_login_success", {
+            "user_id": user["id"],
+            "email": user["email"],
+            "method": "oidc",
+            "is_admin": admin
+        }, req)
+        logger.info(f"OIDC login successful - user_id: {user['id']}, admin: {admin}")
+
+    response.delete_cookie(key=OIDC_LOGIN_COOKIE, path=OIDC_COOKIE_PATH, secure=True, httponly=True,
+                           samesite="lax")
+    return response
 
 
 @router.post("/logout",
@@ -237,18 +343,23 @@ async def logout(request: Request, response: Response):
     The function retrieves the session key from the `request` cookies. If a valid
     session is found, it logs the logout event before deleting the session. After
     that, it deletes the `session` and `csrf_token` cookies from the response.
+    After an OIDC login, `logoutUrl` is where the browser ends the provider's session too
+    (otherwise the next login would go through without asking for a password).
 
     :param request: The incoming HTTP request containing user session cookies
     :type request: Request
     :param response: The HTTP response object to modify and send back to the client
     :type response: Response
-    :return: A confirmation message indicating the successful logout
+    :return: A confirmation message, and the provider's logout URL or None
     :rtype: dict
     """
+    logout_url = None
     session_key = request.cookies.get("session")
     if session_key:
         # Log logout event before deleting session
         session_data = validate_session(session_key)
+        if session_data and session_data.get("auth_method") == "oidc" and AUTH_MODE == "oidc":
+            logout_url = await oidc.logout_url(session_data.get("id_token"))
         if session_data:
             log_security_event("user_logout", {
                 "user_id": session_data["user_id"],
@@ -276,7 +387,7 @@ async def logout(request: Request, response: Response):
         httponly=False,
         samesite="lax"
     )
-    return {"message": "Logged out successfully"}
+    return {"message": "Logged out successfully", "logoutUrl": logout_url}
 
 
 @router.post("/refresh-session",
@@ -324,41 +435,17 @@ async def refresh_session(request: Request, response: Response, current_user: di
     is_guest = current_user.get("is_guest", False)
 
     # Determine session duration based on user type
-    if is_guest:
-        session_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
-    else:
-        session_hours = int(os.getenv('SESSION_TIMEOUT_HOURS', '24'))
+    session_hours = GUEST_SESSION_TIMEOUT_HOURS if is_guest else SESSION_TIMEOUT_HOURS
 
-    # Create new session, regenerating the old one
+    # Create new session, regenerating the old one; it keeps how the user logged in
     new_session_key, new_csrf_token = create_session(
-        user_id, email, session_hours, is_guest, regenerate_from=session_key
+        user_id, email, session_hours, is_guest, regenerate_from=session_key,
+        auth_method=current_user.get("auth_method"), is_admin=current_user.get("is_admin", False),
+        id_token=current_user.get("id_token")
     )
 
-    # Set new session cookie
     max_age = session_hours * 3600
-    response.set_cookie(
-        key="session",
-        value=new_session_key,
-        max_age=max_age,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        path="/"
-    )
-
-    # Set CSRF token as cookie for double-submit pattern
-    response.set_cookie(
-        key="csrf_token",
-        value=new_csrf_token,
-        max_age=max_age,
-        httponly=False,  # JS needs to read this
-        secure=True,
-        samesite="lax",  # Lax allows cross-site requests from different ports
-        path="/"
-    )
-
-    # Also set new CSRF token in response header for backward compatibility
-    response.headers["X-CSRF-Token"] = new_csrf_token
+    set_session_cookies(response, new_session_key, new_csrf_token, max_age)
 
     logger.info(f"Session refreshed for user_id: {user_id}, expires in {max_age}s")
 
@@ -387,8 +474,8 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
     :param current_user: Dictionary containing information about the currently authenticated user;
                          includes user details and session attributes.
     :type current_user: dict, retrieved via dependency injection
-    :return: JSON response with user information, including user ID, email, guest session
-             status, session expiry details and whether the user may manage the model
+    :return: JSON response with user information, including user ID, email, name, guest
+             session status, session expiry details and whether the user may manage the model
              catalog (`isAdmin`, in `user` and at the top level).
     :rtype: dict
     """
@@ -418,9 +505,12 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
         response.headers["X-CSRF-Token"] = csrf_token
 
     # Prepare user data with session info
+    user = db.get_user_by_id(current_user["user_id"])
     user_data = {
+        "id": current_user["user_id"],
         "user_id": current_user["user_id"],
         "email": current_user["email"],
+        "name": user.get("name") if user else None,
         "is_guest": current_user.get("is_guest", False),
         "session_expires_at": current_user.get("expires_at"),
         "session_expires_in": current_user.get("expires_in"),
