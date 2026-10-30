@@ -38,6 +38,8 @@ Everything below is committed and pushed to `develop` (pushed directly with the 
 | `f37eb3c` | New Chat works from the Agents page; long user names are cut off in the sidebar |
 | `84a7777` | Uploaded files belong to their uploader (`uploaded_files` table); files API, agent file tool and history only use the user's own files |
 | `8def39c` | First visit (or a session that expired while the app was closed) starts a guest session in the chat instead of showing the login page |
+| `a8c83a6` | Settings and the first sync wait for the session, so a first visit or a logout no longer lands on the login page by a race |
+| `3e32e58` | Login through Keycloak or another OIDC provider (`AUTH_MODE=oidc`), optional bundled Keycloak for docker compose, mock login for development only (`docs/authentication.md`) |
 
 The contract for the runtime, the catalog, agents, tools and the history budget is in `docs/model_catalog_api.md`; provider choices are in `docs/model_provider_strategy.md`.
 
@@ -46,7 +48,8 @@ The contract for the runtime, the catalog, agents, tools and the history budget 
 - **Models:** `backend/llm/` calls OpenAI-compatible endpoints and Anthropic through the official SDKs. Reasoning text is streamed as a live "Thinking" step; models that need it (Kimi) get their `reasoning_content` back in tool loops; Claude gets its thinking blocks back.
 - **Catalog:** providers (base URL, key env var, privacy tier, currency) come only from `catalog/models.json` (`MODEL_CATALOG_FILE`, the default; `${VAR}` in a base URL is filled from the environment). Keys are always read from the env var named in `api_key_env`. Models and agents are seeded once and then edited on the Agents page; `app_init` (and Docker's `db-init` on every start) never overwrites existing models or agents.
 - **Agents** (the `personas` table; the UI says "Agent"): a name, description, prompt with `{{variables}}` and a tool selection (`files`, `web_search`, `knowledge_graph`, or null for every tool the server enables). No model: the chat's model answers, so models are compared by switching the model in the chat or starting another chat with the same agent.
-- **Admins** are the emails in `ADMIN_EMAILS`. Only they see the Agents page; everyone else uses the models and agents in the chat's pickers. Guests only get models and agents marked "available to guests".
+- **Login** (`AUTH_MODE`, `docs/authentication.md`): `oidc` through Keycloak or another OpenID Connect provider (the backend runs the code flow, no token reaches the browser, logout ends the provider's session too), `mock` for development, `none` (default) for guests only. Users are found by the provider's subject id; a first login links an existing user with the same verified email.
+- **Admins** are users with `OIDC_ADMIN_ROLE`, or listed in `ADMIN_EMAILS` (with `oidc` only if the email is verified). Only they see the Agents page; everyone else uses the models and agents in the chat's pickers. Guests only get models and agents marked "available to guests".
 - **History** sent to the model: the newest messages that fit the model's `context_window` (estimated at 3 characters per token, minus room for the answer, tool results, system prompt and tool definitions; `DEFAULT_CONTEXT_WINDOW` 32768 for models without one).
 - **Guests:** each guest login creates its own user (`users.is_guest`), deleted with its conversations and files by the hourly cleanup once its sessions have expired. Guests are rate-limited per IP (5 answers per 3 hours); behind a reverse proxy set `FORWARDED_ALLOW_IPS`.
 - **Files:** only the uploader can read a file (API, agent tool and history).
@@ -72,6 +75,8 @@ Personas: Pirate (all tools) and Translator (no tools).
 - **Reasoning effort: the second-highest level per model,** because the top level ("max") tends to overthink. That is xhigh for Claude and high for the others: DeepSeek and Kimi go low/high/max, GPT-5.2 none…xhigh, Mistral only has high.
 - **Single-admin setup:** no per-user API keys, billing or private agents; provider keys stay in env vars and the catalog is edited by the admin in the app.
 - Agents don't include a model, and there is no side-by-side comparison of agents or models.
+- **Login:** Keycloak is optional: bundled (docker compose, later the Helm chart), the user's own, or none. Guest logins stay. The homelab deployment keeps guests and adds login through the user's existing homelab Keycloak, and it must work from the home network and from outside (the user has no VPN on the phone yet), so that Keycloak needs a public route.
+- **Deployment:** a Helm chart next to the docker compose files; images and chart are built and published when `develop` is merged into `main`. The chart will replace the current homelab deployment, which still runs old Fessi-era images.
 
 ### Model test results (2026-10-30)
 
@@ -85,8 +90,8 @@ Personas: Pirate (all tools) and Translator (no tools).
 
 ### Next steps
 
-1. **Before exposing the app:** replace the password-less mock login (anyone can log in as any user, including an admin) with real authentication (Keycloak was the plan).
-2. **Homelab deployment:** set `ADMIN_EMAILS`, the provider keys (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY`), and `FORWARDED_ALLOW_IPS` if a reverse proxy sits in front. `CATALOG_SECRET_KEY` no longer exists.
+1. **Helm chart** next to the docker compose files, and CI that builds and publishes the images and the chart on `main` (in progress).
+2. **Homelab deployment with the chart:** the homelab's Keycloak needs a client for the app (`docs/authentication.md`, "Option 2") and a public route, because login must work from outside too; its realm allows self-registration, so set `OIDC_REQUIRED_ROLE`. Also set the provider keys (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY`) and `FORWARDED_ALLOW_IPS`, and run `app_init --prod` on the existing database. Until then the old deployment pulls `develop-latest` on every pod restart, which would start today's code without migration or settings; pinning its image avoids that.
 3. Look at the homelab router's failures.
 4. Merge `develop` into `main` (a separate step the user triggers).
 
@@ -229,15 +234,18 @@ Status on 2026-10-30. Everything runs from `develop`.
 
 Since the catalog work (evening of 2026-10-30):
 
+- `.env` needs `AUTH_MODE=mock` for the email login (the default is `none` since `3e32e58`).
 - `.env` also has `CORTECS_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY` and `ADMIN_EMAILS` (the user's own address). `ANTHROPIC_API_KEY` isn't set yet, so the Claude models are disabled. The router address is private: it stays in `.env` and never goes into the repository.
 - **Changes to `.env` need a backend restart:** `--reload` only watches `.py` files, and the keys are read from the process environment.
 - **Reseed after editing `catalog/models.json`:** `python backend/app_init.py --prod` updates providers and adds missing models and agents. Existing models and agents keep their database values, so change those on the Agents page or with SQL.
 - **`ng serve` needs a restart** after `angular.json` changes (e.g. the bundled fonts).
 - **Tests:**
   - offline runtime tests: `python -m backend.llm.tests.run_all` (27 pass);
-  - catalog end to end: `backend/catalog/tests/catalog_api_test.py` (188 pass) on its own database `llm_chat_catalog_test` and a backend on port 8445, see its docstring;
+  - catalog end to end: `backend/catalog/tests/catalog_api_test.py` (188 pass, 181 with `--skip-network`) on its own database `llm_chat_catalog_test` and a backend on port 8445 with `AUTH_MODE=mock`, see its docstring;
+  - login end to end: `backend/security/tests/oidc_test.py` (62 pass) against the bundled Keycloak and a backend with `AUTH_MODE=oidc` on `llm_chat_auth_test`, see its docstring;
   - model smoke test: `python -m backend.llm.smoke_test --model <id>`;
-  - frontend: `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and the unit tests (58 of 88 fail, the same as before; compare the failing spec names, not just the count).
+  - frontend: `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and the unit tests (57 of 89 fail since `a8c83a6`, all of them failing before; compare the failing spec names, not just the count).
+- **Browser checks:** the Playwright MCP browser hung on start on 2026-10-30; a headless script with the cached `playwright-core` and `~/.cache/ms-playwright/chromium_headless_shell-1217` worked. Keycloak's login form: `#username`, `#password`, `#kc-login`.
 - **Browser checks as an admin:** mock-login with an `@example.invalid` address and start a backend with that address added to `ADMIN_EMAILS` in the process environment (`load_dotenv` doesn't override variables that are already set).
 - **Dev database:** test users from the sessions were deleted. Still there: the seed users (`guest@guest.local` as user 0, `test@`, `admin@`, `demo@example.com`), the user's account, and three users named `test`, `testsetst` and `tetse` (probably the user's own test logins). Two uploads from December 2025 (`file_1766482527957_…`, `file_1766482575933_…`) have no owner, because no message refers to them, so nobody can read them.
 
@@ -249,11 +257,11 @@ Checks that passed:
 
 ## Known issues and findings (backlog)
 
-Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependency (gone with the new runtime), the Placeholder Component and `/metrics` page (removed), and the guest and file access problems (fixed, see "Status").
+Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependency (gone with the new runtime), the Placeholder Component and `/metrics` page (removed), the guest and file access problems, and the mock login (development only since `3e32e58`; see "Status").
 
 **Security and privacy (before exposing the app):**
 
-- **Mock login:** anyone can log in as any email without a password, including an admin email. Real authentication (Keycloak) comes before the app is reachable from outside.
+- **Session token in the body:** the guest login response also returns the session key as `token`, so scripts in the page can read what the httpOnly cookie hides. The frontend doesn't use it.
 - **Guest logins aren't rate-limited themselves:** only answers are (5 per IP per 3 hours). Every guest login creates a user row (deleted after the session expires), so a script could fill the database.
 - **Session expiring while the app is open:** the next request gets a 401 and `AuthInterceptor` sends the user to the login page; a guest could get a new guest session instead. (At startup this is fixed: a missing or expired session starts a guest session in the chat.)
 - Files belong to users, not to conversations (see `docs/attachment_rework.md`). Deleting a conversation leaves its TTS cache on disk.
@@ -272,7 +280,7 @@ Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependenc
 
 **Frontend:**
 
-- **Unit tests:** 58 of 88 fail, mostly `NullInjectorError: No provider for HttpClient` in component specs. `projects/ngx-agent-chat/tsconfig.spec.json` also errors with "No inputs were found".
+- **Unit tests:** 57 of 89 fail, mostly `NullInjectorError: No provider for HttpClient` in component specs. `projects/ngx-agent-chat/tsconfig.spec.json` also errors with "No inputs were found".
 - **Console errors:**
   - `ExpressionChangedAfterItHasBeenCheckedError` (NG0100) in the chat input field;
   - `assets/env.js` 404 in development.
