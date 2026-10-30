@@ -130,6 +130,32 @@
   }
 }
 
+// Notice above the composer for untrusted providers
+.untrusted-notice {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 768px;
+  width: calc(100% - 48px);
+  margin: 8px auto -8px;
+  padding: 8px 12px;
+  border: 1px solid var(--theme-tier-untrusted);
+  border-radius: 12px;
+  background: var(--theme-tier-untrusted-bg);
+  color: var(--theme-tier-untrusted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+
+  mat-icon {
+    flex-shrink: 0;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
 // Input field wrapper
 app-chat-ui-inputfield {
   position: relative;
@@ -141,6 +167,10 @@ app-chat-ui-inputfield {
 // Responsive adjustments
 // ============================================
 @media (max-width: 768px) {
+  .untrusted-notice {
+    width: calc(100% - 24px);
+  }
+
   .message-container {
     padding: 0 8px;
     padding-top: 16px;

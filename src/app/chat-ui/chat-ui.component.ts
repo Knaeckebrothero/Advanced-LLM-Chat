@@ -10,6 +10,7 @@ import { UIStateService } from '../services/ui-state.service';
 import { ThemeService } from '../services/theme.service';
 import { ChatUiInputfieldComponent } from './chat-ui-inputfield/chat-ui-inputfield.component';
 import { ChatUiMessageComponent } from './chat-ui-message/chat-ui-message.component';
+import { IPublicModel } from '../data/models/catalog.model';
 
 
 @Component({
@@ -48,6 +49,9 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     map(state => state.streamingMessage)
   );
   isStreaming$: Observable<boolean> = this.chatState.state$.pipe(map(state => state.isStreaming));
+
+  // The catalog model that answers in this conversation (null without a catalog)
+  effectiveModel$: Observable<IPublicModel | null> = this.chatState.effectiveModel$;
 
   // Messages filtered to exclude the streaming message (prevents duplicate during transition)
   // This ensures smooth handoff: while streaming, the message shows from streamingMessage$;
@@ -646,8 +650,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.chatState.patchMessage(messageId, content);
   }
 
-  // Method to regenerate a message
-  regenerateMessage(message: Message) {
+  // Method to regenerate a message (optionally once with another catalog model)
+  regenerateMessage(message: Message, modelId?: number) {
     // Disable anchor mode for regeneration - just follow the bottom
     // (unlike new messages, we don't want the user message at top with whitespace)
     this.useAnchorMode = false;
@@ -657,7 +661,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.userIsAtBottom = true;
     this.shouldScrollToBottom = true;
 
-    this.chatState.regenerateMessage(message);
+    this.chatState.regenerateMessage(message, modelId);
   }
 
   // Method to rate a message

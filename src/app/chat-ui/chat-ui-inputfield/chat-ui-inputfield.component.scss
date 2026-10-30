@@ -400,6 +400,16 @@ a.file-preview-item {
   align-items: center;
 }
 
+// Projected tools (model and persona picker) may shrink and truncate on narrow screens
+.left-actions {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.right-actions {
+  flex-shrink: 0;
+}
+
 .action-button {
   &.mat-mdc-icon-button {
     width: 40px;

@@ -20,6 +20,11 @@
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
     <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>
   </div>
+  <!-- Privacy notice for models whose provider may keep or train on messages -->
+  <div class="untrusted-notice" *ngIf="(effectiveModel$ | async)?.privacyTier === 'untrusted'" role="note">
+    <mat-icon aria-hidden="true">report</mat-icon>
+    <span>{{ 'catalog.untrustedNotice' | translate }}</span>
+  </div>
   <app-chat-ui-inputfield
     [externalFiles]="pendingFiles"
     [isMobile]="isMobileDevice()"
@@ -30,5 +35,6 @@
     (cameraRequested)="onCameraRequested()"
     (locationRequested)="onLocationRequested()"
     (stopRequested)="cancelStreaming()">
+    <app-model-picker composerTools></app-model-picker>
   </app-chat-ui-inputfield>
 </div>

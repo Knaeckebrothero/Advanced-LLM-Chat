@@ -18,6 +18,28 @@
     <div class="message-role-label">
       <span class="role-name">{{ message.roleName === 'user' ? 'You' : (message.roleName === 'system' ? 'System' :
         'Assistant') }}</span>
+      <!-- Which model wrote this answer; tokens and cost on hover or tap -->
+      <button *ngIf="modelName && usage" type="button" class="model-label model-label--interactive"
+        (click)="showUsage = !showUsage"
+        [matTooltip]="usageSummary"
+        matTooltipClass="multiline-tooltip"
+        [matTooltipDisabled]="showUsage"
+        [attr.aria-expanded]="showUsage"
+        [attr.aria-label]="('catalog.message.writtenBy' | translate: { model: modelName }) + '. ' + usageSummary">
+        <span class="model-label-name">{{ modelName }}</span>
+        <mat-icon aria-hidden="true">{{ showUsage ? 'expand_less' : 'expand_more' }}</mat-icon>
+      </button>
+      <span *ngIf="modelName && !usage" class="model-label"
+        [matTooltip]="'catalog.message.writtenBy' | translate: { model: modelName }">
+        <span class="model-label-name">{{ modelName }}</span>
+      </span>
+    </div>
+    <div class="usage-details" *ngIf="showUsage && usage">
+      <span>{{ 'catalog.message.inputTokens' | translate: { count: formatCount(usage.inputTokens) } }}</span>
+      <span>{{ 'catalog.message.outputTokens' | translate: { count: formatCount(usage.outputTokens) } }}</span>
+      <span *ngIf="usage.reasoningTokens">{{ 'catalog.message.reasoningTokens' | translate: { count: formatCount(usage.reasoningTokens) } }}</span>
+      <span *ngIf="usage.cachedInputTokens">{{ 'catalog.message.cachedTokens' | translate: { count: formatCount(usage.cachedInputTokens) } }}</span>
+      <span *ngIf="costText">{{ 'catalog.message.cost' | translate: { cost: costText } }}</span>
     </div>
 
     <!-- Message Body -->
@@ -186,6 +208,17 @@
           title="Regenerate" aria-label="Regenerate message">
           <mat-icon>refresh</mat-icon>
         </button>
+
+        <!-- Regenerate once with another catalog model -->
+        <app-model-select *ngIf="canRegenerate && (catalogModels$ | async)?.length"
+          class="action-btn-menu"
+          variant="icon"
+          icon="swap_horiz"
+          [label]="'catalog.message.regenerateWith' | translate"
+          [models]="(catalogModels$ | async) ?? []"
+          [selectedId]="currentModelId"
+          (selectedChange)="regenerateWith($event)">
+        </app-model-select>
 
         <!-- Rating buttons - only for AI messages -->
         <button *ngIf="message.roleName !== 'user'" mat-icon-button class="action-btn"

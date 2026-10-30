@@ -154,6 +154,53 @@ body.theme-initialized {
   }
 }
 
+// Dialogs of the model catalog (persona values, catalog management)
+// The theme only emits Material color tokens, so the typography these dialogs need is set here
+.catalog-dialog-panel {
+  .mat-mdc-dialog-container {
+    --mdc-dialog-container-color: var(--theme-surface);
+    --mdc-dialog-container-shape: 20px;
+    --mdc-dialog-subhead-color: var(--theme-text);
+    --mdc-dialog-subhead-size: 1.2rem;
+    --mdc-dialog-subhead-weight: 600;
+    --mdc-dialog-subhead-line-height: 2rem;
+    --mdc-dialog-supporting-text-color: var(--theme-text);
+    --mdc-dialog-supporting-text-size: 0.95rem;
+    --mdc-dialog-supporting-text-line-height: 1.5;
+    --mat-form-field-subscript-text-size: 0.75rem;
+    --mat-form-field-subscript-text-line-height: 1.1rem;
+    --mat-form-field-subscript-text-weight: 400;
+    --mat-form-field-subscript-text-tracking: normal;
+  }
+
+  .mat-mdc-dialog-surface {
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+}
+
+// Slide toggles in the theme's primary color (the M2 color mixin only emits their warn variant)
+.mat-mdc-slide-toggle {
+  --mdc-switch-selected-handle-color: var(--theme-primary);
+  --mdc-switch-selected-hover-handle-color: var(--theme-primary);
+  --mdc-switch-selected-focus-handle-color: var(--theme-primary);
+  --mdc-switch-selected-pressed-handle-color: var(--theme-primary);
+  --mdc-switch-selected-track-color: rgba(var(--theme-primary-rgb), 0.45);
+  --mdc-switch-selected-hover-track-color: rgba(var(--theme-primary-rgb), 0.45);
+  --mdc-switch-selected-focus-track-color: rgba(var(--theme-primary-rgb), 0.45);
+  --mdc-switch-selected-pressed-track-color: rgba(var(--theme-primary-rgb), 0.45);
+  --mdc-switch-selected-icon-color: var(--theme-primary-contrast);
+  --mdc-switch-selected-hover-state-layer-color: var(--theme-primary);
+  --mdc-switch-selected-focus-state-layer-color: var(--theme-primary);
+  --mdc-switch-selected-pressed-state-layer-color: var(--theme-primary);
+  --mat-slide-toggle-label-text-color: var(--theme-text);
+}
+
+// Tooltips with line breaks (model picker, usage of a message)
+.multiline-tooltip {
+  white-space: pre-line;
+}
+
 // Custom backdrop style for the dialog
 .custom-backdrop {
   backdrop-filter: blur(4px);

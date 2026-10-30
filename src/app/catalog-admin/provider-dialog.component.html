@@ -1,0 +1,134 @@
+<h2 mat-dialog-title>
+  {{ (isNew ? 'catalog.admin.providers.addTitle' : 'catalog.admin.providers.editTitle') | translate }}
+</h2>
+
+<form [formGroup]="form" (ngSubmit)="save()">
+  <mat-dialog-content class="catalog-dialog-content">
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.name' | translate }}</mat-label>
+        <input matInput formControlName="name" required>
+        @if (form.controls['name'].hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.kind' | translate }}</mat-label>
+        <mat-select formControlName="kind">
+          @for (kind of kinds; track kind) {
+            <mat-option [value]="kind">{{ ('catalog.kind.' + kind) | translate }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.baseUrl' | translate }}</mat-label>
+      <input matInput formControlName="baseUrl" type="url" placeholder="https://api.example.com/v1">
+      <mat-hint>{{ 'catalog.admin.providers.baseUrlHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    <h3 class="form-section">{{ 'catalog.admin.providers.keySection' | translate }}</h3>
+
+    @if (provider) {
+      <p class="key-status">
+        <mat-icon aria-hidden="true">key</mat-icon>
+        @switch (provider.apiKeySource) {
+          @case ('stored') {
+            <span>{{ 'catalog.admin.providers.keyStored' | translate: { key: provider.apiKeyMasked || '…' } }}</span>
+          }
+          @case ('env') {
+            <span>{{ 'catalog.admin.providers.keyEnv' | translate: { env: provider.apiKeyEnv || '' } }}</span>
+          }
+          @default {
+            <span>{{ 'catalog.admin.providers.keyNone' | translate }}</span>
+          }
+        }
+      </p>
+    }
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ (isNew ? 'catalog.admin.fields.apiKey' : 'catalog.admin.fields.newApiKey') | translate }}</mat-label>
+        <input matInput formControlName="apiKey" type="password" autocomplete="new-password">
+        <mat-hint>
+          {{ (removeKey ? 'catalog.admin.providers.keyWillBeRemoved'
+              : (isNew ? 'catalog.admin.providers.keyHintNew' : 'catalog.admin.providers.keyHintEdit')) | translate }}
+        </mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.apiKeyEnv' | translate }}</mat-label>
+        <input matInput formControlName="apiKeyEnv" placeholder="CORTECS_API_KEY">
+        <mat-hint>{{ 'catalog.admin.providers.keyEnvHint' | translate }}</mat-hint>
+        @if (form.controls['apiKeyEnv'].hasError('pattern')) {
+          <mat-error>{{ 'catalog.admin.validation.envName' | translate }}</mat-error>
+        }
+      </mat-form-field>
+    </div>
+
+    @if (provider?.apiKeySource === 'stored') {
+      <button mat-stroked-button type="button" class="remove-key-button" (click)="toggleRemoveKey()">
+        <mat-icon>{{ removeKey ? 'undo' : 'key_off' }}</mat-icon>
+        {{ (removeKey ? 'catalog.admin.providers.keepKey' : 'catalog.admin.providers.removeKey') | translate }}
+      </button>
+    }
+
+    <h3 class="form-section">{{ 'catalog.admin.providers.privacySection' | translate }}</h3>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.privacyTier' | translate }}</mat-label>
+        <mat-select formControlName="privacyTier">
+          @for (tier of tiers; track tier) {
+            <mat-option [value]="tier">{{ ('catalog.tier.' + tier) | translate }}</mat-option>
+          }
+        </mat-select>
+        <mat-hint>{{ ('catalog.tierHint.' + form.controls['privacyTier'].value) | translate }}</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.currency' | translate }}</mat-label>
+        <mat-select formControlName="currency">
+          @for (currency of currencies; track currency) {
+            <mat-option [value]="currency">{{ currency }}</mat-option>
+          }
+        </mat-select>
+        <mat-hint>{{ 'catalog.admin.providers.currencyHint' | translate }}</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.defaultHeaders' | translate }}</mat-label>
+      <textarea matInput formControlName="defaultHeaders" rows="3" class="code-input"
+                placeholder='{"HTTP-Referer": "https://chat.example.com"}'></textarea>
+      <mat-hint>{{ 'catalog.admin.providers.headersHint' | translate }}</mat-hint>
+      @if (form.controls['defaultHeaders'].invalid) {
+        <mat-error>{{ 'catalog.admin.validation.jsonHeaders' | translate }}</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.notes' | translate }}</mat-label>
+      <textarea matInput formControlName="notes" rows="3"></textarea>
+      <mat-hint>{{ 'catalog.admin.providers.notesHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    <mat-slide-toggle formControlName="enabled">{{ 'catalog.admin.fields.enabled' | translate }}</mat-slide-toggle>
+
+    @if (error) {
+      <p class="dialog-error" role="alert"><mat-icon aria-hidden="true">error_outline</mat-icon>{{ error }}</p>
+    }
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button type="button" mat-dialog-close>{{ 'catalog.common.cancel' | translate }}</button>
+    <button mat-flat-button color="primary" type="submit" [disabled]="saving">
+      @if (saving) {
+        <mat-spinner diameter="18"></mat-spinner>
+      }
+      {{ 'catalog.common.save' | translate }}
+    </button>
+  </mat-dialog-actions>
+</form>

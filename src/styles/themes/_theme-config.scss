@@ -28,6 +28,16 @@ $light-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 $light-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
 $light-shadow-glow: 0 0 20px rgba(14, 116, 104, 0.15);
 
+// Privacy tier badges of the model catalog (text on its tint: at least 5.6:1)
+$light-tier-local: #1d6b34;
+$light-tier-local-bg: #e2f3e7;
+$light-tier-eu: #1f57a8;
+$light-tier-eu-bg: #e5edf9;
+$light-tier-trusted: #7a4f00;
+$light-tier-trusted-bg: #f9eed6;
+$light-tier-untrusted: #a3261c;
+$light-tier-untrusted-bg: #fbe5e2;
+
 // Dark Theme Colors
 $dark-bg: #111518;
 $dark-text: #e3e8ea;
@@ -51,6 +61,16 @@ $dark-code-bg: #1d2528;
 $dark-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
 $dark-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
 $dark-shadow-glow: 0 0 20px rgba(44, 181, 165, 0.2);
+
+// Privacy tier badges (light text on a 14% tint of itself: at least 6.3:1)
+$dark-tier-local: #86d69b;
+$dark-tier-local-bg: rgba(134, 214, 155, 0.14);
+$dark-tier-eu: #9ec2f7;
+$dark-tier-eu-bg: rgba(158, 194, 247, 0.14);
+$dark-tier-trusted: #efc06a;
+$dark-tier-trusted-bg: rgba(239, 192, 106, 0.14);
+$dark-tier-untrusted: #f3a097;
+$dark-tier-untrusted-bg: rgba(243, 160, 151, 0.14);
 
 // --- Theme Maps ---
 $light-theme: (
@@ -77,7 +97,15 @@ $light-theme: (
   'code-bg': $light-code-bg,
   'shadow-sm': $light-shadow-sm,
   'shadow-md': $light-shadow-md,
-  'shadow-glow': $light-shadow-glow
+  'shadow-glow': $light-shadow-glow,
+  'tier-local': $light-tier-local,
+  'tier-local-bg': $light-tier-local-bg,
+  'tier-eu': $light-tier-eu,
+  'tier-eu-bg': $light-tier-eu-bg,
+  'tier-trusted': $light-tier-trusted,
+  'tier-trusted-bg': $light-tier-trusted-bg,
+  'tier-untrusted': $light-tier-untrusted,
+  'tier-untrusted-bg': $light-tier-untrusted-bg
 );
 
 $dark-theme: (
@@ -104,7 +132,15 @@ $dark-theme: (
   'code-bg': $dark-code-bg,
   'shadow-sm': $dark-shadow-sm,
   'shadow-md': $dark-shadow-md,
-  'shadow-glow': $dark-shadow-glow
+  'shadow-glow': $dark-shadow-glow,
+  'tier-local': $dark-tier-local,
+  'tier-local-bg': $dark-tier-local-bg,
+  'tier-eu': $dark-tier-eu,
+  'tier-eu-bg': $dark-tier-eu-bg,
+  'tier-trusted': $dark-tier-trusted,
+  'tier-trusted-bg': $dark-tier-trusted-bg,
+  'tier-untrusted': $dark-tier-untrusted,
+  'tier-untrusted-bg': $dark-tier-untrusted-bg
 );
 
 // Central map of all themes

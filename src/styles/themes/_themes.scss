@@ -55,6 +55,15 @@
     --theme-shadow-sm: #{map.get($theme-map, 'shadow-sm')};
     --theme-shadow-md: #{map.get($theme-map, 'shadow-md')};
     --theme-shadow-glow: #{map.get($theme-map, 'shadow-glow')};
+    // Privacy tiers of the model catalog
+    --theme-tier-local: #{map.get($theme-map, 'tier-local')};
+    --theme-tier-local-bg: #{map.get($theme-map, 'tier-local-bg')};
+    --theme-tier-eu: #{map.get($theme-map, 'tier-eu')};
+    --theme-tier-eu-bg: #{map.get($theme-map, 'tier-eu-bg')};
+    --theme-tier-trusted: #{map.get($theme-map, 'tier-trusted')};
+    --theme-tier-trusted-bg: #{map.get($theme-map, 'tier-trusted-bg')};
+    --theme-tier-untrusted: #{map.get($theme-map, 'tier-untrusted')};
+    --theme-tier-untrusted-bg: #{map.get($theme-map, 'tier-untrusted-bg')};
 
     // Apply base background and text color to the body
     background-color: var(--theme-background);

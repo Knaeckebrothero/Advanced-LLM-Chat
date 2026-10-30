@@ -224,3 +224,23 @@
 ::ng-deep .mat-mdc-progress-spinner {
   --mdc-circular-progress-active-indicator-color: var(--theme-primary);
 }
+
+// Live reasoning text under the collapsed panel: the newest lines stay visible,
+// older ones are clipped at the top
+.live-thought {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: calc(3 * 1.45em);
+  margin: 6px 4px 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  font-style: italic;
+  color: var(--theme-text-secondary);
+
+  p {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+}

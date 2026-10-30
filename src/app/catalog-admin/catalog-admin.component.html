@@ -1,0 +1,62 @@
+<div class="catalog-admin">
+  <header class="catalog-header">
+    <button mat-icon-button type="button" class="back-button" (click)="back()"
+            [attr.aria-label]="'catalog.admin.back' | translate">
+      <mat-icon>arrow_back</mat-icon>
+    </button>
+    <div class="catalog-heading">
+      <h1>{{ 'catalog.admin.title' | translate }}</h1>
+      <p>{{ 'catalog.admin.subtitle' | translate }}</p>
+    </div>
+  </header>
+
+  @switch (store.state$ | async) {
+    @case ('loading') {
+      <div class="catalog-state">
+        <mat-spinner diameter="36"></mat-spinner>
+      </div>
+    }
+    @case ('forbidden') {
+      <div class="catalog-state">
+        <mat-icon aria-hidden="true">lock</mat-icon>
+        <p>{{ 'catalog.admin.forbidden' | translate }}</p>
+      </div>
+    }
+    @case ('error') {
+      <div class="catalog-state" role="alert">
+        <mat-icon aria-hidden="true">cloud_off</mat-icon>
+        <p>{{ 'catalog.admin.loadFailed' | translate }}</p>
+        <p class="catalog-state-detail">{{ store.loadError$ | async }}</p>
+        <button mat-stroked-button type="button" (click)="store.loadAll()">
+          <mat-icon>refresh</mat-icon>
+          {{ 'catalog.common.retry' | translate }}
+        </button>
+      </div>
+    }
+    @default {
+      <mat-tab-group class="catalog-tabs" [selectedIndex]="selectedTab" (selectedIndexChange)="onTabChange($event)"
+                     mat-stretch-tabs="false" mat-align-tabs="start" animationDuration="150ms">
+        <mat-tab [label]="'catalog.admin.tabs.providers' | translate">
+          <ng-template matTabContent>
+            <app-providers-tab></app-providers-tab>
+          </ng-template>
+        </mat-tab>
+        <mat-tab [label]="'catalog.admin.tabs.models' | translate">
+          <ng-template matTabContent>
+            <app-models-tab></app-models-tab>
+          </ng-template>
+        </mat-tab>
+        <mat-tab [label]="'catalog.admin.tabs.personas' | translate">
+          <ng-template matTabContent>
+            <app-personas-tab></app-personas-tab>
+          </ng-template>
+        </mat-tab>
+        <mat-tab [label]="'catalog.admin.tabs.transfer' | translate">
+          <ng-template matTabContent>
+            <app-import-export-tab></app-import-export-tab>
+          </ng-template>
+        </mat-tab>
+      </mat-tab-group>
+    }
+  }
+</div>

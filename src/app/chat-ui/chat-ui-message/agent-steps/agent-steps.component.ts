@@ -29,6 +29,22 @@ export class AgentStepsComponent {
   }
 
   /**
+   * The end of the reasoning text while it streams in (step_delta events), shown under the
+   * collapsed panel so the thinking is visible without opening it.
+   */
+  get liveThought(): string | null {
+    const step = this.currentStep;
+    if (!this.isProcessing || this.isExpanded || !step || step.type !== 'thought' || !step.content) {
+      return null;
+    }
+    const text = step.content.trim();
+    if (text.length <= 280) return text;
+    const tail = text.slice(-280);
+    const wordStart = tail.indexOf(' ');
+    return '…' + (wordStart >= 0 && wordStart < 40 ? tail.slice(wordStart + 1) : tail);
+  }
+
+  /**
    * Get dynamic header text based on status and current step
    */
   get headerText(): string {

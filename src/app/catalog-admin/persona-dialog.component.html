@@ -1,0 +1,119 @@
+<h2 mat-dialog-title>
+  {{ (isNew ? 'catalog.admin.personas.addTitle' : 'catalog.admin.personas.editTitle') | translate }}
+</h2>
+
+<form [formGroup]="form" (ngSubmit)="save()">
+  <mat-dialog-content class="catalog-dialog-content">
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.name' | translate }}</mat-label>
+        <input matInput formControlName="name" required>
+        @if (form.controls['name'].hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.sortOrder' | translate }}</mat-label>
+        <input matInput type="number" formControlName="sortOrder" step="10">
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.description' | translate }}</mat-label>
+      <input matInput formControlName="description">
+      <mat-hint>{{ 'catalog.admin.personas.descriptionHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.systemPrompt' | translate }}</mat-label>
+      <textarea matInput formControlName="systemPrompt" rows="8" required
+                [placeholder]="'catalog.admin.personas.promptPlaceholder' | translate"></textarea>
+      <mat-hint>{{ 'catalog.admin.personas.promptHint' | translate: { builtIns: builtIns } }}</mat-hint>
+      @if (form.controls['systemPrompt'].hasError('required')) {
+        <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+      }
+    </mat-form-field>
+
+    <!-- Variables -->
+    <h3 class="form-section">{{ 'catalog.admin.personas.variablesSection' | translate }}</h3>
+    @if (variables.length === 0) {
+      <p class="empty-hint">{{ 'catalog.admin.personas.noVariables' | translate }}</p>
+    }
+    <div formArrayName="variables">
+      @for (group of variables.controls; track group; let i = $index) {
+        <div class="variable-row" [formGroupName]="i">
+          <mat-form-field appearance="outline">
+            <mat-label>{{ 'catalog.admin.fields.variableName' | translate }}</mat-label>
+            <input matInput formControlName="name" class="code-input" required placeholder="style">
+            @if (group.controls['name'].hasError('pattern')) {
+              <mat-error>{{ 'catalog.admin.validation.variableName' | translate }}</mat-error>
+            } @else if (group.controls['name'].hasError('required')) {
+              <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+            }
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>{{ 'catalog.admin.fields.variableLabel' | translate }}</mat-label>
+            <input matInput formControlName="label" required placeholder="Style">
+            @if (group.controls['label'].hasError('required')) {
+              <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+            }
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="variable-default">
+            <mat-label>{{ 'catalog.admin.fields.variableDefault' | translate }}</mat-label>
+            <input matInput formControlName="default">
+          </mat-form-field>
+          <button mat-icon-button type="button" (click)="removeVariable(i)"
+                  [matTooltip]="'catalog.admin.personas.removeVariable' | translate"
+                  [attr.aria-label]="'catalog.admin.personas.removeVariable' | translate">
+            <mat-icon>remove_circle_outline</mat-icon>
+          </button>
+        </div>
+      }
+    </div>
+    <div class="variables-actions">
+      <button mat-stroked-button type="button" (click)="addVariable()">
+        <mat-icon>add</mat-icon>
+        {{ 'catalog.admin.personas.addVariable' | translate }}
+      </button>
+      @if (undeclaredPlaceholders.length > 0) {
+        <button mat-stroked-button type="button" (click)="addPlaceholdersFromPrompt()">
+          <mat-icon>data_object</mat-icon>
+          {{ 'catalog.admin.personas.addFromPrompt' | translate: { names: undeclaredPlaceholders.join(', ') } }}
+        </button>
+      }
+    </div>
+
+    <!-- Model and visibility -->
+    <h3 class="form-section">{{ 'catalog.admin.personas.modelSection' | translate }}</h3>
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.defaultModel' | translate }}</mat-label>
+      <mat-select formControlName="defaultModelId">
+        <mat-option [value]="null">{{ 'catalog.admin.personas.noDefaultModel' | translate }}</mat-option>
+        @for (model of models; track model.id) {
+          <mat-option [value]="model.id">{{ model.displayName }} · {{ model.providerName }}</mat-option>
+        }
+      </mat-select>
+      <mat-hint>{{ 'catalog.admin.personas.defaultModelHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    <div class="toggle-grid">
+      <mat-slide-toggle formControlName="enabled">{{ 'catalog.admin.fields.enabled' | translate }}</mat-slide-toggle>
+      <mat-slide-toggle formControlName="availableToGuests">{{ 'catalog.admin.fields.availableToGuests' | translate }}</mat-slide-toggle>
+    </div>
+
+    @if (error) {
+      <p class="dialog-error" role="alert"><mat-icon aria-hidden="true">error_outline</mat-icon>{{ error }}</p>
+    }
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button type="button" mat-dialog-close>{{ 'catalog.common.cancel' | translate }}</button>
+    <button mat-flat-button color="primary" type="submit" [disabled]="saving">
+      @if (saving) {
+        <mat-spinner diameter="18"></mat-spinner>
+      }
+      {{ 'catalog.common.save' | translate }}
+    </button>
+  </mat-dialog-actions>
+</form>

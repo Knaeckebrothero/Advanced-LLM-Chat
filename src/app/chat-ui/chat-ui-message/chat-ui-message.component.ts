@@ -7,6 +7,10 @@ import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-
 import { FilePreviewDialogComponent, FilePreviewDialogData } from '../../components/file-preview-dialog/file-preview-dialog.component';
 import { ApiService } from '../../services/api.service';
 import { SettingsStateService } from '../../services/settings-state.service';
+import { CatalogService } from '../../services/catalog.service';
+import { IMessageUsage, IPublicModel } from '../../data/models/catalog.model';
+import { TranslateService } from '@ngx-translate/core';
+import { Observable } from 'rxjs';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -27,14 +31,22 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   backupContent!: string;
   messageTextContent: string = '';
 
+  // Model catalog: per-message model and usage
+  showUsage = false;
+  catalogModels$: Observable<IPublicModel[]>;
+
   constructor(
     private sanitizer: DomSanitizer,
     private chatUI: ChatUiComponent,
     private dialog: MatDialog,
     private apiService: ApiService,
     private settingsState: SettingsStateService,
-    private elementRef: ElementRef
-  ) { }
+    private elementRef: ElementRef,
+    private catalogService: CatalogService,
+    private translate: TranslateService
+  ) {
+    this.catalogModels$ = this.catalogService.models$;
+  }
 
   // TTS Audio Player reference
   @ViewChild('ttsAudioPlayer') ttsAudioPlayerRef!: ElementRef<HTMLAudioElement>;
@@ -239,6 +251,74 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
       // Otherwise, set the new rating
       this.chatUI.rateMessage(this.message, rating);
     }
+  }
+
+  // Regenerate once with another catalog model
+  regenerateWith(modelId: number | null) {
+    if (modelId === null) return;
+    this.chatUI.regenerateMessage(this.message, modelId);
+  }
+
+  // ===== Model and Usage =====
+
+  /** Display name of the model that wrote this answer (agent messages from a catalog-aware backend). */
+  get modelName(): string | null {
+    return this.message.isAgent() ? this.message.content.modelName || null : null;
+  }
+
+  get currentModelId(): number | null {
+    return this.message.isAgent() ? this.message.content.modelId ?? null : null;
+  }
+
+  get usage(): IMessageUsage | null {
+    return this.message.isAgent() ? this.message.content.usage || null : null;
+  }
+
+  /** One line for the tooltip and screen readers: tokens in/out (reasoning), cost. */
+  get usageSummary(): string {
+    const usage = this.usage;
+    if (!usage) return '';
+    const parts = [
+      this.translate.instant('catalog.message.inputTokens', { count: this.formatCount(usage.inputTokens) }),
+      this.translate.instant('catalog.message.outputTokens', { count: this.formatCount(usage.outputTokens) })
+    ];
+    if (usage.reasoningTokens) {
+      parts.push(this.translate.instant('catalog.message.reasoningTokens', { count: this.formatCount(usage.reasoningTokens) }));
+    }
+    const cost = this.costText;
+    if (cost) {
+      parts.push(this.translate.instant('catalog.message.cost', { cost }));
+    }
+    return parts.join(' · ');
+  }
+
+  /** The cost with its currency; empty when the model has no prices. */
+  get costText(): string {
+    const usage = this.usage;
+    if (!usage || usage.cost === null || usage.cost === undefined) return '';
+    const digits = usage.cost !== 0 && Math.abs(usage.cost) < 0.01 ? 4 : 2;
+    if (usage.currency) {
+      try {
+        return new Intl.NumberFormat(this.locale, {
+          style: 'currency',
+          currency: usage.currency,
+          minimumFractionDigits: 2,
+          maximumFractionDigits: digits
+        }).format(usage.cost);
+      } catch {
+        // Unknown currency code: fall through to the plain number
+      }
+    }
+    const amount = new Intl.NumberFormat(this.locale, { maximumFractionDigits: digits }).format(usage.cost);
+    return usage.currency ? `${amount} ${usage.currency}` : amount;
+  }
+
+  formatCount(value: number | null | undefined): string {
+    return new Intl.NumberFormat(this.locale).format(value ?? 0);
+  }
+
+  private get locale(): string {
+    return this.translate.currentLang || this.settingsState.getCurrentSettings()?.language || 'en';
   }
 
   // ===== Agent Message Helper Methods =====

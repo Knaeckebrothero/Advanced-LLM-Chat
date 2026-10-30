@@ -10,6 +10,9 @@ import { LoginComponent } from './login/login.component';
 import { ChatUiInputfieldComponent } from './chat-ui/chat-ui-inputfield/chat-ui-inputfield.component';
 import { AudioMessageComponent } from './components/audio-message/audio-message.component';
 import { AgentStepsComponent } from './chat-ui/chat-ui-message/agent-steps/agent-steps.component';
+import { ModelPickerComponent } from './chat-ui/model-picker/model-picker.component';
+import { ModelSelectComponent } from './components/catalog/model-select.component';
+import { adminGuard } from './auth/admin.guard';
 
 // Services
 import { AuthService } from './auth/auth.service';
@@ -53,6 +56,12 @@ const routes: Routes = [
   { path: '', component: ChatUiComponent, canActivate: [AuthGuard] },
   { path: 'metrics', component: MetricsComponent, canActivate: [AuthGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [AuthGuard] },
+  // Model catalog management for admins, loaded on demand
+  {
+    path: 'admin/catalog',
+    loadComponent: () => import('./catalog-admin/catalog-admin.component').then(m => m.CatalogAdminComponent),
+    canActivate: [AuthGuard, adminGuard]
+  },
   { path: 'auth/callback', component: AuthCallbackComponent },
 ];
 
@@ -101,6 +110,8 @@ export function HttpLoaderFactory(http: HttpClient) {
     ConversationComponent,
     SettingsComponent,
     AudioMessageComponent,
+    ModelPickerComponent,
+    ModelSelectComponent,
     TranslateModule.forRoot({
       loader: {
         provide: TranslateLoader,

@@ -60,3 +60,6 @@
     </mat-expansion-panel>
   </mat-accordion>
 </mat-expansion-panel>
+
+<!-- Live reasoning text while the model thinks (panel collapsed) -->
+<div class="live-thought" *ngIf="liveThought as thought" aria-live="off"><p>{{ thought }}</p></div>

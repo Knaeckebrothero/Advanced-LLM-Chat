@@ -32,6 +32,33 @@
     </div>
   </div>
 
+  <!-- Default model for new conversations (only with a model catalog) -->
+  <ng-container *ngIf="(models$ | async) as models">
+    <div class="setting-option" *ngIf="models.length > 0">
+      <label id="default-model-label">{{ 'catalog.settings.defaultModel' | translate }}</label>
+      <app-model-select
+        class="default-model-select"
+        variant="field"
+        [models]="models"
+        [selectedId]="selectedDefaultModel(settings, models)"
+        [automaticLabel]="'catalog.settings.automatic' | translate"
+        [automaticHint]="'catalog.settings.automaticHint' | translate"
+        (selectedChange)="updateDefaultModel($event)">
+      </app-model-select>
+      <p class="setting-hint">{{ 'catalog.settings.defaultModelHint' | translate }}</p>
+    </div>
+  </ng-container>
+
+  <!-- Catalog management for admins -->
+  <div class="setting-option" *ngIf="isAdmin$ | async">
+    <label>{{ 'catalog.settings.catalog' | translate }}</label>
+    <button class="manage-button" (click)="openCatalogAdmin()">
+      <mat-icon>tune</mat-icon>
+      <span>{{ 'catalog.settings.manageCatalog' | translate }}</span>
+      <mat-icon class="manage-button-arrow">chevron_right</mat-icon>
+    </button>
+  </div>
+
   <div class="button-row">
     <button class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
   </div>
