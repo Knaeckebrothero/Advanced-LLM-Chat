@@ -28,7 +28,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Generator
 
-from sqlalchemy import create_engine, text, select, insert, update, delete
+from sqlalchemy import create_engine, text, select, insert, update, delete, null
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.pool import QueuePool
 
@@ -51,12 +52,40 @@ from backend.database.tables import (
     guest_usage,
     user_settings,
     file_description_cache,
+    llm_providers,
+    llm_models,
+    personas,
 )
 
 log = logging.getLogger(__name__)
 
 # Path to SQL query files
 QUERIES_DIR = Path(__file__).parent / "queries"
+
+# Columns of the catalog tables that are never written directly
+_CATALOG_READ_ONLY_COLUMNS = {"id", "created_at", "updated_at"}
+
+
+class _Unset:
+    """
+    Marker for "leave this column unchanged" in update methods where None
+    means "set the column to NULL" (e.g. clearing a conversation's model).
+    """
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+UNSET = _Unset()
+
+
+def _jsonb(value):
+    """
+    Prepare a value for a JSONB column: None becomes SQL NULL.
+
+    SQLAlchemy would otherwise store None as the JSON value 'null'.
+    """
+    return null() if value is None else value
 
 
 class Database:
@@ -502,7 +531,10 @@ class Database:
         user_id: int,
         name: str,
         participants: str = None,
-        last_modified: int = None
+        last_modified: int = None,
+        model_id: int = None,
+        persona_id: int = None,
+        persona_values: dict = None
     ) -> dict:
         """
         Create a new conversation.
@@ -513,6 +545,9 @@ class Database:
             name: Conversation name.
             participants: JSON-encoded participant list (optional).
             last_modified: Unix timestamp (optional).
+            model_id: Catalog model (llm_models.id); None = the user's default model.
+            persona_id: Persona (personas.id); None = no persona.
+            persona_values: Values for the persona's variables, stored as JSONB.
 
         Returns:
             The created conversation dictionary.
@@ -524,6 +559,9 @@ class Database:
                 name=name,
                 participants=participants,
                 lastModified=last_modified,
+                model_id=model_id,
+                persona_id=persona_id,
+                persona_values=_jsonb(persona_values),
             ).returning(conversations)
             result = conn.execute(stmt).fetchone()
             log.info(f"Created conversation: {conversation_id}")
@@ -535,7 +573,10 @@ class Database:
         user_id: int = None,
         name: str = None,
         version: int = None,
-        last_modified: int = None
+        last_modified: int = None,
+        model_id=UNSET,
+        persona_id=UNSET,
+        persona_values=UNSET
     ) -> Optional[dict]:
         """
         Update a conversation.
@@ -546,11 +587,15 @@ class Database:
             name: New name (optional).
             version: New version for optimistic locking (optional).
             last_modified: Unix timestamp (optional).
+            model_id: New catalog model; None clears it, UNSET keeps it.
+            persona_id: New persona; None clears it, UNSET keeps it.
+            persona_values: New persona variable values; None clears them, UNSET keeps them.
 
         Returns:
             Updated conversation dictionary or None if not found.
         """
-        log.debug(f"Updating conversation {conversation_id}: name={name}, version={version}")
+        log.debug(f"Updating conversation {conversation_id}: name={name}, version={version}, "
+                  f"model_id={model_id}, persona_id={persona_id}")
         values = {}
         if name is not None:
             values['name'] = name
@@ -558,6 +603,12 @@ class Database:
             values['version'] = version
         if last_modified is not None:
             values['lastModified'] = last_modified
+        if model_id is not UNSET:
+            values['model_id'] = model_id
+        if persona_id is not UNSET:
+            values['persona_id'] = persona_id
+        if persona_values is not UNSET:
+            values['persona_values'] = _jsonb(persona_values)
 
         if not values:
             log.debug("No values to update")
@@ -936,7 +987,10 @@ class Database:
         content: str,
         status: str = 'complete',
         error: str = None,
-        steps: list = None
+        steps: list = None,
+        model_id: int = None,
+        model_name: str = None,
+        usage: dict = None
     ) -> dict:
         """
         Create an agent message with steps stored as JSONB.
@@ -950,11 +1004,13 @@ class Database:
             status: Agent status ('thinking', 'responding', 'complete', 'error').
             error: Error message if status is 'error'.
             steps: List of AgentStep dictionaries.
+            model_id: Catalog model that wrote the message (None for the environment model).
+            model_name: Copy of the model's display name, kept if the model is deleted.
+            usage: Token usage as built by Usage.to_api() (camelCase dict, stored as JSONB).
 
         Returns:
             The created message dictionary.
         """
-        import json as json_module
         with self.connection() as conn:
             stmt = insert(messages).values(
                 id=message_id,
@@ -967,7 +1023,10 @@ class Database:
                 lastModified=time,
                 agent_status=status,
                 agent_steps=steps,  # Stored directly as JSONB
-                agent_error=error
+                agent_error=error,
+                model_id=model_id,
+                model_name=model_name,
+                usage=_jsonb(usage)
             ).returning(messages)
             result = conn.execute(stmt).fetchone()
             log.debug(f"Created agent message: {message_id} in conversation {conversation_id}")
@@ -980,7 +1039,10 @@ class Database:
         content: str = None,
         status: str = None,
         error: str = None,
-        steps: list = None
+        steps: list = None,
+        model_id: int = None,
+        model_name: str = None,
+        usage: dict = None
     ) -> Optional[dict]:
         """
         Update an existing agent message.
@@ -992,6 +1054,9 @@ class Database:
             status: New status (optional).
             error: New error message (optional).
             steps: New steps list (optional).
+            model_id: Catalog model that wrote the message (optional).
+            model_name: Copy of the model's display name (optional).
+            usage: Token usage as built by Usage.to_api() (optional).
 
         Returns:
             Updated message dictionary or None if not found.
@@ -1007,6 +1072,12 @@ class Database:
             values["agent_error"] = error
         if steps is not None:
             values["agent_steps"] = steps
+        if model_id is not None:
+            values["model_id"] = model_id
+        if model_name is not None:
+            values["model_name"] = model_name
+        if usage is not None:
+            values["usage"] = usage
 
         with self.connection() as conn:
             stmt = (
@@ -1292,7 +1363,13 @@ class Database:
                 log.debug(f"No settings found for user {user_id}")
             return settings
 
-    def upsert_user_settings(self, user_id: int, theme: str, language: str) -> dict:
+    def upsert_user_settings(
+        self,
+        user_id: int,
+        theme: str,
+        language: str,
+        default_model_id=UNSET
+    ) -> dict:
         """
         Create or update user settings.
 
@@ -1300,17 +1377,24 @@ class Database:
             user_id: The user's ID.
             theme: Theme setting ('auto', 'dark', 'light').
             language: Language setting ('en', 'de', etc.).
+            default_model_id: Catalog model for new conversations; None clears it,
+                UNSET keeps the stored value.
 
         Returns:
             The user settings dictionary.
         """
-        log.debug(f"Upserting settings for user {user_id}: theme={theme}, language={language}")
+        log.debug(f"Upserting settings for user {user_id}: theme={theme}, language={language}, "
+                  f"default_model_id={default_model_id}")
+        values = {"theme": theme, "language": language}
+        if default_model_id is not UNSET:
+            values["default_model_id"] = default_model_id
+
         with self.connection() as conn:
             # Try to update first
             stmt = (
                 update(user_settings)
                 .where(user_settings.c.user_id == user_id)
-                .values(theme=theme, language=language)
+                .values(**values)
                 .returning(user_settings)
             )
             result = conn.execute(stmt).fetchone()
@@ -1320,8 +1404,7 @@ class Database:
                 log.debug(f"Creating new settings for user {user_id}")
                 stmt = insert(user_settings).values(
                     user_id=user_id,
-                    theme=theme,
-                    language=language,
+                    **values,
                 ).returning(user_settings)
                 result = conn.execute(stmt).fetchone()
                 log.info(f"Created settings for user {user_id}")
@@ -1406,3 +1489,444 @@ class Database:
             if count > 0:
                 log.debug(f"Deleted {count} cache entries for file {file_id}")
             return count
+
+    # =========================================================================
+    # Model Catalog Operations (providers, models, personas)
+    # =========================================================================
+
+    def _catalog_values(self, table, values: dict) -> dict:
+        """
+        Check a values dictionary for a catalog table insert or update.
+
+        JSONB values of None become SQL NULL. Unknown or read-only columns
+        raise a ValueError, so mapping mistakes surface instead of being dropped.
+
+        Args:
+            table: The SQLAlchemy table (llm_providers, llm_models or personas).
+            values: Column name to value.
+
+        Returns:
+            The values, ready for insert() or update().
+
+        Raises:
+            ValueError: If a key is not a writable column of the table.
+        """
+        writable = set(table.c.keys()) - _CATALOG_READ_ONLY_COLUMNS
+        unknown = set(values) - writable
+        if unknown:
+            raise ValueError(f"Unknown column(s) for {table.name}: {', '.join(sorted(unknown))}")
+        return {
+            key: _jsonb(value) if isinstance(table.c[key].type, JSONB) else value
+            for key, value in values.items()
+        }
+
+    # ----- Providers -----
+
+    def get_llm_providers(self) -> list[dict]:
+        """
+        Get all catalog providers with the number of models each one has.
+
+        Returns:
+            List of provider dictionaries (including api_key_encrypted and
+            model_count), ordered by name.
+        """
+        log.debug("Getting all LLM providers")
+        with self.connection() as conn:
+            query = self._load_query("complex.sql", "get_llm_providers_with_model_count")
+            results = conn.execute(text(query)).fetchall()
+            provider_list = [self._row_to_dict(row) for row in results]
+            log.debug(f"Found {len(provider_list)} LLM providers")
+            return provider_list
+
+    def get_llm_provider_by_id(self, provider_id: int) -> Optional[dict]:
+        """
+        Get a catalog provider by its ID, with its model count.
+
+        Args:
+            provider_id: The provider's ID.
+
+        Returns:
+            Provider dictionary (including model_count) or None if not found.
+        """
+        log.debug(f"Getting LLM provider: {provider_id}")
+        with self.connection() as conn:
+            query = self._load_query("complex.sql", "get_llm_provider_with_model_count")
+            result = conn.execute(text(query), {"provider_id": provider_id}).fetchone()
+            provider = self._row_to_dict(result)
+            if not provider:
+                log.debug(f"LLM provider not found: {provider_id}")
+            return provider
+
+    def get_llm_provider_by_name(self, name: str) -> Optional[dict]:
+        """
+        Get a catalog provider by its unique name.
+
+        Args:
+            name: The provider's name (exact match).
+
+        Returns:
+            Provider dictionary or None if not found.
+        """
+        log.debug(f"Getting LLM provider by name: {name}")
+        with self.connection() as conn:
+            stmt = select(llm_providers).where(llm_providers.c.name == name)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def create_llm_provider(self, values: dict) -> dict:
+        """
+        Create a catalog provider.
+
+        Args:
+            values: Column values (name, kind, privacy_tier, ... and optionally
+                api_key_encrypted). Left-out columns take their defaults.
+
+        Returns:
+            The created provider dictionary.
+
+        Raises:
+            sqlalchemy.exc.IntegrityError: If the name is already taken.
+        """
+        with self.connection() as conn:
+            stmt = insert(llm_providers).values(
+                **self._catalog_values(llm_providers, values)
+            ).returning(llm_providers)
+            result = conn.execute(stmt).fetchone()
+            provider = self._row_to_dict(result)
+            log.info(f"Created LLM provider: {provider['id']} ({provider['name']})")
+            return provider
+
+    def update_llm_provider(self, provider_id: int, values: dict) -> Optional[dict]:
+        """
+        Update a catalog provider. Every key in values is written, None sets NULL.
+
+        Args:
+            provider_id: The provider's ID.
+            values: Column values to change.
+
+        Returns:
+            Updated provider dictionary or None if not found.
+
+        Raises:
+            sqlalchemy.exc.IntegrityError: If the new name is already taken.
+        """
+        log.debug(f"Updating LLM provider {provider_id}: columns={sorted(values)}")
+        if not values:
+            return self.get_llm_provider_by_id(provider_id)
+
+        with self.connection() as conn:
+            stmt = (
+                update(llm_providers)
+                .where(llm_providers.c.id == provider_id)
+                .values(**self._catalog_values(llm_providers, values))
+                .returning(llm_providers)
+            )
+            result = conn.execute(stmt).fetchone()
+            if result:
+                log.info(f"Updated LLM provider: {provider_id}")
+            return self._row_to_dict(result)
+
+    def delete_llm_provider(self, provider_id: int) -> bool:
+        """
+        Delete a catalog provider. Its models are deleted via ON DELETE CASCADE.
+
+        Args:
+            provider_id: The provider's ID.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        log.debug(f"Deleting LLM provider: {provider_id}")
+        with self.connection() as conn:
+            stmt = delete(llm_providers).where(llm_providers.c.id == provider_id)
+            result = conn.execute(stmt)
+            deleted = result.rowcount > 0
+            if deleted:
+                log.info(f"Deleted LLM provider: {provider_id} (and its models)")
+            return deleted
+
+    # ----- Models -----
+
+    def get_llm_models(
+        self,
+        enabled_only: bool = False,
+        guests_only: bool = False,
+        auxiliary_only: bool = False,
+        provider_id: int = None
+    ) -> list[dict]:
+        """
+        Get catalog models with their provider's name, kind, currency and tier.
+
+        Each row has the llm_models columns plus provider_name, provider_kind,
+        currency, provider_privacy_tier, provider_enabled and
+        effective_privacy_tier. Ordered by sort_order, then display name.
+
+        Args:
+            enabled_only: Only enabled models of enabled providers.
+            guests_only: Only models available to guests.
+            auxiliary_only: Only models marked as auxiliary (titles, speech preprocessing).
+            provider_id: Only models of this provider.
+
+        Returns:
+            List of model dictionaries.
+        """
+        log.debug(f"Getting LLM models: enabled_only={enabled_only}, guests_only={guests_only}, "
+                  f"auxiliary_only={auxiliary_only}, provider_id={provider_id}")
+        with self.connection() as conn:
+            query = self._load_query("complex.sql", "get_llm_models_with_provider")
+            results = conn.execute(text(query), {
+                "enabled_only": enabled_only,
+                "guests_only": guests_only,
+                "auxiliary_only": auxiliary_only,
+                "provider_id": provider_id,
+            }).fetchall()
+            model_list = [self._row_to_dict(row) for row in results]
+            log.debug(f"Found {len(model_list)} LLM models")
+            return model_list
+
+    def get_llm_model_by_id(self, model_id: int) -> Optional[dict]:
+        """
+        Get a catalog model by its ID, with its provider's details joined in
+        (same columns as get_llm_models).
+
+        Args:
+            model_id: The model's ID (llm_models.id).
+
+        Returns:
+            Model dictionary or None if not found.
+        """
+        log.debug(f"Getting LLM model: {model_id}")
+        with self.connection() as conn:
+            query = self._load_query("complex.sql", "get_llm_model_with_provider")
+            result = conn.execute(text(query), {"model_id": model_id}).fetchone()
+            model = self._row_to_dict(result)
+            if not model:
+                log.debug(f"LLM model not found: {model_id}")
+            return model
+
+    def get_llm_model_by_name(self, provider_id: int, display_name: str) -> Optional[dict]:
+        """
+        Get a catalog model by its natural key (provider and display name).
+
+        Args:
+            provider_id: The provider's ID.
+            display_name: The model's display name (exact match).
+
+        Returns:
+            Model dictionary (llm_models columns only) or None if not found.
+        """
+        log.debug(f"Getting LLM model by name: provider={provider_id}, name={display_name}")
+        with self.connection() as conn:
+            stmt = select(llm_models).where(
+                (llm_models.c.provider_id == provider_id) &
+                (llm_models.c.display_name == display_name)
+            )
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def create_llm_model(self, values: dict) -> dict:
+        """
+        Create a catalog model.
+
+        Args:
+            values: Column values (provider_id, display_name, model_id, ...).
+                Left-out columns take their defaults.
+
+        Returns:
+            The created model dictionary (llm_models columns only).
+
+        Raises:
+            sqlalchemy.exc.IntegrityError: If the provider already has a model
+                with this display name, or the provider does not exist.
+        """
+        with self.connection() as conn:
+            stmt = insert(llm_models).values(
+                **self._catalog_values(llm_models, values)
+            ).returning(llm_models)
+            result = conn.execute(stmt).fetchone()
+            model = self._row_to_dict(result)
+            log.info(f"Created LLM model: {model['id']} ({model['display_name']})")
+            return model
+
+    def update_llm_model(self, model_id: int, values: dict) -> Optional[dict]:
+        """
+        Update a catalog model. Every key in values is written, None sets NULL.
+
+        Args:
+            model_id: The model's ID.
+            values: Column values to change.
+
+        Returns:
+            Updated model dictionary (llm_models columns only) or None if not found.
+
+        Raises:
+            sqlalchemy.exc.IntegrityError: If the new display name is taken for the provider.
+        """
+        log.debug(f"Updating LLM model {model_id}: columns={sorted(values)}")
+        with self.connection() as conn:
+            if not values:
+                stmt = select(llm_models).where(llm_models.c.id == model_id)
+                return self._row_to_dict(conn.execute(stmt).fetchone())
+
+            stmt = (
+                update(llm_models)
+                .where(llm_models.c.id == model_id)
+                .values(**self._catalog_values(llm_models, values))
+                .returning(llm_models)
+            )
+            result = conn.execute(stmt).fetchone()
+            if result:
+                log.info(f"Updated LLM model: {model_id}")
+            return self._row_to_dict(result)
+
+    def delete_llm_model(self, model_id: int) -> bool:
+        """
+        Delete a catalog model.
+
+        Personas that used it as their default lose the default (ON DELETE SET NULL).
+        Conversations, settings and messages keep the ID; the resolver skips it.
+
+        Args:
+            model_id: The model's ID.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        log.debug(f"Deleting LLM model: {model_id}")
+        with self.connection() as conn:
+            stmt = delete(llm_models).where(llm_models.c.id == model_id)
+            result = conn.execute(stmt)
+            deleted = result.rowcount > 0
+            if deleted:
+                log.info(f"Deleted LLM model: {model_id}")
+            return deleted
+
+    # ----- Personas -----
+
+    def get_personas(self, enabled_only: bool = False, guests_only: bool = False) -> list[dict]:
+        """
+        Get personas, ordered by sort_order, then name.
+
+        Args:
+            enabled_only: Only enabled personas.
+            guests_only: Only personas available to guests.
+
+        Returns:
+            List of persona dictionaries.
+        """
+        log.debug(f"Getting personas: enabled_only={enabled_only}, guests_only={guests_only}")
+        with self.connection() as conn:
+            stmt = select(personas)
+            if enabled_only:
+                stmt = stmt.where(personas.c.enabled.is_not(False))
+            if guests_only:
+                stmt = stmt.where(personas.c.available_to_guests.is_(True))
+            stmt = stmt.order_by(personas.c.sort_order, personas.c.name, personas.c.id)
+            results = conn.execute(stmt).fetchall()
+            persona_list = [self._row_to_dict(row) for row in results]
+            log.debug(f"Found {len(persona_list)} personas")
+            return persona_list
+
+    def get_persona_by_id(self, persona_id: int) -> Optional[dict]:
+        """
+        Get a persona by its ID.
+
+        Args:
+            persona_id: The persona's ID.
+
+        Returns:
+            Persona dictionary or None if not found.
+        """
+        log.debug(f"Getting persona: {persona_id}")
+        with self.connection() as conn:
+            stmt = select(personas).where(personas.c.id == persona_id)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def get_persona_by_name(self, name: str) -> Optional[dict]:
+        """
+        Get a persona by its unique name.
+
+        Args:
+            name: The persona's name (exact match).
+
+        Returns:
+            Persona dictionary or None if not found.
+        """
+        log.debug(f"Getting persona by name: {name}")
+        with self.connection() as conn:
+            stmt = select(personas).where(personas.c.name == name)
+            result = conn.execute(stmt).fetchone()
+            return self._row_to_dict(result)
+
+    def create_persona(self, values: dict) -> dict:
+        """
+        Create a persona.
+
+        Args:
+            values: Column values (name, system_prompt, variables, ...).
+                Left-out columns take their defaults.
+
+        Returns:
+            The created persona dictionary.
+
+        Raises:
+            sqlalchemy.exc.IntegrityError: If the name is already taken.
+        """
+        with self.connection() as conn:
+            stmt = insert(personas).values(
+                **self._catalog_values(personas, values)
+            ).returning(personas)
+            result = conn.execute(stmt).fetchone()
+            persona = self._row_to_dict(result)
+            log.info(f"Created persona: {persona['id']} ({persona['name']})")
+            return persona
+
+    def update_persona(self, persona_id: int, values: dict) -> Optional[dict]:
+        """
+        Update a persona. Every key in values is written, None sets NULL.
+
+        Args:
+            persona_id: The persona's ID.
+            values: Column values to change.
+
+        Returns:
+            Updated persona dictionary or None if not found.
+
+        Raises:
+            sqlalchemy.exc.IntegrityError: If the new name is already taken.
+        """
+        log.debug(f"Updating persona {persona_id}: columns={sorted(values)}")
+        if not values:
+            return self.get_persona_by_id(persona_id)
+
+        with self.connection() as conn:
+            stmt = (
+                update(personas)
+                .where(personas.c.id == persona_id)
+                .values(**self._catalog_values(personas, values))
+                .returning(personas)
+            )
+            result = conn.execute(stmt).fetchone()
+            if result:
+                log.info(f"Updated persona: {persona_id}")
+            return self._row_to_dict(result)
+
+    def delete_persona(self, persona_id: int) -> bool:
+        """
+        Delete a persona. Conversations keep the ID; the persona prompt is then skipped.
+
+        Args:
+            persona_id: The persona's ID.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        log.debug(f"Deleting persona: {persona_id}")
+        with self.connection() as conn:
+            stmt = delete(personas).where(personas.c.id == persona_id)
+            result = conn.execute(stmt)
+            deleted = result.rowcount > 0
+            if deleted:
+                log.info(f"Deleted persona: {persona_id}")
+            return deleted

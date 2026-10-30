@@ -55,6 +55,9 @@ EXPECTED_TABLES = [
     "guest_usage",
     "user_settings",
     "file_description_cache",
+    "llm_providers",
+    "llm_models",
+    "personas",
 ]
 
 
@@ -231,8 +234,12 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
         "sessions",
         "user_settings",
         "guest_usage",
+        "file_description_cache",
         "conversations",
         "users",
+        "personas",
+        "llm_models",
+        "llm_providers",
     ]
 
     with engine.connect() as conn:
@@ -242,6 +249,9 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
             ("update_conversations_timestamp", "conversations"),
             ("update_messages_timestamp", "messages"),
             ("update_user_settings_timestamp", "user_settings"),
+            ("update_llm_providers_timestamp", "llm_providers"),
+            ("update_llm_models_timestamp", "llm_models"),
+            ("update_personas_timestamp", "personas"),
         ]
         for trigger_name, table_name in triggers:
             try:
