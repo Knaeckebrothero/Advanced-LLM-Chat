@@ -8,7 +8,7 @@
   "Done": "Done",
   "New Chat": "New Chat",
   "Chat": "Chat",
-  "Metrics": "Metrics",
+  "Agents": "Agents",
   "Today": "Today",
   "Last 7 Days": "Last 7 Days",
   "This Month": "This Month",
@@ -64,10 +64,6 @@
       "trusted": "Non-EU provider: no training, retention at most for abuse monitoring",
       "untrusted": "May store or train on your messages"
     },
-    "kind": {
-      "openai_compatible": "OpenAI-compatible",
-      "anthropic": "Anthropic"
-    },
     "reasoning": {
       "none": "No thinking",
       "optional": "Optional",
@@ -79,14 +75,19 @@
       "thinking": "Thinking",
       "thinkingOptional": "Thinking (optional)"
     },
+    "tools": {
+      "files": "Files",
+      "web_search": "Web search",
+      "knowledge_graph": "Knowledge graph"
+    },
     "untrustedNotice": "This provider may store or train on your messages. Don't share personal information.",
     "picker": {
       "model": "Model",
       "chooseModel": "Choose model",
-      "persona": "Persona",
-      "choosePersona": "Choose persona",
-      "noPersona": "No persona",
-      "usePersona": "Use persona"
+      "persona": "Agent",
+      "choosePersona": "Choose agent",
+      "noPersona": "No agent",
+      "usePersona": "Use agent"
     },
     "message": {
       "writtenBy": "Written by {{model}}",
@@ -101,9 +102,7 @@
       "defaultModel": "Default model",
       "defaultModelHint": "New chats start with this model. You can switch it in every chat.",
       "automatic": "Automatic",
-      "automaticHint": "The first model of the catalog",
-      "catalog": "Model catalog",
-      "manageCatalog": "Manage providers, models and personas"
+      "automaticHint": "The first model of the catalog"
     },
     "common": {
       "cancel": "Cancel",
@@ -114,31 +113,16 @@
       "retry": "Try again"
     },
     "admin": {
-      "title": "Model catalog",
-      "subtitle": "Providers, models and personas for everyone using this app",
-      "back": "Back to the chat",
-      "forbidden": "Only admins can manage the model catalog.",
-      "loadFailed": "The catalog could not be loaded.",
+      "title": "Agents",
+      "subtitle": "Prompts, tools and models for your chats",
+      "forbidden": "Only admins can manage agents and models.",
+      "loadFailed": "The agents and models could not be loaded.",
       "unreachable": "The server could not be reached.",
       "disabled": "Disabled",
       "providerDisabled": "Provider disabled",
       "deleted": "Deleted {{name}}",
-      "tabs": {
-        "providers": "Providers",
-        "models": "Models",
-        "personas": "Personas",
-        "transfer": "Import & export"
-      },
       "fields": {
         "name": "Name",
-        "kind": "API type",
-        "baseUrl": "Base URL",
-        "apiKey": "API key",
-        "newApiKey": "New API key",
-        "apiKeyEnv": "Key environment variable",
-        "privacyTier": "Privacy tier",
-        "currency": "Currency",
-        "defaultHeaders": "Default headers (JSON)",
         "notes": "Notes",
         "enabled": "Enabled",
         "guests": "Guests",
@@ -163,44 +147,21 @@
         "systemPrompt": "System prompt",
         "variableName": "Variable",
         "variableLabel": "Label",
-        "variableDefault": "Default value",
-        "defaultModel": "Default model"
+        "variableDefault": "Default value"
       },
       "validation": {
         "required": "Required",
-        "envName": "Letters, digits and underscores only",
-        "jsonHeaders": "A JSON object with text values, e.g. {\"X-Title\": \"Chat\"}",
         "jsonObject": "A JSON object, e.g. {\"key\": \"value\"}",
         "range": "Between {{min}} and {{max}}",
         "variableName": "Letters, digits and underscores, not starting with a digit"
       },
       "providers": {
-        "intro": "A provider is one API account. Its privacy tier is shown with every model it offers.",
-        "add": "Add provider",
-        "addTitle": "Add provider",
-        "editTitle": "Edit provider",
-        "empty": "No providers yet. Add one, then fetch its models.",
-        "saved": "Saved {{name}}",
-        "sdkDefault": "SDK default URL",
-        "baseUrlHint": "Leave empty for the SDK default (OpenAI or Anthropic)",
-        "keySection": "API key",
-        "keyStored": "Stored key {{key}}",
-        "keyEnv": "Key from {{env}}",
-        "keyNone": "No key",
-        "keyHintNew": "Stored encrypted and never shown again",
-        "keyHintEdit": "Leave empty to keep the current key",
-        "keyWillBeRemoved": "The stored key will be removed when you save",
-        "keyEnvHint": "Used when no key is stored",
-        "removeKey": "Remove stored key",
-        "keepKey": "Keep stored key",
-        "privacySection": "Privacy and billing",
-        "currencyHint": "Model prices are entered in this currency",
-        "headersHint": "Sent with every request, e.g. OpenRouter's HTTP-Referer",
-        "notesHint": "Jurisdiction, retention, account settings (ZDR, opt-outs)",
+        "keyNone": "No API key",
         "modelCount": "Models: {{count}}",
         "fetchModels": "Fetch models",
-        "deleteTitle": "Delete {{name}}?",
-        "deleteMessage": "The provider and its models ({{count}}) are deleted. Chats that use them switch to the default model."
+        "serverHint": "Providers and their API keys are set up on the server (catalog/models.json and environment variables). Here you add their models.",
+        "keySet": "set",
+        "keyMissing": "missing"
       },
       "fetch": {
         "title": "Models of {{provider}}",
@@ -213,13 +174,13 @@
         "addedCount": "Models added: {{count}}"
       },
       "models": {
+        "title": "Models",
         "intro": "Models appear in the chat's model picker, grouped by provider and in sort order.",
         "add": "Add model",
         "addTo": "Add a model to {{provider}}",
         "addTitle": "Add model",
         "editTitle": "Edit model",
-        "empty": "No models yet. Fetch them from a provider or add one by hand.",
-        "emptyNoProviders": "Add a provider first, then its models.",
+        "emptyNoProviders": "No providers are set up on the server yet. Add them to catalog/models.json, then add their models here.",
         "saved": "Saved {{name}}",
         "context": "{{tokens}} context",
         "price": "{{input}} / {{output}} per 1M tokens",
@@ -244,43 +205,55 @@
         "visibilitySection": "Visibility",
         "notesHint": "Smoke test results, quirks",
         "deleteTitle": "Delete {{name}}?",
-        "deleteMessage": "Chats that use this model switch to the default model. Answers it wrote keep its name."
+        "deleteMessage": "Chats that use this model switch to the default model. Answers it wrote keep its name.",
+        "groupEmpty": "No models yet. Fetch them from the provider or add one by hand."
       },
       "personas": {
-        "intro": "A persona is a named system prompt with fill-in variables. Users pick one per chat.",
-        "add": "Add persona",
-        "addTitle": "Add persona",
-        "editTitle": "Edit persona",
-        "empty": "No personas yet.",
+        "title": "Agents",
+        "intro": "An agent is a system prompt with fill-in variables and a choice of tools. Start a chat with one here, or pick one in the chat.",
+        "add": "New agent",
+        "addTitle": "New agent",
+        "editTitle": "Edit agent",
+        "empty": "No agents yet. Create one to give the assistant a role, a style or a task.",
         "saved": "Saved {{name}}",
-        "descriptionHint": "Shown in the persona picker",
+        "descriptionHint": "Shown on the agent's card and in the chat's agent menu",
         "promptPlaceholder": "You are a helpful assistant who always talks like a {{style}}.",
         "promptHint": "Use {{name}} placeholders for variables. Filled in automatically: {{builtIns}}",
         "variablesSection": "Variables",
-        "noVariables": "No variables. Users can pick this persona without filling anything in.",
+        "noVariables": "No variables. A chat with this agent starts right away.",
         "addVariable": "Add variable",
         "addFromPrompt": "Add from prompt: {{names}}",
         "removeVariable": "Remove variable",
-        "modelSection": "Model and visibility",
-        "noDefaultModel": "No default model",
-        "defaultModelHint": "Used when the user hasn't picked a model for the chat",
         "deleteTitle": "Delete {{name}}?",
-        "deleteMessage": "Chats that use this persona continue without it."
+        "deleteMessage": "Chats that use this agent continue without it.",
+        "copyTitle": "Duplicate agent",
+        "copyName": "{{name}} (copy)",
+        "copyNameN": "{{name}} (copy {{n}})",
+        "duplicate": "Duplicate",
+        "startChat": "Start chat",
+        "toolsSection": "Tools",
+        "toolModeAll": "All tools available on the server",
+        "toolModePick": "Only these tools",
+        "toolUnavailable": "Not available on the server: {{reason}}",
+        "toolUnavailableUnknown": "no reason given",
+        "noToolsHint": "Without tools, the agent answers from the conversation alone.",
+        "allTools": "All tools",
+        "noTools": "No tools",
+        "allToolsHint": "Currently: {{tools}}",
+        "allToolsNone": "The server doesn't offer any tools right now",
+        "asksFor": "Asks for {{names}} when you start a chat",
+        "visibilitySection": "Visibility"
       },
       "transfer": {
-        "exportTitle": "Export",
-        "exportIntro": "Download providers, models and personas as a catalog file, e.g. to seed another deployment (MODEL_CATALOG_FILE).",
-        "includeKeys": "Include stored API keys",
-        "includeKeysWarning": "The file will contain your API keys in plain text. Keep it private and delete it when done.",
+        "title": "Import & export",
         "download": "Download JSON",
-        "importTitle": "Import",
-        "importIntro": "Upload a catalog file. Entries are matched by name and updated or added; nothing is deleted.",
-        "chooseFile": "Choose JSON file",
+        "chooseFile": "Import JSON file",
         "invalidJson": "This file isn't valid JSON.",
         "invalidFile": "This file isn't a catalog file.",
         "created": "Added",
         "updated": "Updated",
-        "errors": "Problems: {{count}}"
+        "errors": "Problems: {{count}}",
+        "intro": "Download the catalog as a JSON file, e.g. as a backup. Importing a file updates or adds models and agents by name and deletes nothing; providers in it are skipped, as they come from the server."
       }
     }
   },
