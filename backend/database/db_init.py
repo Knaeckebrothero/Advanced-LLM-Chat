@@ -218,7 +218,8 @@ def get_engine(host: str, port: int, user: str, password: str, db_name: str):
     Returns:
         SQLAlchemy Engine instance.
     """
-    url = f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+    # psycopg2 by name: from SQLAlchemy 2.1 on, a plain postgresql:// URL means psycopg 3
+    url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db_name}"
     return create_engine(url, echo=False)
 
 

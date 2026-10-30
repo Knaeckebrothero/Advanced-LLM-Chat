@@ -196,11 +196,12 @@ class Database:
         self._min_connections = min_connections or POSTGRES_MIN_CONNECTIONS
         self._max_connections = max_connections or POSTGRES_MAX_CONNECTIONS
 
-        # Build connection URL
+        # Build connection URL. The driver is psycopg2 (requirements.txt): from SQLAlchemy 2.1 on,
+        # a plain postgresql:// URL means psycopg 3, which isn't installed
         if database_url or DATABASE_URL:
-            url = database_url or DATABASE_URL
+            url = re.sub(r"^postgres(ql)?://", "postgresql+psycopg2://", database_url or DATABASE_URL)
         else:
-            url = f"postgresql://{self._user}:{self._password}@{self._host}:{self._port}/{self._database}"
+            url = f"postgresql+psycopg2://{self._user}:{self._password}@{self._host}:{self._port}/{self._database}"
 
         log.debug(f"Initializing database connection to {self._host}:{self._port}/{self._database}")
 
