@@ -81,6 +81,12 @@ docker-compose -f docker-compose.prod.yml up -d  # Use pre-built images from ghc
 # Deploy to a remote server (set API_URL to backend address)
 API_URL=https://192.168.1.50:8443 docker-compose up -d
 ```
+Settings for compose go in `docker/.env` (template: `docker/.env.example`); `docker/docker-compose.keycloak.yml` adds the optional Keycloak.
+
+### Kubernetes and releases
+The Helm chart is `helm/advanced-llm-chat` (see its README): frontend, backend (runs `app_init --prod` in an init container), Postgres, optional Keycloak and ingress. Check it with `helm lint helm/advanced-llm-chat` and `helm template`. The Keycloak realm file lives in the chart (`files/llm-chat-realm.json`) and docker compose mounts it from there.
+
+`.github/workflows/docker-build.yml`: every push to `develop` builds the images (`develop-latest`, `sha-…`); every merge into `main` is a release `<major>.<minor>.<run number>` (major and minor from `Chart.yaml`): images tagged with the version and `latest`, the chart pushed to `oci://ghcr.io/knaeckebrothero/charts/advanced-llm-chat`, and a GitHub release with the chart and the compose bundle (`.github/scripts/compose-bundle.sh`).
 
 ## Architecture Overview
 

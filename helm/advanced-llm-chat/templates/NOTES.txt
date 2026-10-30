@@ -1,0 +1,28 @@
+Advanced LLM Chat {{ .Chart.AppVersion }} is installed as "{{ .Release.Name }}".
+
+  Frontend: {{ .Values.urls.frontend }}
+  Backend:  {{ .Values.urls.backend }}
+{{- if not .Values.ingress.enabled }}
+  (No ingress: route these addresses to the services {{ include "llmchat.fullname" . }}-frontend
+  and {{ include "llmchat.fullname" . }}-backend yourself, e.g. with a tunnel.)
+{{- end }}
+
+Login: AUTH_MODE={{ include "llmchat.authMode" . }}. Guests can always chat.
+{{- if .Values.keycloak.enabled }}
+
+The bundled Keycloak is at {{ .Values.keycloak.url }} (user "admin"). Its password:
+
+  kubectl get secret -n {{ .Release.Namespace }} {{ include "llmchat.fullname" . }}-keycloak -o jsonpath='{.data.admin-password}' | base64 -d
+
+Create users in the realm "llm-chat" with "Email verified" on; the realm role
+"{{ .Values.keycloak.adminRole }}" makes a user an admin of the app.
+{{- else if eq (include "llmchat.authMode" .) "oidc" }}
+
+Register this client at your provider ({{ .Values.auth.oidc.issuer }}):
+  Valid redirect URI:             {{ trimSuffix "/" .Values.urls.backend }}/api/auth/oidc/callback
+  Valid post logout redirect URI: {{ trimSuffix "/" .Values.urls.frontend }}
+See docs/authentication.md, "Option 3".
+{{- else if eq (include "llmchat.authMode" .) "mock" }}
+
+WARNING: the mock login lets anyone log in as anyone without a password. Use it for development only.
+{{- end }}

@@ -102,6 +102,13 @@ app.include_router(settings.router)
 app.include_router(files.router)
 app.include_router(catalog.router)
 
+
+@app.get("/api/health", include_in_schema=False)
+async def health():
+    """For container probes: the server answers (no database check, so a database outage doesn't restart it)."""
+    return {"status": "ok"}
+
+
 # Register documentation routes (these need to be registered last as they use the app directly)
 docs.create_docs_routes(app)
 

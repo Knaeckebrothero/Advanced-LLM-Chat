@@ -9,7 +9,7 @@ This directory contains the Docker configuration for containerizing both the Ang
 - **nginx.conf**: Nginx configuration optimized for serving Angular SPA
 - **docker-compose.yml**: Docker Compose configuration for running both services
 - **docker-compose.keycloak.yml**: Optional Keycloak for logging in, added to either compose file (see [Login](#login))
-  (the realm it imports on its first start is `helm/advanced-llm-chat/files/llm-chat-realm.json`)
+  (the realm it imports on its first start is shared with the Helm chart: `helm/advanced-llm-chat/files/llm-chat-realm.json`)
 
 ## Prerequisites
 
@@ -20,17 +20,9 @@ This directory contains the Docker configuration for containerizing both the Ang
 
 ### 1. Set up environment variables
 
-Create a `.env` file in the docker directory:
+Copy `.env.example` to `.env` in the docker directory and fill it in (at least `POSTGRES_PASSWORD` for the prod file, and a model provider key).
 
-```bash
-# Required: At least one LLM provider
-OPENAI_API_KEY=your_openai_api_key_here
-# Or use Replicate
-# REPLICATE_API_TOKEN=your_replicate_api_token_here
-
-# Optional: Set API_URL if backend is on a different host
-# API_URL=https://192.168.1.50:8443
-```
+Every release (a merge into `main`) also publishes a ready bundle on the GitHub releases page: `docker-compose.yml` with the release's image tag, the Keycloak file, its realm and `.env.example`. A Helm chart for Kubernetes is in `helm/advanced-llm-chat`.
 
 ### 2. Build and run with Docker Compose
 

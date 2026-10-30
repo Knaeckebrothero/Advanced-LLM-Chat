@@ -55,7 +55,7 @@ The backend reaches the provider for the metadata, the signing keys and the toke
 
 ## Option 1: the bundled Keycloak (docker compose)
 
-`docker/docker-compose.keycloak.yml` adds Keycloak (with its own Postgres) to either compose file, imports the realm `llm-chat` from `helm/advanced-llm-chat/files/llm-chat-realm.json` on its first start, and sets the backend to `AUTH_MODE=oidc` with it:
+`docker/docker-compose.keycloak.yml` adds Keycloak (with its own Postgres) to either compose file, imports the realm `llm-chat` from `helm/advanced-llm-chat/files/llm-chat-realm.json` (shared with the Helm chart) on its first start, and sets the backend to `AUTH_MODE=oidc` with it:
 
 ```bash
 # docker/.env
@@ -70,7 +70,11 @@ Then open the console at `http://localhost:8180`, switch to the realm `llm-chat`
 
 The browser reaches Keycloak at `KEYCLOAK_URL` (default `http://localhost:8180`), the backend inside the network at `http://keycloak:8080` (`KC_HOSTNAME_BACKCHANNEL_DYNAMIC`). Behind a reverse proxy with TLS, set `KEYCLOAK_URL`, `API_URL` and `FRONTEND_URL` to the public addresses before the first start (the realm's redirect URIs are filled from them once), and add `KC_PROXY_HEADERS=xforwarded`.
 
-## Option 2: your own Keycloak
+## Option 2: the bundled Keycloak (Helm)
+
+The Helm chart (`helm/advanced-llm-chat`) does the same with `keycloak.enabled: true` and `keycloak.url` (Keycloak's public address, which needs its own host on the ingress). It generates the console's admin password and the client secret (Secret `<release>-advanced-llm-chat-keycloak`) and keeps Keycloak's database `keycloak` in the chart's Postgres. See the chart's README.
+
+## Option 3: your own Keycloak
 
 Create a client in your realm (Clients, Create client):
 

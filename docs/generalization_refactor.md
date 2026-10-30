@@ -40,6 +40,8 @@ Everything below is committed and pushed to `develop` (pushed directly with the 
 | `8def39c` | First visit (or a session that expired while the app was closed) starts a guest session in the chat instead of showing the login page |
 | `a8c83a6` | Settings and the first sync wait for the session, so a first visit or a logout no longer lands on the login page by a race |
 | `3e32e58` | Login through Keycloak or another OIDC provider (`AUTH_MODE=oidc`), optional bundled Keycloak for docker compose, mock login for development only (`docs/authentication.md`) |
+| `0c6bea7` | Database URLs name the psycopg2 driver: SQLAlchemy 2.1 (in images built since `3e32e58`) defaults to psycopg 3, so the backend image couldn't connect |
+| `89440e4` | The Keycloak compose file mounts the realm from `helm/advanced-llm-chat/files/` (the file moved there in `0c6bea7`) |
 
 The contract for the runtime, the catalog, agents, tools and the history budget is in `docs/model_catalog_api.md`; provider choices are in `docs/model_provider_strategy.md`.
 
@@ -75,8 +77,9 @@ Personas: Pirate (all tools) and Translator (no tools).
 - **Reasoning effort: the second-highest level per model,** because the top level ("max") tends to overthink. That is xhigh for Claude and high for the others: DeepSeek and Kimi go low/high/max, GPT-5.2 none…xhigh, Mistral only has high.
 - **Single-admin setup:** no per-user API keys, billing or private agents; provider keys stay in env vars and the catalog is edited by the admin in the app.
 - Agents don't include a model, and there is no side-by-side comparison of agents or models.
-- **Login:** Keycloak is optional: bundled (docker compose, later the Helm chart), the user's own, or none. Guest logins stay. The homelab deployment keeps guests and adds login through the user's existing homelab Keycloak, and it must work from the home network and from outside (the user has no VPN on the phone yet), so that Keycloak needs a public route.
+- **Login:** Keycloak is optional: bundled (docker compose or the Helm chart), the user's own, or none. Guest logins stay. The homelab deployment is public for guests (the user shows the AI to others) and adds login through the user's existing homelab Keycloak, which stays reachable only at home: the user's phone reaches it through a VPN that is on demand for the homelab's internal domain. Guest mode never contacts Keycloak (checked with a backend whose Keycloak doesn't exist), so visitors only hit a dead end if they press "Log in". The homelab realm allows self-registration, so the deployment sets `OIDC_REQUIRED_ROLE=user`.
 - **Deployment:** a Helm chart next to the docker compose files; images and chart are built and published when `develop` is merged into `main`. The chart will replace the current homelab deployment, which still runs old Fessi-era images.
+- **Releases:** every merge into `main` is a release `<major>.<minor>.<run number>` (major and minor in `Chart.yaml`): images tagged with the version and `latest`, the chart at `oci://ghcr.io/knaeckebrothero/charts/advanced-llm-chat`, and a GitHub release with the chart and a docker compose bundle.
 
 ### Model test results (2026-10-30)
 
@@ -90,8 +93,8 @@ Personas: Pirate (all tools) and Translator (no tools).
 
 ### Next steps
 
-1. **Helm chart** next to the docker compose files, and CI that builds and publishes the images and the chart on `main` (in progress).
-2. **Homelab deployment with the chart:** the homelab's Keycloak needs a client for the app (`docs/authentication.md`, "Option 2") and a public route, because login must work from outside too; its realm allows self-registration, so set `OIDC_REQUIRED_ROLE`. Also set the provider keys (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY`) and `FORWARDED_ALLOW_IPS`, and run `app_init --prod` on the existing database. Until then the old deployment pulls `develop-latest` on every pod restart, which would start today's code without migration or settings; pinning its image avoids that.
+1. **Helm chart and releases:** `helm/advanced-llm-chat` and the release workflow (CLAUDE.md, "Kubernetes and releases"). The first real publish comes with the first merge into `main`; if GHCR creates the chart package as private, make it public (or give the cluster pull credentials).
+2. **Homelab deployment with the chart:** the homelab's Keycloak needs a client for the app (`docs/authentication.md`, "Option 3"); no public route (see the decisions). Values: `auth.mode: oidc`, the realm's issuer, `adminRole: admin`, `requiredRole: user` (`OIDC_REQUIRED_ROLE`: the realm's role `user`, which isn't a default role; assign it, and `admin`, to the user's account, and only to people who may use the chat). Also set the provider keys (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY`) and `FORWARDED_ALLOW_IPS`, and run `app_init --prod` on the existing database. Until then the old deployment pulls `develop-latest` on every pod restart, which would start today's code without migration or settings; pinning its image avoids that.
 3. Look at the homelab router's failures.
 4. Merge `develop` into `main` (a separate step the user triggers).
 
@@ -245,6 +248,7 @@ Since the catalog work (evening of 2026-10-30):
   - login end to end: `backend/security/tests/oidc_test.py` (62 pass) against the bundled Keycloak and a backend with `AUTH_MODE=oidc` on `llm_chat_auth_test`, see its docstring;
   - model smoke test: `python -m backend.llm.smoke_test --model <id>`;
   - frontend: `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and the unit tests (57 of 89 fail since `a8c83a6`, all of them failing before; compare the failing spec names, not just the count).
+- **Chart checks:** `helm lint helm/advanced-llm-chat`, `helm template` with different values, and `kubeconform -strict` on the output (helm 3.20, kubeconform and k3d are installed). For a real install, a throwaway k3d cluster with its own kubeconfig (`k3d cluster create <name> -p "18080:80@loadbalancer" --kubeconfig-update-default=false --kubeconfig-switch-context=false`) and `localhost:18080` / `keycloak.localhost:18080` as the addresses. On this machine k3d nodes can't pull from Docker Hub (EOF), and `k3d image import` silently skips multi-platform images: import with `docker save --platform linux/amd64 <image> | docker exec -i <node> ctr -n k8s.io images import -`. The backend image is 3.6 GB (PyTorch for local Whisper) and pulls at about 1.5 MB/s here; for chart tests, an image built from `requirements.txt` without `openai-whisper` works (Whisper is imported lazily).
 - **Browser checks:** the Playwright MCP browser hung on start on 2026-10-30; a headless script with the cached `playwright-core` and `~/.cache/ms-playwright/chromium_headless_shell-1217` worked. Keycloak's login form: `#username`, `#password`, `#kc-login`.
 - **Browser checks as an admin:** mock-login with an `@example.invalid` address and start a backend with that address added to `ADMIN_EMAILS` in the process environment (`load_dotenv` doesn't override variables that are already set).
 - **Dev database:** test users from the sessions were deleted. Still there: the seed users (`guest@guest.local` as user 0, `test@`, `admin@`, `demo@example.com`), the user's account, and three users named `test`, `testsetst` and `tetse` (probably the user's own test logins). Two uploads from December 2025 (`file_1766482527957_…`, `file_1766482575933_…`) have no owner, because no message refers to them, so nobody can read them.
@@ -276,7 +280,6 @@ Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependenc
 - **Cautious token estimate:** 3 characters per token means a 512k window carries roughly 330k real tokens of English history. Raising it to 4 uses more of the window but risks overflow on tokenizers that count more tokens.
 - **Claude Haiku 5.5** costs five times more above 100k prompt tokens. The cost display uses the lower price.
 - **Voice settings follow the chat model's server:** `WHISPER_BASE_URL` and `TTS_BASE_URL` default to `OPENAI_BASE_URL`. The homelab router serves Whisper and Kokoro, which could be used instead.
-- **Old model default:** the CI workflow's generated `.env.example` (`.github/workflows/docker-build.yml`) still names `claude-3-haiku-20240307`.
 
 **Frontend:**
 
@@ -291,10 +294,14 @@ Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependenc
 
 **Setup and Docker:**
 
+- **Unpinned requirements:** `requirements.txt` only has lower bounds, so every image build that reinstalls packages can pick up breaking releases (SQLAlchemy 2.1 broke the database URL, fixed in `0c6bea7`). A lock file or upper bounds would make builds repeatable.
+- **Large backend image:** 3.6 GB, almost all of it PyTorch for `openai-whisper` (local transcription, off by default). An image without it, or a separate variant with it, would be about a tenth of the size.
+
 - **Dev certificates:** they are regenerated on *every* backend start, by `start_backend.py` and again by importing `backend/main.py`. The backend and the Angular dev server therefore use different certificates, and trusting `devcerts/ca.pem` never lasts. They should only be generated when missing.
 - `schema.sql` starts with a comment-only statement, which logs a harmless "can't execute an empty query" warning at startup.
-- `docker/README.md` still describes SQLite and a Replicate-only backend.
-- **Duplicated compose files:** dev, prod and the CI heredoc are three copies to keep in sync. The `version: '3.8'` field is obsolete.
+- **Two compose files:** dev (builds the images) and prod (pulls them) still duplicate most settings. The CI's heredoc copy is gone: releases bundle the prod file (`.github/scripts/compose-bundle.sh`).
+- **Uploads in Docker:** until the Helm chart work, `FILES_DIR` (`./files`) wasn't on the mounted volume in the compose files, so uploads were lost with the container. The compose files and the chart now put files, the TTS cache and logs on the volume. Deployments that set `FILES_DIR=./files` themselves (the old homelab deployment) have the same problem.
+- The old `helm/fessi` chart only ever existed as ignored files (`.gitignore` ignores `*.yaml`); a leftover copy may still be on disk locally. The repository's chart is `helm/advanced-llm-chat`, excepted from that rule.
 - The provider research (report and the five sets of notes) lives in `docs/research/`.
 
 ## Ideas discussed for later
