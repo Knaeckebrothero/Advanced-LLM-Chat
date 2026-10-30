@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Advanced LLM Chat: an Angular 19.2.2 PWA with a FastAPI backend for chatting with LLMs. Uses microservices architecture with:
 - **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, SCSS styling, ngx-translate for i18n (German/English)
-- **Backend**: FastAPI with PostgreSQL for persistence, LangGraph agent with multi-step reasoning, optional Neo4j knowledge graph (`NEO4J_ENABLED`)
-- **LLM Integration**: Multi-provider support (Replicate, OpenAI, Anthropic) with SSE streaming for agent responses
+- **Backend**: FastAPI with PostgreSQL for persistence, an agent loop with tool use (`backend/llm/`), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
+- **LLM Integration**: Thin runtime on the official `openai` and `anthropic` SDKs (no LangChain): OpenAI, any OpenAI-compatible endpoint, and Anthropic, with SSE streaming for agent responses
 
 This repository is the general **upstream**. Adapted versions (e.g. Fessi, a waste disposal assistant) live in separate downstream repositories that merge `upstream/develop`. Keep domain-specific branding, prompts, tools and data out of this repository; add configuration points instead so downstream changes stay small.
 
@@ -51,7 +51,7 @@ python backend/app_init.py --prod            # Production migration (add missing
 ### Environment Configuration
 Copy `.env.example` to `.env`. Required settings:
 ```bash
-REPLICATE_API_TOKEN=your_token_here  # Or OPENAI_API_KEY or ANTHROPIC_API_KEY
+OPENAI_API_KEY=your_key_here  # Or ANTHROPIC_API_KEY
 USE_DEV_CERTS=True
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
@@ -109,14 +109,23 @@ backend/
 │   ├── neo4j_init.py # Neo4j init, seeds from NEO4J_SEED_FILE
 │   └── queries/      # SQL files (schema.sql, seed.sql)
 ├── models/           # Pydantic request/response models
+├── llm/              # LLM runtime on the openai/anthropic SDKs
+│   ├── types.py          # ModelConfig, Usage, model_from_env()
+│   ├── client.py         # AsyncOpenAI / AsyncAnthropic clients from a ModelConfig
+│   ├── agent_loop.py     # run_agent() (streamed tool loop) and complete() (one call)
+│   ├── openai_chat.py    # Chat Completions adapter (reasoning_content passback, <think> tags)
+│   ├── anthropic_chat.py # Messages adapter (format conversion, thinking blocks)
+│   ├── tools.py          # Tool registry with JSON schemas, default_tools()
+│   ├── prompts.py        # build_system_prompt()
+│   ├── smoke_test.py     # python -m backend.llm.smoke_test --env | --model <id>
+│   └── tests/            # Offline test scripts (fake OpenAI server, mocked Anthropic API)
 ├── services/
-│   ├── llm_provider.py   # Multi-provider LLM abstraction
-│   ├── agent.py          # LangGraph agent (file, web search and optional graph tools)
+│   ├── conversation_history.py  # Conversation history in the OpenAI message format
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation
 │   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
-│   └── tools/            # LangChain tools (files, web search, read-only knowledge graph)
+│   └── tools/            # Tool implementations (files, web search, read-only knowledge graph)
 ├── security/         # Auth, CSRF, logging
 └── utils/            # Certificates, hashing
 ```
@@ -160,10 +169,11 @@ Uses discriminated union pattern with factory methods:
 ## Agent Streaming Protocol
 
 The `/api/message/stream-generate` SSE endpoint emits:
-- **message_start**: Message metadata (messageId, conversationId, roleName, time, type)
-- **step**: Agent reasoning step (thought, tool_call, tool_result, observation)
+- **message_start**: Message metadata (messageId, conversationId, roleName, time, type, modelId, modelName)
+- **step**: Agent reasoning step (thought, tool_call, tool_result, observation); a step with an existing id replaces it, tool steps carry a `callId`
+- **step_delta**: `{"id", "delta"}`, text appended to a step (the model's live "Thinking")
 - **token**: Individual text tokens for final response
-- **done**: Signals completion
+- **done**: Signals completion (messageId, modelId, modelName, usage)
 - **error**: Error information
 
 ## Git Workflow

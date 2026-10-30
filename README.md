@@ -2,7 +2,7 @@
 
 **A self-hosted chat app for talking to large language models.**
 
-Advanced LLM Chat is an Angular Progressive Web App with a FastAPI backend. Messages are answered by a LangGraph agent that reasons in steps, uses tools and streams its work to the browser. It runs against OpenAI, any OpenAI-compatible endpoint (llama.cpp, vLLM, OpenRouter, ...) or Anthropic, and keeps your conversations available offline.
+Advanced LLM Chat is an Angular Progressive Web App with a FastAPI backend. Messages are answered by an agent that reasons in steps, uses tools and streams its work, including the model's thinking, to the browser. It runs against OpenAI, any OpenAI-compatible endpoint (llama.cpp, vLLM, OpenRouter, ...) or Anthropic, and keeps your conversations available offline.
 
 The project started in 2023 as a personal project to learn how to build AI systems. Later it became the base for university projects, most notably **Fessi**, a waste disposal assistant built at Frankfurt University of Applied Sciences in 2025. This repository is the general version; adapted versions such as Fessi live in their own repositories and build on top of it (see [Building on top of this project](#building-on-top-of-this-project)).
 
@@ -22,8 +22,9 @@ The project started in 2023 as a personal project to learn how to build AI syste
 ## Features
 
 **Chat**
-- Agent responses streamed over Server-Sent Events: reasoning steps, tool calls and the final answer token by token
-- Multiple LLM providers: OpenAI and OpenAI-compatible servers, Anthropic, Replicate (legacy)
+- Agent responses streamed over Server-Sent Events: the model's thinking, tool calls and the final answer token by token
+- Multiple LLM providers on the official SDKs: OpenAI and OpenAI-compatible servers (llama.cpp, vLLM, EU hosts, routers), Anthropic
+- Token usage per answer
 - Markdown rendering, copying messages, automatic conversation titles, renaming and deleting conversations
 
 **Tools**
@@ -129,7 +130,8 @@ All settings are environment variables; `.env.example` lists every option with a
 | `POSTGRES_*` | PostgreSQL connection (required) |
 | `TAVILY_API_KEY` | Enables the web search tool |
 | `NEO4J_ENABLED` | Enables the knowledge graph tools (default `false`) |
-| `MODEL_RECEIVE_IMAGES`, `VISION_*` | Send images to the model directly, or describe them with a separate vision model |
+| `REASONING_LEVEL`, `AUXILIARY_REASONING_LEVEL` | Reasoning effort of the model for answers and for titles / speech preprocessing |
+| `VISION_*` | Separate vision model that describes images and PDF pages for text-only models |
 | `USE_LOCAL_WHISPER`, `WHISPER_*`, `TTS_*` | Speech-to-text and text-to-speech |
 | `CORS_ORIGINS`, `SSL_CERTFILE`, `SSL_KEYFILE` | Deployment behind your own domain and certificates |
 
@@ -159,7 +161,7 @@ With the full Docker setup, set `NEO4J_ENABLED=true` and `COMPOSE_PROFILES=graph
 ```
 Browser (Angular PWA, IndexedDB)  ──HTTPS / SSE──>  FastAPI backend  ──>  LLM provider
                                                        │   │
-                                                       │   └──> LangGraph agent ──> tools (files, web search, Neo4j)
+                                                       │   └──> agent loop (backend/llm) ──> tools (files, web search, Neo4j)
                                                        └──> PostgreSQL (users, conversations, messages, files)
 ```
 
@@ -175,15 +177,16 @@ backend/
 ├── api/              # routes: auth, conversations, messages, settings, files
 ├── database/         # PostgreSQL (SQLAlchemy Core) and the optional Neo4j manager
 ├── models/           # Pydantic request/response models
+├── llm/              # LLM runtime on the openai / anthropic SDKs: clients, agent loop, tool registry,
+│                     # system prompt, smoke test (python -m backend.llm.smoke_test --env)
 ├── services/
-│   ├── agent.py          # LangGraph agent
-│   ├── llm_provider.py   # OpenAI / Anthropic abstraction
-│   ├── tools/            # file, web search and knowledge graph tools
+│   ├── conversation_history.py  # history in the OpenAI message format
+│   ├── tools/            # file, web search and knowledge graph tool implementations
 │   └── ...               # vision, audio, TTS, title generation
 └── security/         # authentication, CSRF, logging
 ```
 
-**Agent streaming protocol** (`POST /api/message/stream-generate`): `message_start` (message metadata), `step` (thought, tool call, tool result, observation), `token` (final answer), `done` and `error`.
+**Agent streaming protocol** (`POST /api/message/stream-generate`): `message_start` (message metadata and model), `step` (thought, tool call, tool result, observation; a step with an existing id replaces it), `step_delta` (text appended to a step, the model's live thinking), `token` (final answer), `done` (with the token usage) and `error`.
 
 ## Building on top of this project
 
