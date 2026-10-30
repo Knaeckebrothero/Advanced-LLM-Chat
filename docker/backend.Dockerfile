@@ -22,8 +22,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the backend module and entry point
+# Copy the backend module, entry point and the default model catalog (MODEL_CATALOG_FILE=catalog/models.json)
 COPY backend/ ./backend/
+COPY catalog/ ./catalog/
 COPY start_backend.py .
 
 # Create directories for certificates and file storage

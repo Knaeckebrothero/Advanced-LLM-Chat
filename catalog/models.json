@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "name": "Cortecs",
+      "kind": "openai_compatible",
+      "base_url": "https://api.cortecs.ai/v1",
+      "api_key_env": "CORTECS_API_KEY",
+      "privacy_tier": "eu",
+      "currency": "EUR",
+      "notes": "EU router (Vienna). Account settings: Sovereign Cloud and zero data retention on, Nebius excluded. Prices from api.cortecs.ai/v1/models on 2026-10-30."
+    },
+    {
+      "name": "Homelab",
+      "kind": "openai_compatible",
+      "base_url": "${MODEL_ROUTER_API}",
+      "api_key_env": "MODEL_ROUTER_KEY",
+      "privacy_tier": "local",
+      "currency": "EUR",
+      "notes": "Model router in the homelab. Data never leaves the network."
+    },
+    {
+      "name": "Anthropic",
+      "kind": "anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "privacy_tier": "trusted",
+      "currency": "USD",
+      "notes": "First-party API. No training on API data; standard 30-day retention."
+    },
+    {
+      "name": "OpenAI",
+      "kind": "openai_compatible",
+      "base_url": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "privacy_tier": "trusted",
+      "currency": "USD",
+      "notes": "First-party API. No training on API data; abuse monitoring retention."
+    }
+  ],
+  "models": [
+    {
+      "provider": "Cortecs",
+      "display_name": "DeepSeek V4.1 Flash",
+      "model_id": "deepseek-v4.1-flash-1017",
+      "description": "Fast and cheap, 1M context",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "optional",
+      "context_window": 1048576,
+      "input_price_per_mtok": 0.182,
+      "output_price_per_mtok": 0.547,
+      "sort_order": 10
+    },
+    {
+      "provider": "Cortecs",
+      "display_name": "DeepSeek V4 Pro",
+      "model_id": "deepseek-v4-pro-0813",
+      "description": "DeepSeek's largest model, text only",
+      "supports_tools": true,
+      "supports_vision": false,
+      "reasoning": "optional",
+      "context_window": 1048576,
+      "max_output_tokens": 64000,
+      "input_price_per_mtok": 1.795,
+      "output_price_per_mtok": 3.59,
+      "sort_order": 20
+    },
+    {
+      "provider": "Cortecs",
+      "display_name": "Mistral Large 4",
+      "model_id": "mistral-large-4-0",
+      "description": "Mistral's flagship, served by Mistral in the EU",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "optional",
+      "context_window": 1000000,
+      "input_price_per_mtok": 0.687,
+      "output_price_per_mtok": 2.11,
+      "sort_order": 30
+    },
+    {
+      "provider": "Cortecs",
+      "display_name": "Kimi K3",
+      "model_id": "kimi-k3",
+      "description": "Moonshot's frontier model, always thinks",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "always",
+      "reasoning_passback": true,
+      "reasoning_effort": "high",
+      "context_window": 1048576,
+      "input_price_per_mtok": 2.693,
+      "output_price_per_mtok": 13.464,
+      "sort_order": 40
+    },
+    {
+      "provider": "Homelab",
+      "display_name": "Gemma 4 (MoE)",
+      "model_id": "gemma-4-26b-a4b",
+      "description": "Runs locally in the homelab",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "optional",
+      "is_auxiliary": true,
+      "available_to_guests": true,
+      "sort_order": 50
+    },
+    {
+      "provider": "Anthropic",
+      "display_name": "Claude Opus 5.5",
+      "model_id": "claude-opus-5-5",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "always",
+      "context_window": 1000000,
+      "max_output_tokens": 64000,
+      "input_price_per_mtok": 4.0,
+      "output_price_per_mtok": 20.0,
+      "sort_order": 60
+    },
+    {
+      "provider": "Anthropic",
+      "display_name": "Claude Sonnet 5.5",
+      "model_id": "claude-sonnet-5-5",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "always",
+      "reasoning_effort": "low",
+      "context_window": 1000000,
+      "max_output_tokens": 64000,
+      "input_price_per_mtok": 2.0,
+      "output_price_per_mtok": 10.0,
+      "sort_order": 61
+    },
+    {
+      "provider": "Anthropic",
+      "display_name": "Claude Haiku 5.5",
+      "model_id": "claude-haiku-5-5",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "optional",
+      "context_window": 1000000,
+      "max_output_tokens": 64000,
+      "input_price_per_mtok": 0.1,
+      "output_price_per_mtok": 0.5,
+      "sort_order": 62
+    },
+    {
+      "provider": "OpenAI",
+      "display_name": "GPT-5.2",
+      "model_id": "gpt-5.2-2025-12-11",
+      "supports_tools": true,
+      "supports_vision": true,
+      "reasoning": "optional",
+      "sort_order": 70
+    }
+  ],
+  "personas": [
+    {
+      "name": "Pirate",
+      "description": "Answers in pirate speak",
+      "system_prompt": "You are a helpful assistant who always talks like a {{style}}, while still giving correct and useful answers. Today is {{date}}.",
+      "variables": [{"name": "style", "label": "Style", "default": "pirate"}],
+      "available_to_guests": true,
+      "sort_order": 10
+    },
+    {
+      "name": "Translator",
+      "description": "Translates everything you write",
+      "system_prompt": "You are a translator. Translate every message from the user into {{target_language}}. Keep the meaning, tone and formatting, and only output the translation.",
+      "variables": [{"name": "target_language", "label": "Target language", "default": "English"}],
+      "available_to_guests": true,
+      "sort_order": 20
+    }
+  ]
+}

@@ -51,6 +51,14 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-llm_chat}
       - POSTGRES_USER=${POSTGRES_USER:-llm_chat}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llm_chat_dev_password}
+      # Seeds the model catalog; key variables decide which providers start enabled
+      - MODEL_CATALOG_FILE=${MODEL_CATALOG_FILE:-}
+      - CATALOG_SECRET_KEY=${CATALOG_SECRET_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CORTECS_API_KEY=${CORTECS_API_KEY:-}
+      - MODEL_ROUTER_API=${MODEL_ROUTER_API:-}
+      - MODEL_ROUTER_KEY=${MODEL_ROUTER_KEY:-}
       - NEO4J_ENABLED=${NEO4J_ENABLED:-false}
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=${NEO4J_USER:-neo4j}
@@ -101,7 +109,12 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-llm_chat_neo4j_dev}
       # LLM Provider
       - LLM_PROVIDER=${LLM_PROVIDER:-}
-      - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
+      # Model catalog (docs/model_catalog_api.md)
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      - CATALOG_SECRET_KEY=${CATALOG_SECRET_KEY:-}
+      - CORTECS_API_KEY=${CORTECS_API_KEY:-}
+      - MODEL_ROUTER_API=${MODEL_ROUTER_API:-}
+      - MODEL_ROUTER_KEY=${MODEL_ROUTER_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
