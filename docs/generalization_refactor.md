@@ -1,6 +1,6 @@
 # Generalization refactor (October 2026)
 
-Handover notes for picking the project back up: what was decided, what was done, what was found along the way and what comes next. Written on 2026-10-30, after the cleanup was merged into `develop` (PR #137).
+Handover notes for picking the project back up: what was decided, what was done, what was found along the way and what comes next. Written on 2026-10-30, after the cleanup was merged into `develop` (PR #137), and updated the same evening after the model catalog work (see "Status" below; it is the place to start).
 
 ## Goals and agreed plan
 
@@ -15,11 +15,80 @@ Agreed order of work:
 
 1. Repository setup and downstream repos (done)
 2. Clean up and generalize upstream `develop` (done, PR #137)
-3. **Choose model providers and set the app up as a proper chat app (in progress)**
-4. Deployment to the homelab
+3. Choose model providers and set the app up as a proper chat app (done on 2026-10-30, see "Status")
+4. **Deployment to the homelab (next)**
 5. Merge `develop` into `main`, then deploy and test in production
 
 The user explicitly wants providers and setup settled before the deployment and before touching `main`.
+
+## Status on 2026-10-30 (evening)
+
+Everything below is committed and pushed to `develop` (pushed directly with the admin bypass; `main` is untouched).
+
+### Commits since PR #137
+
+| Commit | What |
+|---|---|
+| `589e7b2`…`b340018` (12 commits) | New LLM runtime on the `openai`/`anthropic` SDKs (LangChain, LangGraph and Replicate removed), the model catalog (providers, models, personas) with admin API, the model picker, and the model and token usage stored per message |
+| `1043e47` | Chat background setting (none, Aurora, Sunset, own image kept in the browser; dim and blur) and settings loaded after login |
+| `7523e84` | History fills the model's context window instead of the last 20 messages; reasoning effort per model |
+| `2359817` | Agents page (`/agents`, admins only) replaces the placeholder; provider keys only from env vars; providers read-only and defined by `catalog/models.json`; seeding never overwrites edits; agents (personas) get a tool selection |
+| `0f60505` | One user per guest login and no guest exception in the ownership check; guests rate-limited by the connection's IP (no more api.ipify.org) |
+| `cd0982f` | Roboto, Inter and Material Icons bundled from npm instead of loaded from Google |
+| `f37eb3c` | New Chat works from the Agents page; long user names are cut off in the sidebar |
+| `84a7777` | Uploaded files belong to their uploader (`uploaded_files` table); files API, agent file tool and history only use the user's own files |
+| `8def39c` | First visit (or a session that expired while the app was closed) starts a guest session in the chat instead of showing the login page |
+
+The contract for the runtime, the catalog, agents, tools and the history budget is in `docs/model_catalog_api.md`; provider choices are in `docs/model_provider_strategy.md`.
+
+### How the app works now
+
+- **Models:** `backend/llm/` calls OpenAI-compatible endpoints and Anthropic through the official SDKs. Reasoning text is streamed as a live "Thinking" step; models that need it (Kimi) get their `reasoning_content` back in tool loops; Claude gets its thinking blocks back.
+- **Catalog:** providers (base URL, key env var, privacy tier, currency) come only from `catalog/models.json` (`MODEL_CATALOG_FILE`, the default; `${VAR}` in a base URL is filled from the environment). Keys are always read from the env var named in `api_key_env`. Models and agents are seeded once and then edited on the Agents page; `app_init` (and Docker's `db-init` on every start) never overwrites existing models or agents.
+- **Agents** (the `personas` table; the UI says "Agent"): a name, description, prompt with `{{variables}}` and a tool selection (`files`, `web_search`, `knowledge_graph`, or null for every tool the server enables). No model: the chat's model answers, so models are compared by switching the model in the chat or starting another chat with the same agent.
+- **Admins** are the emails in `ADMIN_EMAILS`. Only they see the Agents page; everyone else uses the models and agents in the chat's pickers. Guests only get models and agents marked "available to guests".
+- **History** sent to the model: the newest messages that fit the model's `context_window` (estimated at 3 characters per token, minus room for the answer, tool results, system prompt and tool definitions; `DEFAULT_CONTEXT_WINDOW` 32768 for models without one).
+- **Guests:** each guest login creates its own user (`users.is_guest`), deleted with its conversations and files by the hourly cleanup once its sessions have expired. Guests are rate-limited per IP (5 answers per 3 hours); behind a reverse proxy set `FORWARDED_ALLOW_IPS`.
+- **Files:** only the uploader can read a file (API, agent tool and history).
+- **Privacy:** the browser only talks to the app's own frontend and backend (no Google Fonts, no IP lookup service).
+
+### Starter catalog (`catalog/models.json`)
+
+| Provider | Models | Context | Effort | Notes |
+|---|---|---|---|---|
+| Cortecs (EU router, Vienna; account settings to use: Sovereign Cloud and ZDR on, Nebius excluded) | DeepSeek V4.1 Flash, DeepSeek V4 Pro, Mistral Large 4, Kimi K3 | 512k | high | Prices in EUR from `api.cortecs.ai/v1/models` |
+| Homelab router (`${MODEL_ROUTER_API}`) | Gemma 4 MoE (`gemma-4-26b-a4b`) | 128k | – | Auxiliary model (titles, speech preprocessing) and the guest model |
+| Anthropic | Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 | 512k | xhigh | Disabled until `ANTHROPIC_API_KEY` is set |
+| OpenAI | GPT-5.2 | 400k (its maximum) | high | |
+
+Personas: Pirate (all tools) and Translator (no tools).
+
+### Decisions made by the user (2026-10-30)
+
+- "Usability first, privacy preferred" for providers.
+- Start with the newest DeepSeek, Mistral and Kimi models plus one good general model; no coding-focused models such as GLM (those are tested in the user's agent framework instead).
+- Gemma 4 MoE from the homelab router.
+- **Context:** 512k for every model that supports it; Gemma stays at 128k.
+- **Reasoning effort: the second-highest level per model,** because the top level ("max") tends to overthink. That is xhigh for Claude and high for the others: DeepSeek and Kimi go low/high/max, GPT-5.2 none…xhigh, Mistral only has high.
+- **Single-admin setup:** no per-user API keys, billing or private agents; provider keys stay in env vars and the catalog is edited by the admin in the app.
+- Agents don't include a model, and there is no side-by-side comparison of agents or models.
+
+### Model test results (2026-10-30)
+
+`python -m backend.llm.smoke_test --model <id>` passed for all four Cortecs models and Gemma; every model answered real chats through the app.
+
+- **DeepSeek V4 Pro** doesn't think unless `reasoning_effort` is set (now high).
+- **GPT-5.2** defaults to no reasoning and got a test question wrong without it; at high it reasons and is right.
+- **Gemma 4** must not get its reasoning back (it repeats tool calls), ignores `reasoning_effort`, thinks about 250 tokens even for titles, and returns its reasoning in the `reasoning` field (vLLM).
+- **Cortecs** accepts every effort value and maps a level a model lacks to the next lower one.
+- **Homelab router:** about 15% of requests failed with "Backend unavailable: All connection attempts failed", in bursts, and some requests stalled for 60–90 s. Long prompts work (45k tokens tested). This is a router problem to look at, not an app problem. The router also serves Whisper (`whisper-large-v3`), Kokoro TTS (`kokoro`, `tts-1`, `tts-1-hd`), Qwen3 embeddings and rerankers, which the app's voice features (`WHISPER_BASE_URL`, `TTS_BASE_URL`) and a future vector search could use.
+
+### Next steps
+
+1. **Before exposing the app:** replace the password-less mock login (anyone can log in as any user, including an admin) with real authentication (Keycloak was the plan).
+2. **Homelab deployment:** set `ADMIN_EMAILS`, the provider keys (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY`), and `FORWARDED_ALLOW_IPS` if a reverse proxy sits in front. `CATALOG_SECRET_KEY` no longer exists.
+3. Look at the homelab router's failures.
+4. Merge `develop` into `main` (a separate step the user triggers).
 
 ## Repositories
 
@@ -48,6 +117,7 @@ The user explicitly wants providers and setup settled before the deployment and 
 
 - The ruleset **"Main & develop"** applies to the default branch, `main` and `develop`. It blocks deletion and force pushes, requires linear history, and requires PRs with 2 approvals (`merge` or `rebase` only). It also requires CodeQL and Copilot code review. The ruleset **"Backup-and-Deployment-Protection"** protects `backup-**-**-****` and `gh-pages`.
 - As the sole maintainer, the user can't satisfy the approvals, so PRs are merged with the admin bypass when asked: `gh pr merge <n> --rebase --admin`. Rebase keeps the linear history.
+- Since PR #137 the user prefers committing **directly to `develop`** (no feature branches or PRs) and pushing with the admin bypass; GitHub logs these pushes as "Bypassed rule violations". Merging into `main` stays a separate step the user asks for.
 - On every push to `develop` and `main`, `docker-build.yml` builds `ghcr.io/knaeckebrothero/advanced-llm-chat-{frontend,backend}`. Images from `develop` are tagged `develop-latest`, `develop` and `sha-<commit>`; images from `main` get `latest`. On pull requests it builds without pushing.
 - `deploy-gh-pages.yml` deploys `develop` to https://knaeckebrothero.github.io/Advanced-LLM-Chat/. It uses the `DEPLOY_GH_PAGES` secret and takes its base path from the repository name.
 - After the merge of PR #137, both workflows passed on `develop` (`a45a68d`). The backend image takes about 9.5 minutes, the frontend about 2.5.
@@ -157,6 +227,20 @@ Status on 2026-10-30. Everything runs from `develop`.
 6. Frontend: `npm start` → https://localhost:4200.
 7. In a browser, accept the certificate at https://localhost:8443 first, then open :4200. The two use different self-signed certificates (see "Known issues").
 
+Since the catalog work (evening of 2026-10-30):
+
+- `.env` also has `CORTECS_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY` and `ADMIN_EMAILS` (the user's own address). `ANTHROPIC_API_KEY` isn't set yet, so the Claude models are disabled. The router address is private: it stays in `.env` and never goes into the repository.
+- **Changes to `.env` need a backend restart:** `--reload` only watches `.py` files, and the keys are read from the process environment.
+- **Reseed after editing `catalog/models.json`:** `python backend/app_init.py --prod` updates providers and adds missing models and agents. Existing models and agents keep their database values, so change those on the Agents page or with SQL.
+- **`ng serve` needs a restart** after `angular.json` changes (e.g. the bundled fonts).
+- **Tests:**
+  - offline runtime tests: `python -m backend.llm.tests.run_all` (27 pass);
+  - catalog end to end: `backend/catalog/tests/catalog_api_test.py` (188 pass) on its own database `llm_chat_catalog_test` and a backend on port 8445, see its docstring;
+  - model smoke test: `python -m backend.llm.smoke_test --model <id>`;
+  - frontend: `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and the unit tests (58 of 88 fail, the same as before; compare the failing spec names, not just the count).
+- **Browser checks as an admin:** mock-login with an `@example.invalid` address and start a backend with that address added to `ADMIN_EMAILS` in the process environment (`load_dotenv` doesn't override variables that are already set).
+- **Dev database:** test users from the sessions were deleted. Still there: the seed users (`guest@guest.local` as user 0, `test@`, `admin@`, `demo@example.com`), the user's account, and three users named `test`, `testsetst` and `tetse` (probably the user's own test logins). Two uploads from December 2025 (`file_1766482527957_…`, `file_1766482575933_…`) have no owner, because no message refers to them, so nobody can read them.
+
 Checks that passed:
 
 - **End to end:** API calls (guest login, create a conversation, send a message, stream the agent) and a real browser run, with the reply streamed back from `gpt-5.2`.
@@ -165,37 +249,55 @@ Checks that passed:
 
 ## Known issues and findings (backlog)
 
-All of these were already there before the refactor unless noted.
+Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependency (gone with the new runtime), the Placeholder Component and `/metrics` page (removed), and the guest and file access problems (fixed, see "Status").
+
+**Security and privacy (before exposing the app):**
+
+- **Mock login:** anyone can log in as any email without a password, including an admin email. Real authentication (Keycloak) comes before the app is reachable from outside.
+- **Guest logins aren't rate-limited themselves:** only answers are (5 per IP per 3 hours). Every guest login creates a user row (deleted after the session expires), so a script could fill the database.
+- **Session expiring while the app is open:** the next request gets a 401 and `AuthInterceptor` sends the user to the login page; a guest could get a new guest session instead. (At startup this is fixed: a missing or expired session starts a guest session in the chat.)
+- Files belong to users, not to conversations (see `docs/attachment_rework.md`). Deleting a conversation leaves its TTS cache on disk.
+- The guest isolation and file ownership end-to-end checks from 2026-10-30 only existed as scratch scripts. They are worth adding to the backend tests.
+
+**Model catalog and runtime:**
+
+- **Homelab router failures:** about 15% of requests fail with "Backend unavailable" and some stall for 60–90 s (router side).
+- **Removing a provider:** a provider deleted from `catalog/models.json` stays in the database, because seeding only warns and the API has no delete. Removing it takes SQL.
+- **Unused columns:** `llm_providers.api_key_encrypted` and `personas.default_model_id` are left over in existing databases. They are harmless; drop them by hand if wanted.
+- **Long context costs money:** every answer resends the history, up to the context window. A 400k-token history costs about €1.08 of input per Kimi K3 answer. Provider caching helps where it exists.
+- **Cautious token estimate:** 3 characters per token means a 512k window carries roughly 330k real tokens of English history. Raising it to 4 uses more of the window but risks overflow on tokenizers that count more tokens.
+- **Claude Haiku 5.5** costs five times more above 100k prompt tokens. The cost display uses the lower price.
+- **Voice settings follow the chat model's server:** `WHISPER_BASE_URL` and `TTS_BASE_URL` default to `OPENAI_BASE_URL`. The homelab router serves Whisper and Kokoro, which could be used instead.
+- **Old model default:** the CI workflow's generated `.env.example` (`.github/workflows/docker-build.yml`) still names `claude-3-haiku-20240307`.
+
+**Frontend:**
 
 - **Unit tests:** 58 of 88 fail, mostly `NullInjectorError: No provider for HttpClient` in component specs. `projects/ngx-agent-chat/tsconfig.spec.json` also errors with "No inputs were found".
-- **Session expiring while the app is open:** the next request gets a 401 and `AuthInterceptor` sends the user to the login page; a guest could get a new guest session instead. (At startup this is fixed: a missing or expired session starts a guest session in the chat.)
+- **Console errors:**
+  - `ExpressionChangedAfterItHasBeenCheckedError` (NG0100) in the chat input field;
+  - `assets/env.js` 404 in development.
+- **Bundle size:** the production bundle is 1.39 MB, over the 1 MB budget (a warning, not an error).
+- **Dead code:** the `status-bar` component (not rendered, uses old `$color-*` variables from `_variables.scss`).
+- **UI nits seen in screenshots:** a horizontal scrollbar at the bottom of the sidebar, and "(2 steps)" wrapping in the thought-process header.
+- `projects/ngx-agent-chat` is an empty library scaffold from March 2026; to be decided during the chat refactor.
+
+**Setup and Docker:**
+
 - **Dev certificates:** they are regenerated on *every* backend start, by `start_backend.py` and again by importing `backend/main.py`. The backend and the Angular dev server therefore use different certificates, and trusting `devcerts/ca.pem` never lasts. They should only be generated when missing.
-- **Deprecated dependency:** `langchain-community` is being sunset, and the Tavily web search tool uses it. Move to `langchain-tavily`.
-- **Old model default:** the Anthropic default is still `claude-3-haiku-20240307` (`llm_provider.py`, plus the CI-generated `.env.example`). This will be handled with the model work.
 - `schema.sql` starts with a comment-only statement, which logs a harmless "can't execute an empty query" warning at startup.
 - `docker/README.md` still describes SQLite and a Replicate-only backend.
 - **Duplicated compose files:** dev, prod and the CI heredoc are three copies to keep in sync. The `version: '3.8'` field is obsolete.
-- **Bundle size:** the production bundle is 1.29 MB, over the 1 MB budget (a warning, not an error).
-- **Dead code:** `status-bar` component (not rendered, uses old `$color-*` variables from `_variables.scss`), the "Placeholder Component" nav item, and the `/metrics` page that only shows the disclaimer.
-- **UI nits seen in screenshots:** a horizontal scrollbar at the bottom of the sidebar, and "(2 steps)" wrapping in the thought-process header.
-- `projects/ngx-agent-chat` is an empty library scaffold from March 2026; to be decided during the chat refactor.
 - The provider research (report and the five sets of notes) lives in `docs/research/`.
 
 ## Ideas discussed for later
 
-- **Model setup (next):** today one model is configured per deployment through environment variables (`LLM_PROVIDER`, `OPENAI_BASE_URL`, `OPENAI_MODEL`), and switching models means a restart. The planned direction:
-  - a **list of providers and models** in configuration;
-  - a **model picker per conversation**;
-  - storing which model wrote each message, so models can be compared.
-  - Any OpenAI-compatible endpoint already works through `OPENAI_BASE_URL`, but only one at a time.
+- **Model setup:** done (model catalog, model picker per conversation, model and usage stored per message; see "Status").
 - **Knowledge storage:** a setting for a graph database, a vector database or both. The graph tools could become memory or knowledge-base tools, which would need write tools. pgvector code exists in the Küppelsmühle repo (`backend/knowledge/`).
 - **Themes:** separate palette from mode (palette × light/dark/auto), maybe a custom accent color. Check how much CSS each Angular Material theme adds before adding many palettes.
-- **Custom background image:**
-  - Options for theme default, none, or your own image, with dim and blur sliders.
-  - Semi-transparent bubbles and input field when an image is set.
-  - Stored through the existing file API, with the file ID in user settings so it syncs. Shrink large images on the server; guests keep it in the browser only.
+- **Custom background image:** done (`1043e47`). Unlike the first idea, an own image stays in the browser (IndexedDB) and isn't uploaded; only the choice, dim and blur sync.
 - **Other appearance settings:** font size, chat column width.
-- **Configuration point for downstream:** a `SYSTEM_PROMPT_FILE` setting (Küppelsmühle already has one) would let Fessi supply its prompt without code changes.
+- **Configuration point for downstream:** a `SYSTEM_PROMPT_FILE` setting (Küppelsmühle already has one) would let Fessi supply its prompt without code changes. Agents may cover this now: a downstream repo can ship its prompt as an agent in its own catalog file.
+- **Homelab router services:** use its Whisper and Kokoro for voice, and its Qwen3 embeddings and reranker for a vector search (pgvector code exists in the Küppelsmühle repo).
 
 ## For downstream projects (Fessi)
 
@@ -203,14 +305,17 @@ When Fessi merges upstream, it can re-add its layer through configuration instea
 
 - **Waste graph data:** keep `neo4j_seed.cypher` in the Fessi repo and set `NEO4J_ENABLED=true` plus `NEO4J_SEED_FILE`.
 - **Waste-specific tools:** add them next to the generic graph tools, or rely on `query_graph`.
-- **Prompt:** Fessi's prompt currently needs a code change in `agent.py`, until a `SYSTEM_PROMPT_FILE` setting exists.
+- **Prompt:** Fessi's prompt can be an agent (persona) in Fessi's own catalog file. As the default prompt it still needs a code change in `backend/llm/prompts.py` (the old `agent.py` is gone), until a `SYSTEM_PROMPT_FILE` setting exists.
+- **Merge size:** upstream changed a lot since Fessi forked (`e2763d4`): the new runtime without LangChain, the model catalog, agents, guest users and file ownership. Expect a large merge.
 - **Branding:** the university logo and Fessi icons; the hook for the logo's dark-mode variant (`isDarkMode`) is still in place.
 
-## Current task: choosing model providers
+## Model providers (decided on 2026-10-30)
+
+*Historical record of the provider decision. What was actually set up is in "Status" (Cortecs, the homelab router, Anthropic, OpenAI); Scaleway and Berget AI weren't set up yet. The "App changes needed" below were done in the new runtime, except the separate voice base URLs.*
 
 The user wants inference providers for open models (Kimi, DeepSeek, GLM, Qwen, gpt-oss, Mistral, …), with a strong preference for **European companies and EU data centers with good privacy**: GDPR, a DPA, no training on prompts, little or no retention. The user would rather avoid aggregators like OpenRouter, whose routing makes privacy unclear. The user also has Anthropic API credits, and Anthropic is already supported natively.
 
-Hard technical requirement: an OpenAI-compatible chat completions API with **streaming and tool calling**, because the agent uses LangChain `ChatOpenAI` with `bind_tools`. Vision is a plus.
+Hard technical requirement: an OpenAI-compatible chat completions API with **streaming and tool calling** (at the time the agent used LangChain `ChatOpenAI` with `bind_tools`; it now uses the `openai` SDK directly). Vision is a plus.
 
 A research run on 2026-10-30 covers five areas. The notes go to `docs/research/eu_inference_providers_notes/` and the final report to `docs/research/eu_inference_providers_for_open_models.md`.
 
@@ -272,8 +377,8 @@ LangChain was checked. Even the newest `langchain-openai` (1.7.3) does not keep 
 Next steps (see the strategy doc for details):
 
 1. Pick providers (done: Scaleway, Cortecs, OpenRouter with ZDR, Anthropic, OpenAI, Moonshot for K3.1 Pro only, homelab later).
-2. Design the provider and model configuration and the model picker.
-3. Set up and test.
+2. Design the provider and model configuration and the model picker (done).
+3. Set up and test (done for Cortecs, the homelab router and OpenAI; Anthropic waits for its key).
 4. Deploy to the homelab.
 5. Merge into `main`.
 

@@ -9,6 +9,8 @@ Advanced LLM Chat: an Angular 19.2.2 PWA with a FastAPI backend for chatting wit
 - **Backend**: FastAPI with PostgreSQL for persistence, an agent loop with tool use (`backend/llm/`), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
 - **LLM Integration**: Thin runtime on the official `openai` and `anthropic` SDKs (no LangChain): OpenAI, any OpenAI-compatible endpoint, and Anthropic, with SSE streaming for agent responses
 
+**Resuming work:** read the "Status" section of `docs/generalization_refactor.md` first (current state, decisions, backlog, next steps), and `docs/model_catalog_api.md` for the runtime and catalog contract.
+
 This repository is the general **upstream**. Adapted versions (e.g. Fessi, a waste disposal assistant) live in separate downstream repositories that merge `upstream/develop`. Keep domain-specific branding, prompts, tools and data out of this repository; add configuration points instead so downstream changes stay small.
 
 ## Essential Commands
@@ -46,7 +48,10 @@ python backend/app_init.py --skip-neo4j --seed   # Skip Neo4j initialization
 python backend/app_init.py --prod            # Production migration (add missing columns, skip Neo4j)
 ```
 
-**Note:** No Python test framework configured. Backend has no automated tests.
+**Note:** No Python test framework (pytest) is configured. There are test scripts instead:
+- `python -m backend.llm.tests.run_all`: offline tests of the LLM runtime, history and tools (fake OpenAI server, mocked Anthropic API)
+- `backend/catalog/tests/catalog_api_test.py`: catalog end-to-end test against a backend on its own `*_test` database (see its docstring)
+- `python -m backend.llm.smoke_test --model <id>`: real API calls against one catalog model
 
 ### Environment Configuration
 Copy `.env.example` to `.env`. Required settings:
@@ -59,6 +64,8 @@ POSTGRES_DB=llm_chat
 POSTGRES_USER=llm_chat
 POSTGRES_PASSWORD=llm_chat_dev_password
 ```
+
+Model catalog: providers are defined in `catalog/models.json` (`MODEL_CATALOG_FILE`, the default) and their keys are read only from the env vars they name (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `MODEL_ROUTER_API`/`MODEL_ROUTER_KEY`, ...). `ADMIN_EMAILS` lists the users who may edit models and agents on the Agents page (`/agents`). Restart the backend after changing `.env`.
 
 See `.env.example` for all optional settings (Neo4j, vision models, Whisper, TTS, web search).
 
@@ -101,7 +108,8 @@ backend/
 ├── main.py           # FastAPI app entry point
 ├── config.py         # Configuration constants
 ├── app_init.py       # Database and filesystem initialization
-├── api/              # Route handlers (auth, conversations, messages, settings, files)
+├── api/              # Route handlers (auth, conversations, messages, settings, files, catalog)
+├── catalog/          # Model catalog: resolver (model/persona per request), service, catalog file seed/import/export, fetch-models
 ├── database/
 │   ├── db.py         # PostgreSQL database manager (SQLAlchemy)
 │   ├── tables.py     # SQLAlchemy Core table definitions
@@ -180,7 +188,7 @@ The `/api/message/stream-generate` SSE endpoint emits:
 
 Git Flow branching:
 - `main`: Production (protected)
-- `develop`: Integration (protected, requires PR)
+- `develop`: Integration (protected; the sole maintainer commits directly and pushes with the admin bypass)
 - `feature/*`: Feature development
 - `release/*`: Release preparation
 - `hotfix/*`: Emergency fixes
