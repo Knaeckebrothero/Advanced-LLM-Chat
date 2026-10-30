@@ -42,6 +42,8 @@ Everything below is committed and pushed to `develop` (pushed directly with the 
 | `3e32e58` | Login through Keycloak or another OIDC provider (`AUTH_MODE=oidc`), optional bundled Keycloak for docker compose, mock login for development only (`docs/authentication.md`) |
 | `0c6bea7` | Database URLs name the psycopg2 driver: SQLAlchemy 2.1 (in images built since `3e32e58`) defaults to psycopg 3, so the backend image couldn't connect |
 | `89440e4` | The Keycloak compose file mounts the realm from `helm/advanced-llm-chat/files/` (the file moved there in `0c6bea7`) |
+| `ccb1d57` | Compose keeps uploads, the TTS cache and logs on the volume (they were lost with the container), and passes `TAVILY_API_KEY` |
+| `2083ec7` | Helm chart `helm/advanced-llm-chat` and releases from `main` (images, chart on GHCR, GitHub release with the chart and a compose bundle). Its first run on `develop` passed all jobs (version 0.1.172, chart and bundle as artifacts) |
 
 The contract for the runtime, the catalog, agents, tools and the history budget is in `docs/model_catalog_api.md`; provider choices are in `docs/model_provider_strategy.md`.
 
@@ -93,7 +95,7 @@ Personas: Pirate (all tools) and Translator (no tools).
 
 ### Next steps
 
-1. **Helm chart and releases:** `helm/advanced-llm-chat` and the release workflow (CLAUDE.md, "Kubernetes and releases"). The first real publish comes with the first merge into `main`; if GHCR creates the chart package as private, make it public (or give the cluster pull credentials).
+1. **Helm chart and releases:** done in `2083ec7` (CLAUDE.md, "Kubernetes and releases"). Versions continue from the workflow's run counter (0.1.172 on the first run). The first real publish comes with the first merge into `main`; if GHCR creates the chart package as private, make it public (or give the cluster pull credentials).
 2. **Homelab deployment with the chart:** the homelab's Keycloak needs a client for the app (`docs/authentication.md`, "Option 3"); no public route (see the decisions). Values: `auth.mode: oidc`, the realm's issuer, `adminRole: admin`, `requiredRole: user` (`OIDC_REQUIRED_ROLE`: the realm's role `user`, which isn't a default role; assign it, and `admin`, to the user's account, and only to people who may use the chat). Also set the provider keys (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY`) and `FORWARDED_ALLOW_IPS`, and run `app_init --prod` on the existing database. Until then the old deployment pulls `develop-latest` on every pod restart, which would start today's code without migration or settings; pinning its image avoids that.
 3. Look at the homelab router's failures.
 4. Merge `develop` into `main` (a separate step the user triggers).
