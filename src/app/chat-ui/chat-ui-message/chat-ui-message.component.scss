@@ -73,6 +73,40 @@
   }
 }
 
+// With a background image (settings), each message sits on a frosted card
+:host-context(body.has-background-image) {
+  .message-content-wrapper {
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  // User messages keep their bubble shape: the card hugs the text
+  .message-row--user .message-content-wrapper {
+    flex: 0 1 auto;
+    max-width: min(85%, 640px);
+  }
+
+  // Desktop: the actions (shown on hover) sit just below the card instead of
+  // leaving an empty strip inside it. On touch screens they are always shown and stay inside.
+  @media (hover: hover) and (min-width: 769px) {
+    .message-content-wrapper {
+      position: relative;
+    }
+
+    .message-actions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 2px;
+    }
+  }
+}
+
 // ============================================
 // AVATAR
 // ============================================

@@ -4,6 +4,7 @@ import { Subscription, interval, combineLatest } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
 import { ChatService } from './services/chat.service';
 import { ThemeService } from './services/theme.service';
+import { BackgroundService } from './services/background.service';
 import { UIStateService } from './services/ui-state.service';
 import { AuthService } from './auth/auth.service';
 import { TranslateService } from '@ngx-translate/core';
@@ -25,6 +26,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private router: Router,
     private chatService: ChatService,
     private themeService: ThemeService, // Injected the service
+    private backgroundService: BackgroundService, // Applies the chat background from the settings
     private authService: AuthService,
     private translate: TranslateService
   ) {

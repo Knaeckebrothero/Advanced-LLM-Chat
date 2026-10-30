@@ -110,6 +110,9 @@ user_settings = Table(
     Column('theme', Text, nullable=False),
     Column('language', Text, nullable=False),
     Column('default_model_id', Integer),  # llm_models.id for new conversations
+    Column('background', Text, server_default='none'),  # 'none' | 'aurora' | 'ridges' | 'custom'
+    Column('background_dim', Integer, server_default='25'),  # 0-80 %
+    Column('background_blur', Integer, server_default='0'),  # 0-20 px
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 

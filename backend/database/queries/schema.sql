@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS user_settings (
     theme TEXT NOT NULL,
     language TEXT NOT NULL,
     default_model_id INTEGER,    -- llm_models.id for new conversations
+    background TEXT DEFAULT 'none',          -- chat background: 'none' | 'aurora' | 'ridges' | 'custom' (image kept in the browser)
+    background_dim INTEGER DEFAULT 25,       -- 0-80, % of the theme background color over the image
+    background_blur INTEGER DEFAULT 0,       -- 0-20 px
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -25,7 +25,7 @@ export class DBService {
     console.log("Starting database...");
 
     // Open the database
-    this.db = await openDB<MainAppDB>('main', 5, {
+    this.db = await openDB<MainAppDB>('main', 6, {
       upgrade: async (db, oldVersion, newVersion, transaction) => {
         // Upgrade from version 0 (new database) or version 1
         if (oldVersion < 1) {
@@ -98,6 +98,12 @@ export class DBService {
         if (oldVersion < 5) {
           console.log('Migrating database to version 5: Adding catalog store');
           db.createObjectStore('catalog', { keyPath: 'id' });
+        }
+
+        // Add the appearance store (the user's own background image) in version 6
+        if (oldVersion < 6) {
+          console.log('Migrating database to version 6: Adding appearance store');
+          db.createObjectStore('appearance', { keyPath: 'id' });
         }
       }
     });

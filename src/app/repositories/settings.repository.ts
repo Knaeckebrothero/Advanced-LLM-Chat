@@ -16,7 +16,11 @@ const SETTINGS_KEY = 'user-settings';
 export class SettingsRepository {
   constructor(private dbService: DBService, private apiService: ApiService) {}
 
-  async getSettings(): Promise<AppSettings> {
+  /**
+   * Load the settings: the server's if they are newer than the local copy (or
+   * preferRemote is set, e.g. right after a login), else the local ones.
+   */
+  async getSettings(preferRemote = false): Promise<AppSettings> {
     const db = await this.dbService.getDb();
     let localSettings: AppSettings | undefined;
 
@@ -31,14 +35,17 @@ export class SettingsRepository {
       const remoteSettings = await this.apiService.getSettings();
       if (
         remoteSettings &&
-        (!localSettings || remoteSettings.lastUpdated > localSettings.lastUpdated)
+        (preferRemote || !localSettings || toMillis(remoteSettings.lastUpdated) > toMillis(localSettings.lastUpdated))
       ) {
-        // A backend without the model catalog leaves defaultModelId out: keep the local value then
+        // An older backend leaves newer fields out (default model, background): keep the local values then
         const merged: AppSettings = {
           ...remoteSettings,
           defaultModelId: remoteSettings.defaultModelId !== undefined
             ? remoteSettings.defaultModelId
             : localSettings?.defaultModelId ?? null,
+          background: remoteSettings.background ?? localSettings?.background,
+          backgroundDim: remoteSettings.backgroundDim ?? localSettings?.backgroundDim,
+          backgroundBlur: remoteSettings.backgroundBlur ?? localSettings?.backgroundBlur,
         };
         const storableSettings = { ...merged, id: SETTINGS_KEY };
         await db.put('settings', storableSettings);
@@ -66,4 +73,12 @@ export class SettingsRepository {
     }
   }
 
+}
+
+/** The server sends lastUpdated in seconds, the app stores Date.now() in milliseconds. */
+function toMillis(timestamp: number | undefined): number {
+  if (!timestamp) {
+    return 0;
+  }
+  return timestamp < 1e11 ? timestamp * 1000 : timestamp;
 }

@@ -283,5 +283,20 @@
         "errors": "Problems: {{count}}"
       }
     }
+  },
+  "background": {
+    "title": "Background",
+    "none": "None",
+    "aurora": "Aurora",
+    "ridges": "Sunset",
+    "custom": "Your image",
+    "changeImage": "Change image",
+    "removeImage": "Remove image",
+    "missingImage": "Your image is stored in another browser. Choose an image to use it here too.",
+    "customHint": "Your own image stays in this browser; nothing is uploaded.",
+    "dim": "Dim",
+    "blur": "Blur",
+    "errorNotImage": "This file can't be used as an image.",
+    "errorTooLarge": "This image is too large (40 MB at most)."
   }
 }

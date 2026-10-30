@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { SettingsStateService } from './settings-state.service';
 import { SettingsRepository } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
 import { TranslateService } from '@ngx-translate/core';
+import { AuthService } from '../auth/auth.service';
 import { AppSettings } from '../models/settings.model';
 import { Language, Theme } from '../models/enum';
 
@@ -12,6 +13,7 @@ describe('SettingsStateService', () => {
   let mockSettingsRepo: jasmine.SpyObj<SettingsRepository>;
   let mockThemeService: jasmine.SpyObj<ThemeService>;
   let mockTranslateService: jasmine.SpyObj<TranslateService>;
+  let mockAuthService: AuthService;
 
   const mockSettings: AppSettings = {
     theme: Theme.Dark,
@@ -27,6 +29,7 @@ describe('SettingsStateService', () => {
       ['setTheme', 'getCurrentTheme']);
     mockTranslateService = jasmine.createSpyObj('TranslateService',
       ['use']);
+    mockAuthService = { currentUser$: new BehaviorSubject(null), isGuest: false } as unknown as AuthService;
 
     // Set up default mock returns
     mockSettingsRepo.getSettings.and.returnValue(Promise.resolve(mockSettings));
@@ -37,7 +40,8 @@ describe('SettingsStateService', () => {
         SettingsStateService,
         { provide: SettingsRepository, useValue: mockSettingsRepo },
         { provide: ThemeService, useValue: mockThemeService },
-        { provide: TranslateService, useValue: mockTranslateService }
+        { provide: TranslateService, useValue: mockTranslateService },
+        { provide: AuthService, useValue: mockAuthService }
       ]
     });
 
@@ -113,7 +117,8 @@ describe('SettingsStateService', () => {
       const newService = new SettingsStateService(
         mockSettingsRepo,
         mockThemeService,
-        mockTranslateService
+        mockTranslateService,
+        mockAuthService
       );
 
       // Wait for async initialization

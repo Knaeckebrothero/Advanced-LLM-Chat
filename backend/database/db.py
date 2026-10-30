@@ -1368,7 +1368,10 @@ class Database:
         user_id: int,
         theme: str,
         language: str,
-        default_model_id=UNSET
+        default_model_id=UNSET,
+        background=UNSET,
+        background_dim=UNSET,
+        background_blur=UNSET
     ) -> dict:
         """
         Create or update user settings.
@@ -1379,15 +1382,24 @@ class Database:
             language: Language setting ('en', 'de', etc.).
             default_model_id: Catalog model for new conversations; None clears it,
                 UNSET keeps the stored value.
+            background: Chat background ('none', 'aurora', 'ridges', 'custom'); UNSET keeps it.
+            background_dim: Dimming of the background image in percent; UNSET keeps it.
+            background_blur: Blur of the background image in pixels; UNSET keeps it.
 
         Returns:
             The user settings dictionary.
         """
         log.debug(f"Upserting settings for user {user_id}: theme={theme}, language={language}, "
-                  f"default_model_id={default_model_id}")
+                  f"default_model_id={default_model_id}, background={background}")
         values = {"theme": theme, "language": language}
-        if default_model_id is not UNSET:
-            values["default_model_id"] = default_model_id
+        for column, value in (
+            ("default_model_id", default_model_id),
+            ("background", background),
+            ("background_dim", background_dim),
+            ("background_blur", background_blur),
+        ):
+            if value is not UNSET:
+                values[column] = value
 
         with self.connection() as conn:
             # Try to update first

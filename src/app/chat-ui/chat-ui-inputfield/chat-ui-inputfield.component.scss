@@ -5,6 +5,13 @@
 // ============================================
 // MAIN CONTAINER
 // ============================================
+// With a background image (settings), the input is slightly see-through
+:host-context(body.has-background-image) .input-field-container {
+  background-color: color-mix(in srgb, var(--theme-surface) 90%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
 .input-field-container {
   display: flex;
   flex-direction: column;

@@ -21,6 +21,12 @@ export interface ConversationSyncMetadata {
  * Cached copy of the public model catalog (GET /api/models and /api/personas),
  * so the pickers can show the selection while offline.
  */
+export interface AppearanceEntry {
+  id: 'background-image';  // The user's own chat background (never uploaded)
+  blob: Blob;
+  updatedAt: number;
+}
+
 export type CatalogCacheEntry =
   | { id: 'models'; items: IPublicModel[]; fetchedAt: number }
   | { id: 'personas'; items: IPublicPersona[]; fetchedAt: number };
@@ -62,5 +68,10 @@ export interface MainAppDB extends DBSchema {
   catalog: {
     key: string; // 'models' | 'personas'
     value: CatalogCacheEntry;
+  };
+  // Appearance data that stays in this browser (version 6)
+  appearance: {
+    key: string; // 'background-image'
+    value: AppearanceEntry;
   };
 }

@@ -1,10 +1,12 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
+import { distinctUntilChanged, filter, map, skip } from 'rxjs/operators';
 import { SettingsRepository } from '../repositories/settings.repository';
 import { ThemeService } from './theme.service';
 import { AppSettings } from '../models/settings.model';
 import { Language, Theme } from '../models/enum';
 import { TranslateService } from '@ngx-translate/core';
+import { AuthService } from '../auth/auth.service';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: Theme.Auto,
@@ -27,14 +29,24 @@ export class SettingsStateService {
   constructor(
     private repository: SettingsRepository,
     private themeService: ThemeService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private authService: AuthService
   ) {
     this.loadInitialSettings();
+
+    // The first load runs before login (it then only finds local settings), so load
+    // again whenever another user logs in, e.g. to apply their theme and background
+    this.authService.currentUser$.pipe(
+      map(user => user?.id ?? null),
+      distinctUntilChanged(),
+      skip(1),
+      filter(userId => userId !== null)
+    ).subscribe(() => this.loadInitialSettings(!this.authService.isGuest));
   }
 
-  private async loadInitialSettings() {
+  private async loadInitialSettings(preferRemote = false) {
     try {
-      const settings = await this.repository.getSettings();
+      const settings = await this.repository.getSettings(preferRemote);
       this.settingsSubject.next(settings);
       this.themeService.setTheme(settings.theme);
       this.translate.use(settings.language); // ADD THIS LINE

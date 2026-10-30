@@ -283,5 +283,20 @@
         "errors": "Probleme: {{count}}"
       }
     }
+  },
+  "background": {
+    "title": "Hintergrund",
+    "none": "Keiner",
+    "aurora": "Polarlicht",
+    "ridges": "Abendrot",
+    "custom": "Eigenes Bild",
+    "changeImage": "Bild ändern",
+    "removeImage": "Bild entfernen",
+    "missingImage": "Dein Bild ist in einem anderen Browser gespeichert. Wähle ein Bild, um es auch hier zu verwenden.",
+    "customHint": "Dein eigenes Bild bleibt in diesem Browser und wird nicht hochgeladen.",
+    "dim": "Dämpfen",
+    "blur": "Unschärfe",
+    "errorNotImage": "Diese Datei kann nicht als Bild verwendet werden.",
+    "errorTooLarge": "Dieses Bild ist zu groß (höchstens 40 MB)."
   }
 }

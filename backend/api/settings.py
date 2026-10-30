@@ -14,6 +14,22 @@ from backend.security.auth import get_current_user
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Settings"])
 
+# Settings fields that an update may leave out to keep the stored value, by database column
+OPTIONAL_FIELDS = {
+    "background": "background",
+    "backgroundDim": "background_dim",
+    "backgroundBlur": "background_blur",
+}
+
+
+def _appearance(settings: dict) -> dict:
+    """The background fields of a user_settings row, with defaults for rows from before they existed."""
+    defaults = AppSettings.model_fields
+    return {
+        field: settings.get(column) if settings.get(column) is not None else defaults[field].default
+        for field, column in OPTIONAL_FIELDS.items()
+    }
+
 
 @router.get("/settings",
             response_model=AppSettingsResponse,
@@ -41,12 +57,12 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
     logger.debug(f"Get settings for user_id: {user_id}")
 
     if current_user.get("is_guest"):
-        # Return default settings for guest users with current timestamp
+        # Default settings for guests; lastUpdated 0 so they never override settings stored in the browser
         logger.debug("Guest user - returning default settings")
         return AppSettingsResponse(
             theme="auto",
             language="en",
-            lastUpdated=int(time.time())
+            lastUpdated=0
         )
 
     settings = db.get_user_settings(user_id)
@@ -65,15 +81,16 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
             theme=settings['theme'],
             language=settings['language'],
             defaultModelId=settings.get('default_model_id'),
+            **_appearance(settings),
             lastUpdated=last_updated_ts
         )
     else:
-        # Fallback defaults if user has no settings yet
+        # Fallback defaults if user has no settings yet (lastUpdated 0: older than anything stored)
         logger.debug(f"No settings found for user_id {user_id}, returning defaults")
         return AppSettingsResponse(
             theme="auto",
             language="en",
-            lastUpdated=int(time.time())
+            lastUpdated=0
         )
 
 
@@ -116,12 +133,20 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
             logger.warning(f"Rejected default model {default_model_id} for user_id {user_id}: {e}")
             raise HTTPException(status_code=e.status_code, detail=str(e))
 
+    # Background settings: left out = keep the stored values
+    appearance = {
+        column: getattr(new_settings, field)
+        for field, column in OPTIONAL_FIELDS.items()
+        if field in new_settings.model_fields_set
+    }
+
     # Upsert settings using CRUD method
     settings = db.upsert_user_settings(
         user_id=user_id,
         theme=new_settings.theme,
         language=new_settings.language,
-        default_model_id=default_model_id
+        default_model_id=default_model_id,
+        **appearance
     )
 
     logger.info(f"Settings updated for user_id {user_id}: theme={new_settings.theme}, language={new_settings.language}, "
@@ -144,5 +169,6 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         theme=settings['theme'],
         language=settings['language'],
         defaultModelId=settings.get('default_model_id'),
+        **_appearance(settings),
         lastUpdated=last_updated_ts
     )

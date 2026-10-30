@@ -101,6 +101,17 @@
   }
 }
 
+// With a background image (settings), status lines get a backing so they stay readable
+:host-context(body.has-background-image) {
+  .loading-older-messages span,
+  .end-of-conversation span {
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+    opacity: 1;
+  }
+}
+
 // Guest limit warning
 .guest-limit-warning {
   background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.1) 0%, rgba(var(--theme-primary-rgb), 0.05) 100%);

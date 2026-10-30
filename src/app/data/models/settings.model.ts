@@ -7,6 +7,9 @@ export interface IAppSettings {
   theme: string;
   language: string;
   defaultModelId?: number | null;  // Catalog model for new conversations
+  background?: 'none' | 'aurora' | 'ridges' | 'custom';  // Chat background
+  backgroundDim?: number;   // 0-80 %
+  backgroundBlur?: number;  // 0-20 px
 }
 
 export interface IAppSettingsWithMeta extends IAppSettings {
