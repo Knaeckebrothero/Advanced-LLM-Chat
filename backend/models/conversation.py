@@ -1,7 +1,7 @@
 """
 Conversation-related models.
 """
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -66,6 +66,12 @@ class ConversationResponse(BaseModel):
     :ivar lastModified: An optional timestamp when the conversation was last
         modified.
     :type lastModified: Optional[int]
+    :ivar modelId: The catalog model of the conversation; None means the user's default model.
+    :type modelId: Optional[int]
+    :ivar personaId: The persona of the conversation; None means no persona.
+    :type personaId: Optional[int]
+    :ivar personaValues: Values for the persona's variables.
+    :type personaValues: Optional[Dict[str, str]]
     """
     id: str  # Now using UUID
     userId: int
@@ -76,6 +82,10 @@ class ConversationResponse(BaseModel):
     hashsum: int
     version: int = 1
     lastModified: Optional[int] = None
+    # Model catalog selection
+    modelId: Optional[int] = None
+    personaId: Optional[int] = None
+    personaValues: Optional[Dict[str, str]] = None
 
 
 class Conversation(BaseModel):
@@ -101,6 +111,12 @@ class Conversation(BaseModel):
     :ivar updatedAt: Timestamp indicating the last time the conversation was
         updated.
     :type updatedAt: datetime
+    :ivar modelId: The catalog model of the conversation; None means the user's default model.
+    :type modelId: Optional[int]
+    :ivar personaId: The persona of the conversation; None means no persona.
+    :type personaId: Optional[int]
+    :ivar personaValues: Values for the persona's variables.
+    :type personaValues: Optional[Dict[str, str]]
     """
     id: str
     userId: int
@@ -108,6 +124,32 @@ class Conversation(BaseModel):
     participants: Optional[str] = None
     createdAt: datetime
     updatedAt: datetime
+    # Model catalog selection
+    modelId: Optional[int] = None
+    personaId: Optional[int] = None
+    personaValues: Optional[Dict[str, str]] = None
+
+    @classmethod
+    def from_row(cls, row: dict) -> "Conversation":
+        """
+        Build the API model from a conversations row (snake_case catalog columns).
+
+        :param row: A row from the conversations table.
+        :type row: dict
+        :return: The conversation as returned by the API.
+        :rtype: Conversation
+        """
+        return cls(
+            id=row['id'],
+            userId=row['userId'],
+            name=row['name'],
+            participants=row.get('participants'),
+            createdAt=row['createdAt'],
+            updatedAt=row['updatedAt'],
+            modelId=row.get('model_id'),
+            personaId=row.get('persona_id'),
+            personaValues=row.get('persona_values'),
+        )
 
 
 class ConversationCreateRequest(BaseModel):
@@ -121,19 +163,41 @@ class ConversationCreateRequest(BaseModel):
     :type name: str
     :ivar participants: A list of participants to be included in the conversation.
     :type participants: List[str]
+    :ivar modelId: Optional catalog model; None means the user's default model.
+    :type modelId: Optional[int]
+    :ivar personaId: Optional persona; None means no persona.
+    :type personaId: Optional[int]
+    :ivar personaValues: Optional values for the persona's variables.
+    :type personaValues: Optional[Dict[str, str]]
     """
     name: str
     participants: List[str]
+    modelId: Optional[int] = None
+    personaId: Optional[int] = None
+    personaValues: Optional[Dict[str, str]] = None
 
 
 class ConversationUpdateRequest(BaseModel):
     """
     Represents a request to update an existing conversation.
 
-    :ivar name: The new name for the conversation.
-    :type name: str
+    Only the fields that are sent change. For the catalog fields, null clears
+    the selection (the user's default model, no persona); clearing the persona
+    also clears its values unless personaValues is sent as well.
+
+    :ivar name: The new name for the conversation (optional).
+    :type name: Optional[str]
+    :ivar modelId: The new catalog model, or None for the user's default model.
+    :type modelId: Optional[int]
+    :ivar personaId: The new persona, or None for no persona.
+    :type personaId: Optional[int]
+    :ivar personaValues: New values for the persona's variables.
+    :type personaValues: Optional[Dict[str, str]]
     """
-    name: str
+    name: Optional[str] = None
+    modelId: Optional[int] = None
+    personaId: Optional[int] = None
+    personaValues: Optional[Dict[str, str]] = None
 
 
 class ConversationWithDetails(Conversation):

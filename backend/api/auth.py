@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, UTC
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from backend.models.auth import MockLoginRequest, GuestLoginRequest, LoginResponse
 from backend.security.auth import (
-    create_session, validate_session, delete_session, get_current_user
+    create_session, validate_session, delete_session, get_current_user, is_admin
 )
 from backend.security.logging import log_security_event
 from backend.database import db
@@ -214,7 +214,8 @@ async def mock_login(request: MockLoginRequest, req: Request, response: Response
         user={
             "id": user_id,
             "email": request.email,
-            "name": user_name
+            "name": user_name,
+            "isAdmin": is_admin({"email": request.email, "is_guest": False})
         },
         message="Mock login successful"
     )
@@ -383,7 +384,8 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
                          includes user details and session attributes.
     :type current_user: dict, retrieved via dependency injection
     :return: JSON response with user information, including user ID, email, guest session
-             status, and session expiry details.
+             status, session expiry details and whether the user may manage the model
+             catalog (`isAdmin`, in `user` and at the top level).
     :rtype: dict
     """
     logger.debug(f"Get current user - user_id: {current_user['user_id']}")
@@ -417,7 +419,8 @@ async def get_me(request: Request, response: Response, current_user: dict = Depe
         "email": current_user["email"],
         "is_guest": current_user.get("is_guest", False),
         "session_expires_at": current_user.get("expires_at"),
-        "session_expires_in": current_user.get("expires_in")
+        "session_expires_in": current_user.get("expires_in"),
+        "isAdmin": is_admin(current_user)
     }
 
-    return {"user": user_data}
+    return {"user": user_data, "isAdmin": user_data["isAdmin"]}

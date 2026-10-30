@@ -1,6 +1,7 @@
 """
 Settings-related models.
 """
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -15,9 +16,14 @@ class AppSettings(BaseModel):
     :type theme: str
     :ivar language: The language preference of the user.
     :type language: str
+    :ivar defaultModelId: The catalog model for new conversations; None means the
+        first catalog model (or the environment model). Left out in an update,
+        the stored value is kept.
+    :type defaultModelId: Optional[int]
     """
     theme: str
     language: str
+    defaultModelId: Optional[int] = None
 
 
 class AppSettingsResponse(AppSettings):

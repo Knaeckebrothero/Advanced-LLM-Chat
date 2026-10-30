@@ -1,0 +1,485 @@
+"""
+Model catalog API endpoints.
+
+GET /api/models and GET /api/personas serve the model and persona pickers of
+every user (guests only see what is available to guests). Everything under
+/api/admin manages the catalog and is limited to admins (ADMIN_EMAILS).
+
+The contract is in docs/model_catalog_api.md. API keys are write-only: no
+response contains a key, only its source and a masked version (except the
+export with includeKeys=true).
+"""
+import logging
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
+
+from backend.catalog import catalog_file, service
+from backend.catalog.fetch import fetch_provider_models
+from backend.catalog.service import CatalogError
+from backend.models.catalog import (
+    FetchModelsResponse,
+    ImportResult,
+    ModelCreate,
+    ModelOut,
+    ModelUpdate,
+    PersonaCreate,
+    PersonaOut,
+    PersonaUpdate,
+    ProviderCreate,
+    ProviderOut,
+    ProviderUpdate,
+    PublicModel,
+    PublicPersona,
+)
+from backend.security.auth import get_current_user, require_admin
+from backend.security.logging import crud_logger
+
+logger = logging.getLogger(__name__)
+
+
+class NoInputEchoRoute(APIRoute):
+    """
+    Route whose validation errors (422) leave out the submitted input.
+
+    FastAPI's default 422 response repeats the request body, which would send
+    an API key back in the response, e.g. for a provider without a name.
+    """
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def route_handler(request: Request):
+            try:
+                return await handler(request)
+            except RequestValidationError as e:
+                errors = [{key: value for key, value in error.items() if key != "input"} for error in e.errors()]
+                return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    content={"detail": jsonable_encoder(errors)})
+
+        return route_handler
+
+
+router = APIRouter(prefix="/api", tags=["Catalog"], route_class=NoInputEchoRoute)
+
+ADMIN_ERRORS = {
+    status.HTTP_403_FORBIDDEN: {"description": "Admin access required"},
+}
+
+
+def _http_error(error: CatalogError) -> HTTPException:
+    """Turn a catalog error into an HTTP error with its status code."""
+    return HTTPException(status_code=error.status_code, detail=str(error))
+
+
+# =========================================================================
+# Pickers (every user, guests filtered)
+# =========================================================================
+
+@router.get("/models",
+            response_model=List[PublicModel],
+            summary="List Models",
+            description="Enabled catalog models of enabled providers that the current user may use",
+            operation_id="listModels")
+async def list_models(current_user: dict = Depends(get_current_user)):
+    """
+    Lists the models for the model picker, sorted by sort order, then name.
+
+    Guests only see models available to guests. The list is empty when the
+    catalog is empty; the environment model answers then.
+
+    :param current_user: The authenticated user, injected via get_current_user.
+    :type current_user: dict
+    :return: The models the user may pick.
+    :rtype: List[PublicModel]
+    """
+    models = service.public_models(current_user)
+    logger.debug(f"Returning {len(models)} models for user_id {current_user['user_id']}")
+    return models
+
+
+@router.get("/personas",
+            response_model=List[PublicPersona],
+            summary="List Personas",
+            description="Enabled personas that the current user may use",
+            operation_id="listPersonas")
+async def list_personas(current_user: dict = Depends(get_current_user)):
+    """
+    Lists the personas for the persona picker, sorted by sort order, then name.
+
+    Guests only see personas available to guests. A persona's default model is
+    left out (null) when the user can't use it.
+
+    :param current_user: The authenticated user, injected via get_current_user.
+    :type current_user: dict
+    :return: The personas the user may pick.
+    :rtype: List[PublicPersona]
+    """
+    personas = service.public_personas(current_user)
+    logger.debug(f"Returning {len(personas)} personas for user_id {current_user['user_id']}")
+    return personas
+
+
+# =========================================================================
+# Admin: providers
+# =========================================================================
+
+@router.get("/admin/providers",
+            response_model=List[ProviderOut],
+            responses=ADMIN_ERRORS,
+            summary="List Providers",
+            operation_id="adminListProviders")
+async def admin_list_providers(admin: dict = Depends(require_admin)):
+    """
+    Lists all providers (API accounts) with their model counts, by name.
+
+    :return: The providers; keys only as source and mask.
+    :rtype: List[ProviderOut]
+    """
+    return service.list_providers()
+
+
+@router.post("/admin/providers",
+             response_model=ProviderOut,
+             status_code=status.HTTP_201_CREATED,
+             responses=ADMIN_ERRORS,
+             summary="Create Provider",
+             operation_id="adminCreateProvider")
+async def admin_create_provider(req: ProviderCreate, admin: dict = Depends(require_admin)):
+    """
+    Creates a provider. An apiKey in the body is stored encrypted.
+
+    :param req: The provider.
+    :type req: ProviderCreate
+    :return: The created provider.
+    :rtype: ProviderOut
+    :raises HTTPException: 400 for invalid fields, 409 if the name is taken.
+    """
+    try:
+        provider = service.create_provider(req)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Provider created - id: {provider.id}, name: {provider.name}, "
+                     f"key: {provider.apiKeySource}, by user {admin['user_id']}")
+    return provider
+
+
+@router.put("/admin/providers/{provider_id}",
+            response_model=ProviderOut,
+            responses=ADMIN_ERRORS,
+            summary="Update Provider",
+            operation_id="adminUpdateProvider")
+async def admin_update_provider(provider_id: int, req: ProviderUpdate, admin: dict = Depends(require_admin)):
+    """
+    Updates the fields of a provider that are sent.
+
+    apiKey: left out or null keeps the stored key, "" removes it.
+
+    :param provider_id: The provider's ID.
+    :type provider_id: int
+    :param req: The fields to change.
+    :type req: ProviderUpdate
+    :return: The updated provider.
+    :rtype: ProviderOut
+    :raises HTTPException: 404 if not found, 400 for invalid fields, 409 if the name is taken.
+    """
+    try:
+        provider = service.update_provider(provider_id, req)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Provider updated - id: {provider_id}, fields: {sorted(req.model_fields_set)}, "
+                     f"by user {admin['user_id']}")
+    return provider
+
+
+@router.delete("/admin/providers/{provider_id}",
+               status_code=status.HTTP_204_NO_CONTENT,
+               responses=ADMIN_ERRORS,
+               summary="Delete Provider",
+               operation_id="adminDeleteProvider")
+async def admin_delete_provider(provider_id: int, admin: dict = Depends(require_admin)):
+    """
+    Deletes a provider and all of its models.
+
+    :param provider_id: The provider's ID.
+    :type provider_id: int
+    :raises HTTPException: 404 if not found.
+    """
+    try:
+        service.delete_provider(provider_id)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Provider deleted (with its models) - id: {provider_id}, by user {admin['user_id']}")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/admin/providers/{provider_id}/fetch-models",
+             response_model=FetchModelsResponse,
+             responses={**ADMIN_ERRORS, status.HTTP_502_BAD_GATEWAY: {"description": "The provider's API call failed"}},
+             summary="Fetch Provider Models",
+             operation_id="adminFetchProviderModels")
+async def admin_fetch_provider_models(provider_id: int, admin: dict = Depends(require_admin)):
+    """
+    Lists the models the provider offers (its GET /models), marking those
+    already in the catalog.
+
+    :param provider_id: The provider's ID.
+    :type provider_id: int
+    :return: The provider's models.
+    :rtype: FetchModelsResponse
+    :raises HTTPException: 404 if not found, 502 with the provider's message if the call fails.
+    """
+    try:
+        return await fetch_provider_models(provider_id)
+    except CatalogError as e:
+        raise _http_error(e)
+
+
+# =========================================================================
+# Admin: models
+# =========================================================================
+
+@router.get("/admin/models",
+            response_model=List[ModelOut],
+            responses=ADMIN_ERRORS,
+            summary="List Catalog Models",
+            operation_id="adminListModels")
+async def admin_list_models(admin: dict = Depends(require_admin)):
+    """
+    Lists all catalog models, including disabled ones, by sort order and name.
+
+    :return: The models.
+    :rtype: List[ModelOut]
+    """
+    return service.list_models()
+
+
+@router.post("/admin/models",
+             response_model=ModelOut,
+             status_code=status.HTTP_201_CREATED,
+             responses=ADMIN_ERRORS,
+             summary="Create Catalog Model",
+             operation_id="adminCreateModel")
+async def admin_create_model(req: ModelCreate, admin: dict = Depends(require_admin)):
+    """
+    Creates a catalog model.
+
+    :param req: The model.
+    :type req: ModelCreate
+    :return: The created model.
+    :rtype: ModelOut
+    :raises HTTPException: 400 if the provider does not exist or a field is invalid,
+        409 if the provider already has a model with this display name.
+    """
+    try:
+        model = service.create_model(req)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Model created - id: {model.id}, name: {model.displayName}, "
+                     f"provider: {model.providerName}, by user {admin['user_id']}")
+    return model
+
+
+@router.put("/admin/models/{model_id}",
+            response_model=ModelOut,
+            responses=ADMIN_ERRORS,
+            summary="Update Catalog Model",
+            operation_id="adminUpdateModel")
+async def admin_update_model(model_id: int, req: ModelUpdate, admin: dict = Depends(require_admin)):
+    """
+    Updates the fields of a model that are sent; null clears optional fields.
+
+    :param model_id: The model's ID.
+    :type model_id: int
+    :param req: The fields to change.
+    :type req: ModelUpdate
+    :return: The updated model.
+    :rtype: ModelOut
+    :raises HTTPException: 404 if not found, 400 for invalid fields, 409 if the name is taken.
+    """
+    try:
+        model = service.update_model(model_id, req)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Model updated - id: {model_id}, fields: {sorted(req.model_fields_set)}, "
+                     f"by user {admin['user_id']}")
+    return model
+
+
+@router.delete("/admin/models/{model_id}",
+               status_code=status.HTTP_204_NO_CONTENT,
+               responses=ADMIN_ERRORS,
+               summary="Delete Catalog Model",
+               operation_id="adminDeleteModel")
+async def admin_delete_model(model_id: int, admin: dict = Depends(require_admin)):
+    """
+    Deletes a catalog model. Conversations that used it fall back to the default model.
+
+    :param model_id: The model's ID.
+    :type model_id: int
+    :raises HTTPException: 404 if not found.
+    """
+    try:
+        service.delete_model(model_id)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Model deleted - id: {model_id}, by user {admin['user_id']}")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# =========================================================================
+# Admin: personas
+# =========================================================================
+
+@router.get("/admin/personas",
+            response_model=List[PersonaOut],
+            responses=ADMIN_ERRORS,
+            summary="List Catalog Personas",
+            operation_id="adminListPersonas")
+async def admin_list_personas(admin: dict = Depends(require_admin)):
+    """
+    Lists all personas, including disabled ones, by sort order and name.
+
+    :return: The personas.
+    :rtype: List[PersonaOut]
+    """
+    return service.list_personas()
+
+
+@router.post("/admin/personas",
+             response_model=PersonaOut,
+             status_code=status.HTTP_201_CREATED,
+             responses=ADMIN_ERRORS,
+             summary="Create Persona",
+             operation_id="adminCreatePersona")
+async def admin_create_persona(req: PersonaCreate, admin: dict = Depends(require_admin)):
+    """
+    Creates a persona.
+
+    :param req: The persona.
+    :type req: PersonaCreate
+    :return: The created persona.
+    :rtype: PersonaOut
+    :raises HTTPException: 400 if the default model does not exist or a variable is
+        declared twice, 409 if the name is taken.
+    """
+    try:
+        persona = service.create_persona(req)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Persona created - id: {persona.id}, name: {persona.name}, by user {admin['user_id']}")
+    return persona
+
+
+@router.put("/admin/personas/{persona_id}",
+            response_model=PersonaOut,
+            responses=ADMIN_ERRORS,
+            summary="Update Persona",
+            operation_id="adminUpdatePersona")
+async def admin_update_persona(persona_id: int, req: PersonaUpdate, admin: dict = Depends(require_admin)):
+    """
+    Updates the fields of a persona that are sent.
+
+    :param persona_id: The persona's ID.
+    :type persona_id: int
+    :param req: The fields to change.
+    :type req: PersonaUpdate
+    :return: The updated persona.
+    :rtype: PersonaOut
+    :raises HTTPException: 404 if not found, 400 for invalid fields, 409 if the name is taken.
+    """
+    try:
+        persona = service.update_persona(persona_id, req)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Persona updated - id: {persona_id}, fields: {sorted(req.model_fields_set)}, "
+                     f"by user {admin['user_id']}")
+    return persona
+
+
+@router.delete("/admin/personas/{persona_id}",
+               status_code=status.HTTP_204_NO_CONTENT,
+               responses=ADMIN_ERRORS,
+               summary="Delete Persona",
+               operation_id="adminDeletePersona")
+async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_admin)):
+    """
+    Deletes a persona. Conversations that used it continue without it.
+
+    :param persona_id: The persona's ID.
+    :type persona_id: int
+    :raises HTTPException: 404 if not found.
+    """
+    try:
+        service.delete_persona(persona_id)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Persona deleted - id: {persona_id}, by user {admin['user_id']}")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# =========================================================================
+# Admin: catalog file
+# =========================================================================
+
+@router.get("/admin/catalog/export",
+            responses=ADMIN_ERRORS,
+            summary="Export Catalog",
+            description="The whole catalog in the catalog file format (docs/model_catalog_api.md)",
+            operation_id="adminExportCatalog")
+async def admin_export_catalog(
+        includeKeys: bool = Query(False, description="Include the decrypted API keys stored in the catalog"),
+        admin: dict = Depends(require_admin)
+):
+    """
+    Exports providers, models and personas as a catalog file.
+
+    :param includeKeys: Add the stored API keys (decrypted) to the providers.
+    :type includeKeys: bool
+    :return: The catalog file (JSON, offered as a download).
+    :rtype: JSONResponse
+    """
+    content = catalog_file.export_catalog(include_keys=includeKeys)
+    crud_logger.info(f"Catalog exported by user {admin['user_id']} (keys {'included' if includeKeys else 'left out'})")
+    headers = {"Content-Disposition": 'attachment; filename="model-catalog.json"'}
+    if includeKeys:
+        headers["Cache-Control"] = "no-store"
+    return JSONResponse(content=jsonable_encoder(content), headers=headers)
+
+
+@router.post("/admin/catalog/import",
+             response_model=ImportResult,
+             responses=ADMIN_ERRORS,
+             summary="Import Catalog",
+             description="Upserts a catalog file by natural key; never deletes",
+             operation_id="adminImportCatalog")
+async def admin_import_catalog(
+        data: Dict[str, Any] = Body(..., description="A catalog file (docs/model_catalog_api.md)"),
+        admin: dict = Depends(require_admin)
+):
+    """
+    Imports a catalog file: providers by name, models by provider and display
+    name, personas by name. Bad entries are reported in errors; the others are
+    still imported.
+
+    :param data: The catalog file.
+    :type data: dict
+    :return: Created and updated counts per section, and the errors.
+    :rtype: ImportResult
+    :raises HTTPException: 400 if the file itself is malformed (e.g. wrong version).
+    """
+    try:
+        result = catalog_file.import_catalog(data)
+    except CatalogError as e:
+        raise _http_error(e)
+    crud_logger.info(
+        f"Catalog imported by user {admin['user_id']} - providers {result.providers.created}+"
+        f"{result.providers.updated}, models {result.models.created}+{result.models.updated}, "
+        f"personas {result.personas.created}+{result.personas.updated} (created+updated), "
+        f"{len(result.errors)} error(s)"
+    )
+    return result

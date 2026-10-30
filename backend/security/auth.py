@@ -8,6 +8,7 @@ import secrets
 from datetime import datetime, timedelta, UTC
 from typing import Optional, Dict
 from fastapi import Request, HTTPException, Depends
+from backend.config import ADMIN_EMAILS
 from backend.database import db
 from backend.security.csrf import generate_csrf_token
 
@@ -191,6 +192,42 @@ async def get_current_user_optional(request: Request) -> Optional[dict]:
         return await get_current_user(request)
     except HTTPException:
         return None
+
+
+def is_admin(user: Optional[dict]) -> bool:
+    """
+    Checks whether a user may manage the model catalog.
+
+    Until roles come from Keycloak, admins are the users whose email is listed in
+    ADMIN_EMAILS (case-insensitive). Guests are never admins, and an empty
+    ADMIN_EMAILS means nobody is.
+
+    :param user: The user dictionary from get_current_user (with `email` and `is_guest`).
+    :type user: Optional[dict]
+    :return: True if the user is an admin, otherwise False.
+    :rtype: bool
+    """
+    if not user or user.get("is_guest"):
+        return False
+    email = (user.get("email") or "").strip().lower()
+    return bool(email) and email in ADMIN_EMAILS
+
+
+async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    FastAPI dependency for admin-only endpoints (the model catalog management).
+
+    :param current_user: The authenticated user, injected via get_current_user.
+    :type current_user: dict
+    :return: The current user if they are an admin.
+    :rtype: dict
+    :raises HTTPException: 401 if not authenticated (from get_current_user), 403 if not an admin.
+    """
+    if not is_admin(current_user):
+        log.warning(f"Admin access denied for user_id={current_user.get('user_id')} "
+                    f"(guest={current_user.get('is_guest', False)})")
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
 
 
 async def cleanup_expired_sessions():

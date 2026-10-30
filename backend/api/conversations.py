@@ -16,7 +16,9 @@ from backend.models.conversation import (
     ConversationWithDetails
 )
 from backend.models.message import MessageResponse
+from backend.catalog.service import CatalogError, check_model_choice, check_persona_choice
 from backend.database import db
+from backend.database.db import UNSET
 from backend.security.auth import get_current_user, verify_conversation_ownership
 from backend.security.logging import crud_logger
 from backend.utils.hash import generate_hash, generate_sha256_hash
@@ -24,6 +26,21 @@ from backend.services.llm import generate_conversation_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Conversation"])
+
+
+def _check_catalog_choice(current_user: dict, model_id: Optional[int], persona_id: Optional[int]) -> None:
+    """
+    Reject a model or persona the user can't use for a conversation.
+
+    :raises HTTPException: 400 if the model or persona does not exist, 403 if it is
+        disabled or not available to the user (e.g. a guest and a non-guest model).
+    """
+    try:
+        check_model_choice(current_user, model_id)
+        check_persona_choice(current_user, persona_id)
+    except CatalogError as e:
+        logger.warning(f"Rejected catalog choice for user {current_user['user_id']}: {e}")
+        raise HTTPException(status_code=e.status_code, detail=str(e))
 
 
 @router.get("/conversations",
@@ -91,7 +108,10 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
                 updatedAt=conv['updatedAt'],
                 hashsum=hashsum,
                 version=conv['version'] or 1,
-                lastModified=conv['lastModified'] or int(time.time())
+                lastModified=conv['lastModified'] or int(time.time()),
+                modelId=conv.get('model_id'),
+                personaId=conv.get('persona_id'),
+                personaValues=conv.get('persona_values')
             ))
 
         logger.info(f"Returning {len(conversation_responses)} conversations for user_id: {user_id}")
@@ -160,21 +180,23 @@ async def get_conversation(conversation_id: str, response: Response, current_use
         content_str = ''.join([msg['content'] for msg in messages if msg.get('content')])
         sync_hash = generate_sha256_hash(content_str) if content_str else None
 
-        # Parse participants (stored as JSON string)
-        participants = json.loads(conv['participants']) if conv['participants'] else []
-
         logger.debug(f"Returning conversation {conversation_id} with {message_count} messages")
 
-        # Return conversation with details
+        # Return conversation with details (participants as the stored JSON string,
+        # like the Conversation model of the create endpoint)
         return ConversationWithDetails(
             id=conv['id'],
             userId=conv['userId'],
             name=conv['name'],
-            participants=participants,
+            participants=conv['participants'],
             createdAt=conv['createdAt'],
+            updatedAt=conv['updatedAt'],
             lastModified=conv['updatedAt'],
             messageCount=message_count,
-            syncHash=sync_hash
+            syncHash=sync_hash,
+            modelId=conv.get('model_id'),
+            personaId=conv.get('persona_id'),
+            personaValues=conv.get('persona_values')
         )
 
     except Exception as e:
@@ -194,7 +216,7 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     into the database, and then retrieves and returns the saved conversation details.
 
     :param req: An object containing details required to create a conversation, including
-        name and participants.
+        name and participants, and optionally the catalog model, persona and persona values.
     :type req: ConversationCreateRequest
     :param current_user: A dictionary holding authentication details of the current user,
         injected via dependency.
@@ -203,7 +225,10 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     :rtype: Conversation
     """
     user_id = current_user['user_id']
-    logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name}")
+    logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name}, "
+                 f"model: {req.modelId}, persona: {req.personaId}")
+
+    _check_catalog_choice(current_user, req.modelId, req.personaId)
 
     participants_json = json.dumps(req.participants)
     new_id = generate_conversation_id()  # Generate UUID
@@ -212,12 +237,16 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
         conversation_id=new_id,
         user_id=user_id,
         name=req.name,
-        participants=participants_json
+        participants=participants_json,
+        model_id=req.modelId,
+        persona_id=req.personaId,
+        persona_values=req.personaValues
     )
 
-    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name}")
+    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name}, "
+                     f"model_id: {req.modelId}, persona_id: {req.personaId}")
 
-    return Conversation(**new_conv)
+    return Conversation.from_row(new_conv)
 
 
 class GenerateTitleRequest(BaseModel):
@@ -259,7 +288,7 @@ async def generate_title(
     except Exception as e:
         logger.error(f"Failed to generate title: {e}")
         # Return existing conversation without changes
-        return Conversation(**existing)
+        return Conversation.from_row(existing)
 
     # Update conversation with new title
     updated_conv = db.update_conversation(
@@ -269,7 +298,7 @@ async def generate_title(
     )
 
     crud_logger.info(f"Conversation {conversation_id} title updated to '{new_title}'")
-    return Conversation(**updated_conv)
+    return Conversation.from_row(updated_conv)
 
 
 @router.patch("/conversation/{conversation_id}",
@@ -282,9 +311,11 @@ async def update_conversation(
     """
     Handles the updating of a specific conversation for the currently authorized user.
 
-    This endpoint allows the user to update the name of a conversation if the
-    specified conversation belongs to the user. The request validates the
-    existence of the conversation and updates the record in the database.
+    This endpoint allows the user to update the name, the catalog model, the persona
+    and the persona values of a conversation if the specified conversation belongs to
+    the user. Only the fields that are sent change; null clears the model or persona.
+    The request validates the existence of the conversation and that the user may use
+    the chosen model and persona, then updates the record in the database.
     Returns the updated conversation details on success.
 
     :param conversation_id: Identifier of the conversation to be updated.
@@ -295,10 +326,12 @@ async def update_conversation(
     :type current_user: dict
     :return: An instance of the updated conversation.
     :rtype: Conversation
-    :raises HTTPException: If the conversation does not exist for the user.
+    :raises HTTPException: 404 if the conversation does not exist for the user, 400/403 if
+        the model or persona is unknown or not available to the user.
     """
     user_id = current_user['user_id']
-    logger.debug(f"Updating conversation {conversation_id} for user_id: {user_id}")
+    sent = req.model_fields_set
+    logger.debug(f"Updating conversation {conversation_id} for user_id: {user_id}, fields: {sorted(sent)}")
 
     # Check if conversation exists and belongs to user
     existing = db.get_conversation_by_id(conversation_id, user_id)
@@ -306,16 +339,36 @@ async def update_conversation(
         logger.debug(f"Conversation {conversation_id} not found for update")
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    _check_catalog_choice(
+        current_user,
+        req.modelId if "modelId" in sent else None,
+        req.personaId if "personaId" in sent else None
+    )
+
+    # Catalog fields: left out = unchanged, null = cleared
+    model_id = req.modelId if "modelId" in sent else UNSET
+    persona_id = req.personaId if "personaId" in sent else UNSET
+    persona_values = req.personaValues if "personaValues" in sent else UNSET
+    if "personaId" in sent and req.personaId is None and persona_values is UNSET:
+        persona_values = None  # No persona, no values
+
     # Update conversation
     updated_conv = db.update_conversation(
         conversation_id=conversation_id,
         user_id=user_id,
-        name=req.name
+        name=req.name,
+        model_id=model_id,
+        persona_id=persona_id,
+        persona_values=persona_values
     )
 
-    crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name}' by user {user_id}")
+    if req.name is not None:
+        crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name}' by user {user_id}")
+    if sent & {"modelId", "personaId", "personaValues"}:
+        crud_logger.info(f"Conversation {conversation_id} catalog selection updated by user {user_id} - "
+                         f"model_id: {updated_conv.get('model_id')}, persona_id: {updated_conv.get('persona_id')}")
 
-    return Conversation(**updated_conv)
+    return Conversation.from_row(updated_conv)
 
 
 @router.delete("/conversation/{conversation_id}",
@@ -436,11 +489,17 @@ async def get_conversation_messages(
                     msg['finalResponse'] = msg.get('content', '')
                     msg['status'] = msg.get('agent_status', 'complete')
                     msg['error'] = msg.get('agent_error')
+                    # Which model wrote the message, and its token usage
+                    msg['modelId'] = msg.get('model_id')
+                    msg['modelName'] = msg.get('model_name')
+                    msg['usage'] = msg.get('usage')
 
                     # Clean up internal column names
                     msg.pop('agent_steps', None)
                     msg.pop('agent_status', None)
                     msg.pop('agent_error', None)
+                    msg.pop('model_id', None)
+                    msg.pop('model_name', None)
                 elif msg.get('type') == 'text' or not msg.get('type'):
                     # Parse JSON content for text messages with attachments
                     content = msg.get('content', '')

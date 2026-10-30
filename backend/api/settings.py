@@ -6,7 +6,9 @@ import time
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from backend.models.settings import AppSettings, AppSettingsResponse
+from backend.catalog.service import CatalogError, check_model_choice
 from backend.database import db
+from backend.database.db import UNSET
 from backend.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -62,6 +64,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         return AppSettingsResponse(
             theme=settings['theme'],
             language=settings['language'],
+            defaultModelId=settings.get('default_model_id'),
             lastUpdated=last_updated_ts
         )
     else:
@@ -103,14 +106,26 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         logger.warning(f"Guest user attempted to save settings")
         raise HTTPException(status_code=403, detail="Guests cannot save settings.")
 
+    # Default model: left out = keep the stored one, null = clear it
+    default_model_id = UNSET
+    if "defaultModelId" in new_settings.model_fields_set:
+        default_model_id = new_settings.defaultModelId
+        try:
+            check_model_choice(current_user, default_model_id)
+        except CatalogError as e:
+            logger.warning(f"Rejected default model {default_model_id} for user_id {user_id}: {e}")
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+
     # Upsert settings using CRUD method
     settings = db.upsert_user_settings(
         user_id=user_id,
         theme=new_settings.theme,
-        language=new_settings.language
+        language=new_settings.language,
+        default_model_id=default_model_id
     )
 
-    logger.info(f"Settings updated for user_id {user_id}: theme={new_settings.theme}, language={new_settings.language}")
+    logger.info(f"Settings updated for user_id {user_id}: theme={new_settings.theme}, language={new_settings.language}, "
+                f"default_model_id={settings.get('default_model_id')}")
 
     # Convert datetime to Unix timestamp
     try:
@@ -128,5 +143,6 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
     return AppSettingsResponse(
         theme=settings['theme'],
         language=settings['language'],
+        defaultModelId=settings.get('default_model_id'),
         lastUpdated=last_updated_ts
     )
