@@ -167,8 +167,8 @@ async def add_security_headers(request: Request, call_next):
         csp_directives = [
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # Required for Angular dev mode
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "font-src 'self' https://fonts.gstatic.com",
+            "style-src 'self' 'unsafe-inline'",
+            "font-src 'self'",
             "img-src 'self' data: blob:",
             "media-src 'self' blob: data:",  # Allow audio/video from blob and data URLs
             "connect-src 'self' wss: https: ws://localhost:* http://localhost:*",  # Allow dev server websockets
@@ -183,8 +183,8 @@ async def add_security_headers(request: Request, call_next):
         csp_directives = [
             "default-src 'self'",
             f"script-src 'self' 'nonce-{csp_nonce}' 'strict-dynamic'",  # Nonce-based with strict-dynamic
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # Styles still need unsafe-inline
-            "font-src 'self' https://fonts.gstatic.com",
+            "style-src 'self' 'unsafe-inline'",  # Styles still need unsafe-inline
+            "font-src 'self'",
             "img-src 'self' data: blob:",
             "media-src 'self' blob: data:",  # Allow audio/video from blob and data URLs
             "connect-src 'self' wss: https:",

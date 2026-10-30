@@ -32,6 +32,14 @@
               "src/manifest.webmanifest"
             ],
             "styles": [
+              "node_modules/@fontsource/roboto/latin-300.css",
+              "node_modules/@fontsource/roboto/latin-400.css",
+              "node_modules/@fontsource/roboto/latin-500.css",
+              "node_modules/@fontsource/inter/latin-400.css",
+              "node_modules/@fontsource/inter/latin-500.css",
+              "node_modules/@fontsource/inter/latin-600.css",
+              "node_modules/@fontsource/inter/latin-700.css",
+              "node_modules/material-icons/iconfont/filled.css",
               "src/styles/styles.scss",
               "node_modules/prismjs/plugins/line-numbers/prism-line-numbers.css"
             ],
@@ -122,6 +130,14 @@
               "src/manifest.webmanifest"
             ],
             "styles": [
+              "node_modules/@fontsource/roboto/latin-300.css",
+              "node_modules/@fontsource/roboto/latin-400.css",
+              "node_modules/@fontsource/roboto/latin-500.css",
+              "node_modules/@fontsource/inter/latin-400.css",
+              "node_modules/@fontsource/inter/latin-500.css",
+              "node_modules/@fontsource/inter/latin-600.css",
+              "node_modules/@fontsource/inter/latin-700.css",
+              "node_modules/material-icons/iconfont/filled.css",
               "src/styles/styles.scss",
               "node_modules/prismjs/plugins/line-numbers/prism-line-numbers.css"
             ],

@@ -6,9 +6,6 @@
 // Import the theme mixin.
 @use 'themes/themes' as theme;
 
-// --- Modern Font Import ---
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 // --- STEP 1: Include Core & Typography Styles Once ---
 @include mat.core();
 @include mat.typography-hierarchy(typography.$custom-typography);
