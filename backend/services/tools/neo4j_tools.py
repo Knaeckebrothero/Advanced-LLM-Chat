@@ -1,16 +1,16 @@
 # backend/services/tools/neo4j_tools.py
 """
-LangChain tools for reading the optional Neo4j knowledge graph.
+Tools for reading the optional Neo4j knowledge graph.
 
 The tools make no assumptions about the graph's schema: the agent inspects the
 schema first, then searches for nodes or runs read-only Cypher queries.
-They are only registered when NEO4J_ENABLED is set (see agent.py).
+They are only registered when NEO4J_ENABLED is set (see backend/llm/tools.py,
+which also holds the schemas the model sees). The functions are synchronous;
+the agent loop runs them in a worker thread.
 """
 
 import json
 import logging
-from langchain_core.tools import tool
-from backend.database.neo4j_db import neo4j_db
 from backend.config import NEO4J_MAX_RESULTS
 
 log = logging.getLogger(__name__)
@@ -37,16 +37,21 @@ def _compact(value):
     return json.loads(json.dumps(value, default=str))
 
 
+def _db():
+    """The Neo4j database manager, imported on first use so the driver is only needed with the graph enabled."""
+    from backend.database.neo4j_db import neo4j_db
+    return neo4j_db
+
+
 def _limited_read(cypher: str, params: dict = None) -> dict:
     """Run a read query and report whether the result was cut off."""
-    rows = neo4j_db.query_read(cypher, params, limit=NEO4J_MAX_RESULTS + 1)
+    rows = _db().query_read(cypher, params, limit=NEO4J_MAX_RESULTS + 1)
     return {
         "results": _compact(rows[:NEO4J_MAX_RESULTS]),
         "truncated": len(rows) > NEO4J_MAX_RESULTS
     }
 
 
-@tool
 def get_graph_schema() -> dict:
     """Get the structure of the knowledge graph.
 
@@ -59,6 +64,7 @@ def get_graph_schema() -> dict:
     """
     try:
         log.debug("Getting knowledge graph schema")
+        neo4j_db = _db()
         counts = neo4j_db.query_read("""
             CALL { MATCH (n) RETURN count(n) AS nodes }
             CALL { MATCH ()-[r]->() RETURN count(r) AS relationships }
@@ -87,7 +93,6 @@ def get_graph_schema() -> dict:
         return {"error": str(e)}
 
 
-@tool
 def search_graph(text: str) -> dict:
     """Search the knowledge graph for nodes whose text properties contain the given text.
 
@@ -117,7 +122,6 @@ def search_graph(text: str) -> dict:
         return {"error": str(e), "results": []}
 
 
-@tool
 def query_graph(cypher: str) -> dict:
     """Run a read-only Cypher query against the knowledge graph.
 
@@ -140,11 +144,3 @@ def query_graph(cypher: str) -> dict:
         log.error(f"Error running agent Cypher query: {e}")
         return {"error": str(e), "results": []}
 
-
-def get_graph_tools() -> list:
-    """Return the knowledge graph tools for the agent."""
-    return [
-        get_graph_schema,
-        search_graph,
-        query_graph
-    ]

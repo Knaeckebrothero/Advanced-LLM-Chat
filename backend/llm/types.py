@@ -7,7 +7,7 @@ key decrypted), and model_from_env() builds one from the OPENAI_* / ANTHROPIC_*
 environment variables when the catalog is empty.
 """
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 # Provider kinds: which client the runtime uses
@@ -148,3 +148,17 @@ def model_from_env() -> Optional[ModelConfig]:
         )
 
     return None
+
+
+def auxiliary_model_from_env() -> Optional[ModelConfig]:
+    """
+    The environment model for auxiliary tasks (titles, speech preprocessing).
+
+    Same as model_from_env(), with AUXILIARY_REASONING_LEVEL as the reasoning
+    effort when that variable is set, so these short tasks can think less.
+    """
+    config = model_from_env()
+    effort = (os.getenv("AUXILIARY_REASONING_LEVEL") or "").strip().lower()
+    if config is not None and effort:
+        config = replace(config, reasoning_effort=effort)
+    return config

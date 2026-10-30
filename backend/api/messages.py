@@ -4,10 +4,7 @@ Message API endpoints.
 import json
 import logging
 import time
-import asyncio
-import uuid
-from collections import defaultdict
-from typing import Dict, AsyncGenerator
+from typing import Dict, AsyncGenerator, Optional
 from fastapi import APIRouter, Response, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 from backend.models.common import ErrorResponse
@@ -21,17 +18,13 @@ from backend.models.message import (
     RateMessageRequest,
     RegenerateMessageRequest,
     StreamGenerateRequest,
-    AgentStep,
     MessageStartEvent
 )
 from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
-from backend.services.llm import get_conversation_context, generate_llm_response
-from backend.config import DEFAULT_MODEL, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_SYSTEM_PROMPT
-from backend.services.agent import create_agent
-from backend.services.llm_provider import is_provider_available
-from backend.services.image_handler import extract_image_attachments, extract_document_attachments, extract_audio_attachments
+from backend.llm import ModelConfig, Usage, build_system_prompt, default_tools, model_from_env, run_agent
+from backend.services.llm import generate_reply
 from backend.services.conversation_history import ConversationHistoryBuilder
 from backend.models.attachments import AttachmentType
 from backend.services.tts_handler import (
@@ -45,6 +38,50 @@ from backend.services.tts_preprocessor import preprocess_for_tts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/message", tags=["Message"])
+
+NO_MODEL_MESSAGE = (
+    "No language model is configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, "
+    "or add a model to the model catalog."
+)
+
+
+class NoModelAvailableError(Exception):
+    """No model can answer this request."""
+
+
+def _resolve_model(current_user: dict, conversation_id: str, model_id: Optional[int] = None) -> ModelConfig:
+    """
+    The model that answers in this conversation.
+
+    TODO(integration): replace the body with backend.catalog.resolver.resolve_model(
+    current_user, model_id, conversation) and map ModelNotAvailable to this error
+    (503) and ModelNotAllowed to a 403. Until then the environment model answers
+    and a requested modelId is ignored.
+
+    :raises NoModelAvailableError: If no model is configured.
+    """
+    if model_id is not None:
+        logger.info(f"Requested model {model_id} ignored: the model catalog is not wired in yet")
+    config = model_from_env()
+    if config is None:
+        raise NoModelAvailableError(NO_MODEL_MESSAGE)
+    return config
+
+
+def _resolve_model_or_503(current_user: dict, conversation_id: str) -> ModelConfig:
+    """_resolve_model for the non-streaming endpoints: no model is a 503."""
+    try:
+        return _resolve_model(current_user, conversation_id)
+    except NoModelAvailableError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+
+def _step_to_dict(step) -> dict:
+    """An agent step as stored and streamed; callId only on tool steps."""
+    step_dict = step.model_dump()
+    if step_dict.get('callId') is None:
+        step_dict.pop('callId', None)
+    return step_dict
 
 
 def _save_agent_message(
@@ -233,7 +270,9 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
                  status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Conversation ID missing"},
                  status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
                  status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse,
-                                                          "description": "Internal server error"}
+                                                          "description": "Internal server error"},
+                 status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse,
+                                                        "description": "No language model configured"}
              },
              dependencies=[Depends(rate_limit_guest)])
 async def generate_message(request_body: ApiMessageGenerate, response: Response,
@@ -261,17 +300,13 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
                 detail="Conversation ID missing or invalid in request"
             )
 
-        # Get conversation context for the LLM
-        logger.debug(f"Getting conversation context for {request_body.conversationId}")
-        context = await get_conversation_context(request_body.conversationId)
-
-        # Generate AI response
-        ai_response_content = await generate_llm_response(
-            context,
-            DEFAULT_TEMPERATURE,
-            DEFAULT_TOP_P,
-            DEFAULT_SYSTEM_PROMPT,
-            DEFAULT_MODEL
+        # Generate AI response from the conversation history
+        config = _resolve_model_or_503(current_user, request_body.conversationId)
+        logger.debug(f"Generating reply for {request_body.conversationId} with {config.model_id}")
+        ai_response_content, usage = await generate_reply(
+            config,
+            request_body.conversationId,
+            system_prompt=request_body.systemPrompt
         )
 
         message_id = int(time.time() * 1000)
@@ -558,7 +593,9 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
                  status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
                  status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Message not found"},
                  status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse,
-                                                          "description": "Internal server error"}
+                                                          "description": "Internal server error"},
+                 status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse,
+                                                        "description": "No language model configured"}
              },
              dependencies=[Depends(rate_limit_guest)])
 async def regenerate_message(request_body: RegenerateMessageRequest, response: Response,
@@ -593,37 +630,16 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
                 detail="Can only regenerate AI messages"
             )
 
-        # Get all messages before this one for context
-        all_messages = db.get_messages_by_conversation(
-            request_body.conversationId,
-            before_timestamp=message['time'],
-            limit=20
-        )
-
-        # Build conversation context
-        context_messages = []
-        for msg in reversed(all_messages):  # Reverse to get chronological order
-            context_messages.append({
-                "role": "user" if msg['roleName'] == 'user' else "assistant",
-                "content": msg['content']
-            })
-
-        # Build prompt from context messages
-        prompt_lines = []
-        for msg in context_messages:
-            role = "User" if msg['role'] == 'user' else "Assistant"
-            prompt_lines.append(f"{role}: {msg['content']}")
-        prompt_lines.append("Assistant:")
-        prompt = "\n".join(prompt_lines)
-
-        # Generate new AI response
-        ai_response_content = await generate_llm_response(
-            prompt,
-            DEFAULT_TEMPERATURE,
-            DEFAULT_TOP_P,
-            DEFAULT_SYSTEM_PROMPT,
-            DEFAULT_MODEL
-        )
+        # Generate a new AI response from the messages before this one
+        config = _resolve_model_or_503(current_user, request_body.conversationId)
+        try:
+            ai_response_content, usage = await generate_reply(
+                config,
+                request_body.conversationId,
+                before_message=message
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
         # Update the message with new content
         current_version = message['version'] or 1
@@ -668,7 +684,9 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
                  status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Invalid request"},
                  status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
                  status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse,
-                                                          "description": "Internal server error"}
+                                                          "description": "Internal server error"},
+                 status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse,
+                                                        "description": "No language model configured"}
              })
 async def send_and_generate_message(
         request_body: ApiMessageSendAndGenerate,
@@ -802,15 +820,8 @@ async def send_and_generate_message(
 
         ai_message_response = None
         if request_body.generateResponse:
-            context = await get_conversation_context(request_body.conversationId, limit=6)
-
-            ai_response_content = await generate_llm_response(
-                context,
-                DEFAULT_TEMPERATURE,
-                DEFAULT_TOP_P,
-                DEFAULT_SYSTEM_PROMPT,
-                DEFAULT_MODEL
-            )
+            config = _resolve_model_or_503(current_user, request_body.conversationId)
+            ai_response_content, usage = await generate_reply(config, request_body.conversationId)
 
             ai_message_id = int(time.time() * 1000) + 1
             current_time = int(time.time())
@@ -867,13 +878,16 @@ async def stream_generate(
     Stream agent reasoning steps and final response using Server-Sent Events.
 
     This endpoint returns an SSE stream with the following event types:
-    - step: An agent reasoning step (thought, tool_call, tool_result, observation)
+    - message_start: Message metadata, including the model that answers (modelId, modelName)
+    - step: An agent reasoning step (thought, tool_call, tool_result, observation);
+      a step with the id of an earlier one replaces it
+    - step_delta: Text appended to an earlier step ({"id", "delta"}), the model's live reasoning
     - token: A token from the final response stream
-    - done: Signals completion with the final message ID
+    - done: Signals completion with the message ID, the model and the token usage
     - error: An error occurred during processing
 
-    The agent uses LangGraph to orchestrate multi-step reasoning with its tools
-    (file retrieval, web search and the optional Neo4j knowledge graph).
+    The agent loop (backend/llm) runs the model with its tools (file retrieval,
+    web search and the optional Neo4j knowledge graph).
     """
     crud_logger.info(
         f"Stream generate called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -890,10 +904,16 @@ async def stream_generate(
         """Generate SSE events for agent reasoning and response."""
         message_id = int(time.time() * 1000)
         current_time = int(time.time())
-        steps = []  # Will store step dicts (not models)
+        steps = []  # Step dicts in order of first appearance (not models)
+        step_positions: dict[str, int] = {}  # Step id -> index in steps, for replaced steps
         final_response = ""
-        # Track pending tool calls by tool name (queue per tool for parallel calls)
-        pending_tool_calls: dict[str, list[str]] = defaultdict(list)
+        usage: Optional[Usage] = None
+
+        try:
+            config = _resolve_model(current_user, request_body.conversationId, request_body.modelId)
+        except NoModelAvailableError as e:
+            config = None
+            crud_logger.error(f"Stream generate without a model: {e}")
 
         # Send message envelope FIRST - provides metadata before any content
         message_start = MessageStartEvent(
@@ -901,12 +921,21 @@ async def stream_generate(
             conversationId=request_body.conversationId,
             roleName=request_body.aiParticipant,
             time=current_time,
-            type="agent"
+            type="agent",
+            modelId=config.id if config else None,
+            modelName=config.display_name if config else None
         )
         yield {
             "event": "message_start",
             "data": json.dumps(message_start.model_dump())
         }
+
+        if config is None:
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": NO_MODEL_MESSAGE})
+            }
+            return
 
         try:
             # Build conversation history with placeholders for previous attachments
@@ -914,7 +943,8 @@ async def stream_generate(
             history_messages, available_attachments = await history_builder.build_history(
                 request_body.conversationId,
                 limit=20,
-                include_latest_attachments=True
+                include_latest_attachments=True,
+                supports_vision=config.supports_vision
             )
 
             if not history_messages:
@@ -924,156 +954,68 @@ async def stream_generate(
                 }
                 return
 
-            # Get latest user message text (for logging/validation)
-            user_message = ""
-            if history_messages:
-                latest = history_messages[-1]
-                if hasattr(latest, 'content'):
-                    user_message = latest.content if isinstance(latest.content, str) else str(latest.content)
-
-            if not user_message:
+            if not any(message.get('role') == 'user' for message in history_messages):
                 yield {
                     "event": "error",
                     "data": json.dumps({"error": "No user message found in conversation"})
                 }
                 return
 
-            # Filter attachments by type from available_attachments (for latest message processing)
-            image_attachments = [
-                {"fileId": att.file_id, "mimeType": att.mime_type, "name": att.file_name}
-                for att in available_attachments
-                if att.attachment_type == AttachmentType.IMAGE
-            ]
-            document_attachments = [
-                {"fileId": att.file_id, "mimeType": att.mime_type, "name": att.file_name}
-                for att in available_attachments
-                if att.attachment_type == AttachmentType.PDF
-            ]
-            audio_attachments = [
-                {"fileId": att.file_id, "mimeType": att.mime_type, "name": att.file_name}
-                for att in available_attachments
-                if att.attachment_type == AttachmentType.AUDIO
-            ]
-
-            # Log if attachments are found
-            if image_attachments:
-                crud_logger.info(f"Found {len(image_attachments)} image attachment(s) in conversation")
-            if document_attachments:
-                crud_logger.info(f"Found {len(document_attachments)} document attachment(s) in conversation")
-            if audio_attachments:
-                crud_logger.info(f"Found {len(audio_attachments)} audio attachment(s) in conversation")
+            # Log the attachments of the conversation (full content for the latest message only)
             if available_attachments:
-                crud_logger.info(f"Total available attachments for file retrieval: {len(available_attachments)}")
-
-            # Check if we have an LLM provider configured
-            use_agent = is_provider_available("openai") or is_provider_available("anthropic")
-
-            if use_agent:
-                # Use the real LangGraph agent
-                crud_logger.info(f"Using LangGraph agent for message: {user_message[:50] if len(user_message) > 50 else user_message}...")
-
-                try:
-                    agent = create_agent()
-
-                    # Get conversation history without the latest message (it will be built with attachments)
-                    conversation_history = history_messages[:-1] if len(history_messages) > 1 else None
-
-                    # Stream reasoning steps and response using astream_full
-                    async for event_type, event_data in agent.astream_full(
-                        user_message,
-                        images=image_attachments,
-                        documents=document_attachments,
-                        audio=audio_attachments,
-                        conversation_history=conversation_history
-                    ):
-                        if event_type == "step":
-                            step_dict = event_data.model_dump()
-
-                            # Add callId linking for tool calls and results
-                            step_type = step_dict.get('type')
-                            tool_title = step_dict.get('title', '')
-
-                            if step_type == 'tool_call':
-                                call_id = str(uuid.uuid4())
-                                pending_tool_calls[tool_title].append(call_id)
-                                step_dict['callId'] = call_id
-                            elif step_type == 'tool_result':
-                                # Extract original tool title from "Ergebnis: <tool_title>"
-                                original_title = tool_title.replace('Ergebnis: ', '', 1)
-                                if pending_tool_calls[original_title]:
-                                    step_dict['callId'] = pending_tool_calls[original_title].pop(0)
-
-                            steps.append(step_dict)
-                            yield {
-                                "event": "step",
-                                "data": json.dumps(step_dict)
-                            }
-                        elif event_type == "token":
-                            final_response += event_data
-                            yield {
-                                "event": "token",
-                                "data": event_data
-                            }
-
-                except Exception as agent_error:
-                    crud_logger.error(f"Agent error, falling back to basic LLM: {agent_error}", exc_info=True)
-                    # Fall back to basic LLM if agent fails
-                    final_response = await _fallback_generate(request_body.conversationId, steps)
-                    # Stream fallback response
-                    for i in range(0, len(final_response), 4):
-                        token = final_response[i:i + 4]
-                        yield {
-                            "event": "token",
-                            "data": token
-                        }
-                        await asyncio.sleep(0.01)
-
-            else:
-                # Fallback: Use the basic LLM (Replicate) when no LangChain provider is available
-                crud_logger.info("No LangChain LLM provider available, using fallback Replicate LLM")
-
-                # Emit a thinking step (as dict for consistency)
-                thinking_step = {
-                    "id": str(uuid.uuid4()),
-                    "type": "thought",
-                    "title": "Processing Request",
-                    "content": "Analyzing message and preparing response...",
-                    "timestamp": int(time.time() * 1000)
+                counts = {
+                    attachment_type.value: sum(1 for att in available_attachments if att.attachment_type == attachment_type)
+                    for attachment_type in AttachmentType
                 }
-                steps.append(thinking_step)
-                yield {
-                    "event": "step",
-                    "data": json.dumps(thinking_step)
-                }
+                crud_logger.info(f"Attachments in conversation: {counts}")
 
-                # Generate using fallback
-                final_response = await _fallback_generate(request_body.conversationId, steps)
+            tools = default_tools() if config.supports_tools else None
+            # TODO(integration): pass the conversation's rendered persona prompt instead of None
+            system_prompt = build_system_prompt(None, tools)
 
-                # Emit observation step (as dict for consistency)
-                observation_step = {
-                    "id": str(uuid.uuid4()),
-                    "type": "observation",
-                    "title": "Response Generated",
-                    "content": "Response has been successfully generated.",
-                    "timestamp": int(time.time() * 1000)
-                }
-                steps.append(observation_step)
-                yield {
-                    "event": "step",
-                    "data": json.dumps(observation_step)
-                }
+            crud_logger.info(
+                f"Running agent with {config.display_name} ({config.provider_name}) on "
+                f"{len(history_messages)} messages")
 
-                # Stream the response tokens
-                chunk_size = 4
-                for i in range(0, len(final_response), chunk_size):
-                    token = final_response[i:i + chunk_size]
+            async for event_type, event_data in run_agent(
+                config,
+                history_messages,
+                system_prompt=system_prompt,
+                tools=tools
+            ):
+                if event_type == "step":
+                    step_dict = _step_to_dict(event_data)
+                    position = step_positions.get(step_dict['id'])
+                    if position is None:
+                        step_positions[step_dict['id']] = len(steps)
+                        steps.append(step_dict)
+                    else:
+                        steps[position] = step_dict
+                    yield {
+                        "event": "step",
+                        "data": json.dumps(step_dict)
+                    }
+                elif event_type == "step_delta":
+                    # Keep the stored step current, in case the stream breaks before the step completes
+                    position = step_positions.get(event_data['id'])
+                    if position is not None:
+                        steps[position]['content'] += event_data['delta']
+                    yield {
+                        "event": "step_delta",
+                        "data": json.dumps(event_data)
+                    }
+                elif event_type == "token":
+                    final_response += event_data
                     yield {
                         "event": "token",
-                        "data": token
+                        "data": event_data
                     }
-                    await asyncio.sleep(0.01)
+                elif event_type == "usage":
+                    usage = event_data
 
             # Save using JSONB storage (new schema)
+            # TODO(integration): also store config.id, config.display_name and usage.to_api(config)
+            # once db.create_agent_message accepts them (model_id, model_name, usage columns)
             db.create_agent_message(
                 message_id=message_id,
                 conversation_id=request_body.conversationId,
@@ -1089,16 +1031,22 @@ async def stream_generate(
                 "event": "done",
                 "data": json.dumps({
                     "messageId": message_id,
-                    "conversationId": request_body.conversationId
+                    "conversationId": request_body.conversationId,
+                    "modelId": config.id,
+                    "modelName": config.display_name,
+                    "usage": (usage or Usage()).to_api(config)
                 })
             }
 
-            crud_logger.info(f"Stream generate completed - Message ID: {message_id}")
+            crud_logger.info(
+                f"Stream generate completed - Message ID: {message_id}, "
+                f"tokens in/out: {usage.input_tokens if usage else 0}/{usage.output_tokens if usage else 0}")
 
         except Exception as e:
             crud_logger.error(f"Error in stream generate: {str(e)}", exc_info=True)
 
             # Save error state using JSONB storage
+            # TODO(integration): store the model and the partial usage here as well
             db.create_agent_message(
                 message_id=message_id,
                 conversation_id=request_body.conversationId,
@@ -1238,73 +1186,3 @@ async def generate_tts(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"TTS generation failed: {str(e)}"
         )
-
-
-async def _get_last_user_message(conversation_id: str) -> tuple[str, list[dict], list[dict], list[dict]]:
-    """
-    Get the last user message from a conversation, including any attachments.
-
-    Args:
-        conversation_id: The conversation ID.
-
-    Returns:
-        Tuple of (text_content, image_attachments, document_attachments, audio_attachments).
-    """
-    messages = db.get_messages_by_conversation(conversation_id, limit=10)
-
-    crud_logger.debug(f"Retrieved {len(messages)} messages for conversation {conversation_id}")
-
-    # Find the last user message (messages are returned in reverse order)
-    for msg in messages:
-        if msg.get('roleName') == 'user':
-            content = msg.get('content', '')
-            images = []
-            documents = []
-            audio = []
-
-            crud_logger.info(f"Found user message - content starts with: {content[:100] if content else '(empty)'}...")
-            crud_logger.info(f"Content is JSON: {content.startswith('{') if content else False}")
-
-            # Handle JSON-encoded content (contains attachments)
-            if content.startswith('{'):
-                try:
-                    content_obj = json.loads(content)
-                    text_content = content_obj.get('content', content)
-                    crud_logger.info(f"Parsed JSON content - has attachments key: {'attachments' in content_obj}")
-                    if 'attachments' in content_obj:
-                        crud_logger.info(f"Attachments count: {len(content_obj.get('attachments', []))}")
-                        crud_logger.info(f"Attachments: {content_obj.get('attachments', [])}")
-                    images = extract_image_attachments(content_obj)
-                    documents = extract_document_attachments(content_obj)
-                    audio = extract_audio_attachments(content_obj)
-                    crud_logger.info(f"Extracted: {len(images)} images, {len(documents)} documents, {len(audio)} audio files")
-                    return (text_content, images, documents, audio)
-                except json.JSONDecodeError as e:
-                    crud_logger.error(f"Failed to parse JSON content: {e}")
-                    pass
-
-            return (content, images, documents, audio)
-
-    crud_logger.warning(f"No user message found in conversation {conversation_id}")
-    return ("", [], [], [])
-
-
-async def _fallback_generate(conversation_id: str, steps: list) -> str:
-    """
-    Fallback generation using the basic Replicate LLM.
-
-    Args:
-        conversation_id: The conversation ID.
-        steps: List to append any additional steps to.
-
-    Returns:
-        The generated response text.
-    """
-    context = await get_conversation_context(conversation_id, limit=6)
-    return await generate_llm_response(
-        context,
-        DEFAULT_TEMPERATURE,
-        DEFAULT_TOP_P,
-        DEFAULT_SYSTEM_PROMPT,
-        DEFAULT_MODEL
-    )

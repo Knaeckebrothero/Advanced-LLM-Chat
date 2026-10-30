@@ -9,12 +9,6 @@ from dotenv import load_dotenv, find_dotenv
 # Load environment variables
 load_dotenv(find_dotenv())
 
-# Default settings for LLM generation
-DEFAULT_MODEL = "openai/gpt-4o"
-DEFAULT_TEMPERATURE = 0.5
-DEFAULT_TOP_P = 0.5
-DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant!"
-
 # CORS configuration
 # Can be set via CORS_ORIGINS env var as comma-separated list
 # Example: CORS_ORIGINS=http://10.18.2.105:8200,https://example.com
@@ -63,15 +57,13 @@ PORT = int(os.getenv("PORT", "8443"))
 # Filesystem configuration
 FILESYSTEM_PATH = os.getenv("FILESYSTEM_PATH", "filesystem")
 
-# Replicate API configuration
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-
 # Tavily Web Search configuration
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # Image processing configuration for LLM
-# Set to 'true' to pass images to vision-capable models
-# Set to 'false' to use text descriptions instead
+# Whether the chat model gets images is decided per model (ModelConfig.supports_vision);
+# text-only models get placeholders and read files through the get_file_content tool.
+# MODEL_RECEIVE_IMAGES is only the default of FileRetrievalService.get_content().
 MODEL_RECEIVE_IMAGES = os.getenv("MODEL_RECEIVE_IMAGES", "false").lower() == "true"
 
 # PDF page images for LLM (vision-capable models only)
@@ -112,34 +104,14 @@ TTS_TIMEOUT = float(os.getenv("TTS_TIMEOUT", "120"))  # Timeout for TTS requests
 TTS_PREPROCESS_ENABLED = os.getenv("TTS_PREPROCESS_ENABLED", "true").lower() == "true"
 TTS_PREPROCESS_VERSION = "v1"  # Increment to invalidate cached preprocessed text
 
-# LLM Agent Timeout
+# LLM request timeout in seconds, for every provider (backend/llm/client.py)
 # Increase for slow models (CPU inference, model loading time)
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))  # Timeout for LLM chat requests
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 
-# Reasoning Level Configuration (OpenAI only)
-# Controls reasoning effort for main agent and auxiliary tasks
-# Valid values: "low", "medium", "high"
-REASONING_LEVEL = os.getenv("REASONING_LEVEL", "medium")
-AUXILIARY_REASONING_LEVEL = os.getenv("AUXILIARY_REASONING_LEVEL", "low")
-
-# Validate reasoning levels
-def _validate_reasoning_level(level: str, var_name: str) -> str:
-    """Validate and normalize reasoning level value."""
-    valid_levels = {"low", "medium", "high"}
-    normalized = level.lower().strip()
-    if normalized not in valid_levels:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(
-            f"{var_name}='{level}' is invalid. "
-            f"Valid values: {', '.join(sorted(valid_levels))}. Defaulting to 'medium'."
-        )
-        return "medium"
-    return normalized
-
-# Apply validation
-REASONING_LEVEL = _validate_reasoning_level(REASONING_LEVEL, "REASONING_LEVEL")
-AUXILIARY_REASONING_LEVEL = _validate_reasoning_level(AUXILIARY_REASONING_LEVEL, "AUXILIARY_REASONING_LEVEL")
+# Reasoning effort of the environment fallback model (backend/llm/types.py reads these directly):
+# REASONING_LEVEL is the reasoning_effort of the OpenAI environment model for chat answers,
+# AUXILIARY_REASONING_LEVEL the effort for titles and speech preprocessing (Claude: output_config.effort).
+# Unset = the provider's default. Catalog models carry their own reasoning_effort.
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

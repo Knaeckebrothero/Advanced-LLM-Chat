@@ -14,10 +14,9 @@ suitable for text-to-speech. Handles:
 import logging
 from typing import Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
-from .llm_provider import get_llm, wrap_system_prompt_with_reasoning
 from ..config import TTS_PREPROCESS_ENABLED
+from ..llm import ModelConfig, complete
+from ..llm.types import auxiliary_model_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -88,14 +87,14 @@ def needs_preprocessing(text: str) -> bool:
     return False
 
 
-async def preprocess_for_tts(text: str) -> Optional[str]:
+async def preprocess_for_tts(text: str, config: Optional[ModelConfig] = None) -> Optional[str]:
     """
     Preprocess text using LLM to optimize for TTS.
 
-    Uses the configured LLM provider from llm_provider.py.
-
     Args:
         text: Raw message text (may contain markdown, tables, etc.)
+        config: The model to use. Defaults to the environment model
+                (with AUXILIARY_REASONING_LEVEL as its reasoning effort).
 
     Returns:
         Processed text optimized for speech, or None if preprocessing fails or is disabled.
@@ -109,27 +108,19 @@ async def preprocess_for_tts(text: str) -> Optional[str]:
         return None
 
     try:
-        logger.info(f"Preprocessing text for TTS: {len(text)} chars")
+        config = config or auxiliary_model_from_env()
+        if config is None:
+            logger.warning("No model configured for TTS preprocessing")
+            return None
 
-        # Get the configured LLM with lower temperature for consistency
-        llm = get_llm(temperature=0.3)
+        logger.info(f"Preprocessing text for TTS with {config.model_id}: {len(text)} chars")
 
-        # Wrap preprocessing prompt with auxiliary reasoning level
-        wrapped_prompt = wrap_system_prompt_with_reasoning(
-            TTS_PREPROCESS_PROMPT,
-            auxiliary=True
+        # The instructions go in the system prompt, the text in the user message
+        processed_text, usage = await complete(
+            config,
+            [{"role": "user", "content": text}],
+            system_prompt=TTS_PREPROCESS_PROMPT
         )
-
-        # Use SystemMessage for instruction, HumanMessage for text
-        messages = [
-            SystemMessage(content=wrapped_prompt),
-            HumanMessage(content=text)
-        ]
-
-        # Invoke the LLM
-        response = await llm.ainvoke(messages)
-
-        processed_text = response.content
 
         if processed_text and isinstance(processed_text, str):
             processed_text = processed_text.strip()

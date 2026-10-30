@@ -6,11 +6,13 @@ pydantic>=2.5.0
 python-multipart>=0.0.6
 httpx>=0.25.2
 
-# LLM Providers
-replicate>=0.22.0
+# LLM Providers (backend/llm: agent loop on the official SDKs)
+openai>=2.14.0
+anthropic>=2.0.0
 
 # Security
 trustme>=1.1.0
+cryptography>=44.0.0  # Fernet encryption of API keys in the model catalog
 
 # Database
 psycopg2-binary>=2.9.9
@@ -22,13 +24,7 @@ sse-starlette>=1.6.0
 # Neo4j Knowledge Graph
 neo4j>=5.0.0
 
-# LangChain & LangGraph (for agent)
-langchain-core>=0.3.0
-langchain-community>=0.3.0
-langgraph>=0.2.0
-langchain-openai>=0.2.0
-langchain-anthropic>=0.2.0
-langsmith>=0.1.131
+# Web search tool
 tavily-python>=0.5.0
 
 # Document Processing

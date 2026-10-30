@@ -6,9 +6,13 @@ Generates concise conversation titles based on the first user message.
 
 import logging
 from typing import Optional
-from langchain_core.messages import HumanMessage, SystemMessage
+
+from ..llm import ModelConfig, complete
+from ..llm.types import auxiliary_model_from_env
 
 logger = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = "You generate concise conversation titles."
 
 TITLE_PROMPT = """Generate a short title (3-6 words) for a conversation starting with this message.
 Return ONLY the title. No quotes, no ending punctuation.
@@ -18,7 +22,8 @@ Message: {message}"""
 
 async def generate_conversation_title(
     first_message: str,
-    fallback_title: Optional[str] = None
+    fallback_title: Optional[str] = None,
+    config: Optional[ModelConfig] = None
 ) -> str:
     """
     Generate a conversation title using the LLM.
@@ -27,6 +32,8 @@ async def generate_conversation_title(
         first_message: The user's first message in the conversation.
         fallback_title: Optional fallback if generation fails.
                        Defaults to truncated first_message.
+        config: The model to use. Defaults to the environment model
+                (with AUXILIARY_REASONING_LEVEL as its reasoning effort).
 
     Returns:
         Generated title (3-6 words) or fallback on failure.
@@ -35,29 +42,23 @@ async def generate_conversation_title(
         fallback_title = _truncate_title(first_message)
 
     try:
-        from .llm_provider import get_llm, wrap_system_prompt_with_reasoning
+        config = config or auxiliary_model_from_env()
+        if config is None:
+            logger.warning("No model configured for title generation, using fallback")
+            return fallback_title
 
-        llm = get_llm(temperature=0.3)
-
-        # Wrap system message with auxiliary reasoning level
-        wrapped_system_msg = wrap_system_prompt_with_reasoning(
-            "You generate concise conversation titles.",
-            auxiliary=True
+        title, usage = await complete(
+            config,
+            [{"role": "user", "content": TITLE_PROMPT.format(message=first_message[:500])}],
+            system_prompt=SYSTEM_PROMPT
         )
-
-        messages = [
-            SystemMessage(content=wrapped_system_msg),
-            HumanMessage(content=TITLE_PROMPT.format(message=first_message[:500]))
-        ]
-
-        response = await llm.ainvoke(messages)
-        title = _sanitize_title(response.content.strip())
+        title = _sanitize_title(title.strip())
 
         if len(title) < 2:
             logger.warning("Generated title too short, using fallback")
             return fallback_title
 
-        logger.info(f"Generated conversation title: {title}")
+        logger.info(f"Generated conversation title with {config.model_id}: {title}")
         return title
 
     except Exception as e:
@@ -80,6 +81,8 @@ def _truncate_title(message: str, max_len: int = 50) -> str:
 
 def _sanitize_title(title: str) -> str:
     """Clean up generated title."""
+    # Use the first line only; some models add an explanation
+    title = title.splitlines()[0] if title else title
     # Remove surrounding quotes if present
     title = title.strip('"\'')
     # Remove trailing punctuation

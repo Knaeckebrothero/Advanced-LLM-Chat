@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..config import FILES_DIR, MODEL_RECEIVE_IMAGES, MODEL_RECEIVE_IMAGES_PDF
+from ..config import FILES_DIR, MODEL_RECEIVE_IMAGES_PDF
 from .file_utils import get_file_path, SUPPORTED_AUDIO_TYPES, is_audio
 
 logger = logging.getLogger(__name__)
@@ -22,11 +22,6 @@ SUPPORTED_IMAGE_TYPES = {
     'image/gif': True,
     'image/webp': True,
 }
-
-
-def is_image_processing_enabled() -> bool:
-    """Check if image processing is enabled via environment variable."""
-    return MODEL_RECEIVE_IMAGES
 
 
 def get_mime_type(file_path: Path) -> str:
@@ -97,16 +92,16 @@ def prepare_image_for_llm(file_id: str, mime_type: Optional[str] = None) -> Opti
     """
     Prepare an image for inclusion in LLM messages.
 
+    Only call this for models that support vision (ModelConfig.supports_vision);
+    text-only models get a placeholder and the get_file_content tool instead.
+
     Args:
         file_id: The file ID of the image.
         mime_type: Optional MIME type hint.
 
     Returns:
-        Dictionary with image content for LLM, or None if failed.
+        An OpenAI-format image_url content part, or None if failed.
     """
-    if not is_image_processing_enabled():
-        return None
-
     result = read_image_as_base64(file_id)
     if not result:
         return None
@@ -171,8 +166,8 @@ SUPPORTED_DOCUMENT_TYPES = {
 
 
 def is_pdf_page_images_enabled() -> bool:
-    """Check if PDF page images should be sent to the model."""
-    return MODEL_RECEIVE_IMAGES_PDF and MODEL_RECEIVE_IMAGES
+    """Check if PDF page images should be sent to vision models (MODEL_RECEIVE_IMAGES_PDF)."""
+    return MODEL_RECEIVE_IMAGES_PDF
 
 
 def is_document(mime_type: str) -> bool:
@@ -216,7 +211,12 @@ def extract_document_attachments(content: dict | str) -> list[dict]:
     return documents
 
 
-def prepare_document_for_llm(file_id: str, mime_type: str, name: str) -> Optional[dict]:
+def prepare_document_for_llm(
+    file_id: str,
+    mime_type: str,
+    name: str,
+    include_page_images: bool = False
+) -> Optional[dict]:
     """
     Prepare document content for inclusion in LLM messages.
 
@@ -224,6 +224,7 @@ def prepare_document_for_llm(file_id: str, mime_type: str, name: str) -> Optiona
         file_id: The file ID of the document.
         mime_type: MIME type of the document.
         name: Filename for context.
+        include_page_images: Add the rendered PDF pages as images (vision models only).
 
     Returns:
         Dictionary with text content and optionally images, or None if failed.
@@ -242,7 +243,7 @@ def prepare_document_for_llm(file_id: str, mime_type: str, name: str) -> Optiona
         result['text'] = text_content
 
     # For PDFs, optionally include page images
-    if mime_type.lower() == 'application/pdf' and is_pdf_page_images_enabled():
+    if mime_type.lower() == 'application/pdf' and include_page_images:
         page_paths = get_pdf_page_paths(file_id)
         for page_path in page_paths:
             try:
