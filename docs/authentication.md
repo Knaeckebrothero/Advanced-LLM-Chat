@@ -55,7 +55,7 @@ The backend reaches the provider for the metadata, the signing keys and the toke
 
 ## Option 1: the bundled Keycloak (docker compose)
 
-`docker/docker-compose.keycloak.yml` adds Keycloak (with its own Postgres) to either compose file, imports the realm `llm-chat` from `docker/keycloak/llm-chat-realm.json` on its first start, and sets the backend to `AUTH_MODE=oidc` with it:
+`docker/docker-compose.keycloak.yml` adds Keycloak (with its own Postgres) to either compose file, imports the realm `llm-chat` from `helm/advanced-llm-chat/files/llm-chat-realm.json` on its first start, and sets the backend to `AUTH_MODE=oidc` with it:
 
 ```bash
 # docker/.env

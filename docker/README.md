@@ -9,7 +9,7 @@ This directory contains the Docker configuration for containerizing both the Ang
 - **nginx.conf**: Nginx configuration optimized for serving Angular SPA
 - **docker-compose.yml**: Docker Compose configuration for running both services
 - **docker-compose.keycloak.yml**: Optional Keycloak for logging in, added to either compose file (see [Login](#login))
-- **keycloak/llm-chat-realm.json**: The Keycloak realm it imports on its first start
+  (the realm it imports on its first start is `helm/advanced-llm-chat/files/llm-chat-realm.json`)
 
 ## Prerequisites
 

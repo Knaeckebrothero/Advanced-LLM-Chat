@@ -51,12 +51,12 @@ services:
       # The first admin of the Keycloak console (realm "master")
       - KC_BOOTSTRAP_ADMIN_USERNAME=admin
       - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD in docker/.env}
-      # Filled into the realm file (keycloak/llm-chat-realm.json) when it's imported
+      # Filled into the realm file (shared with the Helm chart) when it's imported
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET in docker/.env}
       - OIDC_REDIRECT_URI=${API_URL:-https://localhost:8443}/api/auth/oidc/callback
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-8080}}
     volumes:
-      - ./keycloak/llm-chat-realm.json:/opt/keycloak/data/import/llm-chat-realm.json:ro
+      - ${KEYCLOAK_REALM_FILE:-../helm/advanced-llm-chat/files/llm-chat-realm.json}:/opt/keycloak/data/import/llm-chat-realm.json:ro
     depends_on:
       keycloak-db:
         condition: service_healthy
