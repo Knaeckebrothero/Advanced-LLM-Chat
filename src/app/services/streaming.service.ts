@@ -3,19 +3,20 @@ import { Injectable } from '@angular/core';
 import { Observable, Subscriber } from 'rxjs';
 import { environment } from '../environments/environment';
 import { AgentStep } from '../data/objects/message';
+import { IMessageUsage } from '../data/models/catalog.model';
 import { ApiService } from './api.service';
 
 /**
  * Types of events that can be received from the SSE stream
  */
-export type StreamEventType = 'message_start' | 'step' | 'token' | 'done' | 'error';
+export type StreamEventType = 'message_start' | 'step' | 'step_delta' | 'token' | 'done' | 'error';
 
 /**
  * Represents an event from the SSE stream
  */
 export interface StreamEvent {
   type: StreamEventType;
-  data: MessageStartEventData | AgentStep | string | DoneEventData | ErrorEventData;
+  data: MessageStartEventData | AgentStep | StepDeltaEventData | string | DoneEventData | ErrorEventData;
 }
 
 /**
@@ -28,6 +29,17 @@ export interface MessageStartEventData {
   roleName: string;
   time: number;
   type: 'agent';
+  modelId?: number | null;  // null for the environment model
+  modelName?: string | null;
+}
+
+/**
+ * Data payload for 'step_delta' events: text appended to the content of an earlier step
+ * (the model's reasoning as it streams in)
+ */
+export interface StepDeltaEventData {
+  id: string;
+  delta: string;
 }
 
 /**
@@ -36,6 +48,9 @@ export interface MessageStartEventData {
 export interface DoneEventData {
   messageId: number;
   conversationId: string;
+  modelId?: number | null;
+  modelName?: string | null;
+  usage?: IMessageUsage | null;
 }
 
 /**
@@ -65,16 +80,18 @@ export class StreamingService {
    *
    * @param conversationId - The ID of the conversation to generate a response for
    * @param aiParticipant - The name of the AI participant (default: 'Assistant')
+   * @param modelId - Optional catalog model to answer with instead of the conversation's model
    * @returns An Observable that emits StreamEvent objects
    */
   streamAgentResponse(
     conversationId: string,
-    aiParticipant: string = 'Assistant'
+    aiParticipant: string = 'Assistant',
+    modelId?: number
   ): Observable<StreamEvent> {
     return new Observable(observer => {
       const controller = new AbortController();
 
-      this.initiateStream(conversationId, aiParticipant, observer, controller.signal);
+      this.initiateStream(conversationId, aiParticipant, modelId, observer, controller.signal);
 
       // Cleanup function - called when the subscription is unsubscribed
       return () => {
@@ -89,6 +106,7 @@ export class StreamingService {
   private async initiateStream(
     conversationId: string,
     aiParticipant: string,
+    modelId: number | undefined,
     observer: Subscriber<StreamEvent>,
     signal: AbortSignal
   ): Promise<void> {
@@ -114,7 +132,9 @@ export class StreamingService {
         credentials: 'include',
         body: JSON.stringify({
           conversationId,
-          aiParticipant
+          aiParticipant,
+          // Only sent to answer with another model than the conversation's
+          ...(modelId !== undefined && { modelId })
         }),
         signal,
       });
@@ -202,11 +222,15 @@ export class StreamingService {
           return { type, data };
 
         case 'step':
-          // Step events are JSON AgentStep objects
+          // Step events are JSON AgentStep objects; a step with a known id replaces the earlier one
           return { type, data: JSON.parse(data) as AgentStep };
 
+        case 'step_delta':
+          // Text to append to the content of an earlier step
+          return { type, data: JSON.parse(data) as StepDeltaEventData };
+
         case 'done':
-          // Done events contain messageId and conversationId
+          // Done events contain messageId, conversationId, the model and its usage
           return { type, data: JSON.parse(data) as DoneEventData };
 
         case 'error':

@@ -1,7 +1,7 @@
 // src/app/services/chat-state.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, of, Subscription } from 'rxjs';
-import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
+import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout, take } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
 import { SyncEngineService } from '../repositories/sync-engine.service';
@@ -13,11 +13,32 @@ import { AuthService } from '../auth/auth.service';
 import { SettingsStateService } from './settings-state.service';
 import { UIStateService } from './ui-state.service';
 import { NotificationService } from './notification.service';
-import { StreamingService, StreamEvent, MessageStartEventData, ErrorEventData } from './streaming.service';
+import {
+  StreamingService,
+  StreamEvent,
+  MessageStartEventData,
+  ErrorEventData,
+  StepDeltaEventData,
+  DoneEventData
+} from './streaming.service';
+import { CatalogService } from './catalog.service';
+import {
+  IConversationSelection,
+  IPublicModel,
+  IPublicPersona,
+  PersonaValues
+} from '../data/models/catalog.model';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { AppSettings } from '../models/settings.model';
+
+/** Model and persona for a new conversation, kept until it is created with the first message. */
+interface DraftSelection extends IConversationSelection {
+  modelPicked: boolean;  // The user picked the model (a persona's default model then doesn't override it)
+}
+
+const EMPTY_DRAFT: DraftSelection = { modelId: null, personaId: null, personaValues: null, modelPicked: false };
 
 export interface ChatState {
   activeConversation: Conversation | null;
@@ -48,6 +69,10 @@ export class ChatStateService implements OnDestroy {
   private isStreaming$ = new BehaviorSubject<boolean>(false);
   private streamingSubscription: Subscription | null = null;
 
+  // Model catalog selection
+  private draftSelection$ = new BehaviorSubject<DraftSelection>(EMPTY_DRAFT);
+  private modelPickedIn = new Set<string>();  // Conversations whose model the user picked in this session
+
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
     switchMap(id => {
@@ -76,6 +101,42 @@ export class ChatStateService implements OnDestroy {
       }
       return timeDiff;
     })),
+    shareReplay(1)
+  );
+
+  /** Model and persona of the active conversation (the draft for a new conversation). */
+  public selection$: Observable<IConversationSelection> = combineLatest([
+    this.activeConversation$,
+    this.draftSelection$
+  ]).pipe(
+    map(([conversation, draft]) => {
+      if (!conversation || conversation.id === '0') {
+        const { modelPicked, ...selection } = draft;
+        return selection;
+      }
+      return conversation.selection;
+    }),
+    shareReplay(1)
+  );
+
+  /** The catalog model that will answer in the active conversation; null without a catalog. */
+  public effectiveModel$: Observable<IPublicModel | null> = combineLatest([
+    this.selection$,
+    this.catalogService.models$,
+    this.settingsState.settings$
+  ]).pipe(
+    map(([selection, models, settings]) =>
+      this.catalogService.resolveModel(selection.modelId, settings?.defaultModelId, models)
+    ),
+    shareReplay(1)
+  );
+
+  /** The persona of the active conversation, if it is (still) in the catalog. */
+  public activePersona$: Observable<IPublicPersona | null> = combineLatest([
+    this.selection$,
+    this.catalogService.personas$
+  ]).pipe(
+    map(([selection, personas]) => personas.find(p => p.id === selection.personaId) ?? null),
     shareReplay(1)
   );
 
@@ -133,7 +194,8 @@ export class ChatStateService implements OnDestroy {
     private notificationService: NotificationService,
     private streamingService: StreamingService,
     private http: HttpClient,
-    private dbService: DBService
+    private dbService: DBService,
+    private catalogService: CatalogService
   ) {
     this.initializeService();
     this.listenToAuthChanges();
@@ -200,6 +262,8 @@ export class ChatStateService implements OnDestroy {
    * Create a new conversation (not saved until first message)
    */
   async createNewConversation(): Promise<void> {
+    // A new conversation starts with the default model and no persona
+    this.draftSelection$.next(EMPTY_DRAFT);
     this.isNewConversation$.next(true);
     this.activeConversationId$.next('0');
     this.uiState.setActiveConversation('0');
@@ -420,14 +484,36 @@ export class ChatStateService implements OnDestroy {
         message.id = startData.messageId;
         message.time = new Date(startData.time * 1000);
         message.roleName = startData.roleName;
+        // Which model answers (modelId null = the environment model)
+        if (startData.modelId !== undefined) message.content.modelId = startData.modelId;
+        if (startData.modelName !== undefined) message.content.modelName = startData.modelName;
         // Status remains 'thinking' until we get steps or tokens
         break;
 
-      case 'step':
-        // Add the new step to the message
-        message.content.steps.push(event.data as AgentStep);
-        message.content.status = 'thinking';
+      case 'step': {
+        // A step with a known id replaces the earlier one (e.g. the reasoning step, sent
+        // empty at its start and complete at its end); otherwise it is a new step
+        const step = event.data as AgentStep;
+        const steps = message.content.steps;
+        const index = steps.findIndex(s => s.id === step.id);
+        if (index >= 0) {
+          steps[index] = step;
+        } else {
+          steps.push(step);
+          message.content.status = 'thinking';
+        }
         break;
+      }
+
+      case 'step_delta': {
+        // Live reasoning text for an earlier step
+        const delta = event.data as StepDeltaEventData;
+        const step = message.content.steps.find(s => s.id === delta.id);
+        if (step) {
+          step.content = (step.content || '') + delta.delta;
+        }
+        break;
+      }
 
       case 'token':
         // Append the token to the response content
@@ -435,10 +521,15 @@ export class ChatStateService implements OnDestroy {
         message.content.status = 'responding';
         break;
 
-      case 'done':
+      case 'done': {
         // Mark as complete (ID should already be set from message_start)
+        const doneData = event.data as DoneEventData;
+        if (doneData.modelId !== undefined) message.content.modelId = doneData.modelId;
+        if (doneData.modelName !== undefined) message.content.modelName = doneData.modelName;
+        if (doneData.usage !== undefined) message.content.usage = doneData.usage;
         message.content.status = 'complete';
         break;
+      }
 
       case 'error':
         // Handle error
@@ -540,8 +631,9 @@ export class ChatStateService implements OnDestroy {
   /**
    * Internal helper to start streaming an AI response.
    * Creates a placeholder agent message and streams the response.
+   * @param modelId - Answer with this catalog model instead of the conversation's model
    */
-  private async _streamResponse(conversationId: string): Promise<void> {
+  private async _streamResponse(conversationId: string, modelId?: number): Promise<void> {
     // Create placeholder agent message for streaming
     const agentMessage = Message.createAgent(conversationId, [], '', 'thinking');
     this.streamingMessage$.next(agentMessage);
@@ -554,7 +646,7 @@ export class ChatStateService implements OnDestroy {
 
     // Start streaming
     this.streamingSubscription = this.streamingService
-      .streamAgentResponse(conversationId, 'Assistant')
+      .streamAgentResponse(conversationId, 'Assistant', modelId)
       .subscribe({
         next: (event) => this.handleStreamEvent(event, agentMessage),
         error: (error) => this.handleStreamError(error, agentMessage),
@@ -735,8 +827,9 @@ export class ChatStateService implements OnDestroy {
   /**
    * Regenerate a message using streaming.
    * Deletes the old AI message and streams a new response.
+   * @param modelId - Answer with this catalog model instead of the conversation's model (once)
    */
-  async regenerateMessage(message: Message): Promise<void> {
+  async regenerateMessage(message: Message, modelId?: number): Promise<void> {
     if (!message.id || !message.conversationId) {
       throw new Error('Message ID and conversation ID are required');
     }
@@ -753,7 +846,7 @@ export class ChatStateService implements OnDestroy {
       await this.messageRepository.delete(message.id);
 
       // Start streaming a new response (backend will use the last user message)
-      await this._streamResponse(message.conversationId);
+      await this._streamResponse(message.conversationId, modelId);
     } catch (error) {
       console.error('Error regenerating message:', error);
       this.error$.next('Failed to regenerate message');
@@ -877,6 +970,7 @@ export class ChatStateService implements OnDestroy {
   private async createConversationFromFirstMessage(content: string): Promise<void> {
     const backendAvailable = await this.isBackendAvailable();
     let conversation: Conversation;
+    const selection = this.resolveDraftSelection();
 
     // Generate fallback title (truncated message)
     const fallbackTitle = content.length > 50
@@ -894,6 +988,7 @@ export class ChatStateService implements OnDestroy {
     } else {
       // Create conversation on server with fallback title (fast)
       const newConvData = new Conversation('', 0, fallbackTitle, ['user', 'Assistant']);
+      this.applySelection(newConvData, selection);
       try {
         conversation = await this.apiService.createConversation(newConvData);
 
@@ -911,10 +1006,96 @@ export class ChatStateService implements OnDestroy {
       }
     }
 
+    // Keep the selection locally if the backend doesn't return it (no catalog yet, or a local-only conversation)
+    if (conversation.modelId === undefined && conversation.personaId === undefined) {
+      this.applySelection(conversation, selection);
+    }
+    if (this.draftSelection$.getValue().modelPicked) {
+      this.modelPickedIn.add(conversation.id);
+    }
+
     await this.conversationRepository.save(conversation);
     this.isNewConversation$.next(false);
     this.activeConversationId$.next(conversation.id);
     this.uiState.setActiveConversation(conversation.id);
+  }
+
+  // =========================================================================
+  // Model catalog selection
+  // =========================================================================
+
+  /** Pick the model for the active conversation (null = the user's default model). */
+  async selectModel(modelId: number | null): Promise<void> {
+    const conversationId = this.activeConversationId$.getValue();
+    if (!conversationId || conversationId === '0') {
+      this.draftSelection$.next({ ...this.draftSelection$.getValue(), modelId, modelPicked: true });
+      return;
+    }
+    this.modelPickedIn.add(conversationId);
+    await this.conversationRepository.updateSelection(conversationId, { modelId });
+  }
+
+  /**
+   * Pick the persona for the active conversation (null = no persona), with the values for its
+   * variables. A persona's default model is used unless the user picked a model for this conversation.
+   */
+  async selectPersona(persona: IPublicPersona | null, values: PersonaValues | null = null): Promise<void> {
+    const changes: Partial<IConversationSelection> = {
+      personaId: persona ? persona.id : null,
+      personaValues: persona && values && Object.keys(values).length > 0 ? values : null
+    };
+    if (persona?.defaultModelId && this.catalogService.getModel(persona.defaultModelId) && !this.userPickedModel()) {
+      changes.modelId = persona.defaultModelId;
+    }
+
+    const conversationId = this.activeConversationId$.getValue();
+    if (!conversationId || conversationId === '0') {
+      this.draftSelection$.next({ ...this.draftSelection$.getValue(), ...changes });
+      return;
+    }
+    await this.conversationRepository.updateSelection(conversationId, changes);
+  }
+
+  /** Whether the user chose the model of the active conversation themselves. */
+  private userPickedModel(): boolean {
+    const conversationId = this.activeConversationId$.getValue();
+    if (!conversationId || conversationId === '0') {
+      return this.draftSelection$.getValue().modelPicked;
+    }
+    if (this.modelPickedIn.has(conversationId)) {
+      return true;
+    }
+    // A conversation that uses the default model counts as "not picked"
+    let modelId: number | null | undefined;
+    this.conversationRepository.getById(conversationId).pipe(take(1)).subscribe(c => modelId = c?.modelId);
+    const defaultModelId = this.settingsState.getCurrentSettings()?.defaultModelId ?? null;
+    return modelId !== null && modelId !== undefined && modelId !== defaultModelId;
+  }
+
+  /**
+   * The selection a new conversation is created with: the picked or the default model, so the
+   * conversation keeps its model when the default changes later. Undefined without a catalog,
+   * so the create request stays as it was.
+   */
+  private resolveDraftSelection(): IConversationSelection | undefined {
+    const draft = this.draftSelection$.getValue();
+    if (!this.catalogService.hasModels && this.catalogService.personas.length === 0) {
+      return undefined;
+    }
+    const defaultModelId = this.settingsState.getCurrentSettings()?.defaultModelId ?? null;
+    const model = this.catalogService.resolveModel(draft.modelId, defaultModelId);
+    return {
+      modelId: model ? model.id : null,
+      personaId: draft.personaId,
+      personaValues: draft.personaValues
+    };
+  }
+
+  private applySelection(conversation: Conversation, selection: IConversationSelection | undefined): void {
+    if (!selection) return;
+    conversation.modelId = selection.modelId;
+    conversation.personaId = selection.personaId;
+    conversation.personaValues = selection.personaValues;
   }
 
   /**
@@ -924,7 +1105,7 @@ export class ChatStateService implements OnDestroy {
     this.apiService.generateConversationTitle(conversationId, firstMessage)
       .then(async (updatedConversation) => {
         // Update local cache and IndexedDB with the new title (backend already updated)
-        await this.conversationRepository.save(updatedConversation);
+        await this.conversationRepository.saveFromServer(updatedConversation);
         console.log(`Conversation title updated to: ${updatedConversation.name}`);
       })
       .catch((error) => {
@@ -973,6 +1154,8 @@ export class ChatStateService implements OnDestroy {
   resetState(): void {
     console.log('Resetting chat state...');
     // Reset to new conversation state
+    this.draftSelection$.next(EMPTY_DRAFT);
+    this.modelPickedIn.clear();
     this.activeConversationId$.next('0');
     this.isNewConversation$.next(true);
     this.isLoading$.next(false);

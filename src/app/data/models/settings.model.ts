@@ -6,6 +6,7 @@
 export interface IAppSettings {
   theme: string;
   language: string;
+  defaultModelId?: number | null;  // Catalog model for new conversations
 }
 
 export interface IAppSettingsWithMeta extends IAppSettings {

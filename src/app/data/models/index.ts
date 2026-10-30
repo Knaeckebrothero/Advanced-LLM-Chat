@@ -13,3 +13,4 @@ export * from './file.model';
 export * from './api.model';
 export * from './recording.model';
 export * from './device.model';
+export * from './catalog.model';

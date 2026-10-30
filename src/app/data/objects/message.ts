@@ -222,7 +222,8 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
         steps: data.steps || [],
         content: data.finalResponse || data.content || '',
         status: data.status || 'complete',
-        error: data.error
+        error: data.error,
+        ...Message.readModelFields(data)
       });
     } else {
       let attachments: IFilePreview[] | undefined;
@@ -245,6 +246,21 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
         attachments
       );
     }
+  }
+
+  /**
+   * Read the model and usage fields of an agent message (API response or stored content).
+   * Fields that are missing stay undefined, so older messages keep their shape.
+   */
+  private static readModelFields(data: any): Pick<IAgentContent, 'modelId' | 'modelName' | 'usage'> {
+    const fields: Pick<IAgentContent, 'modelId' | 'modelName' | 'usage'> = {};
+    if (!data) return fields;
+    if (data.modelId !== undefined) fields.modelId = data.modelId;
+    if (data.modelName !== undefined) fields.modelName = data.modelName;
+    if (data.usage !== undefined) {
+      fields.usage = typeof data.usage === 'string' ? JSON.parse(data.usage) : data.usage;
+    }
+    return fields;
   }
 
   toApiSend() {
@@ -494,7 +510,8 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
             steps: data.content.steps || [],
             content: data.content.content || data.content.finalResponse || '',
             status: data.content.status || 'complete',
-            error: data.content.error
+            error: data.content.error,
+            ...Message.readModelFields(data.content)
           });
         case 'text':
         default:

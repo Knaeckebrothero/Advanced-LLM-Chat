@@ -20,8 +20,21 @@ interface User {
   picture?: string;
   roles?: string[];
   permissions?: string[];
+  // Catalog admin (GET /api/auth/me); is_admin is accepted as well, like the snake_case user fields
+  isAdmin?: boolean;
+  is_admin?: boolean;
 }
 // TODO: Change this to use the user interface!
+
+/** GET /api/auth/me: the user, and the admin flag (top level and/or in the user object). */
+interface MeResponse {
+  user: User;
+  isAdmin?: boolean;
+}
+
+function withAdminFlag(response: MeResponse): User {
+  return { ...response.user, isAdmin: response.user.isAdmin ?? response.isAdmin };
+}
 
 interface LoginProvider {
   type: 'mock' | 'oauth' | 'saml';  // Extensible for future
@@ -36,6 +49,10 @@ export class AuthService {
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
   public isGuest = false;
+
+  // Admins manage the model catalog (users in the backend's ADMIN_EMAILS; never guests)
+  private isAdminSubject = new BehaviorSubject<boolean>(false);
+  public isAdmin$ = this.isAdminSubject.asObservable();
 
   private guestLimitReachedSubject = new BehaviorSubject<boolean>(false);
   public guestLimitReached$ = this.guestLimitReachedSubject.asObservable();
@@ -106,7 +123,7 @@ export class AuthService {
       this.apiService.extractCsrfToken(response);
 
       this.isGuest = true;
-      this.currentUserSubject.next(response.body!.user);
+      this.setCurrentUser(response.body!.user);
       console.log('AuthService: Guest session created successfully');
     } catch (error) {
       console.error('AuthService: Guest login failed, creating offline guest:', error);
@@ -117,7 +134,7 @@ export class AuthService {
         name: 'Guest (Offline)'
       };
       this.isGuest = true;
-      this.currentUserSubject.next(offlineGuest);
+      this.setCurrentUser(offlineGuest);
     }
   }
 
@@ -130,7 +147,7 @@ export class AuthService {
     console.log('AuthService: checkAuthStatus() called.');
     try {
       const response = await lastValueFrom(
-        this.http.get<{ user: User }>(
+        this.http.get<MeResponse>(
           `${this.baseUrl}/api/auth/me`,
           { withCredentials: true, observe: 'response' }
         )
@@ -141,18 +158,18 @@ export class AuthService {
       this.apiService.extractCsrfToken(response);
 
       if (response && response.body && response.body.user) {
-        this.currentUserSubject.next(response.body.user);
         this.isGuest = response.body.user.email.includes('guest');
+        this.setCurrentUser(withAdminFlag(response.body));
         console.log('AuthService: currentUserSubject updated with user:', response.body.user);
         return true;
       } else {
         console.log('AuthService: /api/auth/me response did not contain a valid user object.');
-        this.currentUserSubject.next(null);
+        this.setCurrentUser(null);
         return false;
       }
     } catch (error) {
       console.error('AuthService: Error during checkAuthStatus:', error);
-      this.currentUserSubject.next(null);
+      this.setCurrentUser(null);
       return false;
     }
   }
@@ -188,9 +205,12 @@ export class AuthService {
       // Extract CSRF token
       this.apiService.extractCsrfToken(response);
 
-      this.currentUserSubject.next(response.body!.user);
       this.isGuest = false;
+      this.setCurrentUser(response.body!.user);
       this.router.navigate(['/']);
+
+      // The login response may not carry the admin flag; /me does
+      this.refreshAdminStatus();
 
       // Trigger sync after successful login
       console.log('Triggering sync after login...');
@@ -223,9 +243,10 @@ export class AuthService {
         this.http.post<{ user: User }>(`${this.baseUrl}/api/auth/callback`, params)
       );
 
-      this.currentUserSubject.next(response.user);
       this.isGuest = false;
+      this.setCurrentUser(response.user);
       this.router.navigate(['/']);
+      this.refreshAdminStatus();
     } catch (error) {
       console.error('Auth callback failed:', error);
       this.router.navigate(['/login'], { queryParams: { error: 'auth_failed' } });
@@ -268,6 +289,36 @@ export class AuthService {
 
   getCurrentUser(): User | null {
     return this.currentUserSubject.value;
+  }
+
+  /** Whether the current user may manage the model catalog. */
+  get isAdmin(): boolean {
+    return this.isAdminSubject.value;
+  }
+
+  private setCurrentUser(user: User | null): void {
+    // Update the admin flag first, so subscribers of currentUser$ see a consistent state
+    this.isAdminSubject.next(this.readIsAdmin(user));
+    this.currentUserSubject.next(user);
+  }
+
+  private readIsAdmin(user: User | null): boolean {
+    if (!user || this.isGuest) return false;
+    return user.isAdmin === true || user.is_admin === true;
+  }
+
+  /** Re-read the admin flag from /api/auth/me (login responses may leave it out). */
+  private async refreshAdminStatus(): Promise<void> {
+    try {
+      const response = await lastValueFrom(
+        this.http.get<MeResponse>(`${this.baseUrl}/api/auth/me`, { withCredentials: true })
+      );
+      if (response?.user) {
+        this.isAdminSubject.next(this.readIsAdmin(withAdminFlag(response)));
+      }
+    } catch (error) {
+      console.warn('AuthService: Could not refresh the admin flag:', error);
+    }
   }
 
   isAuthenticated(): boolean {

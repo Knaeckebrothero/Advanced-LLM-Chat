@@ -6,6 +6,25 @@ import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
 import { AppSettings } from '../models/settings.model';
 import { FilePreview } from '../data/objects/file-preview';
+import {
+  ICatalogFile,
+  IConversationSelection,
+  IFetchModelsResponse,
+  IImportResult,
+  IModelCreate,
+  IModelOut,
+  IModelTestResult,
+  IModelUpdate,
+  IPersonaCreate,
+  IPersonaOut,
+  IPersonaUpdate,
+  IProviderCreate,
+  IProviderOut,
+  IProviderUpdate,
+  IPublicModel,
+  IPublicPersona,
+} from '../data/models/catalog.model';
+import { IApiConversationCreate, IApiConversationUpdate } from '../data/models/api.model';
 
 /**
  * Response from file upload endpoint
@@ -415,10 +434,13 @@ export class ApiService {
     }
   }
 
-  // Create a new conversation
+  // Create a new conversation (with its model and persona, if picked)
   async createConversation(conversation: Conversation): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/create`;
-    const body = { name: conversation.name, participants: conversation.participants };
+    const body: IApiConversationCreate = { name: conversation.name, participants: conversation.participants };
+    if (conversation.modelId !== undefined) body.modelId = conversation.modelId;
+    if (conversation.personaId !== undefined) body.personaId = conversation.personaId;
+    if (conversation.personaValues !== undefined) body.personaValues = conversation.personaValues;
     try {
       const responseData = await lastValueFrom(
         this.http.post<any>(endpoint, body, this.getHttpOptions())
@@ -445,10 +467,11 @@ export class ApiService {
     }
   }
 
-  // Update conversation name
-  async updateConversationName(id: string, name: string): Promise<Conversation> {
+  // Update conversation name. The current selection is sent along when known, so a backend
+  // that treats missing fields as null doesn't reset the model and persona.
+  async updateConversationName(id: string, name: string, selection?: IConversationSelection): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/${id}`;
-    const body = { name };
+    const body: IApiConversationUpdate = { name, ...selection };
     try {
       const responseData = await lastValueFrom(
         this.http.patch<any>(endpoint, body, this.getHttpOptions())
@@ -456,6 +479,31 @@ export class ApiService {
       return Conversation.fromApiResponse(responseData);
     } catch (error) {
       console.error('Error updating conversation:', error);
+      throw error;
+    }
+  }
+
+  // Update a conversation's model and persona. The name is sent too, since older
+  // backends require it in the PATCH body.
+  async updateConversationSelection(
+    id: string,
+    name: string,
+    selection: IConversationSelection
+  ): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/${id}`;
+    const body: IApiConversationUpdate = {
+      name,
+      modelId: selection.modelId,
+      personaId: selection.personaId,
+      personaValues: selection.personaValues
+    };
+    try {
+      const responseData = await lastValueFrom(
+        this.http.patch<any>(endpoint, body, this.getHttpOptions())
+      );
+      return Conversation.fromApiResponse(responseData);
+    } catch (error) {
+      console.error('Error updating conversation selection:', error);
       throw error;
     }
   }
@@ -527,6 +575,133 @@ export class ApiService {
       console.error('Error generating TTS:', error);
       throw error;
     }
+  }
+
+
+  // =========================================================================
+  // Model catalog: public endpoints (guests get a filtered list)
+  // =========================================================================
+
+  /** Enabled models for the picker. Empty when the catalog is empty (the environment model answers). */
+  async getModels(): Promise<IPublicModel[]> {
+    return await lastValueFrom(
+      this.http.get<IPublicModel[]>(`${this.baseUrl}/api/models`, this.getHttpOptions())
+    ) || [];
+  }
+
+  async getPersonas(): Promise<IPublicPersona[]> {
+    return await lastValueFrom(
+      this.http.get<IPublicPersona[]>(`${this.baseUrl}/api/personas`, this.getHttpOptions())
+    ) || [];
+  }
+
+  // =========================================================================
+  // Model catalog: admin endpoints (403 for everyone else)
+  // =========================================================================
+
+  async getAdminProviders(): Promise<IProviderOut[]> {
+    return await lastValueFrom(
+      this.http.get<IProviderOut[]>(`${this.baseUrl}/api/admin/providers`, this.getHttpOptions())
+    );
+  }
+
+  async createProvider(provider: IProviderCreate): Promise<IProviderOut> {
+    return await lastValueFrom(
+      this.http.post<IProviderOut>(`${this.baseUrl}/api/admin/providers`, provider, this.getHttpOptions())
+    );
+  }
+
+  async updateProvider(id: number, update: IProviderUpdate): Promise<IProviderOut> {
+    return await lastValueFrom(
+      this.http.put<IProviderOut>(`${this.baseUrl}/api/admin/providers/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  /** Deletes the provider and its models. */
+  async deleteProvider(id: number): Promise<void> {
+    await lastValueFrom(
+      this.http.delete(`${this.baseUrl}/api/admin/providers/${id}`, this.getHttpOptions())
+    );
+  }
+
+  /** The provider's own model list (GET /models), with the ones already in the catalog marked. */
+  async fetchProviderModels(id: number): Promise<IFetchModelsResponse> {
+    return await lastValueFrom(
+      this.http.post<IFetchModelsResponse>(
+        `${this.baseUrl}/api/admin/providers/${id}/fetch-models`, {}, this.getHttpOptions()
+      )
+    );
+  }
+
+  async getAdminModels(): Promise<IModelOut[]> {
+    return await lastValueFrom(
+      this.http.get<IModelOut[]>(`${this.baseUrl}/api/admin/models`, this.getHttpOptions())
+    );
+  }
+
+  async createModel(model: IModelCreate): Promise<IModelOut> {
+    return await lastValueFrom(
+      this.http.post<IModelOut>(`${this.baseUrl}/api/admin/models`, model, this.getHttpOptions())
+    );
+  }
+
+  async updateModel(id: number, update: IModelUpdate): Promise<IModelOut> {
+    return await lastValueFrom(
+      this.http.put<IModelOut>(`${this.baseUrl}/api/admin/models/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  async deleteModel(id: number): Promise<void> {
+    await lastValueFrom(
+      this.http.delete(`${this.baseUrl}/api/admin/models/${id}`, this.getHttpOptions())
+    );
+  }
+
+  /** Sends a short prompt to the model and reports whether it answered. */
+  async testModel(id: number): Promise<IModelTestResult> {
+    return await lastValueFrom(
+      this.http.post<IModelTestResult>(`${this.baseUrl}/api/admin/models/${id}/test`, {}, this.getHttpOptions())
+    );
+  }
+
+  async getAdminPersonas(): Promise<IPersonaOut[]> {
+    return await lastValueFrom(
+      this.http.get<IPersonaOut[]>(`${this.baseUrl}/api/admin/personas`, this.getHttpOptions())
+    );
+  }
+
+  async createPersona(persona: IPersonaCreate): Promise<IPersonaOut> {
+    return await lastValueFrom(
+      this.http.post<IPersonaOut>(`${this.baseUrl}/api/admin/personas`, persona, this.getHttpOptions())
+    );
+  }
+
+  async updatePersona(id: number, update: IPersonaUpdate): Promise<IPersonaOut> {
+    return await lastValueFrom(
+      this.http.put<IPersonaOut>(`${this.baseUrl}/api/admin/personas/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  async deletePersona(id: number): Promise<void> {
+    await lastValueFrom(
+      this.http.delete(`${this.baseUrl}/api/admin/personas/${id}`, this.getHttpOptions())
+    );
+  }
+
+  /** The catalog file; API keys are only included when asked for. */
+  async exportCatalog(includeKeys: boolean = false): Promise<ICatalogFile> {
+    return await lastValueFrom(
+      this.http.get<ICatalogFile>(
+        `${this.baseUrl}/api/admin/catalog/export?includeKeys=${includeKeys}`, this.getHttpOptions()
+      )
+    );
+  }
+
+  /** Upserts providers, models and personas by name; never deletes. */
+  async importCatalog(file: ICatalogFile): Promise<IImportResult> {
+    return await lastValueFrom(
+      this.http.post<IImportResult>(`${this.baseUrl}/api/admin/catalog/import`, file, this.getHttpOptions())
+    );
   }
 
 }

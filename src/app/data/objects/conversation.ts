@@ -6,7 +6,7 @@
  * Use the ConversationRepository for database operations.
  */
 
-import { IConversation } from '../models';
+import { IConversation, IConversationSelection, PersonaValues } from '../models';
 
 /**
  * Conversation class that implements IConversation interface.
@@ -22,6 +22,12 @@ export class Conversation implements IConversation {
   updatedAt: Date;
   version: number;
   lastModified: number;
+  // Model catalog selection: null = the user's default model / no persona,
+  // undefined = unknown (not sent by the backend)
+  modelId?: number | null;
+  personaId?: number | null;
+  personaValues?: PersonaValues | null;
+  selectionPending?: boolean;
 
   constructor(
     id: string,
@@ -76,6 +82,29 @@ export class Conversation implements IConversation {
   }
 
   // =========================================================================
+  // Model Catalog Selection
+  // =========================================================================
+
+  /** The current selection, with unknown values read as "default model, no persona". */
+  get selection(): IConversationSelection {
+    return {
+      modelId: this.modelId ?? null,
+      personaId: this.personaId ?? null,
+      personaValues: this.personaValues ?? null
+    };
+  }
+
+  private static readSelection(conv: Conversation, data: any): void {
+    if (data.modelId !== undefined) conv.modelId = data.modelId;
+    if (data.personaId !== undefined) conv.personaId = data.personaId;
+    if (data.personaValues !== undefined) {
+      conv.personaValues = typeof data.personaValues === 'string'
+        ? JSON.parse(data.personaValues)
+        : data.personaValues;
+    }
+  }
+
+  // =========================================================================
   // Factory Methods
   // =========================================================================
 
@@ -100,6 +129,7 @@ export class Conversation implements IConversation {
     if (data.hashsum !== undefined) {
       conv.hashsum = data.hashsum;
     }
+    Conversation.readSelection(conv, data);
     return conv;
   }
 
@@ -120,6 +150,10 @@ export class Conversation implements IConversation {
     }
     conv.version = data.version || 1;
     conv.lastModified = data.lastModified || Math.floor(Date.now() / 1000);
+    Conversation.readSelection(conv, data);
+    if (data.selectionPending) {
+      conv.selectionPending = true;
+    }
     return conv;
   }
 
@@ -140,7 +174,11 @@ export class Conversation implements IConversation {
       updatedAt: this.updatedAt.toISOString(),
       version: this.version,
       lastModified: this.lastModified,
-      hashsum: this.hashsum
+      hashsum: this.hashsum,
+      modelId: this.modelId,
+      personaId: this.personaId,
+      personaValues: this.personaValues,
+      selectionPending: this.selectionPending
     };
   }
 }

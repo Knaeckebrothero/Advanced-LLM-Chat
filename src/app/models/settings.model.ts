@@ -9,4 +9,5 @@ export interface AppSettings {
   theme: Theme;
   language: Language;
   lastUpdated: number; // Unix timestamp
+  defaultModelId?: number | null; // Catalog model for new conversations (null = first available)
 }

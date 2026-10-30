@@ -6,6 +6,7 @@
  */
 
 import { IFilePreview } from './file.model';
+import { IMessageUsage } from './catalog.model';
 
 // ============================================================================
 // Core Types
@@ -66,6 +67,10 @@ export interface IAgentContent {
   content: string;  // Response text (unified with ITextContent)
   status: AgentStatus;
   error?: string;
+  // Which catalog model wrote the message (modelId null = the environment model), and its usage
+  modelId?: number | null;
+  modelName?: string | null;
+  usage?: IMessageUsage | null;
 }
 
 export type IMessageContent = ITextContent | IAgentContent;

@@ -33,9 +33,16 @@ export class SettingsRepository {
         remoteSettings &&
         (!localSettings || remoteSettings.lastUpdated > localSettings.lastUpdated)
       ) {
-        const storableSettings = { ...remoteSettings, id: SETTINGS_KEY };
+        // A backend without the model catalog leaves defaultModelId out: keep the local value then
+        const merged: AppSettings = {
+          ...remoteSettings,
+          defaultModelId: remoteSettings.defaultModelId !== undefined
+            ? remoteSettings.defaultModelId
+            : localSettings?.defaultModelId ?? null,
+        };
+        const storableSettings = { ...merged, id: SETTINGS_KEY };
         await db.put('settings', storableSettings);
-        return remoteSettings;
+        return merged;
       }
     } catch (error) {
       console.warn('Could not fetch remote settings. Using local.', error);

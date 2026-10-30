@@ -4,6 +4,7 @@
  */
 
 import { IAgentStep, IAgentContent, IMessageContent } from './message.model';
+import { IMessageUsage, PersonaValues } from './catalog.model';
 
 // ============================================================================
 // Message API Models
@@ -43,6 +44,10 @@ export interface IApiMessageResponse {
   finalResponse?: string;
   status?: string;
   error?: string;
+  // Model and usage (agent messages)
+  modelId?: number | null;
+  modelName?: string | null;
+  usage?: IMessageUsage | null;
 }
 
 // ============================================================================
@@ -52,6 +57,7 @@ export interface IApiMessageResponse {
 export interface IStreamGenerateRequest {
   conversationId: string;
   aiParticipant?: string;
+  modelId?: number;  // Answer with this catalog model instead of the conversation's
 }
 
 export interface IMessageStartEvent {
@@ -60,9 +66,11 @@ export interface IMessageStartEvent {
   roleName: string;
   time: number;
   type: 'agent';
+  modelId?: number | null;  // null for the environment model
+  modelName?: string | null;
 }
 
-export type StreamEventType = 'message_start' | 'step' | 'token' | 'done' | 'error';
+export type StreamEventType = 'message_start' | 'step' | 'step_delta' | 'token' | 'done' | 'error';
 
 // ============================================================================
 // Conversation API Models
@@ -71,6 +79,17 @@ export type StreamEventType = 'message_start' | 'step' | 'token' | 'done' | 'err
 export interface IApiConversationCreate {
   name: string;
   participants: string[];
+  modelId?: number | null;
+  personaId?: number | null;
+  personaValues?: PersonaValues | null;
+}
+
+/** PATCH /api/conversation/{id}. The name is always sent, for backends that still require it. */
+export interface IApiConversationUpdate {
+  name: string;
+  modelId?: number | null;
+  personaId?: number | null;
+  personaValues?: PersonaValues | null;
 }
 
 export interface IApiConversationResponse {
@@ -83,4 +102,7 @@ export interface IApiConversationResponse {
   hashsum: number;
   version: number;
   lastModified?: number;
+  modelId?: number | null;
+  personaId?: number | null;
+  personaValues?: PersonaValues | null;
 }
