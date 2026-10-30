@@ -1,0 +1,192 @@
+<h2 mat-dialog-title>
+  {{ (isNew ? 'catalog.admin.models.addTitle' : 'catalog.admin.models.editTitle') | translate }}
+</h2>
+
+<form [formGroup]="form" (ngSubmit)="save()">
+  <mat-dialog-content class="catalog-dialog-content">
+    <!-- General -->
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.provider' | translate }}</mat-label>
+        <mat-select formControlName="providerId" required>
+          @for (provider of providers; track provider.id) {
+            <mat-option [value]="provider.id">{{ provider.name }}</mat-option>
+          }
+        </mat-select>
+        @if (form.controls['providerId'].hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.sortOrder' | translate }}</mat-label>
+        <input matInput type="number" formControlName="sortOrder" step="10">
+        <mat-hint>{{ 'catalog.admin.models.sortOrderHint' | translate }}</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.displayName' | translate }}</mat-label>
+        <input matInput formControlName="displayName" required placeholder="Kimi K3">
+        @if (form.controls['displayName'].hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.modelId' | translate }}</mat-label>
+        <input matInput formControlName="modelId" required class="code-input" placeholder="kimi-k3">
+        <mat-hint>{{ 'catalog.admin.models.modelIdHint' | translate }}</mat-hint>
+        @if (form.controls['modelId'].hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        }
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.description' | translate }}</mat-label>
+      <input matInput formControlName="description">
+      <mat-hint>{{ 'catalog.admin.models.descriptionHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    <!-- Capabilities -->
+    <h3 class="form-section">{{ 'catalog.admin.models.capabilitiesSection' | translate }}</h3>
+    <div class="toggle-grid">
+      <mat-slide-toggle formControlName="supportsTools">{{ 'catalog.capability.tools' | translate }}</mat-slide-toggle>
+      <mat-slide-toggle formControlName="supportsVision">{{ 'catalog.capability.vision' | translate }}</mat-slide-toggle>
+    </div>
+
+    <div class="form-row form-row--3">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.reasoning' | translate }}</mat-label>
+        <mat-select formControlName="reasoning">
+          @for (mode of reasoningModes; track mode) {
+            <mat-option [value]="mode">{{ ('catalog.reasoning.' + mode) | translate }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.reasoningEffort' | translate }}</mat-label>
+        <input matInput formControlName="reasoningEffort" list="reasoning-effort-options">
+        <datalist id="reasoning-effort-options">
+          @for (effort of effortSuggestions; track effort) {
+            <option [value]="effort"></option>
+          }
+        </datalist>
+        <mat-hint>{{ 'catalog.admin.models.effortHint' | translate }}</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.contextWindow' | translate }}</mat-label>
+        <input matInput type="number" formControlName="contextWindow" min="1">
+        <mat-hint>{{ 'catalog.admin.models.tokensHint' | translate }}</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <div class="toggle-with-hint">
+      <mat-slide-toggle formControlName="reasoningPassback">{{ 'catalog.admin.fields.reasoningPassback' | translate }}</mat-slide-toggle>
+      <p class="toggle-hint">{{ 'catalog.admin.models.passbackHint' | translate }}</p>
+    </div>
+
+    <!-- Request settings -->
+    <h3 class="form-section">{{ 'catalog.admin.models.requestSection' | translate }}</h3>
+    <div class="form-row form-row--3">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.temperature' | translate }}</mat-label>
+        <input matInput type="number" formControlName="temperature" min="0" max="2" step="0.1">
+        <mat-hint>{{ 'catalog.admin.models.defaultHint' | translate }}</mat-hint>
+        @if (form.controls['temperature'].invalid) {
+          <mat-error>{{ 'catalog.admin.validation.range' | translate: { min: 0, max: 2 } }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.topP' | translate }}</mat-label>
+        <input matInput type="number" formControlName="topP" min="0" max="1" step="0.05">
+        <mat-hint>{{ 'catalog.admin.models.defaultHint' | translate }}</mat-hint>
+        @if (form.controls['topP'].invalid) {
+          <mat-error>{{ 'catalog.admin.validation.range' | translate: { min: 0, max: 1 } }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.maxOutputTokens' | translate }}</mat-label>
+        <input matInput type="number" formControlName="maxOutputTokens" min="1">
+        <mat-hint>{{ 'catalog.admin.models.defaultHint' | translate }}</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.extraBody' | translate }}</mat-label>
+      <textarea matInput formControlName="extraBody" rows="3" class="code-input"
+                placeholder='{"provider": {"zdr": true}}'></textarea>
+      <mat-hint>{{ 'catalog.admin.models.extraBodyHint' | translate }}</mat-hint>
+      @if (form.controls['extraBody'].invalid) {
+        <mat-error>{{ 'catalog.admin.validation.jsonObject' | translate }}</mat-error>
+      }
+    </mat-form-field>
+
+    <!-- Pricing and privacy -->
+    <h3 class="form-section">{{ 'catalog.admin.models.pricingSection' | translate }}</h3>
+    <div class="form-row form-row--3">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.inputPrice' | translate }}</mat-label>
+        <input matInput type="number" formControlName="inputPricePerMtok" min="0" step="0.01">
+        <span matTextSuffix>{{ selectedProvider?.currency ?? '' }}</span>
+        <mat-hint>{{ 'catalog.admin.models.priceHint' | translate }}</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.outputPrice' | translate }}</mat-label>
+        <input matInput type="number" formControlName="outputPricePerMtok" min="0" step="0.01">
+        <span matTextSuffix>{{ selectedProvider?.currency ?? '' }}</span>
+        <mat-hint>{{ 'catalog.admin.models.priceHint' | translate }}</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'catalog.admin.fields.privacyOverride' | translate }}</mat-label>
+        <mat-select formControlName="privacyTier">
+          <mat-option [value]="null">
+            {{ 'catalog.admin.models.inheritTier' | translate: { tier: (selectedProvider ? (('catalog.tier.' + selectedProvider.privacyTier) | translate) : '–') } }}
+          </mat-option>
+          @for (tier of tiers; track tier) {
+            <mat-option [value]="tier">{{ ('catalog.tier.' + tier) | translate }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <!-- Visibility -->
+    <h3 class="form-section">{{ 'catalog.admin.models.visibilitySection' | translate }}</h3>
+    <div class="toggle-grid">
+      <mat-slide-toggle formControlName="enabled">{{ 'catalog.admin.fields.enabled' | translate }}</mat-slide-toggle>
+      <mat-slide-toggle formControlName="availableToGuests">{{ 'catalog.admin.fields.availableToGuests' | translate }}</mat-slide-toggle>
+      <div class="toggle-with-hint">
+        <mat-slide-toggle formControlName="isAuxiliary">{{ 'catalog.admin.fields.isAuxiliary' | translate }}</mat-slide-toggle>
+        <p class="toggle-hint">{{ 'catalog.admin.models.auxiliaryHint' | translate }}</p>
+      </div>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.notes' | translate }}</mat-label>
+      <textarea matInput formControlName="notes" rows="2"></textarea>
+      <mat-hint>{{ 'catalog.admin.models.notesHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    @if (error) {
+      <p class="dialog-error" role="alert"><mat-icon aria-hidden="true">error_outline</mat-icon>{{ error }}</p>
+    }
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button type="button" mat-dialog-close>{{ 'catalog.common.cancel' | translate }}</button>
+    <button mat-flat-button color="primary" type="submit" [disabled]="saving">
+      @if (saving) {
+        <mat-spinner diameter="18"></mat-spinner>
+      }
+      {{ 'catalog.common.save' | translate }}
+    </button>
+  </mat-dialog-actions>
+</form>

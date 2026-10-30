@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { openDB, IDBPDatabase } from 'idb';
 import { Message } from './objects/message';
-import { MainAppDB, ConversationSyncMetadata } from './db-schema';
+import { MainAppDB, ConversationSyncMetadata, CatalogCacheEntry } from './db-schema';
 import { Conversation } from './objects/conversation';
 import { User } from './objects/user';
 import { FilePreview } from './objects/file-preview';
@@ -25,7 +25,7 @@ export class DBService {
     console.log("Starting database...");
 
     // Open the database
-    this.db = await openDB<MainAppDB>('main', 4, {
+    this.db = await openDB<MainAppDB>('main', 6, {
       upgrade: async (db, oldVersion, newVersion, transaction) => {
         // Upgrade from version 0 (new database) or version 1
         if (oldVersion < 1) {
@@ -91,6 +91,19 @@ export class DBService {
         if (oldVersion < 4) {
           console.log('Migrating database to version 4: Adding syncMetadata store');
           db.createObjectStore('syncMetadata', { keyPath: 'id' });
+        }
+
+        // Add the model catalog cache in version 5
+        // (conversations and messages get optional model fields, which need no migration)
+        if (oldVersion < 5) {
+          console.log('Migrating database to version 5: Adding catalog store');
+          db.createObjectStore('catalog', { keyPath: 'id' });
+        }
+
+        // Add the appearance store (the user's own background image) in version 6
+        if (oldVersion < 6) {
+          console.log('Migrating database to version 6: Adding appearance store');
+          db.createObjectStore('appearance', { keyPath: 'id' });
         }
       }
     });
@@ -296,6 +309,9 @@ export class DBService {
     // Clear sync metadata separately
     await this.status;
     await this.db.clear('syncMetadata');
+
+    // The catalog differs between users and guests
+    await this.db.clear('catalog');
   }
 
   async getConversationsByUserId(userId: any = null) {
@@ -583,6 +599,28 @@ export class DBService {
   async deleteSyncMetadata(conversationId: string): Promise<void> {
     await this.status;
     await this.db.delete('syncMetadata', conversationId);
+  }
+
+  /*
+  Model catalog cache
+  */
+
+  async getCatalogCache<K extends CatalogCacheEntry['id']>(
+    id: K
+  ): Promise<Extract<CatalogCacheEntry, { id: K }> | undefined> {
+    await this.status;
+    const entry = await this.db.get('catalog', id);
+    return entry as Extract<CatalogCacheEntry, { id: K }> | undefined;
+  }
+
+  async saveCatalogCache(entry: CatalogCacheEntry): Promise<void> {
+    await this.status;
+    await this.db.put('catalog', entry);
+  }
+
+  async clearCatalogCache(): Promise<void> {
+    await this.status;
+    await this.db.clear('catalog');
   }
 
   /**

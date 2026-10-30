@@ -11,8 +11,8 @@
   <!-- File preview area (shown when files are selected) -->
   <div class="file-preview-area" *ngIf="filePreviews.length > 0 && !isRecording">
     <a *ngFor="let preview of filePreviews"
-       [href]="preview.type !== 'image' ? createDownloadUrl(preview.file) : preview.preview"
-       [download]="preview.type !== 'image' ? preview.name : null"
+       [href]="preview.type !== 'image' && preview.file ? createDownloadUrl(preview.file) : (preview.preview || '#')"
+       [download]="preview.type !== 'image' && preview.file ? preview.name : null"
        (click)="onAttachmentClick($event, preview)"
        class="file-preview-item"
        [class.is-image]="preview.type === 'image'">
@@ -99,15 +99,14 @@
   <div class="action-buttons-bar" *ngIf="!isRecording">
     <!-- Left side buttons -->
     <div class="left-actions">
-      <!-- Camera button (only shown if device has camera and is a mobile device) -->
-      <button *ngIf="hasCamera && isMobile"
-              mat-icon-button
-              class="action-button camera-button"
-              (click)="handleCameraClick()"
-              aria-label="Take photo"
-              matTooltip="Take photo">
+      <!-- Camera button (only shown if device has camera and is a mobile device) - using label for direct camera access -->
+      <label *ngIf="hasCamera && isMobile"
+             for="cameraInputId"
+             class="action-button camera-button camera-label"
+             aria-label="Take photo"
+             matTooltip="Take photo">
         <mat-icon>photo_camera</mat-icon>
-      </button>
+      </label>
       <!-- File attachment button with menu -->
       <button mat-icon-button
               class="action-button attachment-button"
@@ -118,22 +117,29 @@
       </button>
       <!-- Attachment menu -->
       <mat-menu #attachmentMenu="matMenu" class="attachment-menu">
-        <!-- Camera option (only shown if device has camera) -->
-        <button *ngIf="hasCamera" mat-menu-item (click)="handleFileMenuClick('camera')">
+        <!-- Camera option (only shown if device has camera) - using label for mobile, button for desktop -->
+        <label *ngIf="hasCamera && isMobile" mat-menu-item for="cameraInputId" class="file-upload-label">
+          <mat-icon>photo_camera</mat-icon>
+          <span>Take Photo</span>
+        </label>
+        <button *ngIf="hasCamera && !isMobile" mat-menu-item (click)="handleFileMenuClick('camera')">
           <mat-icon>photo_camera</mat-icon>
           <span>Take Photo</span>
         </button>
-        <!-- File upload option -->
-        <button mat-menu-item (click)="handleFileMenuClick('file')">
+        <!-- File upload option - using label to preserve trusted user gesture -->
+        <label mat-menu-item for="fileInputId" class="file-upload-label">
           <mat-icon>folder_open</mat-icon>
           <span>Choose File</span>
-        </button>
+        </label>
         <!-- Location option (only shown if device supports geolocation) -->
         <button *ngIf="hasGeolocation" mat-menu-item (click)="handleFileMenuClick('location')">
           <mat-icon>location_on</mat-icon>
           <span>Share Location</span>
         </button>
       </mat-menu>
+
+      <!-- Extra composer tools from the parent (model and persona picker) -->
+      <ng-content select="[composerTools]"></ng-content>
     </div>
 
     <!-- Right side buttons -->
@@ -149,9 +155,20 @@
         <mat-icon>send</mat-icon>
       </button>
 
-      <!-- Microphone button when input is empty -->
+      <!-- Stop button when AI is streaming -->
       <button
-        *ngIf="!hasContent"
+        *ngIf="!hasContent && isStreaming"
+        mat-icon-button
+        class="action-button stop-button"
+        (click)="stopRequested.emit()"
+        aria-label="Stop generating"
+        matTooltip="Stop generating">
+        <mat-icon>stop</mat-icon>
+      </button>
+
+      <!-- Microphone button when input is empty and not streaming -->
+      <button
+        *ngIf="!hasContent && !isStreaming"
         mat-icon-button
         class="action-button mic-button"
         (click)="startRecording()"
@@ -170,6 +187,7 @@
   <!-- Hidden file input -->
   <input
     #fileInput
+    id="fileInputId"
     type="file"
     (change)="handleFileSelection($event)"
     multiple
@@ -179,6 +197,7 @@
   <!-- Hidden camera input (for mobile camera capture) -->
   <input
     #cameraInput
+    id="cameraInputId"
     type="file"
     accept="image/*"
     capture="environment"

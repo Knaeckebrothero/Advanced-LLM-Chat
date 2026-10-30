@@ -1,0 +1,123 @@
+{{- include "llmchat.validate" . }}
+{{- if not .Values.postgresql.existingSecret }}
+{{- $secretName := printf "%s-postgresql" (include "llmchat.fullname" .) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "postgresql") | nindent 4 }}
+  annotations:
+    # Keep the generated password if the release is uninstalled, so the data stays readable
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  password: {{ include "llmchat.secretValue" (dict "ctx" $ "secret" $secretName "key" "password" "value" .Values.postgresql.password) | quote }}
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llmchat.fullname" . }}-postgresql
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "postgresql") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "postgresql") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "llmchat.fullname" . }}-postgresql
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "postgresql") | nindent 4 }}
+spec:
+  serviceName: {{ include "llmchat.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "postgresql") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "postgresql") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      containers:
+        - name: postgresql
+          image: {{ include "llmchat.image" (dict "image" .Values.postgresql.image "ctx" $) }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "llmchat.postgresSecretName" . }}
+                  key: {{ include "llmchat.postgresSecretKey" . }}
+            # A subdirectory, so the volume's lost+found doesn't stop initdb
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      {{- if not .Values.postgresql.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+      {{- with .Values.postgresql.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.postgresql.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.postgresql.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.postgresql.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - {{ .Values.postgresql.persistence.accessMode }}
+        {{- with .Values.postgresql.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
+  {{- end }}
+{{- end }}

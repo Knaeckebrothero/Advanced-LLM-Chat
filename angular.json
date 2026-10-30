@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "Fessi": {
+    "advanced-llm-chat": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -18,7 +18,7 @@
           "builder": "@angular-devkit/build-angular:application",
           "options": {
             "outputPath": {
-              "base": "dist/fessi"
+              "base": "dist/advanced-llm-chat"
             },
             "index": "src/index.html",
             "polyfills": [
@@ -32,9 +32,33 @@
               "src/manifest.webmanifest"
             ],
             "styles": [
-              "src/styles/styles.scss"
+              "node_modules/@fontsource/roboto/latin-300.css",
+              "node_modules/@fontsource/roboto/latin-400.css",
+              "node_modules/@fontsource/roboto/latin-500.css",
+              "node_modules/@fontsource/inter/latin-400.css",
+              "node_modules/@fontsource/inter/latin-500.css",
+              "node_modules/@fontsource/inter/latin-600.css",
+              "node_modules/@fontsource/inter/latin-700.css",
+              "node_modules/material-icons/iconfont/filled.css",
+              "src/styles/styles.scss",
+              "node_modules/prismjs/plugins/line-numbers/prism-line-numbers.css"
             ],
-            "scripts": [],
+            "scripts": [
+              "node_modules/clipboard/dist/clipboard.min.js",
+              "node_modules/prismjs/prism.js",
+              "node_modules/prismjs/components/prism-python.min.js",
+              "node_modules/prismjs/components/prism-typescript.min.js",
+              "node_modules/prismjs/components/prism-javascript.min.js",
+              "node_modules/prismjs/components/prism-json.min.js",
+              "node_modules/prismjs/components/prism-bash.min.js",
+              "node_modules/prismjs/components/prism-css.min.js",
+              "node_modules/prismjs/components/prism-scss.min.js",
+              "node_modules/prismjs/components/prism-java.min.js",
+              "node_modules/prismjs/components/prism-sql.min.js",
+              "node_modules/prismjs/components/prism-yaml.min.js",
+              "node_modules/prismjs/components/prism-markdown.min.js",
+              "node_modules/prismjs/plugins/line-numbers/prism-line-numbers.min.js"
+            ],
             "serviceWorker": "ngsw-config.json",
             "browser": "src/main.ts",
             "stylePreprocessorOptions": {
@@ -77,10 +101,10 @@
           },
           "configurations": {
             "production": {
-              "buildTarget": "Fessi:build:production"
+              "buildTarget": "advanced-llm-chat:build:production"
             },
             "development": {
-              "buildTarget": "Fessi:build:development"
+              "buildTarget": "advanced-llm-chat:build:development"
             }
           },
           "defaultConfiguration": "development"
@@ -88,7 +112,7 @@
         "extract-i18n": {
           "builder": "@angular-devkit/build-angular:extract-i18n",
           "options": {
-            "buildTarget": "Fessi:build"
+            "buildTarget": "advanced-llm-chat:build"
           }
         },
         "test": {
@@ -106,9 +130,57 @@
               "src/manifest.webmanifest"
             ],
             "styles": [
-              "src/styles/styles.scss"
+              "node_modules/@fontsource/roboto/latin-300.css",
+              "node_modules/@fontsource/roboto/latin-400.css",
+              "node_modules/@fontsource/roboto/latin-500.css",
+              "node_modules/@fontsource/inter/latin-400.css",
+              "node_modules/@fontsource/inter/latin-500.css",
+              "node_modules/@fontsource/inter/latin-600.css",
+              "node_modules/@fontsource/inter/latin-700.css",
+              "node_modules/material-icons/iconfont/filled.css",
+              "src/styles/styles.scss",
+              "node_modules/prismjs/plugins/line-numbers/prism-line-numbers.css"
             ],
-            "scripts": []
+            "scripts": [
+              "node_modules/clipboard/dist/clipboard.min.js",
+              "node_modules/prismjs/prism.js",
+              "node_modules/prismjs/components/prism-typescript.min.js",
+              "node_modules/prismjs/components/prism-javascript.min.js",
+              "node_modules/prismjs/plugins/line-numbers/prism-line-numbers.min.js"
+            ]
+          }
+        }
+      }
+    },
+    "ngx-agent-chat": {
+      "projectType": "library",
+      "root": "projects/ngx-agent-chat",
+      "sourceRoot": "projects/ngx-agent-chat/src",
+      "prefix": "ngx",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:ng-packagr",
+          "options": {
+            "project": "projects/ngx-agent-chat/ng-package.json"
+          },
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/ngx-agent-chat/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/ngx-agent-chat/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "tsConfig": "projects/ngx-agent-chat/tsconfig.spec.json",
+            "polyfills": [
+              "zone.js",
+              "zone.js/testing"
+            ]
           }
         }
       }

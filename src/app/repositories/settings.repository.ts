@@ -16,7 +16,22 @@ const SETTINGS_KEY = 'user-settings';
 export class SettingsRepository {
   constructor(private dbService: DBService, private apiService: ApiService) {}
 
-  async getSettings(): Promise<AppSettings> {
+  /**
+   * Load the settings: the server's if they are newer than the local copy (or
+   * preferRemote is set, e.g. right after a login), else the local ones.
+   */
+  /** The settings stored in this browser, without asking the backend (for the start, before a session exists). */
+  async getLocalSettings(): Promise<AppSettings> {
+    try {
+      const db = await this.dbService.getDb();
+      return (await db.get('settings', SETTINGS_KEY)) || DEFAULT_SETTINGS;
+    } catch (error) {
+      console.warn('Could not fetch local settings from IndexedDB. Using default.', error);
+      return DEFAULT_SETTINGS;
+    }
+  }
+
+  async getSettings(preferRemote = false): Promise<AppSettings> {
     const db = await this.dbService.getDb();
     let localSettings: AppSettings | undefined;
 
@@ -31,11 +46,21 @@ export class SettingsRepository {
       const remoteSettings = await this.apiService.getSettings();
       if (
         remoteSettings &&
-        (!localSettings || remoteSettings.lastUpdated > localSettings.lastUpdated)
+        (preferRemote || !localSettings || toMillis(remoteSettings.lastUpdated) > toMillis(localSettings.lastUpdated))
       ) {
-        const storableSettings = { ...remoteSettings, id: SETTINGS_KEY };
+        // An older backend leaves newer fields out (default model, background): keep the local values then
+        const merged: AppSettings = {
+          ...remoteSettings,
+          defaultModelId: remoteSettings.defaultModelId !== undefined
+            ? remoteSettings.defaultModelId
+            : localSettings?.defaultModelId ?? null,
+          background: remoteSettings.background ?? localSettings?.background,
+          backgroundDim: remoteSettings.backgroundDim ?? localSettings?.backgroundDim,
+          backgroundBlur: remoteSettings.backgroundBlur ?? localSettings?.backgroundBlur,
+        };
+        const storableSettings = { ...merged, id: SETTINGS_KEY };
         await db.put('settings', storableSettings);
-        return remoteSettings;
+        return merged;
       }
     } catch (error) {
       console.warn('Could not fetch remote settings. Using local.', error);
@@ -59,4 +84,12 @@ export class SettingsRepository {
     }
   }
 
+}
+
+/** The server sends lastUpdated in seconds, the app stores Date.now() in milliseconds. */
+function toMillis(timestamp: number | undefined): number {
+  if (!timestamp) {
+    return 0;
+  }
+  return timestamp < 1e11 ? timestamp * 1000 : timestamp;
 }

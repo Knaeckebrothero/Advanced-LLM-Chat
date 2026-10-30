@@ -1,0 +1,174 @@
+{{- if .Values.keycloak.enabled }}
+{{- $fullname := include "llmchat.fullname" . }}
+{{- $secretName := printf "%s-keycloak" $fullname }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "keycloak") | nindent 4 }}
+  annotations:
+    # The imported realm keeps the client secret, so the Secret must outlive an uninstall
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  admin-password: {{ include "llmchat.secretValue" (dict "ctx" $ "secret" $secretName "key" "admin-password" "value" .Values.keycloak.adminPassword) | quote }}
+  client-secret: {{ include "llmchat.secretValue" (dict "ctx" $ "secret" $secretName "key" "client-secret" "value" .Values.keycloak.clientSecret) | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-keycloak-realm
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "keycloak") | nindent 4 }}
+data:
+  llm-chat-realm.json: |
+    {{- .Files.Get "files/llm-chat-realm.json" | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-keycloak
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "keycloak") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "keycloak") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-keycloak
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "keycloak") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "keycloak") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "keycloak") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      initContainers:
+        {{- include "llmchat.waitForPostgres" . | nindent 8 }}
+        # Keycloak's own database in the same Postgres, created by the chart's user
+        - name: create-database
+          image: {{ include "llmchat.image" (dict "image" .Values.postgresql.image "ctx" $) }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - >-
+              export PGPASSWORD="$POSTGRES_PASSWORD";
+              psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc
+              "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q 1 ||
+              psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE DATABASE keycloak"
+          env:
+            {{- include "llmchat.postgresEnv" . | nindent 12 }}
+      containers:
+        - name: keycloak
+          image: {{ include "llmchat.image" (dict "image" .Values.keycloak.image "ctx" $) }}
+          imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
+          # Imports the realm on the first start only; later changes go through the console
+          args: ["start", "--import-realm"]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          env:
+            {{- include "llmchat.postgresEnv" . | nindent 12 }}
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL_HOST
+              value: "$(POSTGRES_HOST)"
+            - name: KC_DB_URL_PORT
+              value: "$(POSTGRES_PORT)"
+            - name: KC_DB_URL_DATABASE
+              value: keycloak
+            - name: KC_DB_USERNAME
+              value: "$(POSTGRES_USER)"
+            - name: KC_DB_PASSWORD
+              value: "$(POSTGRES_PASSWORD)"
+            # The address browsers use; the backend reaches Keycloak through the service
+            # (KC_HOSTNAME_BACKCHANNEL_DYNAMIC). TLS ends at the ingress.
+            - name: KC_HOSTNAME
+              value: {{ trimSuffix "/" .Values.keycloak.url | quote }}
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "true"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: admin-password
+            # Filled into the realm file when it's imported
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: client-secret
+            - name: OIDC_REDIRECT_URI
+              value: {{ printf "%s/api/auth/oidc/callback" (trimSuffix "/" .Values.urls.backend) | quote }}
+            - name: FRONTEND_URL
+              value: {{ trimSuffix "/" .Values.urls.frontend | quote }}
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import/llm-chat-realm.json
+              subPath: llm-chat-realm.json
+              readOnly: true
+      volumes:
+        - name: realm
+          configMap:
+            name: {{ $fullname }}-keycloak-realm
+      {{- with .Values.keycloak.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.keycloak.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.keycloak.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

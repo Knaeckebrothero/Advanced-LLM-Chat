@@ -1,22 +1,40 @@
 // src/app/services/chat-state.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, from, of } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, of, Subscription } from 'rxjs';
 import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
 import { SyncEngineService } from '../repositories/sync-engine.service';
 import { Conversation } from '../data/objects/conversation';
-import { Message } from '../data/objects/message';
+import { Message, AgentContent, AgentStep } from '../data/objects/message';
 import { FilePreview, UploadStatus } from '../data/objects/file-preview';
 import { ApiService } from './api.service';
 import { AuthService } from '../auth/auth.service';
 import { SettingsStateService } from './settings-state.service';
 import { UIStateService } from './ui-state.service';
 import { NotificationService } from './notification.service';
+import {
+  StreamingService,
+  StreamEvent,
+  MessageStartEventData,
+  ErrorEventData,
+  StepDeltaEventData,
+  DoneEventData
+} from './streaming.service';
+import { CatalogService } from './catalog.service';
+import {
+  IConversationSelection,
+  IPublicModel,
+  IPublicPersona,
+  PersonaValues
+} from '../data/models/catalog.model';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { AppSettings } from '../models/settings.model';
+
+/** Model and persona for a new conversation, kept until it is created with the first message. */
+const EMPTY_DRAFT: IConversationSelection = { modelId: null, personaId: null, personaValues: null };
 
 export interface ChatState {
   activeConversation: Conversation | null;
@@ -25,6 +43,8 @@ export interface ChatState {
   isLoading: boolean;
   error: string | null;
   hasReachedEnd?: boolean;
+  streamingMessage: Message<AgentContent> | null;
+  isStreaming: boolean;
 }
 
 @Injectable({
@@ -35,10 +55,18 @@ export class ChatStateService implements OnDestroy {
 
   // State management
   private activeConversationId$ = new BehaviorSubject<string | null>(null);
-  private isNewConversation$ = new BehaviorSubject<boolean>(false);
+  public isNewConversation$ = new BehaviorSubject<boolean>(false);
   private isLoading$ = new BehaviorSubject<boolean>(false);
   private error$ = new BehaviorSubject<string | null>(null);
   private hasReachedEnd$ = new BehaviorSubject<boolean>(false);
+
+  // Streaming state
+  private streamingMessage$ = new BehaviorSubject<Message<AgentContent> | null>(null);
+  private isStreaming$ = new BehaviorSubject<boolean>(false);
+  private streamingSubscription: Subscription | null = null;
+
+  // Model catalog selection
+  private draftSelection$ = new BehaviorSubject<IConversationSelection>(EMPTY_DRAFT);
 
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
@@ -59,7 +87,50 @@ export class ChatStateService implements OnDestroy {
       }
       return this.messageRepository.getByConversationId(id);
     }),
-    map(messages => messages.sort((a, b) => (a.time?.getTime() || 0) - (b.time?.getTime() || 0))),
+    map(messages => messages.sort((a, b) => {
+      const timeDiff = (a.time?.getTime() || 0) - (b.time?.getTime() || 0);
+      // Use ID as tie-breaker when timestamps are within 1 second
+      // This fixes ordering issues caused by timestamp precision loss in SSE streaming
+      if (Math.abs(timeDiff) < 1000) {
+        return a.id - b.id;
+      }
+      return timeDiff;
+    })),
+    shareReplay(1)
+  );
+
+  /** Model and persona of the active conversation (the draft for a new conversation). */
+  public selection$: Observable<IConversationSelection> = combineLatest([
+    this.activeConversation$,
+    this.draftSelection$
+  ]).pipe(
+    map(([conversation, draft]) => {
+      if (!conversation || conversation.id === '0') {
+        return draft;
+      }
+      return conversation.selection;
+    }),
+    shareReplay(1)
+  );
+
+  /** The catalog model that will answer in the active conversation; null without a catalog. */
+  public effectiveModel$: Observable<IPublicModel | null> = combineLatest([
+    this.selection$,
+    this.catalogService.models$,
+    this.settingsState.settings$
+  ]).pipe(
+    map(([selection, models, settings]) =>
+      this.catalogService.resolveModel(selection.modelId, settings?.defaultModelId, models)
+    ),
+    shareReplay(1)
+  );
+
+  /** The persona of the active conversation, if it is (still) in the catalog. */
+  public activePersona$: Observable<IPublicPersona | null> = combineLatest([
+    this.selection$,
+    this.catalogService.personas$
+  ]).pipe(
+    map(([selection, personas]) => personas.find(p => p.id === selection.personaId) ?? null),
     shareReplay(1)
   );
 
@@ -89,15 +160,19 @@ export class ChatStateService implements OnDestroy {
     this.isNewConversation$,
     this.isLoading$,
     this.error$,
-    this.hasReachedEnd$
+    this.hasReachedEnd$,
+    this.streamingMessage$,
+    this.isStreaming$
   ]).pipe(
-    map(([activeConversation, messages, isNewConversation, isLoading, error, hasReachedEnd]) => ({
+    map(([activeConversation, messages, isNewConversation, isLoading, error, hasReachedEnd, streamingMessage, isStreaming]) => ({
       activeConversation,
       messages,
       isNewConversation,
       isLoading,
       error,
-      hasReachedEnd
+      hasReachedEnd,
+      streamingMessage,
+      isStreaming
     })),
     shareReplay(1)
   );
@@ -111,8 +186,10 @@ export class ChatStateService implements OnDestroy {
     private settingsState: SettingsStateService,
     private uiState: UIStateService,
     private notificationService: NotificationService,
+    private streamingService: StreamingService,
     private http: HttpClient,
-    private dbService: DBService
+    private dbService: DBService,
+    private catalogService: CatalogService
   ) {
     this.initializeService();
     this.listenToAuthChanges();
@@ -137,7 +214,7 @@ export class ChatStateService implements OnDestroy {
       )
       .subscribe(user => {
         // When user changes (after logout/login), reset to new conversation
-        if (user.email.includes('guest')) {
+        if (this.authService.isGuest) {
           console.log('Guest user detected, resetting chat state');
           this.resetState();
         }
@@ -179,13 +256,15 @@ export class ChatStateService implements OnDestroy {
    * Create a new conversation (not saved until first message)
    */
   async createNewConversation(): Promise<void> {
+    // A new conversation starts with the default model and no persona
+    this.draftSelection$.next(EMPTY_DRAFT);
     this.isNewConversation$.next(true);
     this.activeConversationId$.next('0');
     this.uiState.setActiveConversation('0');
   }
 
   /**
-   * Send a text message
+   * Send a text message and stream the AI response
    */
   async sendMessage(content: string, roleName: string = 'user'): Promise<void> {
     // Create conversation if it's new
@@ -195,8 +274,8 @@ export class ChatStateService implements OnDestroy {
 
     const conversationId = this.activeConversationId$.getValue()!;
 
-    // Create message
-    const message = Message.createText(
+    // Create and save user message
+    const userMessage = Message.createText(
       {
         id: Math.floor(Date.now() / 1000),
         conversationId,
@@ -209,24 +288,11 @@ export class ChatStateService implements OnDestroy {
     // Mark that we're sending a message to prevent immediate re-sync
     await this.conversationRepository.markMessageSent(conversationId);
 
-    // Use the new combined send and generate method
-    const aiMessage = await this.messageRepository.sendAndGenerate(message, true);
+    // Save user message to repository
+    await this.messageRepository.save(userMessage);
 
-    // Update conversation timestamp
-    const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== '0') {
-      conversation.updatedAt = new Date();
-      await this.conversationRepository.save(conversation);
-    }
-
-    // Handle guest limit if AI generation failed
-    if (!aiMessage && await this.isBackendAvailable()) {
-      // Check if it's a rate limit issue
-      const error = (message as any).syncError;
-      if (error && error.includes('429')) {
-        this.handleRateLimitError(error);
-      }
-    }
+    // Start streaming the AI response
+    await this._streamResponse(conversationId);
   }
 
   /**
@@ -256,8 +322,10 @@ export class ChatStateService implements OnDestroy {
           const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
 
           pendingFiles.forEach((f, index) => {
+            const uploadResponse = uploadedFileIds[index];
             f.uploadStatus = UploadStatus.COMPLETED;
-            f.id = uploadedFileIds[index] || `file-${Date.now()}-${Math.random()}`;
+            f.id = uploadResponse?.fileId || `file-${Date.now()}-${Math.random()}`;
+            f.transcript = uploadResponse?.transcript || f.transcript;
           });
         } catch (error) {
           console.error('Error uploading files:', error);
@@ -278,8 +346,8 @@ export class ChatStateService implements OnDestroy {
       });
     }
 
-    // Create and save message
-    const message = Message.createText(
+    // Create user message with file attachments
+    const userMessage = Message.createText(
       {
         id: Math.floor(Date.now() / 1000),
         conversationId,
@@ -290,57 +358,308 @@ export class ChatStateService implements OnDestroy {
       files
     );
 
-    // This now also handles the AI response generation
-    await this.messageRepository.sendAndGenerate(message, true);
+    // Mark that we're sending a message to prevent immediate re-sync
+    await this.conversationRepository.markMessageSent(conversationId);
 
-    // Update conversation
-    const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== '0') {
-      conversation.updatedAt = new Date();
-      await this.conversationRepository.save(conversation);
-    }
+    // Save user message to repository
+    await this.messageRepository.save(userMessage);
+
+    // Start streaming the AI response (backend will extract file attachments)
+    await this._streamResponse(conversationId);
   }
 
+  // Track pending voice message for async updates
+  private pendingVoiceMessage: Message | null = null;
+
   /**
-   * Send a voice message
+   * Add a voice message locally (for immediate display while transcription is pending)
+   * This creates the message and displays it but doesn't send to backend yet.
    */
-  async sendVoiceMessage(
-    audioBlob: Blob,
-    duration: number,
-    mimeType: string = 'audio/webm',
-    roleName: string = 'user'
+  async addLocalVoiceMessage(
+    placeholderText: string,
+    voiceFile: FilePreview
   ): Promise<void> {
     // Create conversation if needed
     if (this.isNewConversation$.getValue()) {
-      await this.createConversationFromFirstMessage('Voice conversation');
+      await this.createConversationFromFirstMessage('Voice message');
     }
 
     const conversationId = this.activeConversationId$.getValue()!;
 
-    // Convert blob to base64
-    const base64Audio = await this.blobToBase64(audioBlob);
-
-    // Create and save message
-    const message = Message.createVoice(
+    // Create user message with voice file attachment
+    const userMessage = Message.createText(
       {
         id: Math.floor(Date.now() / 1000),
         conversationId,
-        roleName,
+        roleName: 'user',
         time: new Date()
       },
-      base64Audio,
-      duration,
-      mimeType
+      placeholderText,
+      [voiceFile]
     );
 
+    // Store reference to update later
+    this.pendingVoiceMessage = userMessage;
+
+    // Save to local repository only (skip backend sync)
+    await this.messageRepository.save(userMessage, true); // skipSync = true
+  }
+
+  /**
+   * Update a pending voice message with the real transcript and trigger AI response
+   */
+  async updateVoiceMessageAndRespond(
+    voiceFile: FilePreview,
+    transcript: string
+  ): Promise<void> {
+    if (!this.pendingVoiceMessage) {
+      console.error('No pending voice message to update');
+      return;
+    }
+
+    const conversationId = this.activeConversationId$.getValue()!;
+
+    // Update message content with real transcript
+    if (this.pendingVoiceMessage.isText()) {
+      (this.pendingVoiceMessage.content as any).content = transcript;
+    }
+
+    // Update attachment with transcript
+    const attachments = this.pendingVoiceMessage.attachments;
+    if (attachments && attachments.length > 0) {
+      attachments[0].transcript = voiceFile.transcript;
+      attachments[0].uploadStatus = voiceFile.uploadStatus;
+      attachments[0].id = voiceFile.id;
+    }
+
+    // Mark message as modified
+    this.pendingVoiceMessage.version = (this.pendingVoiceMessage.version || 1) + 1;
+    this.pendingVoiceMessage.lastModified = Math.floor(Date.now() / 1000);
+
+    // Update in local repository
+    await this.messageRepository.update(this.pendingVoiceMessage);
+
+    // Mark that we're sending a message to prevent immediate re-sync
+    await this.conversationRepository.markMessageSent(conversationId);
+
+    // Clear the pending reference
+    const messageToSync = this.pendingVoiceMessage;
+    this.pendingVoiceMessage = null;
+
+    // Now sync with backend (this will send the message)
+    try {
+      await this.apiService.sendMessage(messageToSync);
+    } catch (error) {
+      console.error('Failed to sync voice message with backend:', error);
+      // Continue anyway - message is saved locally
+    }
+
+    // Start streaming the AI response
+    await this._streamResponse(conversationId);
+  }
+
+  /**
+   * Send a message and stream the AI response using SSE.
+   * @deprecated Use sendMessage() instead - it now uses streaming by default.
+   */
+  async sendAndStreamResponse(content: string, roleName: string = 'user'): Promise<void> {
+    // Delegate to sendMessage which now uses streaming
+    await this.sendMessage(content, roleName);
+  }
+
+  /**
+   * Handle individual stream events
+   */
+  private handleStreamEvent(event: StreamEvent, message: Message<AgentContent>): void {
+    switch (event.type) {
+      case 'message_start':
+        // Message envelope received - apply metadata immediately
+        const startData = event.data as MessageStartEventData;
+        message.id = startData.messageId;
+        message.time = new Date(startData.time * 1000);
+        message.roleName = startData.roleName;
+        // Which model answers (modelId null = the environment model)
+        if (startData.modelId !== undefined) message.content.modelId = startData.modelId;
+        if (startData.modelName !== undefined) message.content.modelName = startData.modelName;
+        // Status remains 'thinking' until we get steps or tokens
+        break;
+
+      case 'step': {
+        // A step with a known id replaces the earlier one (e.g. the reasoning step, sent
+        // empty at its start and complete at its end); otherwise it is a new step
+        const step = event.data as AgentStep;
+        const steps = message.content.steps;
+        const index = steps.findIndex(s => s.id === step.id);
+        if (index >= 0) {
+          steps[index] = step;
+        } else {
+          steps.push(step);
+          message.content.status = 'thinking';
+        }
+        break;
+      }
+
+      case 'step_delta': {
+        // Live reasoning text for an earlier step
+        const delta = event.data as StepDeltaEventData;
+        const step = message.content.steps.find(s => s.id === delta.id);
+        if (step) {
+          step.content = (step.content || '') + delta.delta;
+        }
+        break;
+      }
+
+      case 'token':
+        // Append the token to the response content
+        message.content.content += event.data as string;
+        message.content.status = 'responding';
+        break;
+
+      case 'done': {
+        // Mark as complete (ID should already be set from message_start)
+        const doneData = event.data as DoneEventData;
+        if (doneData.modelId !== undefined) message.content.modelId = doneData.modelId;
+        if (doneData.modelName !== undefined) message.content.modelName = doneData.modelName;
+        if (doneData.usage !== undefined) message.content.usage = doneData.usage;
+        message.content.status = 'complete';
+        break;
+      }
+
+      case 'error':
+        // Handle error
+        message.content.status = 'error';
+        message.content.error = (event.data as ErrorEventData).error;
+        break;
+    }
+
+    // Emit the updated message (create a new reference to trigger change detection)
+    this.streamingMessage$.next(message);
+  }
+
+  /**
+   * Handle stream errors
+   */
+  private async handleStreamError(error: any, message: Message<AgentContent>): Promise<void> {
+    console.error('Stream error:', error);
+
+    // Update message to show error state
+    message.content.status = 'error';
+    message.content.error = error.message || 'An error occurred during streaming';
+
+    // Save the error message to the repository
     await this.messageRepository.save(message);
 
-    // Update conversation
-    const conversation = await firstValueFrom(this.activeConversation$);
-    if (conversation && conversation.id !== '0') {
-      conversation.updatedAt = new Date();
-      await this.conversationRepository.save(conversation);
+    // Clean up streaming state
+    this.isStreaming$.next(false);
+    this.streamingMessage$.next(null);
+
+    this.notificationService.showError('Failed to generate response');
+  }
+
+  /**
+   * Handle stream completion
+   */
+  private async handleStreamComplete(message: Message<AgentContent>): Promise<void> {
+    // Only save if the message completed successfully
+    if (message.content.status === 'complete') {
+      // The message was already saved on the backend by the SSE endpoint,
+      // but we need to save it locally to IndexedDB
+      await this.messageRepository.save(message);
+
+      // Update conversation timestamp
+      const conversation = await firstValueFrom(this.activeConversation$);
+      if (conversation && conversation.id !== '0') {
+        conversation.updatedAt = new Date();
+        await this.conversationRepository.save(conversation);
+      }
+
+      this.notificationService.showSuccess('Response generated');
     }
+
+    // Clean up streaming state
+    this.isStreaming$.next(false);
+    this.streamingMessage$.next(null);
+    this.streamingSubscription = null;
+  }
+
+  /**
+   * Cancel an ongoing streaming response.
+   * Saves the partial response if any content was generated.
+   */
+  async cancelStreaming(): Promise<void> {
+    // Unsubscribe first to stop receiving more tokens
+    if (this.streamingSubscription) {
+      this.streamingSubscription.unsubscribe();
+      this.streamingSubscription = null;
+    }
+
+    // Get the current streaming message before clearing
+    const streamingMessage = this.streamingMessage$.getValue();
+
+    // Save partial response if we have any content
+    if (streamingMessage && streamingMessage.content) {
+      const hasContent = streamingMessage.content.content?.trim().length > 0;
+      const hasSteps = streamingMessage.content.steps?.length > 0;
+
+      if (hasContent || hasSteps) {
+        // Mark as complete (user intentionally stopped it)
+        streamingMessage.content.status = 'complete';
+
+        // Save to IndexedDB
+        await this.messageRepository.save(streamingMessage);
+
+        // Update conversation timestamp
+        const conversation = await firstValueFrom(this.activeConversation$);
+        if (conversation && conversation.id !== '0') {
+          conversation.updatedAt = new Date();
+          await this.conversationRepository.save(conversation);
+        }
+      }
+    }
+
+    // Clean up streaming state
+    this.isStreaming$.next(false);
+    this.streamingMessage$.next(null);
+  }
+
+  /**
+   * Internal helper to start streaming an AI response.
+   * Creates a placeholder agent message and streams the response.
+   * @param modelId - Answer with this catalog model instead of the conversation's model
+   */
+  private async _streamResponse(conversationId: string, modelId?: number): Promise<void> {
+    // Create placeholder agent message for streaming
+    const agentMessage = Message.createAgent(conversationId, [], '', 'thinking');
+    this.streamingMessage$.next(agentMessage);
+    this.isStreaming$.next(true);
+
+    // Cancel any existing streaming subscription
+    if (this.streamingSubscription) {
+      this.streamingSubscription.unsubscribe();
+    }
+
+    // Start streaming
+    this.streamingSubscription = this.streamingService
+      .streamAgentResponse(conversationId, 'Assistant', modelId)
+      .subscribe({
+        next: (event) => this.handleStreamEvent(event, agentMessage),
+        error: (error) => this.handleStreamError(error, agentMessage),
+        complete: () => this.handleStreamComplete(agentMessage)
+      });
+  }
+
+  /**
+   * Get the current streaming message (for direct access)
+   */
+  getStreamingMessage(): Message<AgentContent> | null {
+    return this.streamingMessage$.getValue();
+  }
+
+  /**
+   * Check if streaming is currently in progress
+   */
+  isCurrentlyStreaming(): boolean {
+    return this.isStreaming$.getValue();
   }
 
   /**
@@ -500,9 +819,11 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Regenerate a message
+   * Regenerate a message using streaming.
+   * Deletes the old AI message and streams a new response.
+   * @param modelId - Answer with this catalog model instead of the conversation's model (once)
    */
-  async regenerateMessage(message: Message): Promise<void> {
+  async regenerateMessage(message: Message, modelId?: number): Promise<void> {
     if (!message.id || !message.conversationId) {
       throw new Error('Message ID and conversation ID are required');
     }
@@ -512,28 +833,19 @@ export class ChatStateService implements OnDestroy {
       throw new Error('Can only regenerate AI messages');
     }
 
-    this.isLoading$.next(true);
     this.error$.next(null);
 
     try {
-      // Use the new regenerate endpoint
-      await this.messageRepository.regenerateMessage(
-        message.id,
-        message.conversationId
-      );
+      // Delete the old AI message immediately
+      await this.messageRepository.delete(message.id);
 
-      // The message repository will automatically update the cache and trigger
-      // the messages$ observable to emit the new value
-
-      // Show success notification
-      this.notificationService.showSuccess('Message regenerated successfully');
+      // Start streaming a new response (backend will use the last user message)
+      await this._streamResponse(message.conversationId, modelId);
     } catch (error) {
       console.error('Error regenerating message:', error);
       this.error$.next('Failed to regenerate message');
       this.notificationService.showError('Failed to regenerate message');
       throw error;
-    } finally {
-      this.isLoading$.next(false);
     }
   }
 
@@ -647,41 +959,129 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Helper: Create conversation from first message
+   * Helper: Create conversation from first message with async AI-generated title
    */
-  private async createConversationFromFirstMessage(title: string): Promise<void> {
+  private async createConversationFromFirstMessage(content: string): Promise<void> {
     const backendAvailable = await this.isBackendAvailable();
     let conversation: Conversation;
+    const selection = this.resolveDraftSelection();
+
+    // Generate fallback title (truncated message)
+    const fallbackTitle = content.length > 50
+      ? content.substring(0, 47).trim() + '...'
+      : content;
 
     if (!backendAvailable) {
-      // Create local-only conversation with proper UUID
+      // Create local-only conversation with fallback title
       conversation = new Conversation(
         this.dbService.generateUUID(),
         0,
-        title,
+        fallbackTitle,
         ['user', 'Assistant']
       );
     } else {
-      // Try to create on server
-      const newConvData = new Conversation('', 0, title, ['user', 'Assistant']);
+      // Create conversation on server with fallback title (fast)
+      const newConvData = new Conversation('', 0, fallbackTitle, ['user', 'Assistant']);
+      this.applySelection(newConvData, selection);
       try {
         conversation = await this.apiService.createConversation(newConvData);
+
+        // Fire off async title generation (don't await - runs in background)
+        this.generateTitleAsync(conversation.id, content);
       } catch (error) {
         console.error('Failed to create conversation on server:', error);
-        // Fallback to local with UUID
+        // Fallback to local with truncated title
         conversation = new Conversation(
           this.dbService.generateUUID(),
           0,
-          title,
+          fallbackTitle,
           ['user', 'Assistant']
         );
       }
     }
 
+    // Keep the selection locally if the backend doesn't return it (no catalog yet, or a local-only conversation)
+    if (conversation.modelId === undefined && conversation.personaId === undefined) {
+      this.applySelection(conversation, selection);
+    }
     await this.conversationRepository.save(conversation);
     this.isNewConversation$.next(false);
     this.activeConversationId$.next(conversation.id);
     this.uiState.setActiveConversation(conversation.id);
+  }
+
+  // =========================================================================
+  // Model catalog selection
+  // =========================================================================
+
+  /** Pick the model for the active conversation (null = the user's default model). */
+  async selectModel(modelId: number | null): Promise<void> {
+    const conversationId = this.activeConversationId$.getValue();
+    if (!conversationId || conversationId === '0') {
+      this.draftSelection$.next({ ...this.draftSelection$.getValue(), modelId });
+      return;
+    }
+    await this.conversationRepository.updateSelection(conversationId, { modelId });
+  }
+
+  /**
+   * Pick the persona for the active conversation (null = no persona), with the values for its
+   * variables. The model stays as it is.
+   */
+  async selectPersona(persona: IPublicPersona | null, values: PersonaValues | null = null): Promise<void> {
+    const changes: Partial<IConversationSelection> = {
+      personaId: persona ? persona.id : null,
+      personaValues: persona && values && Object.keys(values).length > 0 ? values : null
+    };
+
+    const conversationId = this.activeConversationId$.getValue();
+    if (!conversationId || conversationId === '0') {
+      this.draftSelection$.next({ ...this.draftSelection$.getValue(), ...changes });
+      return;
+    }
+    await this.conversationRepository.updateSelection(conversationId, changes);
+  }
+
+  /**
+   * The selection a new conversation is created with: the picked or the default model, so the
+   * conversation keeps its model when the default changes later. Undefined without a catalog,
+   * so the create request stays as it was.
+   */
+  private resolveDraftSelection(): IConversationSelection | undefined {
+    const draft = this.draftSelection$.getValue();
+    if (!this.catalogService.hasModels && this.catalogService.personas.length === 0) {
+      return undefined;
+    }
+    const defaultModelId = this.settingsState.getCurrentSettings()?.defaultModelId ?? null;
+    const model = this.catalogService.resolveModel(draft.modelId, defaultModelId);
+    return {
+      modelId: model ? model.id : null,
+      personaId: draft.personaId,
+      personaValues: draft.personaValues
+    };
+  }
+
+  private applySelection(conversation: Conversation, selection: IConversationSelection | undefined): void {
+    if (!selection) return;
+    conversation.modelId = selection.modelId;
+    conversation.personaId = selection.personaId;
+    conversation.personaValues = selection.personaValues;
+  }
+
+  /**
+   * Generate AI title for conversation asynchronously and update sidebar
+   */
+  private generateTitleAsync(conversationId: string, firstMessage: string): void {
+    this.apiService.generateConversationTitle(conversationId, firstMessage)
+      .then(async (updatedConversation) => {
+        // Update local cache and IndexedDB with the new title (backend already updated)
+        await this.conversationRepository.saveFromServer(updatedConversation);
+        console.log(`Conversation title updated to: ${updatedConversation.name}`);
+      })
+      .catch((error) => {
+        // Silently fail - fallback title is already in place
+        console.warn('Failed to generate AI title:', error);
+      });
   }
 
   /**
@@ -719,25 +1119,12 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Helper: Convert blob to base64
-   */
-  private blobToBase64(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        resolve((reader.result as string).split(',')[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  /**
    * Reset all state - used during logout
    */
   resetState(): void {
     console.log('Resetting chat state...');
     // Reset to new conversation state
+    this.draftSelection$.next(EMPTY_DRAFT);
     this.activeConversationId$.next('0');
     this.isNewConversation$.next(true);
     this.isLoading$.next(false);
@@ -750,5 +1137,8 @@ export class ChatStateService implements OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+
+    // Cancel any ongoing streaming
+    this.cancelStreaming();
   }
 }

@@ -198,6 +198,8 @@ target/
 
 # Yaml
 *.yaml
+# ... except the Helm chart's
+!helm/advanced-llm-chat/**/*.yaml
 
 # SQLite database files
 *.db

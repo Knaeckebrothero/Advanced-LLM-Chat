@@ -1,0 +1,145 @@
+# Advanced LLM Chat. The backend's settings are described in .env.example and in docs/
+# (docs/authentication.md for login, docs/model_catalog_api.md for models and agents).
+
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+
+# The public addresses, as the browser reaches them (TLS ends at the ingress or tunnel).
+# Logins return to these, and the frontend calls the backend at urls.backend. Both may be the
+# same address: the ingress then sends /api to the backend.
+urls:
+  frontend: https://chat.example.com
+  backend: https://chat-api.example.com
+
+frontend:
+  image:
+    repository: ghcr.io/knaeckebrothero/advanced-llm-chat-frontend
+    tag: ""  # Default: the chart's appVersion
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 80
+  resources: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+backend:
+  image:
+    repository: ghcr.io/knaeckebrothero/advanced-llm-chat-backend
+    tag: ""  # Default: the chart's appVersion
+    pullPolicy: IfNotPresent
+  # Uploaded files are on a ReadWriteOnce volume, so keep one replica unless it's ReadWriteMany
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8000
+  # Run `app_init --prod` before the backend starts: creates missing tables and columns, and
+  # seeds the model catalog (providers are updated, existing models and agents are kept)
+  migrate: true
+  # Further settings as environment variables (see .env.example), e.g. ADMIN_EMAILS, LOG_LEVEL,
+  # MODEL_ROUTER_API, NEO4J_ENABLED, WHISPER_BASE_URL, GUEST_SESSION_TIMEOUT_HOURS
+  env: {}
+  # Secret settings (API keys such as CORTECS_API_KEY, ANTHROPIC_API_KEY, MODEL_ROUTER_KEY,
+  # TAVILY_API_KEY, OIDC_CLIENT_SECRET): the name of an existing Secret whose keys become
+  # environment variables, e.g. one made by External Secrets ...
+  existingSecret: ""
+  # ... or the values, for a Secret the chart creates
+  secretEnv: {}
+  # A model catalog (the content of a catalog JSON file) instead of the image's catalog/models.json
+  catalog: ""
+  # Uploaded files, the TTS cache and logs
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+  # Guests are rate-limited by IP address; the ingress or tunnel in front must be trusted to
+  # pass the client's address in X-Forwarded-For (uvicorn's FORWARDED_ALLOW_IPS)
+  forwardedAllowIps: "*"
+  resources: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Login (docs/authentication.md). Guests can always chat.
+auth:
+  # oidc (an OpenID Connect provider such as Keycloak), mock (any email, no password:
+  # development only) or none. keycloak.enabled sets it to oidc with the bundled Keycloak.
+  mode: none
+  oidc:
+    issuer: ""        # e.g. https://auth.example.com/realms/home
+    clientId: llm-chat
+    # The client secret: here, or as OIDC_CLIENT_SECRET in backend.existingSecret
+    clientSecret: ""
+    adminRole: ""     # Role or group that makes a user an admin (models and agents)
+    requiredRole: ""  # Role or group a user needs to log in at all (empty: anyone)
+    displayName: ""   # On the login button (default: Keycloak)
+    discoveryUrl: ""  # Only if the backend reaches the provider under another address
+  # Admins by email (with oidc: only verified emails count), comma-separated
+  adminEmails: ""
+
+# The bundled Postgres. Set enabled to false and fill in external for your own server.
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  database: llm_chat
+  username: llm_chat
+  # Empty: a random password, kept in the Secret <release>-postgresql across upgrades
+  password: ""
+  # Or an existing Secret with the password under existingSecretKey
+  existingSecret: ""
+  existingSecretKey: password
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Used when enabled is false (username, database and the password settings above apply)
+  external:
+    host: ""
+    port: 5432
+
+# A bundled Keycloak with the realm "llm-chat" (helm/advanced-llm-chat/files/llm-chat-realm.json),
+# imported on its first start. Its database "keycloak" lives in the Postgres above (bundled or
+# external; the chart's user creates it). Create users in its console; the realm role "admin"
+# makes a user an admin of the app.
+keycloak:
+  enabled: false
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.6.0"
+    pullPolicy: IfNotPresent
+  # Keycloak's public address (needs its own host on the ingress)
+  url: https://auth.example.com
+  # The console's first admin (realm "master"), user "admin". Empty: random, kept in the Secret
+  # <release>-keycloak across upgrades (read it with kubectl)
+  adminPassword: ""
+  # The client secret shared by the realm and the backend. Empty: random, kept like the password
+  clientSecret: ""
+  adminRole: admin
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Hosts come from urls.frontend, urls.backend and keycloak.url; list them here for TLS, e.g.
+  # - secretName: chat-tls
+  #   hosts: [chat.example.com, chat-api.example.com]
+  tls: []

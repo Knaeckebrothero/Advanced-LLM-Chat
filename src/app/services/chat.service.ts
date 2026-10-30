@@ -57,19 +57,6 @@ export class ChatService implements OnDestroy {
     await this.chatState.sendMessageWithFiles(content, files, roleName);
   }
 
-  // Send a voice message
-  public async sendVoiceMessage(
-    audioBlob: Blob,
-    duration: number,
-    mimeType: string = 'audio/webm',
-    roleName: string = 'user'
-  ): Promise<void> {
-    await this.chatState.sendVoiceMessage(audioBlob, duration, mimeType, roleName);
-  }
-
-
-
-
   // Generate a message
   public async generateMessage(participant: string) {
     await this.chatState.generateMessage(participant);

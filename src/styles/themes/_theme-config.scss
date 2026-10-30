@@ -1,31 +1,76 @@
 @use "sass:color";
 
+// Graphite & Teal: graphite neutrals with a teal accent.
+// Avatars use darker teal stops in both modes so their white icons stay readable.
+
 // Light Theme Colors
-$light-bg: #f3f9fd;
-$light-text: #1a1a1a;
+$light-bg: #eef3f3;
+$light-text: #162024;
+$light-text-secondary: #566a70;
 $light-surface: #ffffff;
-$light-primary: #1976d2;
-$light-primary-rgb: 25, 118, 210; // RGB for transparency
-$light-secondary: #2C8BCC;
-$light-border: #ccc;
-$light-link: #007bff;
-$light-msg-user-bg: #e6f0fc;
-$light-msg-assistant-bg: #d8ebff;
+$light-primary: #0e7468;
+$light-primary-rgb: 14, 116, 104; // RGB for transparency
+$light-secondary: #127d70;
+$light-border: #d3dede;
+$light-link: #0e6e63;
+$light-msg-user-bg: transparent;
+$light-msg-assistant-bg: transparent;
 $light-primary-contrast: #ffffff;
 $light-primary-contrast-rgb: 255, 255, 255;
 
+// New modern light theme tokens
+$light-avatar-user: linear-gradient(135deg, #227a86 0%, #17806f 100%);
+$light-avatar-ai: linear-gradient(135deg, #0e7468 0%, #178f80 100%);
+$light-hover: rgba(14, 116, 104, 0.05);
+$light-active: rgba(14, 116, 104, 0.1);
+$light-code-bg: #f2f6f6;
+$light-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+$light-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+$light-shadow-glow: 0 0 20px rgba(14, 116, 104, 0.15);
+
+// Privacy tier badges of the model catalog (text on its tint: at least 5.6:1)
+$light-tier-local: #1d6b34;
+$light-tier-local-bg: #e2f3e7;
+$light-tier-eu: #1f57a8;
+$light-tier-eu-bg: #e5edf9;
+$light-tier-trusted: #7a4f00;
+$light-tier-trusted-bg: #f9eed6;
+$light-tier-untrusted: #a3261c;
+$light-tier-untrusted-bg: #fbe5e2;
+
 // Dark Theme Colors
-$dark-bg: #212529;
-$dark-text: #e9ecef;
-$dark-surface: #353535;
-$dark-primary: #5C287E;
-$dark-primary-rgb: 92, 40, 126; // RGB for transparency
-$dark-secondary: #A088D2;
-$dark-border: #495057;
-$dark-link: #A088D2;
-$dark-msg-bg: #353535;
-$dark-primary-contrast: #ffffff;
-$dark-primary-contrast-rgb: 255, 255, 255;
+$dark-bg: #111518;
+$dark-text: #e3e8ea;
+$dark-text-secondary: #8fa0a7;
+$dark-surface: #181e21;
+$dark-primary: #2cb5a5;
+$dark-primary-rgb: 44, 181, 165; // RGB for transparency
+$dark-secondary: #5ccfc1;
+$dark-border: #263035;
+$dark-link: #6fd6ca;
+$dark-msg-bg: transparent;
+$dark-primary-contrast: #062421; // the teal is light, so text on it is dark
+$dark-primary-contrast-rgb: 6, 36, 33;
+
+// New modern dark theme tokens
+$dark-avatar-user: linear-gradient(135deg, #227a86 0%, #17806f 100%);
+$dark-avatar-ai: linear-gradient(135deg, #0e7468 0%, #178f80 100%);
+$dark-hover: rgba(255, 255, 255, 0.04);
+$dark-active: rgba(255, 255, 255, 0.08);
+$dark-code-bg: #1d2528;
+$dark-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+$dark-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+$dark-shadow-glow: 0 0 20px rgba(44, 181, 165, 0.2);
+
+// Privacy tier badges (light text on a 14% tint of itself: at least 6.3:1)
+$dark-tier-local: #86d69b;
+$dark-tier-local-bg: rgba(134, 214, 155, 0.14);
+$dark-tier-eu: #9ec2f7;
+$dark-tier-eu-bg: rgba(158, 194, 247, 0.14);
+$dark-tier-trusted: #efc06a;
+$dark-tier-trusted-bg: rgba(239, 192, 106, 0.14);
+$dark-tier-untrusted: #f3a097;
+$dark-tier-untrusted-bg: rgba(243, 160, 151, 0.14);
 
 // --- Theme Maps ---
 $light-theme: (
@@ -35,15 +80,32 @@ $light-theme: (
   background: $light-bg,
   surface: $light-surface,
   text: $light-text,
+  'text-secondary': $light-text-secondary,
   border: $light-border,
   link: $light-link,
   'msg-user-bg': $light-msg-user-bg,
   'msg-assistant-bg': $light-msg-assistant-bg,
-  'input-bg': $light-bg,
+  'input-bg': $light-surface,
   'text-accent': $light-primary,
   'primary-contrast': $light-primary-contrast,
   'primary-contrast-rgb': $light-primary-contrast-rgb,
-  'background-image': url('/assets/background/light-mode-bg.svg')
+  'background-image': none,
+  'avatar-user': $light-avatar-user,
+  'avatar-ai': $light-avatar-ai,
+  'hover': $light-hover,
+  'active': $light-active,
+  'code-bg': $light-code-bg,
+  'shadow-sm': $light-shadow-sm,
+  'shadow-md': $light-shadow-md,
+  'shadow-glow': $light-shadow-glow,
+  'tier-local': $light-tier-local,
+  'tier-local-bg': $light-tier-local-bg,
+  'tier-eu': $light-tier-eu,
+  'tier-eu-bg': $light-tier-eu-bg,
+  'tier-trusted': $light-tier-trusted,
+  'tier-trusted-bg': $light-tier-trusted-bg,
+  'tier-untrusted': $light-tier-untrusted,
+  'tier-untrusted-bg': $light-tier-untrusted-bg
 );
 
 $dark-theme: (
@@ -53,15 +115,32 @@ $dark-theme: (
   background: $dark-bg,
   surface: $dark-surface,
   text: $dark-text,
+  'text-secondary': $dark-text-secondary,
   border: $dark-border,
   link: $dark-link,
   'msg-user-bg': $dark-msg-bg,
   'msg-assistant-bg': $dark-msg-bg,
-  'input-bg': color.adjust($dark-surface, $lightness: 5%),
+  'input-bg': $dark-surface,
   'text-accent': $dark-secondary,
   'primary-contrast': $dark-primary-contrast,
   'primary-contrast-rgb': $dark-primary-contrast-rgb,
-  'background-image': url('/assets/background/dark-mode-bg.svg')
+  'background-image': none,
+  'avatar-user': $dark-avatar-user,
+  'avatar-ai': $dark-avatar-ai,
+  'hover': $dark-hover,
+  'active': $dark-active,
+  'code-bg': $dark-code-bg,
+  'shadow-sm': $dark-shadow-sm,
+  'shadow-md': $dark-shadow-md,
+  'shadow-glow': $dark-shadow-glow,
+  'tier-local': $dark-tier-local,
+  'tier-local-bg': $dark-tier-local-bg,
+  'tier-eu': $dark-tier-eu,
+  'tier-eu-bg': $dark-tier-eu-bg,
+  'tier-trusted': $dark-tier-trusted,
+  'tier-trusted-bg': $dark-tier-trusted-bg,
+  'tier-untrusted': $dark-tier-untrusted,
+  'tier-untrusted-bg': $dark-tier-untrusted-bg
 );
 
 // Central map of all themes

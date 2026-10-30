@@ -1,13 +1,35 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-dotenv==1.0.0
-replicate==0.22.0
-trustme==1.1.0
-pydantic==2.5.0
-python-multipart==0.0.6
-httpx==0.25.2
+# Core Framework
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+httpx>=0.25.2
 
-# TODO: Do we need these for the container?
-# python-multipart==0.0.6
-# Add CORS middleware support
-# httpx==0.25.2
+# LLM Providers (backend/llm: agent loop on the official SDKs)
+openai>=2.14.0
+anthropic>=2.0.0
+
+# Security
+trustme>=1.1.0
+PyJWT[crypto]>=2.10.0  # Checks the OIDC provider's tokens (AUTH_MODE=oidc)
+
+# Database
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+
+# Streaming
+sse-starlette>=1.6.0
+
+# Neo4j Knowledge Graph
+neo4j>=5.0.0
+
+# Web search tool
+tavily-python>=0.5.0
+
+# Document Processing
+pdfplumber>=0.10.0
+pdf2image>=1.16.0
+
+# Audio Transcription
+openai-whisper>=20231117

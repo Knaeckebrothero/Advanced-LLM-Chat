@@ -60,7 +60,7 @@ describe('ChatStateService', () => {
     mockMessageRepo.uploadPendingFiles.and.returnValue(Promise.resolve());
     
     mockApiService.generateMessage.and.returnValue(Promise.resolve(mockMessages[1]));
-    mockApiService.uploadFiles.and.returnValue(Promise.resolve(['https://example.com/file']));
+    mockApiService.uploadFiles.and.returnValue(Promise.resolve([{fileId: 'file-1'}]));
     mockApiService.patchMessage.and.returnValue(Promise.resolve(mockMessages[0]));
 
     TestBed.configureTestingModule({
@@ -183,20 +183,6 @@ describe('ChatStateService', () => {
             name: 'test.txt',
             mimeType: 'text/plain'
           })])
-        })
-      }));
-    });
-
-    it('should send voice message', async () => {
-      const mockBlob = new Blob(['audio'], { type: 'audio/webm' });
-      await service.sendVoiceMessage(mockBlob, 5, 'audio/webm', 'Test transcript');
-      
-      expect(mockMessageRepo.save).toHaveBeenCalledWith(jasmine.objectContaining({
-        content: jasmine.objectContaining({
-          type: 'voice',
-          duration: 5,
-          mimeType: 'audio/webm',
-          transcript: 'Test transcript'
         })
       }));
     });

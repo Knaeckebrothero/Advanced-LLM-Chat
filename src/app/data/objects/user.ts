@@ -1,6 +1,9 @@
-export interface User {
-    id: number;  // Unique ID of the user
-    accessToken: string;  // Access token for authentication
-    email: string;  // Email (used as username)
-    name: string;  // Display name
-}
+/**
+ * User Types
+ *
+ * Re-exports from models/ for backwards compatibility.
+ * Import directly from '@app/data/models' for new code.
+ */
+
+export type { IUser as User } from '../models';
+export type { IUserSession as UserSession } from '../models';

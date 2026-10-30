@@ -1,9 +1,16 @@
-// src/app/chat-ui/chat-ui-message/chat-ui-message.component.ts
-import { Component, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
-import { Message, VoiceContent } from '../../data/objects/message';
-import { DomSanitizer, SafeHtml, SafeUrl } from '@angular/platform-browser';
+import { Component, Input, Output, EventEmitter, OnChanges, OnDestroy, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
+import { Message, AgentStatus } from '../../data/objects/message';
+import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
+import { FilePreviewDialogComponent, FilePreviewDialogData } from '../../components/file-preview-dialog/file-preview-dialog.component';
+import { ApiService } from '../../services/api.service';
+import { SettingsStateService } from '../../services/settings-state.service';
+import { CatalogService } from '../../services/catalog.service';
+import { IMessageUsage, IPublicModel } from '../../data/models/catalog.model';
+import { TranslateService } from '@ngx-translate/core';
+import { Observable } from 'rxjs';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -11,21 +18,65 @@ import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-
   styleUrls: ['./chat-ui-message.component.scss'],
   standalone: false
 })
-export class ChatUiMessageComponent implements OnChanges {
+export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Pass the message object from the parent component
   @Input() message!: Message;
   @Input() isLastAiMessage: boolean = false;
 
+  // Event emitter for agent steps expansion (for scroll adjustment)
+  @Output() stepsExpanded = new EventEmitter<{ expanded: boolean; messageElement: HTMLElement }>();
+
   // Variables
   editing: boolean = false;
   backupContent!: string;
-  formattedTextContent: SafeHtml = '';
+  messageTextContent: string = '';
+
+  // Model catalog: per-message model and usage
+  showUsage = false;
+  catalogModels$: Observable<IPublicModel[]>;
 
   constructor(
     private sanitizer: DomSanitizer,
     private chatUI: ChatUiComponent,
-    private renderer: Renderer2
-  ) { }
+    private dialog: MatDialog,
+    private apiService: ApiService,
+    private settingsState: SettingsStateService,
+    private elementRef: ElementRef,
+    private catalogService: CatalogService,
+    private translate: TranslateService
+  ) {
+    this.catalogModels$ = this.catalogService.models$;
+  }
+
+  // TTS Audio Player reference
+  @ViewChild('ttsAudioPlayer') ttsAudioPlayerRef!: ElementRef<HTMLAudioElement>;
+
+  // TTS state
+  ttsAudioUrl: string | null = null;
+  isGeneratingTTS = false;
+  isTTSPlaying = false;
+  ttsCurrentTime = 0;
+  ttsDuration = 0;
+  ttsError = false;
+
+  // Copy message content to clipboard
+  copyMessage(): void {
+    let textToCopy = '';
+    if (this.message.isText()) {
+      textToCopy = this.message.textContent || '';
+    } else if (this.message.isAgent()) {
+      textToCopy = this.message.content.content || '';
+    }
+
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        console.log('Message copied to clipboard');
+      }).catch(err => {
+        console.error('Failed to copy message:', err);
+      });
+    }
+  }
+
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['message']) {
@@ -36,34 +87,20 @@ export class ChatUiMessageComponent implements OnChanges {
   private updateFormattedContent() {
     if (this.message && this.message.isText()) {
       const textContent = this.message.getDisplayContent();
-      const formattedText = this.formatText(textContent);
-      this.formattedTextContent = this.sanitizer.bypassSecurityTrustHtml(formattedText);
+      // Apply user/AI name replacements - markdown will be parsed by ngx-markdown
+      this.messageTextContent = textContent
+        .replace(/\{\{user\}\}/g, this.chatUI.userName)
+        .replace(this.chatUI.aiName + ':', '')
+        .replace(/"/ + this.chatUI.aiName + ':' + /"/, '');
     }
   }
 
-  // Helper to format text content with replacements
-  formatText(text: string): string {
-    if (!text) return '';
-    return text
-      // First, convert line breaks to <br> tags to preserve formatting
-      .replace(/\n/g, '<br>')
-      // Then do the other replacements
-      .replace(/\{\{user\}\}/g, this.chatUI.userName) // Replace {{user}} with the user's name
-      .replace(this.chatUI.aiName + ':', '') // Remove the AI's name from the message
-      .replace(/"/ + this.chatUI.aiName + ':' + /"/, '') // Remove the AI's name from the message
-      .replace(/\*(.*?)\*/g, '<em>$1</em>'); // Replace asterix with <em> tags, *text* -> <em>text</em>
-  }
-
-  // Helper to format duration
-  formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  getVoiceMessageUrl(message: Message<VoiceContent>): SafeUrl {
-    const src = `data:${message.content.mimeType};base64,${message.content.audioData}`;
-    return this.sanitizer.bypassSecurityTrustUrl(src);
+  // Getter for agent response content (for ngx-markdown)
+  get agentResponseContent(): string {
+    if (this.message?.isAgent()) {
+      return this.message.content?.content || '';
+    }
+    return '';
   }
 
   getAttachmentIcon(type: FileType): string {
@@ -71,10 +108,8 @@ export class ChatUiMessageComponent implements OnChanges {
   }
 
   onAttachmentClick(event: MouseEvent, attachment: FilePreview): void {
-    if (attachment.type === 'image' && attachment.preview) {
-      event.preventDefault();
-      this.openImagePopup(attachment.preview);
-    }
+    event.preventDefault();
+    this.openFilePreviewDialog(attachment);
   }
 
   createDownloadUrl(file: File): SafeUrl {
@@ -82,16 +117,29 @@ export class ChatUiMessageComponent implements OnChanges {
     return this.sanitizer.bypassSecurityTrustUrl(objectUrl);
   }
 
-  openImagePopup(imageUrl: string): void {
-    const overlay = this.renderer.createElement('div');
-    this.renderer.addClass(overlay, 'image-popup-overlay');
-    const img = this.renderer.createElement('img');
-    this.renderer.addClass(img, 'image-popup-content');
-    this.renderer.setAttribute(img, 'src', imageUrl);
-    this.renderer.appendChild(overlay, img);
-    this.renderer.appendChild(document.body, overlay);
-    this.renderer.listen(overlay, 'click', () => {
-      this.renderer.removeChild(document.body, overlay);
+  openFilePreviewDialog(attachment: FilePreview): void {
+    const dialogData: FilePreviewDialogData = {
+      fileId: attachment.id,
+      fileName: attachment.name,
+      fileSize: attachment.sizeFormatted,
+      fileType: attachment.type as FileType,
+      mimeType: attachment.mimeType,
+      // Pass local content if available
+      localUrl: attachment.preview,
+      localFile: attachment.file,
+      // Pass message info for thumbnail regeneration on synced images
+      messageId: this.message.id,
+      conversationId: this.message.conversationId
+    };
+
+    this.dialog.open(FilePreviewDialogComponent, {
+      data: dialogData,
+      panelClass: 'file-preview-dialog-panel',
+      hasBackdrop: false, // Component handles its own backdrop
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      width: '100vw',
+      height: '100vh'
     });
   }
 
@@ -152,6 +200,23 @@ export class ChatUiMessageComponent implements OnChanges {
     return this.message.getDisplayContent();
   }
 
+  // Check if this is a voice message (text with only audio attachment)
+  // In this case, we don't show the text content separately since
+  // the AudioMessageComponent handles the transcript display
+  isVoiceMessageWithTranscript(): boolean {
+    if (!this.message.isText() || !this.message.hasAttachments()) {
+      return false;
+    }
+    const attachments = this.message.attachments;
+    // If there's exactly one audio attachment and the text looks like a transcript
+    // (not manually typed text), treat it as a voice message
+    if (attachments && attachments.length === 1 && attachments[0].type === FileType.AUDIO) {
+      // Check if the attachment name indicates it's a voice message
+      return attachments[0].name.includes('Voice message');
+    }
+    return false;
+  }
+
   // Check if message is editable
   get isEditable(): boolean {
     return this.message.isText();
@@ -186,5 +251,260 @@ export class ChatUiMessageComponent implements OnChanges {
       // Otherwise, set the new rating
       this.chatUI.rateMessage(this.message, rating);
     }
+  }
+
+  // Regenerate once with another catalog model
+  regenerateWith(modelId: number | null) {
+    if (modelId === null) return;
+    this.chatUI.regenerateMessage(this.message, modelId);
+  }
+
+  // ===== Model and Usage =====
+
+  /** Display name of the model that wrote this answer (agent messages from a catalog-aware backend). */
+  get modelName(): string | null {
+    return this.message.isAgent() ? this.message.content.modelName || null : null;
+  }
+
+  get currentModelId(): number | null {
+    return this.message.isAgent() ? this.message.content.modelId ?? null : null;
+  }
+
+  get usage(): IMessageUsage | null {
+    return this.message.isAgent() ? this.message.content.usage || null : null;
+  }
+
+  /** One line for the tooltip and screen readers: tokens in/out (reasoning), cost. */
+  get usageSummary(): string {
+    const usage = this.usage;
+    if (!usage) return '';
+    const parts = [
+      this.translate.instant('catalog.message.inputTokens', { count: this.formatCount(usage.inputTokens) }),
+      this.translate.instant('catalog.message.outputTokens', { count: this.formatCount(usage.outputTokens) })
+    ];
+    if (usage.reasoningTokens) {
+      parts.push(this.translate.instant('catalog.message.reasoningTokens', { count: this.formatCount(usage.reasoningTokens) }));
+    }
+    const cost = this.costText;
+    if (cost) {
+      parts.push(this.translate.instant('catalog.message.cost', { cost }));
+    }
+    return parts.join(' · ');
+  }
+
+  /** The cost with its currency; empty when the model has no prices. */
+  get costText(): string {
+    const usage = this.usage;
+    if (!usage || usage.cost === null || usage.cost === undefined) return '';
+    const digits = usage.cost !== 0 && Math.abs(usage.cost) < 0.01 ? 4 : 2;
+    if (usage.currency) {
+      try {
+        return new Intl.NumberFormat(this.locale, {
+          style: 'currency',
+          currency: usage.currency,
+          minimumFractionDigits: 2,
+          maximumFractionDigits: digits
+        }).format(usage.cost);
+      } catch {
+        // Unknown currency code: fall through to the plain number
+      }
+    }
+    const amount = new Intl.NumberFormat(this.locale, { maximumFractionDigits: digits }).format(usage.cost);
+    return usage.currency ? `${amount} ${usage.currency}` : amount;
+  }
+
+  formatCount(value: number | null | undefined): string {
+    return new Intl.NumberFormat(this.locale).format(value ?? 0);
+  }
+
+  private get locale(): string {
+    return this.translate.currentLang || this.settingsState.getCurrentSettings()?.language || 'en';
+  }
+
+  // ===== Agent Message Helper Methods =====
+
+  // Get status text for agent status
+  getStatusText(status: AgentStatus): string {
+    const texts: Record<AgentStatus, string> = {
+      thinking: 'Reasoning...',
+      responding: 'Generating response...',
+      complete: '',
+      error: 'An error occurred',
+    };
+    return texts[status];
+  }
+
+  // Handle steps panel expansion change - emit event for scroll adjustment
+  onStepsExpandedChange(expanded: boolean): void {
+    // Emit event with the message element for scroll adjustment
+    this.stepsExpanded.emit({
+      expanded,
+      messageElement: this.elementRef.nativeElement
+    });
+  }
+
+  // ===== TTS Methods =====
+
+  /**
+   * Toggle TTS playback - generates audio if not available, or toggles player visibility
+   */
+  async toggleReadOutLoud(): Promise<void> {
+    // If we have an error, retry
+    if (this.ttsError) {
+      this.ttsError = false;
+      this.ttsAudioUrl = null;
+    }
+
+    // If already have audio, toggle player visibility
+    if (this.ttsAudioUrl) {
+      this.closeTTSPlayer();
+      return;
+    }
+
+    this.isGeneratingTTS = true;
+    this.ttsError = false;
+
+    try {
+      // Get current language from settings
+      const settings = this.settingsState.getCurrentSettings();
+      const language = settings?.language || 'en';
+
+      // Generate TTS
+      const audioBlob = await this.apiService.generateTTS(
+        this.message.conversationId,
+        this.message.id!,
+        language
+      );
+
+      // Create object URL
+      this.ttsAudioUrl = URL.createObjectURL(audioBlob);
+
+      // Wait for next tick, then auto-play
+      setTimeout(() => {
+        if (this.ttsAudioPlayerRef?.nativeElement) {
+          this.ttsAudioPlayerRef.nativeElement.play().catch(err => {
+            console.error('Auto-play failed:', err);
+          });
+        }
+      }, 100);
+
+    } catch (error) {
+      console.error('TTS generation failed:', error);
+      this.ttsError = true;
+    } finally {
+      this.isGeneratingTTS = false;
+    }
+  }
+
+  /**
+   * Toggle TTS playback (play/pause)
+   */
+  toggleTTSPlayback(): void {
+    if (this.ttsAudioPlayerRef?.nativeElement) {
+      if (this.isTTSPlaying) {
+        this.ttsAudioPlayerRef.nativeElement.pause();
+      } else {
+        this.ttsAudioPlayerRef.nativeElement.play();
+      }
+    }
+  }
+
+  /**
+   * Close TTS player and clean up
+   */
+  closeTTSPlayer(): void {
+    if (this.ttsAudioPlayerRef?.nativeElement) {
+      this.ttsAudioPlayerRef.nativeElement.pause();
+    }
+    if (this.ttsAudioUrl) {
+      URL.revokeObjectURL(this.ttsAudioUrl);
+      this.ttsAudioUrl = null;
+    }
+    this.isTTSPlaying = false;
+    this.ttsCurrentTime = 0;
+    this.ttsDuration = 0;
+  }
+
+  // TTS Audio event handlers
+  onTTSPlay(): void {
+    this.isTTSPlaying = true;
+  }
+
+  onTTSPause(): void {
+    this.isTTSPlaying = false;
+  }
+
+  onTTSEnded(): void {
+    this.isTTSPlaying = false;
+    this.ttsCurrentTime = 0;
+  }
+
+  onTTSTimeUpdate(event: Event): void {
+    const audio = event.target as HTMLAudioElement;
+    this.ttsCurrentTime = audio.currentTime;
+  }
+
+  onTTSLoadedMetadata(event: Event): void {
+    const audio = event.target as HTMLAudioElement;
+    this.ttsDuration = audio.duration;
+  }
+
+  onTTSError(): void {
+    this.ttsError = true;
+    this.isGeneratingTTS = false;
+  }
+
+  /**
+   * Get TTS progress percentage
+   */
+  get ttsProgressPercent(): number {
+    if (!this.ttsDuration) return 0;
+    return (this.ttsCurrentTime / this.ttsDuration) * 100;
+  }
+
+  /**
+   * Format time in MM:SS
+   */
+  formatTime(seconds: number): string {
+    if (!seconds || !Number.isFinite(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Seek to position in TTS audio
+   */
+  onTTSSeek(event: MouseEvent): void {
+    if (!this.ttsAudioPlayerRef?.nativeElement || !this.ttsDuration) return;
+
+    const progressBar = event.currentTarget as HTMLElement;
+    const rect = progressBar.getBoundingClientRect();
+    const percent = (event.clientX - rect.left) / rect.width;
+    this.ttsAudioPlayerRef.nativeElement.currentTime = percent * this.ttsDuration;
+  }
+
+  /**
+   * Check if TTS is available for this message
+   */
+  get canReadOutLoud(): boolean {
+    // Only for AI messages (not user)
+    if (this.message.roleName === 'user') return false;
+
+    // Must have text content
+    if (this.message.isText()) {
+      return !!(this.message.textContent?.trim());
+    }
+    if (this.message.isAgent()) {
+      return !!(this.message.content?.content?.trim());
+    }
+    return false;
+  }
+
+  /**
+   * Cleanup on destroy
+   */
+  ngOnDestroy(): void {
+    this.closeTTSPlayer();
   }
 }

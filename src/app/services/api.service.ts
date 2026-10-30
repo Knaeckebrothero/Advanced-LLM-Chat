@@ -6,6 +6,32 @@ import { environment } from '../environments/environment';
 import { Conversation } from '../data/objects/conversation';
 import { AppSettings } from '../models/settings.model';
 import { FilePreview } from '../data/objects/file-preview';
+import {
+  ICatalogFile,
+  IConversationSelection,
+  IFetchModelsResponse,
+  IImportResult,
+  IModelCreate,
+  IModelOut,
+  IModelTestResult,
+  IModelUpdate,
+  IPersonaCreate,
+  IPersonaOut,
+  IPersonaUpdate,
+  IProviderOut,
+  IPublicModel,
+  IPublicPersona,
+  IToolStatus,
+} from '../data/models/catalog.model';
+import { IApiConversationCreate, IApiConversationUpdate } from '../data/models/api.model';
+
+/**
+ * Response from file upload endpoint
+ */
+export interface UploadedFileResponse {
+  fileId: string;
+  transcript?: string;  // Present only for audio files
+}
 
 
 @Injectable({
@@ -364,17 +390,19 @@ export class ApiService {
   }
 
   // Method for file upload
-  async uploadFiles(files: FilePreview[]): Promise<string[]> {
+  async uploadFiles(files: FilePreview[]): Promise<UploadedFileResponse[]> {
     const endpoint = `${this.baseUrl}/api/files/upload`;
 
     // Convert FilePreview to FormData and upload
     const formData = new FormData();
     files.forEach(fp => {
-      formData.append('files', fp.file, fp.name);
+      if (fp.file) {
+        formData.append('files', fp.file, fp.name);
+      }
     });
 
     try {
-      // Upload files and return their server IDs
+      // Upload files and return their server IDs (and transcripts for audio)
       // Get existing headers with CSRF token
       const baseHeaders = this.getHeaders();
 
@@ -391,7 +419,7 @@ export class ApiService {
       });
 
       const response = await lastValueFrom(
-        this.http.post<string[]>(endpoint, formData, {
+        this.http.post<UploadedFileResponse[]>(endpoint, formData, {
           headers: uploadHeaders,
           withCredentials: true,
           reportProgress: true
@@ -405,10 +433,13 @@ export class ApiService {
     }
   }
 
-  // Create a new conversation
+  // Create a new conversation (with its model and persona, if picked)
   async createConversation(conversation: Conversation): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/create`;
-    const body = { name: conversation.name, participants: conversation.participants };
+    const body: IApiConversationCreate = { name: conversation.name, participants: conversation.participants };
+    if (conversation.modelId !== undefined) body.modelId = conversation.modelId;
+    if (conversation.personaId !== undefined) body.personaId = conversation.personaId;
+    if (conversation.personaValues !== undefined) body.personaValues = conversation.personaValues;
     try {
       const responseData = await lastValueFrom(
         this.http.post<any>(endpoint, body, this.getHttpOptions())
@@ -420,10 +451,26 @@ export class ApiService {
     }
   }
 
-  // Update conversation name
-  async updateConversationName(id: string, name: string): Promise<Conversation> {
+  // Generate AI title for a conversation (async, fire-and-forget friendly)
+  async generateConversationTitle(conversationId: string, firstMessage: string): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/${conversationId}/generate-title`;
+    const body = { firstMessage };
+    try {
+      const responseData = await lastValueFrom(
+        this.http.post<any>(endpoint, body, this.getHttpOptions())
+      );
+      return Conversation.fromApiResponse(responseData);
+    } catch (error) {
+      console.error('Error generating conversation title:', error);
+      throw error;
+    }
+  }
+
+  // Update conversation name. The current selection is sent along when known, so a backend
+  // that treats missing fields as null doesn't reset the model and persona.
+  async updateConversationName(id: string, name: string, selection?: IConversationSelection): Promise<Conversation> {
     const endpoint = `${this.baseUrl}/api/conversation/${id}`;
-    const body = { name };
+    const body: IApiConversationUpdate = { name, ...selection };
     try {
       const responseData = await lastValueFrom(
         this.http.patch<any>(endpoint, body, this.getHttpOptions())
@@ -431,6 +478,31 @@ export class ApiService {
       return Conversation.fromApiResponse(responseData);
     } catch (error) {
       console.error('Error updating conversation:', error);
+      throw error;
+    }
+  }
+
+  // Update a conversation's model and persona. The name is sent too, since older
+  // backends require it in the PATCH body.
+  async updateConversationSelection(
+    id: string,
+    name: string,
+    selection: IConversationSelection
+  ): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/${id}`;
+    const body: IApiConversationUpdate = {
+      name,
+      modelId: selection.modelId,
+      personaId: selection.personaId,
+      personaValues: selection.personaValues
+    };
+    try {
+      const responseData = await lastValueFrom(
+        this.http.patch<any>(endpoint, body, this.getHttpOptions())
+      );
+      return Conversation.fromApiResponse(responseData);
+    } catch (error) {
+      console.error('Error updating conversation selection:', error);
       throw error;
     }
   }
@@ -446,6 +518,176 @@ export class ApiService {
       console.error('Error deleting conversation:', error);
       throw error;
     }
+  }
+
+  // Fetch a file by its ID
+  async getFile(fileId: string): Promise<Blob> {
+    const endpoint = `${this.baseUrl}/api/files/${fileId}`;
+    try {
+      return await lastValueFrom(
+        this.http.get(endpoint, {
+          ...this.getHttpOptions(),
+          responseType: 'blob'
+        })
+      );
+    } catch (error) {
+      console.error('Error fetching file:', error);
+      throw error;
+    }
+  }
+
+  // Fetch extracted text content for a document
+  async getFileText(fileId: string): Promise<string> {
+    const endpoint = `${this.baseUrl}/api/files/${fileId}/text`;
+    try {
+      return await lastValueFrom(
+        this.http.get(endpoint, {
+          ...this.getHttpOptions(),
+          responseType: 'text'
+        })
+      );
+    } catch (error) {
+      console.error('Error fetching file text:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate text-to-speech audio for a message.
+   * Returns cached audio if available, otherwise generates new.
+   * @param conversationId The conversation ID
+   * @param messageId The message ID
+   * @param language Language code for voice selection ('en' or 'de')
+   * @returns Audio blob (MP3 format)
+   */
+  async generateTTS(conversationId: string, messageId: number, language: string): Promise<Blob> {
+    const endpoint = `${this.baseUrl}/api/message/tts/${conversationId}/${messageId}?language=${language}`;
+
+    try {
+      return await lastValueFrom(
+        this.http.post(endpoint, {}, {
+          ...this.getHttpOptions(),
+          responseType: 'blob'
+        })
+      );
+    } catch (error) {
+      console.error('Error generating TTS:', error);
+      throw error;
+    }
+  }
+
+
+  // =========================================================================
+  // Model catalog: public endpoints (guests get a filtered list)
+  // =========================================================================
+
+  /** Enabled models for the picker. Empty when the catalog is empty (the environment model answers). */
+  async getModels(): Promise<IPublicModel[]> {
+    return await lastValueFrom(
+      this.http.get<IPublicModel[]>(`${this.baseUrl}/api/models`, this.getHttpOptions())
+    ) || [];
+  }
+
+  async getPersonas(): Promise<IPublicPersona[]> {
+    return await lastValueFrom(
+      this.http.get<IPublicPersona[]>(`${this.baseUrl}/api/personas`, this.getHttpOptions())
+    ) || [];
+  }
+
+  // =========================================================================
+  // Model catalog: admin endpoints (403 for everyone else)
+  // =========================================================================
+
+  /** Providers are configured on the server (catalog file and environment variables) and read-only here. */
+  async getAdminProviders(): Promise<IProviderOut[]> {
+    return await lastValueFrom(
+      this.http.get<IProviderOut[]>(`${this.baseUrl}/api/admin/providers`, this.getHttpOptions())
+    );
+  }
+
+  /** The provider's own model list (GET /models), with the ones already in the catalog marked. */
+  async fetchProviderModels(id: number): Promise<IFetchModelsResponse> {
+    return await lastValueFrom(
+      this.http.post<IFetchModelsResponse>(
+        `${this.baseUrl}/api/admin/providers/${id}/fetch-models`, {}, this.getHttpOptions()
+      )
+    );
+  }
+
+  async getAdminModels(): Promise<IModelOut[]> {
+    return await lastValueFrom(
+      this.http.get<IModelOut[]>(`${this.baseUrl}/api/admin/models`, this.getHttpOptions())
+    );
+  }
+
+  async createModel(model: IModelCreate): Promise<IModelOut> {
+    return await lastValueFrom(
+      this.http.post<IModelOut>(`${this.baseUrl}/api/admin/models`, model, this.getHttpOptions())
+    );
+  }
+
+  async updateModel(id: number, update: IModelUpdate): Promise<IModelOut> {
+    return await lastValueFrom(
+      this.http.put<IModelOut>(`${this.baseUrl}/api/admin/models/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  async deleteModel(id: number): Promise<void> {
+    await lastValueFrom(
+      this.http.delete(`${this.baseUrl}/api/admin/models/${id}`, this.getHttpOptions())
+    );
+  }
+
+  /** Sends a short prompt to the model and reports whether it answered. */
+  async testModel(id: number): Promise<IModelTestResult> {
+    return await lastValueFrom(
+      this.http.post<IModelTestResult>(`${this.baseUrl}/api/admin/models/${id}/test`, {}, this.getHttpOptions())
+    );
+  }
+
+  async getAdminPersonas(): Promise<IPersonaOut[]> {
+    return await lastValueFrom(
+      this.http.get<IPersonaOut[]>(`${this.baseUrl}/api/admin/personas`, this.getHttpOptions())
+    );
+  }
+
+  async createPersona(persona: IPersonaCreate): Promise<IPersonaOut> {
+    return await lastValueFrom(
+      this.http.post<IPersonaOut>(`${this.baseUrl}/api/admin/personas`, persona, this.getHttpOptions())
+    );
+  }
+
+  async updatePersona(id: number, update: IPersonaUpdate): Promise<IPersonaOut> {
+    return await lastValueFrom(
+      this.http.put<IPersonaOut>(`${this.baseUrl}/api/admin/personas/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  async deletePersona(id: number): Promise<void> {
+    await lastValueFrom(
+      this.http.delete(`${this.baseUrl}/api/admin/personas/${id}`, this.getHttpOptions())
+    );
+  }
+
+  /** The tool groups agents can use, and whether the server offers them. */
+  async getAdminTools(): Promise<IToolStatus[]> {
+    return await lastValueFrom(
+      this.http.get<IToolStatus[]>(`${this.baseUrl}/api/admin/tools`, this.getHttpOptions())
+    );
+  }
+
+  /** The catalog file. */
+  async exportCatalog(): Promise<ICatalogFile> {
+    return await lastValueFrom(
+      this.http.get<ICatalogFile>(`${this.baseUrl}/api/admin/catalog/export`, this.getHttpOptions())
+    );
+  }
+
+  /** Upserts models and personas by name; never deletes. Provider entries are skipped. */
+  async importCatalog(file: ICatalogFile): Promise<IImportResult> {
+    return await lastValueFrom(
+      this.http.post<IImportResult>(`${this.baseUrl}/api/admin/catalog/import`, file, this.getHttpOptions())
+    );
   }
 
 }

@@ -1,9 +1,4 @@
 <div class="chat-ui-container">
-  <div class="top-right-logo">
-    <img [src]="isDarkMode ? 'assets/icons/fra_uas_logo_white.png' : 'assets/icons/fra_logo_svg.svg'"
-         alt="Frankfurt University of Applied Sciences Logo" />
-  </div>
-
   <div class="message-container" #messageContainer (scroll)="onScroll($event)">
     <div class="loading-older-messages" *ngIf="isLoadingOlderMessages">
       <mat-spinner diameter="30"></mat-spinner>
@@ -14,18 +9,32 @@
     </div>
     <app-chat-ui-message *ngFor="let message of messages | async; let i = index"
                          [message]="message"
-                         [isLastAiMessage]="isLastAiMessage(message, i)"></app-chat-ui-message>
+                         [isLastAiMessage]="isLastAiMessage(message, i)"
+                         (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
+    <!-- Streaming message (displayed separately from persisted messages) -->
+    <app-chat-ui-message *ngIf="streamingMessage$ | async as streamingMessage"
+                         [message]="streamingMessage"
+                         [isLastAiMessage]="true"
+                         (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
   </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
     <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>
   </div>
+  <!-- Privacy notice for models whose provider may keep or train on messages -->
+  <div class="untrusted-notice" *ngIf="(effectiveModel$ | async)?.privacyTier === 'untrusted'" role="note">
+    <mat-icon aria-hidden="true">report</mat-icon>
+    <span>{{ 'catalog.untrustedNotice' | translate }}</span>
+  </div>
   <app-chat-ui-inputfield
     [externalFiles]="pendingFiles"
     [isMobile]="isMobileDevice()"
+    [isStreaming]="(isStreaming$ | async) ?? false"
     (messageSent)="onMessageSent($event)"
     (audioRequested)="onAudioRequested()"
     (filesSelected)="onFileRequested($event)"
     (cameraRequested)="onCameraRequested()"
-    (locationRequested)="onLocationRequested()">
+    (locationRequested)="onLocationRequested()"
+    (stopRequested)="cancelStreaming()">
+    <app-model-picker composerTools></app-model-picker>
   </app-chat-ui-inputfield>
 </div>

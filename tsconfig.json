@@ -11,6 +11,11 @@
     "noPropertyAccessFromIndexSignature": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "ngx-agent-chat": [
+        "./dist/ngx-agent-chat"
+      ]
+    },
     "sourceMap": true,
     "declaration": false,
     "experimentalDecorators": true,

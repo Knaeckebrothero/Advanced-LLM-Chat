@@ -58,8 +58,8 @@ export class SyncEngineService {
     // Set up periodic sync
     this.setupPeriodicSync();
 
-    // Perform initial sync
-    this.performInitialSync();
+    // The first sync is started by the AuthService once a session exists: a request
+    // before that gets a 401, which would open the login page
   }
 
   /**
@@ -120,14 +120,6 @@ export class SyncEngineService {
       console.error('Sync failed:', error);
       this.updateStatus({ isSyncing: false });
     }
-  }
-
-  /**
-   * Initial sync on startup
-   */
-  private async performInitialSync(): Promise<void> {
-    console.log('Performing initial sync...');
-    await this.performSync();
   }
 
   /**

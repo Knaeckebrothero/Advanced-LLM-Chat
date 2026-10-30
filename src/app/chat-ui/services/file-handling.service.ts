@@ -48,9 +48,9 @@ export class FileHandlingService {
   /**
    * Creates a file preview for an audio recording
    * @param recordingResult The result of a voice recording
-   * @returns FilePreview object for the audio recording
+   * @returns Promise<FilePreview> for the audio recording with base64 data
    */
-  createAudioFilePreview(recordingResult: RecordingResult): FilePreview {
+  async createAudioFilePreview(recordingResult: RecordingResult): Promise<FilePreview> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const extension = this.getFileExtension(recordingResult.mimeType);
     const fileName = `voice-message-${timestamp}.${extension}`;
@@ -62,7 +62,10 @@ export class FileHandlingService {
       lastModified: Date.now()
     });
 
-    // Create FilePreview
+    // Convert blob to base64 for offline storage/playback
+    const base64Data = await this.blobToBase64(recordingResult.blob);
+
+    // Create FilePreview with base64 data
     return {
       id: FilePreviewUtil.generateId(),
       file: audioFile,
@@ -71,8 +74,25 @@ export class FileHandlingService {
       sizeFormatted: FilePreviewUtil.formatFileSize(audioFile.size),
       type: FileType.AUDIO,
       mimeType: audioFile.type,
-      uploadStatus: UploadStatus.PENDING
+      uploadStatus: UploadStatus.PENDING,
+      base64Data: base64Data
     };
+  }
+
+  /**
+   * Converts a Blob to a base64 data URL
+   * @param blob Blob to convert
+   * @returns Promise with base64 data URL string
+   */
+  private blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        resolve(reader.result as string);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 
   /**

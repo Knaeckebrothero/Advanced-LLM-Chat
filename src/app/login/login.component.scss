@@ -244,6 +244,17 @@
   }
 }
 
+// Without login (AUTH_MODE=none)
+.login-off {
+  margin-top: 24px;
+  color: var(--theme-text-secondary);
+  line-height: 1.5;
+}
+
+.guest-link {
+  margin-top: 16px;
+}
+
 // Modern error message styling
 .error-message {
   display: flex;
@@ -317,7 +328,7 @@
 .skip-button {
   margin-top: 16px;
   background-color: var(--theme-secondary);
-  color: white;
+  color: var(--theme-primary-contrast);
   border-radius: 12px;
 
 }

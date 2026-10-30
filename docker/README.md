@@ -1,4 +1,4 @@
-# Docker Setup for Fessi
+# Docker Setup
 
 This directory contains the Docker configuration for containerizing both the Angular frontend and Python backend applications.
 
@@ -8,6 +8,8 @@ This directory contains the Docker configuration for containerizing both the Ang
 - **backend.Dockerfile**: Python FastAPI backend with SQLite database
 - **nginx.conf**: Nginx configuration optimized for serving Angular SPA
 - **docker-compose.yml**: Docker Compose configuration for running both services
+- **docker-compose.keycloak.yml**: Optional Keycloak for logging in, added to either compose file (see [Login](#login))
+  (the realm it imports on its first start is shared with the Helm chart: `helm/advanced-llm-chat/files/llm-chat-realm.json`)
 
 ## Prerequisites
 
@@ -18,11 +20,9 @@ This directory contains the Docker configuration for containerizing both the Ang
 
 ### 1. Set up environment variables
 
-Create a `.env` file in the docker directory:
+Copy `.env.example` to `.env` in the docker directory and fill it in (at least `POSTGRES_PASSWORD` for the prod file, and a model provider key).
 
-```bash
-REPLICATE_API_TOKEN=your_replicate_api_token_here
-```
+Every release (a merge into `main`) also publishes a ready bundle on the GitHub releases page: `docker-compose.yml` with the release's image tag, the Keycloak file, its realm and `.env.example`. A Helm chart for Kubernetes is in `helm/advanced-llm-chat`.
 
 ### 2. Build and run with Docker Compose
 
@@ -47,10 +47,10 @@ From the repository root:
 
 ```bash
 # Build the frontend image
-docker build -f docker/Dockerfile -t fessi-frontend:latest .
+docker build -f docker/Dockerfile -t llm-chat-frontend:latest .
 
 # Run the frontend container
-docker run -d -p 8080:80 --name fessi-frontend fessi-frontend:latest
+docker run -d -p 8080:80 --name llm-chat-frontend llm-chat-frontend:latest
 ```
 
 ### Backend Only
@@ -59,15 +59,15 @@ From the repository root:
 
 ```bash
 # Build the backend image
-docker build -f docker/backend.Dockerfile -t fessi-backend:latest .
+docker build -f docker/backend.Dockerfile -t llm-chat-backend:latest .
 
 # Run the backend container
 docker run -d \
   -p 8443:8443 \
   -v $(pwd)/docker/data:/app/data \
   -e REPLICATE_API_TOKEN=your_token_here \
-  --name fessi-backend \
-  fessi-backend:latest
+  --name llm-chat-backend \
+  llm-chat-backend:latest
 ```
 
 ## Accessing the Application
@@ -86,12 +86,56 @@ The GitHub Actions workflow automatically builds and pushes both images:
 
 ```bash
 # Pull the latest images
-docker pull ghcr.io/Knaeckebrothero/fessi-frontend:develop-latest
-docker pull ghcr.io/Knaeckebrothero/fessi-backend:develop-latest
+docker pull ghcr.io/knaeckebrothero/advanced-llm-chat-frontend:develop-latest
+docker pull ghcr.io/knaeckebrothero/advanced-llm-chat-backend:develop-latest
 
 # Run with docker-compose using remote images
 docker-compose -f docker-compose.prod.yml up -d
 ```
+
+## Runtime Configuration
+
+The frontend container supports runtime environment variable injection. This allows you to configure the API URL without rebuilding the image.
+
+### How it works
+
+1. At container startup, `envsubst` substitutes `${API_URL}` in `/assets/env.template.js`
+2. The result is written to `/assets/env.js`
+3. Angular loads this config before bootstrapping
+
+### Deploying to a remote server
+
+```bash
+# Set the API_URL to your backend's address
+API_URL=https://my-server.example.com:8443 docker-compose up -d
+
+# Or add to .env file
+echo "API_URL=https://my-server.example.com:8443" >> .env
+docker-compose up -d
+```
+
+## Login
+
+Guests can always chat. How everyone else logs in is `AUTH_MODE` (details in
+[docs/authentication.md](../docs/authentication.md)):
+
+- **No login** (the default, `AUTH_MODE=none`): guests only.
+- **Your own OpenID Connect provider**, e.g. an existing Keycloak: set `AUTH_MODE=oidc` and the
+  `OIDC_*` settings in `docker/.env`, and register the client there as the doc describes.
+- **The bundled Keycloak**: set `KEYCLOAK_ADMIN_PASSWORD` and `OIDC_CLIENT_SECRET` in `docker/.env`
+  (e.g. `openssl rand -hex 24`), then add the Keycloak compose file:
+
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up -d
+  ```
+
+  Open the Keycloak console at http://localhost:8180 (user `admin`), switch to the realm
+  `llm-chat`, create users (with "Email verified" on and a password), and give admins the
+  realm role `admin`. The realm is imported on the first start only; change it in the
+  console afterwards. Behind a reverse proxy, set `KEYCLOAK_URL`, `API_URL` and
+  `FRONTEND_URL` to the addresses the browser uses.
+
+`AUTH_MODE=mock` (log in with any email, no password) is for development only.
 
 ## Container Details
 
@@ -104,6 +148,7 @@ docker-compose -f docker-compose.prod.yml up -d
   - Static asset caching
   - Security headers configured
   - SPA routing handled correctly
+  - Runtime environment variable injection via `envsubst`
 
 ### Backend Container
 - **Base Image**: python:3.11-slim
@@ -131,6 +176,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ### Frontend
 - `NODE_ENV`: Set to "production" for production builds
+- `API_URL`: Backend API endpoint (default: `https://localhost:8443`). Set this to the backend's address when deploying to a remote server.
 
 ## Production Deployment
 

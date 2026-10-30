@@ -1,0 +1,78 @@
+# Optional login server: Keycloak with a ready realm "llm-chat" for this app, and the
+# backend set up to log users in through it (AUTH_MODE=oidc). Add it to either compose file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up -d
+#   docker compose -f docker-compose.prod.yml -f docker-compose.keycloak.yml up -d
+#
+# Needs KEYCLOAK_ADMIN_PASSWORD and OIDC_CLIENT_SECRET in docker/.env. Then create users in
+# the Keycloak console (KEYCLOAK_URL, user "admin"), realm "llm-chat"; the realm role "admin"
+# makes a user an admin of the app. Details: docs/authentication.md.
+# Without this file the backend can use any other OIDC provider (the OIDC_* settings), or none.
+
+services:
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: llm-chat-keycloak-db
+    environment:
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak_dev_password}
+      - POSTGRES_DB=keycloak
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.0
+    container_name: llm-chat-keycloak
+    # Imports the realm on the first start only; later changes go through the console
+    command: ["start", "--import-realm"]
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    environment:
+      - KC_DB=postgres
+      - KC_DB_URL_HOST=keycloak-db
+      - KC_DB_URL_DATABASE=keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD:-keycloak_dev_password}
+      # The address browsers use; the backend reaches Keycloak inside the network instead
+      # (KC_HOSTNAME_BACKCHANNEL_DYNAMIC). Behind a reverse proxy with TLS, set KEYCLOAK_URL
+      # to its https address and add KC_PROXY_HEADERS=xforwarded.
+      - KC_HOSTNAME=${KEYCLOAK_URL:-http://localhost:8180}
+      - KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
+      - KC_HTTP_ENABLED=true
+      - KC_HEALTH_ENABLED=true
+      # The first admin of the Keycloak console (realm "master")
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD in docker/.env}
+      # Filled into the realm file (shared with the Helm chart) when it's imported
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET in docker/.env}
+      - OIDC_REDIRECT_URI=${API_URL:-https://localhost:8443}/api/auth/oidc/callback
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-8080}}
+    volumes:
+      - ${KEYCLOAK_REALM_FILE:-../helm/advanced-llm-chat/files/llm-chat-realm.json}:/opt/keycloak/data/import/llm-chat-realm.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  backend:
+    environment:
+      - AUTH_MODE=${AUTH_MODE:-oidc}
+      - OIDC_ISSUER=${KEYCLOAK_URL:-http://localhost:8180}/realms/llm-chat
+      - OIDC_DISCOVERY_URL=http://keycloak:8080/realms/llm-chat/.well-known/openid-configuration
+      - OIDC_CLIENT_ID=llm-chat
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET in docker/.env}
+      - OIDC_ADMIN_ROLE=${OIDC_ADMIN_ROLE:-admin}
+      - OIDC_DISPLAY_NAME=${OIDC_DISPLAY_NAME:-Keycloak}
+
+volumes:
+  keycloak_db_data:

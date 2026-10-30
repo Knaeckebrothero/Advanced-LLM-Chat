@@ -36,17 +36,17 @@ jobs:
       - name: Build Angular App
         run: |
           echo "Building from develop branch commit: ${{ steps.commit.outputs.sha_short }}"
-          ng build --configuration production --base-href "/Fessi/"
+          ng build --configuration production --base-href "/${{ github.event.repository.name }}/"
 
       - name: Verify Build Output
         run: |
           echo "Checking build output structure:"
           ls -la dist/
-          ls -la dist/fessi/
+          ls -la dist/advanced-llm-chat/
           # Check if browser subdirectory exists (Angular 17+)
-          if [ -d "dist/fessi/browser" ]; then
+          if [ -d "dist/advanced-llm-chat/browser" ]; then
             echo "Found browser subdirectory (Angular 17+ structure)"
-            ls -la dist/fessi/browser/
+            ls -la dist/advanced-llm-chat/browser/
           fi
 
       - name: Checkout GitHub Pages Branch
@@ -62,12 +62,12 @@ jobs:
           rm -rf gh-pages/*
 
           # Copy build files - handle both old and new Angular build structures
-          if [ -d "dist/fessi/browser" ]; then
+          if [ -d "dist/advanced-llm-chat/browser" ]; then
             echo "Copying from browser subdirectory (Angular 17+)"
-            cp -r dist/fessi/browser/* gh-pages/
+            cp -r dist/advanced-llm-chat/browser/* gh-pages/
           else
             echo "Copying from root dist directory (legacy structure)"
-            cp -r dist/fessi/* gh-pages/
+            cp -r dist/advanced-llm-chat/* gh-pages/
           fi
 
           # Create .nojekyll file to prevent Jekyll processing
@@ -105,6 +105,6 @@ jobs:
           echo "- **Commit:** \`${{ steps.commit.outputs.sha_short }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Message:** ${{ steps.commit.outputs.commit_message }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Author:** ${{ steps.commit.outputs.commit_author }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployed to:** https://${{ github.repository_owner }}.github.io/Fessi/" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed to:** https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Deployment completed successfully!" >> $GITHUB_STEP_SUMMARY

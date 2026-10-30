@@ -1,5 +1,4 @@
 import { Component, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
 import { AuthService } from '../auth.service';
 
 
@@ -8,7 +7,7 @@ import { AuthService } from '../auth.service';
   template: `
     <div class="callback-container">
       <mat-spinner></mat-spinner>
-      <p>Completing login...</p>
+      <p>{{ 'Completing login...' | translate }}</p>
     </div>
   `,
   styles: [`
@@ -23,17 +22,11 @@ import { AuthService } from '../auth.service';
   `],
   standalone: false
 })
+/** Where the backend sends the browser after a login through the OIDC provider. */
 export class AuthCallbackComponent implements OnInit {
-  constructor(
-    private route: ActivatedRoute,
-    private authService: AuthService
-  ) {}
+  constructor(private authService: AuthService) {}
 
   ngOnInit() {
-    // Get all query params (code, state, etc. for OAuth)
-    const params = this.route.snapshot.queryParams;
-
-    // Handle the callback
-    this.authService.handleAuthCallback(params);
+    this.authService.completeLogin();
   }
 }

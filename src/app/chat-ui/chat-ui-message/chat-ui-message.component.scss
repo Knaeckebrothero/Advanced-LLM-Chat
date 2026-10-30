@@ -1,333 +1,931 @@
 // src/app/chat-ui/chat-ui-message/chat-ui-message.component.scss
-@use 'src/styles/variables' as vars;
+// Modern AI Chat Message Styles - Inspired by ChatGPT/Claude
 
-// Ensure the message display container takes up the full width so that the messages are displayed in a column.
-.message-display-container {
+// ============================================
+// MESSAGE ROW - Main Container
+// ============================================
+.message-row {
   display: flex;
-  flex-direction: column;
-  flex-grow: 1;
+  gap: 16px;
+  padding: 24px 0;
   width: 100%;
-  overflow-y: auto;
+  max-width: 768px;
+  margin: 0 auto;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    .message-actions {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+
+  // User message styling - right-aligned with avatar on right
+  &--user {
+    flex-direction: row-reverse;
+
+    .message-avatar {
+      background: var(--theme-avatar-user);
+    }
+
+    .message-content-wrapper {
+      align-items: flex-end; // Align children to the right
+    }
+
+    .message-role-label {
+      text-align: right;
+      justify-content: flex-end;
+    }
+
+    .message-body {
+      text-align: right;
+    }
+
+    .message-actions {
+      justify-content: flex-end;
+    }
+
+    // Attachments should align right too
+    .message-attachments {
+      justify-content: flex-end;
+    }
+  }
+
+  // Assistant message styling
+  &--assistant {
+    .message-avatar {
+      background: var(--theme-avatar-ai);
+    }
+  }
+
+  // System message styling
+  &--system {
+    opacity: 0.8;
+    padding: 16px 0;
+
+    .message-avatar {
+      background: var(--theme-border);
+    }
+
+    .message-content-wrapper {
+      font-style: italic;
+    }
+  }
 }
 
-// Message component styles
-.message {
-  //
+// With a background image (settings), each message sits on a frosted card
+:host-context(body.has-background-image) {
+  .message-content-wrapper {
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  // User messages keep their bubble shape: the card hugs the text
+  .message-row--user .message-content-wrapper {
+    flex: 0 1 auto;
+    max-width: min(85%, 640px);
+  }
+
+  // Desktop: the actions (shown on hover) sit just below the card instead of
+  // leaving an empty strip inside it. On touch screens they are always shown and stay inside.
+  @media (hover: hover) and (min-width: 769px) {
+    .message-content-wrapper {
+      position: relative;
+    }
+
+    .message-actions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 2px;
+    }
+  }
+}
+
+// ============================================
+// AVATAR
+// ============================================
+.message-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   display: flex;
-  // Aligns the message to the left or right side of the screen
-  flex-direction: column;
-  max-width: 60%;
-  // Adds space between the message and the edge of the screen
-  padding: 10px;
-  // Gives the message rounded corners
-  border-radius: 20px;
-  // Elevates the message from the background
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  // Adds space between messages
-  margin-bottom: 20px;
-  color: var(--theme-text); // Use theme text color
-  word-wrap: break-word;
-  text-align: left;
-  position: relative;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: var(--theme-shadow-sm);
 
-  // Adjusts the messages for the user
-  &.message-user {
-    // Aligns the message to the right side of the screen
-    align-self: flex-end;
-    // Flattens the top left corner
-    border-top-right-radius: 0;
-    // Use the specific user message background from the theme
-    background-color: var(--theme-msg-user-bg);
-    .message-user-name {
-      display: none;
-    }
-  }
-
-  // Adjusts the messages for others
-  &.message-not-user {
-    // Aligns the message to the left side of the screen
-    align-self: flex-start;
-    // Flattens the top right corner
-    border-top-left-radius: 0;
-    // Use the specific assistant message background from the theme
-    background-color: var(--theme-msg-assistant-bg);
-  }
-
-  // Adjusts the messages for the system
-  &.message-system {
-    // Center the message
-    align-self: center;
-    border-radius: 0;
-    // Use a neutral surface color for system messages
-    background-color: var(--theme-surface);
-    border: 1px solid var(--theme-border);
-    .message-user-name, .message-timestamp {
-      display: none;
-    }
-
-    .message-footer {
-      align-self: center;
-      .message-timestamp {
-        display: none;
-      }
-    }
-  }
-
-  // --- Voice Message ---
-  &.message-voice {
-    .voice-message {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-
-      .voice-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        .voice-icon { font-size: 1.2em; }
-        .voice-duration {
-          font-weight: 500;
-          color: var(--theme-text);
-        }
-      }
-
-      .voice-transcript {
-        padding: 8px;
-        // Use a subtle background for the transcript
-        background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
-        border-radius: 8px;
-        font-style: italic;
-        color: var(--theme-text);
-        opacity: 0.9;
-      }
-
-      .voice-player {
-        margin-top: 8px;
-
-        .voice-audio-player {
-          width: 100%;
-          height: 40px;
-          border-radius: 20px;
-          &::-webkit-media-controls-panel {
-            background-color: transparent;
-          }
-
-          &::-webkit-media-controls-play-button,
-          &::-webkit-media-controls-current-time-display,
-          &::-webkit-media-controls-time-remaining-display {
-            color: var(--theme-text);
-          }
-        }
-      }
-    }
-  }
-}
-
-// Message username
-.message-user-name {
-  // Space between username and message text
-  margin-bottom: 4px;
-  // Slightly smaller font for username
-  font-size: 0.80em;
-}
-
-// Message content
-.message-body {
-  // Font size for message text content
-  font-size: 1em;
-
-  // Preserve line breaks and spaces in messages
-  white-space: pre-wrap;
-
-  // Ensure text wraps properly at container edges
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-
-  // Prevent text from overflowing the message bubble
-  max-width: 100%;
-
-  // Attachments styling
-  .message-attachments {
-    margin-bottom: 12px;
-    display: flex;
-    flex-wrap: nowrap;      // <-- Changed from 'wrap' to 'nowrap'
-    gap: 8px;
-    overflow-x: auto;       // <-- Added for horizontal scrolling
-    overflow-y: hidden;     // <-- Added to hide vertical scrollbar
-    padding-bottom: 8px;    // <-- Added padding for scrollbar visibility
-
-    // Custom scrollbar styling
-    &::-webkit-scrollbar {
-      height: 4px;
-    }
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    &::-webkit-scrollbar-thumb {
-      background-color: rgba(var(--theme-primary-contrast-rgb), 0.2);
-      border-radius: 4px;
-    }
-  }
-
-    // Target the <a> tag to remove link styling
-    a.attachment-item {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    .attachment-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      background-color: rgba(var(--theme-primary-contrast-rgb), 0.05);
-      border: 1px solid rgba(var(--theme-primary-contrast-rgb), 0.1);
-      border-radius: 18px;
-      max-width: 250px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-
-      &:hover {
-        background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
-      }
-
-      &.is-image {
-        width: 120px;
-        height: 120px;
-        padding: 0;
-        border-radius: 12px;
-        position: relative;
-        flex-shrink: 0; // Prevents the image from shrinking
-
-        .attachment-thumbnail {
-          width: 100%;
-          height: 100%;
-          border-radius: 12px;
-        }
-
-        .attachment-info, .attachment-icon {
-          display: none;
-        }
-
-        &:hover .attachment-info-overlay {
-          opacity: 1;
-        }
-      }
-    }
-
-  .attachment-thumbnail {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    overflow: hidden;
-    flex-shrink: 0;
-    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
-
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-  }
-
-  .attachment-info-overlay {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    padding: 4px 8px;
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    border-bottom-left-radius: 11px;
-    border-bottom-right-radius: 11px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    pointer-events: none;
-  }
-
-  .attachment-icon {
-    width: 32px;
-    height: 32px;
+  .avatar-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
-    border-radius: 6px;
-    flex-shrink: 0;
 
     mat-icon {
       font-size: 20px;
-      color: var(--theme-text);
-      opacity: 0.8;
-    }
-  }
-
-  .attachment-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1;
-
-    .attachment-name {
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .attachment-size {
-      font-size: 11px;
-      opacity: 0.7;
+      width: 20px;
+      height: 20px;
     }
   }
 }
 
-// Message footer
-.message-footer {
+// ============================================
+// MESSAGE CONTENT WRAPPER
+// ============================================
+.message-content-wrapper {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
+}
+
+// Role Label
+.message-role-label {
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .role-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--theme-text);
+  }
 }
 
-// Message timestamp
-.message-timestamp {
-  align-self: flex-end;
-  // Smaller font for timestamp
-  font-size: 0.50em;
-  // Space between message text and timestamp
-  margin-top: 4px;
+// Model that wrote an agent message
+.model-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--theme-text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+
+  .model-label-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    margin-right: -4px;
+  }
+
+  &--interactive {
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+
+    &:hover {
+      background: var(--theme-hover);
+      color: var(--theme-text);
+    }
+  }
 }
 
-// Message actions
+// Tokens and cost, opened from the model label
+.usage-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 2px 0 6px;
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+// MESSAGE BODY
+// ============================================
+.message-body {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--theme-text);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+
+  // Use ::ng-deep to pierce Angular encapsulation for innerHTML content
+  ::ng-deep .message-text,
+  ::ng-deep .response-text {
+    // ===== MARKDOWN STYLES =====
+    // Compact spacing for modern chat UIs (similar to OpenAI, Claude, Google)
+
+    // Headings - tight margins for compact layout
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      margin: 0.5em 0 0.15em 0;
+      font-weight: 600;
+      line-height: 1.3;
+      color: var(--theme-text);
+
+      &:first-child {
+        margin-top: 0;
+      }
+    }
+
+    h1 {
+      font-size: 1.4em;
+    }
+
+    h2 {
+      font-size: 1.25em;
+    }
+
+    h3 {
+      font-size: 1.1em;
+    }
+
+    h4,
+    h5,
+    h6 {
+      font-size: 1em;
+    }
+
+    // Paragraphs - minimal margins
+    p {
+      margin: 0 0 0.25em 0;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+
+    // Bold and italic
+    strong {
+      font-weight: 600;
+    }
+
+    em {
+      font-style: italic;
+    }
+
+    // Links
+    a {
+      color: var(--theme-primary);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    // Inline code
+    code {
+      background-color: var(--theme-code-bg);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Consolas', monospace;
+      font-size: 0.9em;
+      border: 1px solid var(--theme-border);
+    }
+
+    // Code blocks - compact margin
+    pre {
+      background-color: var(--theme-code-bg);
+      padding: 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 0.35em 0;
+      border: 1px solid var(--theme-border);
+
+      code {
+        background: none;
+        padding: 0;
+        border: none;
+        font-size: 0.875em;
+        line-height: 1.5;
+      }
+    }
+
+    // Blockquotes - compact margins
+    blockquote {
+      margin: 0.35em 0;
+      padding: 0.3em 0 0.3em 0.8em;
+      border-left: 3px solid var(--theme-primary);
+      background-color: var(--theme-hover);
+      border-radius: 0 6px 6px 0;
+
+      p {
+        margin: 0;
+      }
+    }
+
+    // Lists - compact spacing
+    ul,
+    ol {
+      margin: 0.2em 0;
+      padding-left: 1.4em;
+
+      li {
+        margin: 0.1em 0;
+        line-height: 1.5;
+
+        // Nested lists
+        ul,
+        ol {
+          margin: 0.1em 0;
+        }
+      }
+    }
+
+    ul {
+      list-style-type: disc;
+
+      ul {
+        list-style-type: circle;
+
+        ul {
+          list-style-type: square;
+        }
+      }
+    }
+
+    ol {
+      list-style-type: decimal;
+    }
+
+    // Tables - Modern design with clear borders, compact margin
+    // Scrollable on mobile for tables that exceed viewport width
+    table {
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 0.35em 0;
+      font-size: 0.9em;
+      border: 2px solid var(--theme-border);
+      border-radius: 10px;
+      background-color: var(--theme-surface);
+
+      thead {
+        background: linear-gradient(180deg, var(--theme-hover) 0%, rgba(var(--theme-primary-rgb), 0.15) 100%);
+
+        th {
+          font-weight: 600;
+          text-align: left;
+          padding: 14px 16px;
+          border-bottom: 2px solid var(--theme-primary);
+          border-right: 1px solid var(--theme-border);
+          color: var(--theme-text);
+          white-space: nowrap;
+
+          &:last-child {
+            border-right: none;
+          }
+        }
+      }
+
+      tbody {
+        tr {
+          border-bottom: 1px solid var(--theme-border);
+          transition: background-color 0.15s ease;
+
+          &:nth-child(even) {
+            background-color: rgba(var(--theme-primary-rgb), 0.05);
+          }
+
+          &:hover {
+            background-color: rgba(var(--theme-primary-rgb), 0.1);
+          }
+
+          &:last-child {
+            border-bottom: none;
+
+            td {
+              border-bottom: none;
+            }
+          }
+        }
+
+        td {
+          padding: 12px 16px;
+          vertical-align: top;
+          border-right: 1px solid var(--theme-border);
+          border-bottom: 1px solid var(--theme-border);
+
+          &:last-child {
+            border-right: none;
+          }
+        }
+      }
+    }
+
+    // Horizontal rule - compact margin
+    hr {
+      border: none;
+      border-top: 1px solid var(--theme-border);
+      margin: 0.5em 0;
+    }
+
+    // Images
+    img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      margin: 0.35em 0;
+    }
+
+    // ===== Copy/Download Button Wrappers =====
+
+    // Table wrapper with hover buttons - compact margin
+    .table-wrapper {
+      position: relative;
+      display: inline-block;
+      min-width: 100%;
+      margin: 0.35em 0;
+
+      &:hover .copy-download-buttons {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      table {
+        margin: 0 !important; // Remove margin since wrapper handles it
+      }
+
+      .copy-download-buttons {
+        top: 10px;
+        right: 10px;
+      }
+    }
+
+    // Code block wrapper with hover buttons - compact margin
+    .code-wrapper {
+      position: relative;
+      margin: 0.35em 0;
+
+      &:hover .copy-download-buttons {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      pre {
+        margin: 0 !important; // Remove margin since wrapper handles it
+      }
+
+      .copy-download-buttons {
+        top: 8px;
+        right: 8px;
+      }
+    }
+
+    // Copy/download buttons container
+    .copy-download-buttons {
+      position: absolute;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      z-index: 10;
+    }
+
+    // Action icon button style
+    .action-icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      border-radius: 6px;
+      background-color: rgba(var(--theme-surface-rgb, 30, 30, 30), 0.9);
+      color: var(--theme-text-secondary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      backdrop-filter: blur(4px);
+
+      .material-icons {
+        font-size: 16px;
+      }
+
+      &:hover {
+        background-color: var(--theme-hover);
+        color: var(--theme-text);
+      }
+
+      &:active {
+        transform: scale(0.95);
+      }
+    }
+  }
+}
+
+// ============================================
+// ATTACHMENTS
+// ============================================
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--theme-hover);
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  max-width: 280px;
+
+  &:hover {
+    background-color: var(--theme-active);
+    border-color: var(--theme-primary);
+    transform: translateY(-1px);
+  }
+
+  &.is-image {
+    padding: 0;
+    width: 160px;
+    height: 160px;
+    overflow: hidden;
+    position: relative;
+
+    .attachment-thumbnail {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
+
+.attachment-thumbnail {
+  width: 100%;
+  height: 100%;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 11px;
+  }
+}
+
+.attachment-info-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  color: white;
+  padding: 24px 12px 12px;
+  font-size: 12px;
+  border-bottom-left-radius: 11px;
+  border-bottom-right-radius: 11px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+
+  .attachment-item:hover & {
+    opacity: 1;
+  }
+}
+
+.attachment-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: var(--theme-hover);
+
+  .placeholder-icon {
+    font-size: 40px;
+    width: 40px;
+    height: 40px;
+    opacity: 0.5;
+  }
+
+  .placeholder-text {
+    font-size: 11px;
+    opacity: 0.7;
+    text-align: center;
+    padding: 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .placeholder-hint {
+    font-size: 10px;
+    opacity: 0.5;
+    color: var(--theme-primary);
+  }
+}
+
+.attachment-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--theme-primary);
+  border-radius: 10px;
+  flex-shrink: 0;
+
+  mat-icon {
+    font-size: 22px;
+    color: var(--theme-primary-contrast);
+  }
+}
+
+.attachment-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+
+  .attachment-name {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attachment-size {
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.attachment-error {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+
+  .error-icon {
+    font-size: 20px;
+    color: #ef4444;
+  }
+}
+
+.attachment-item.has-error {
+  border-color: rgba(239, 68, 68, 0.5);
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+.attachment-item.is-synced {
+  border-style: dashed;
+}
+
+// ============================================
+// VOICE MESSAGE
+// ============================================
+.voice-message {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: var(--theme-hover);
+  border-radius: 16px;
+  border: 1px solid var(--theme-border);
+
+  .voice-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .voice-icon {
+      color: var(--theme-primary);
+    }
+
+    .voice-duration {
+      font-weight: 500;
+      font-size: 14px;
+    }
+  }
+
+  .voice-transcript {
+    padding: 12px 16px;
+    background-color: var(--theme-surface);
+    border-radius: 12px;
+    font-style: italic;
+    opacity: 0.9;
+  }
+
+  .voice-player {
+    .voice-audio-player {
+      width: 100%;
+      height: 40px;
+      border-radius: 20px;
+    }
+  }
+}
+
+// ============================================
+// AGENT MESSAGE
+// ============================================
+.agent-message {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  .agent-status {
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background-color: var(--theme-hover);
+      border-radius: 20px;
+      font-size: 14px;
+      color: var(--theme-text-secondary);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--theme-primary);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.5;
+        transform: scale(0.9);
+      }
+    }
+  }
+
+  // Agent steps styles moved to agent-steps.component.scss
+
+  .agent-response {
+    line-height: 1.6;
+
+    .streaming-cursor {
+      display: inline-block;
+      width: 3px;
+      height: 1.2em;
+      background-color: var(--theme-primary);
+      margin-left: 4px;
+      animation: blink 0.8s infinite;
+      vertical-align: text-bottom;
+      border-radius: 1px;
+    }
+
+    @keyframes blink {
+
+      0%,
+      50% {
+        opacity: 1;
+      }
+
+      51%,
+      100% {
+        opacity: 0;
+      }
+    }
+  }
+
+  .agent-error {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+    color: #ef4444;
+
+    mat-icon {
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+    }
+  }
+}
+
+// ============================================
+// MESSAGE ACTIONS
+// ============================================
 .message-actions {
   display: flex;
   align-items: center;
-  // This ensures the buttons are on the same level as the timestamp
-  margin-bottom: -10px;
+  gap: 4px;
+  margin-top: 12px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
 
-  button {
-    // Reduce the size of the icons
+  &--visible {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+
     mat-icon {
-      font-size: 15px;
-      height: 15px;
-      width: 15px;
-    }
-    // Adjust padding to ensure icons are not too close to each other
-    &:not(:last-child) {
-      margin-right: 3px;
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--theme-text-secondary);
+      transition: color 0.15s ease;
     }
 
-    // Active rating style
-    &.active-rating {
+    &:hover {
+      background-color: var(--theme-hover);
+
       mat-icon {
-        color: var(--theme-primary);
+        color: var(--theme-text);
       }
     }
+
+    &--active {
+      mat-icon {
+        color: var(--theme-primary) !important;
+      }
+    }
+
+    &--danger:hover {
+      background-color: rgba(239, 68, 68, 0.1);
+
+      mat-icon {
+        color: #ef4444 !important;
+      }
+    }
+
+    &--confirm {
+      mat-icon {
+        color: #10b981;
+      }
+
+      &:hover {
+        background-color: rgba(16, 185, 129, 0.1);
+      }
+    }
+
+    &--cancel {
+      mat-icon {
+        color: #ef4444;
+      }
+
+      &:hover {
+        background-color: rgba(239, 68, 68, 0.1);
+      }
+    }
+  }
+
+  .message-timestamp {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+  }
+}
+
+// ============================================
+// EDITABLE MESSAGE
+// ============================================
+.editable-message {
+  outline: none;
+  border: 2px solid var(--theme-primary);
+  background-color: var(--theme-surface);
+  padding: 12px 16px;
+  border-radius: 12px;
+  min-height: 60px;
+  white-space: pre-wrap;
+  transition: border-color 0.2s ease;
+
+  &:focus {
+    border-color: var(--theme-secondary);
+    box-shadow: var(--theme-shadow-glow);
   }
 }
 
@@ -336,26 +934,199 @@ em {
   font-style: italic;
 }
 
-// Editable message styling
-.editable-message {
-  outline: none;
-  border: 1px dashed rgba(var(--theme-primary-contrast-rgb), 0.3);
-  padding: 4px;
-  border-radius: 4px;
-  min-height: 1.5em;
+// ============================================
+// TTS AUDIO PLAYER
+// ============================================
+.tts-player-container {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--theme-hover);
+  border-radius: 12px;
+  border: 1px solid var(--theme-border);
+}
 
-  &:focus {
-    border-color: var(--theme-primary);
-    background-color: rgba(var(--theme-primary-contrast-rgb), 0.1);
+.tts-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--theme-text-secondary);
+  font-size: 14px;
+
+  mat-spinner {
+    ::ng-deep circle {
+      stroke: var(--theme-primary);
+    }
   }
 }
 
-// Responsive adjustment, allowing the message to take more space on smaller screens
+.tts-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ef4444;
+  font-size: 14px;
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  .tts-retry-btn {
+    margin-left: auto;
+    width: 32px;
+    height: 32px;
+
+    mat-icon {
+      color: var(--theme-primary);
+    }
+
+    &:hover {
+      background-color: var(--theme-active);
+    }
+  }
+}
+
+.tts-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .tts-play-btn {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background: var(--theme-primary);
+    border-radius: 50%;
+
+    mat-icon {
+      color: var(--theme-primary-contrast);
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+    }
+
+    &:hover {
+      transform: scale(1.05);
+    }
+  }
+
+  .tts-progress {
+    flex: 1;
+    height: 6px;
+    background: rgba(128, 128, 128, 0.3);
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+    transition: height 0.15s ease;
+
+    &:hover {
+      height: 8px;
+    }
+
+    .tts-progress-bar {
+      height: 100%;
+      background: var(--theme-primary);
+      border-radius: 3px;
+      transition: width 0.1s linear;
+    }
+  }
+
+  .tts-time {
+    font-size: 12px;
+    color: var(--theme-text-secondary);
+    min-width: 72px;
+    text-align: center;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  }
+
+  .tts-close-btn {
+    width: 28px;
+    height: 28px;
+    opacity: 0.6;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--theme-text-secondary);
+    }
+
+    &:hover {
+      opacity: 1;
+      background-color: var(--theme-hover);
+    }
+  }
+
+  audio {
+    display: none; // Hidden audio element
+  }
+}
+
+// ============================================
+// RESPONSIVE
+// ============================================
 @media (max-width: 768px) {
-  .message {
-    max-width: 75%;
-    &.message-user {
-      margin-right: 5%;
+  .message-row {
+    padding: 16px 12px;
+    gap: 12px;
+  }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+
+    .avatar-icon mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .message-actions {
+    opacity: 1;
+    visibility: visible;
+    flex-wrap: wrap;
+  }
+
+  .attachment-item.is-image {
+    width: 120px;
+    height: 120px;
+  }
+
+  // Mobile-specific table and code block optimizations
+  .message-body {
+    ::ng-deep .message-text,
+    ::ng-deep .response-text {
+      // Tables - more compact on mobile
+      table {
+        font-size: 0.85em;
+
+        thead th {
+          padding: 10px 12px;
+        }
+
+        tbody td {
+          padding: 8px 12px;
+        }
+      }
+
+      // Code blocks - more compact on mobile
+      pre {
+        padding: 12px;
+        font-size: 0.8em;
+
+        code {
+          font-size: 0.85em;
+        }
+      }
+
+      // Inline code - slightly smaller
+      code {
+        font-size: 0.85em;
+        padding: 0.1em 0.3em;
+      }
     }
   }
 }

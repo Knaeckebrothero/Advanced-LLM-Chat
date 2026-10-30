@@ -228,7 +228,7 @@ describe('ChatUiInputfieldComponent', () => {
       mimeType: 'audio/webm',
       uploadStatus: UploadStatus.PENDING
     };
-    fileHandlingServiceMock.createAudioFilePreview.and.returnValue(mockFilePreview);
+    fileHandlingServiceMock.createAudioFilePreview.and.returnValue(Promise.resolve(mockFilePreview));
 
     // Call the method
     await component.sendVoiceMessage();

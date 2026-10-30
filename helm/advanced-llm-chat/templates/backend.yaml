@@ -1,0 +1,221 @@
+{{- $fullname := include "llmchat.fullname" . }}
+{{- $mode := include "llmchat.authMode" . }}
+{{- $settings := dict
+  "HOST" "0.0.0.0"
+  "PORT" (toString .Values.backend.service.port)
+  "USE_DEV_CERTS" "False"
+  "FORWARDED_ALLOW_IPS" .Values.backend.forwardedAllowIps
+  "FILESYSTEM_PATH" "/app/.filesystem"
+  "FILES_DIR" "/app/.filesystem/files"
+  "API_URL" (trimSuffix "/" .Values.urls.backend)
+  "FRONTEND_URL" (trimSuffix "/" .Values.urls.frontend)
+  "CORS_ORIGINS" (trimSuffix "/" .Values.urls.frontend)
+  "POSTGRES_HOST" (include "llmchat.postgresHost" .)
+  "POSTGRES_PORT" (include "llmchat.postgresPort" .)
+  "POSTGRES_DB" .Values.postgresql.database
+  "POSTGRES_USER" .Values.postgresql.username
+  "AUTH_MODE" $mode
+  "ADMIN_EMAILS" .Values.auth.adminEmails
+}}
+{{- if .Values.keycloak.enabled }}
+{{- $_ := set $settings "OIDC_ISSUER" (printf "%s/realms/llm-chat" (trimSuffix "/" .Values.keycloak.url)) }}
+{{- $_ := set $settings "OIDC_DISCOVERY_URL" (printf "http://%s-keycloak:8080/realms/llm-chat/.well-known/openid-configuration" $fullname) }}
+{{- $_ := set $settings "OIDC_CLIENT_ID" "llm-chat" }}
+{{- $_ := set $settings "OIDC_ADMIN_ROLE" .Values.keycloak.adminRole }}
+{{- else if eq $mode "oidc" }}
+{{- $_ := set $settings "OIDC_ISSUER" .Values.auth.oidc.issuer }}
+{{- $_ := set $settings "OIDC_CLIENT_ID" .Values.auth.oidc.clientId }}
+{{- $_ := set $settings "OIDC_ADMIN_ROLE" .Values.auth.oidc.adminRole }}
+{{- $_ := set $settings "OIDC_DISCOVERY_URL" .Values.auth.oidc.discoveryUrl }}
+{{- end }}
+{{- if eq $mode "oidc" }}
+{{- $_ := set $settings "OIDC_REQUIRED_ROLE" .Values.auth.oidc.requiredRole }}
+{{- $_ := set $settings "OIDC_DISPLAY_NAME" .Values.auth.oidc.displayName }}
+{{- end }}
+{{- if .Values.backend.catalog }}
+{{- $_ := set $settings "MODEL_CATALOG_FILE" "/app/catalog-custom/models.json" }}
+{{- end }}
+{{- /* backend.env wins over the computed settings */}}
+{{- $settings = mustMergeOverwrite $settings (default dict .Values.backend.env) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-backend
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+data:
+  {{- range $key, $value := $settings }}
+  {{ $key }}: {{ toString $value | quote }}
+  {{- end }}
+{{- if .Values.backend.catalog }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-catalog
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+data:
+  models.json: |
+    {{- .Values.backend.catalog | nindent 4 }}
+{{- end }}
+{{- if .Values.backend.secretEnv }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $fullname }}-backend
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+type: Opaque
+stringData:
+  {{- range $key, $value := .Values.backend.secretEnv }}
+  {{ $key }}: {{ toString $value | quote }}
+  {{- end }}
+{{- end }}
+{{- if and (eq $mode "oidc") (not .Values.keycloak.enabled) .Values.auth.oidc.clientSecret }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $fullname }}-oidc
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+type: Opaque
+stringData:
+  client-secret: {{ .Values.auth.oidc.clientSecret | quote }}
+{{- end }}
+{{- if and .Values.backend.persistence.enabled (not .Values.backend.persistence.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $fullname }}-backend-data
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+  annotations:
+    # Uploaded files outlive an uninstall
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.backend.persistence.accessMode }}
+  {{- with .Values.backend.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backend.persistence.size }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-backend
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+spec:
+  type: {{ .Values.backend.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.backend.service.port }}
+      targetPort: http
+  selector:
+    {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-backend
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  {{- if eq (toString .Values.backend.persistence.accessMode) "ReadWriteOnce" }}
+  # A ReadWriteOnce volume can't be mounted by the old and the new pod on different nodes
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 8 }}
+      annotations:
+        # Restart the pods when the settings change
+        checksum/settings: {{ toJson $settings | sha256sum }}
+        checksum/secret-env: {{ toJson .Values.backend.secretEnv | sha256sum }}
+        checksum/catalog: {{ .Values.backend.catalog | sha256sum }}
+        {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      initContainers:
+        {{- include "llmchat.waitForPostgres" . | nindent 8 }}
+        {{- if .Values.backend.migrate }}
+        - name: migrate
+          image: {{ include "llmchat.image" (dict "image" .Values.backend.image "ctx" $) }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          command: ["python", "-m", "backend.app_init", "--prod", "--no-certs"]
+          {{- include "llmchat.backendEnv" . | nindent 10 }}
+        {{- end }}
+      containers:
+        - name: backend
+          image: {{ include "llmchat.image" (dict "image" .Values.backend.image "ctx" $) }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+          {{- include "llmchat.backendEnv" . | nindent 10 }}
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.backend.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-backend-data" $fullname) .Values.backend.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.backend.catalog }}
+        - name: catalog
+          configMap:
+            name: {{ $fullname }}-catalog
+        {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

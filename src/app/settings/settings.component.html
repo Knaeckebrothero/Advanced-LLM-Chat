@@ -32,6 +32,77 @@
     </div>
   </div>
 
+  <!-- Chat background: built-in images or the user's own (kept in this browser) -->
+  <div class="setting-option" *ngIf="{ url: customImageUrl$ | async } as custom">
+    <label id="background-label">{{ 'background.title' | translate }}</label>
+    <div class="background-options" role="radiogroup" aria-labelledby="background-label">
+      <button
+        *ngFor="let option of backgroundOptions"
+        type="button"
+        role="radio"
+        class="background-tile"
+        [class.active]="activeBackground(settings) === option.value"
+        [attr.aria-checked]="activeBackground(settings) === option.value"
+        (click)="chooseBackground(option.value, custom.url, fileInput)"
+      >
+        <span class="background-thumb" [style.background-image]="backgroundThumb(option.value, custom.url)">
+          <mat-icon *ngIf="option.value === 'none'" aria-hidden="true">block</mat-icon>
+          <mat-icon *ngIf="option.value === 'custom' && !custom.url" aria-hidden="true">add_photo_alternate</mat-icon>
+        </span>
+        <span class="background-name">{{ option.label | translate }}</span>
+      </button>
+    </div>
+    <input #fileInput type="file" accept="image/*" hidden (change)="onImageSelected($event)">
+
+    <div class="background-image-actions" *ngIf="custom.url">
+      <button type="button" class="text-button" (click)="fileInput.click()">
+        <mat-icon aria-hidden="true">image</mat-icon>{{ 'background.changeImage' | translate }}
+      </button>
+      <button type="button" class="text-button" (click)="removeCustomImage()">
+        <mat-icon aria-hidden="true">delete</mat-icon>{{ 'background.removeImage' | translate }}
+      </button>
+    </div>
+    <p class="setting-hint" *ngIf="activeBackground(settings) === 'custom' && !custom.url">
+      {{ 'background.missingImage' | translate }}
+    </p>
+    <p class="setting-hint setting-error" *ngIf="imageError" role="alert">{{ imageError | translate }}</p>
+
+    <div class="background-sliders" *ngIf="activeBackground(settings) !== 'none'">
+      <div class="background-slider">
+        <label for="background-dim">{{ 'background.dim' | translate }}</label>
+        <input id="background-dim" type="range" min="0" [max]="dimMax" step="5"
+               [value]="backgroundDim(settings)"
+               (input)="previewDim($event)" (change)="saveBackgroundAdjustments()">
+        <output for="background-dim">{{ backgroundDim(settings) }}%</output>
+      </div>
+      <div class="background-slider">
+        <label for="background-blur">{{ 'background.blur' | translate }}</label>
+        <input id="background-blur" type="range" min="0" [max]="blurMax" step="1"
+               [value]="backgroundBlur(settings)"
+               (input)="previewBlur($event)" (change)="saveBackgroundAdjustments()">
+        <output for="background-blur">{{ backgroundBlur(settings) }} px</output>
+      </div>
+    </div>
+    <p class="setting-hint">{{ 'background.customHint' | translate }}</p>
+  </div>
+
+  <!-- Default model for new conversations (only with a model catalog) -->
+  <ng-container *ngIf="(models$ | async) as models">
+    <div class="setting-option" *ngIf="models.length > 0">
+      <label id="default-model-label">{{ 'catalog.settings.defaultModel' | translate }}</label>
+      <app-model-select
+        class="default-model-select"
+        variant="field"
+        [models]="models"
+        [selectedId]="selectedDefaultModel(settings, models)"
+        [automaticLabel]="'catalog.settings.automatic' | translate"
+        [automaticHint]="'catalog.settings.automaticHint' | translate"
+        (selectedChange)="updateDefaultModel($event)">
+      </app-model-select>
+      <p class="setting-hint">{{ 'catalog.settings.defaultModelHint' | translate }}</p>
+    </div>
+  </ng-container>
+
   <div class="button-row">
     <button class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
   </div>

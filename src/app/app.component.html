@@ -1,24 +1,20 @@
 <div class="app-container">
-  <div *ngIf="showMenuIcon" class="burger-container" [class.sidebar-closed]="!(uiState.sidebarOpen$ | async)">
-    <button class="burger-menu-button"
-            (click)="uiState.toggleSidebar()"
-            aria-label="Toggle sidebar menu"
-            [attr.aria-expanded]="uiState.sidebarOpen$ | async">
-      <div class="burger-line line1"></div>
-      <div class="burger-line line2"></div>
-      <div class="burger-line line3"></div>
-    </button>
+  <!-- Backdrop overlay for mobile (when sidebar is open) -->
+  <div *ngIf="showMenuIcon" class="sidebar-backdrop" [class.visible]="uiState.sidebarOpen$ | async"
+    (click)="uiState.toggleSidebar()">
   </div>
 
-  <app-sidebar
-    *ngIf="showMenuIcon"
-    class="sidebar-element"
-    [class.open]="uiState.sidebarOpen$ | async">
+  <!-- Sidebar toggle button - visible when sidebar is closed -->
+  <button *ngIf="showMenuIcon && !(uiState.sidebarOpen$ | async)" class="sidebar-toggle-btn sidebar-toggle-btn--open"
+    (click)="uiState.toggleSidebar()" aria-label="Open sidebar">
+    <mat-icon>menu</mat-icon>
+  </button>
+
+  <app-sidebar *ngIf="showMenuIcon" class="sidebar-element" [class.open]="uiState.sidebarOpen$ | async">
   </app-sidebar>
 
-  <div class="content-wrapper"
-       [class.sidebar-open]="(uiState.sidebarOpen$ | async) && showMenuIcon"
-       [class.no-sidebar]="!showMenuIcon">
+  <div class="content-wrapper" [class.sidebar-open]="(uiState.sidebarOpen$ | async) && showMenuIcon"
+    [class.no-sidebar]="!showMenuIcon">
     <router-outlet></router-outlet>
   </div>
 </div>

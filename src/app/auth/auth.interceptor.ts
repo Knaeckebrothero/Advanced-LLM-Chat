@@ -32,7 +32,9 @@ export class AuthInterceptor implements HttpInterceptor {
 
     return next.handle(authReq).pipe(
       catchError((error: HttpErrorResponse) => {
-        if (error.status === 401) {
+        // A 401 from the session check is expected without a session: the AuthService then
+        // starts a guest session, so new visitors land in the chat instead of on the login page
+        if (error.status === 401 && !req.url.endsWith('/api/auth/me')) {
           // User is not authenticated, redirect to login
           this.router.navigate(['/login']);
         } else if (error.status === 403 && error.error?.error === 'CSRF validation failed') {

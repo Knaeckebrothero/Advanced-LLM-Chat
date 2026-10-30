@@ -1,0 +1,36 @@
+<div class="catalog-admin">
+  <header class="catalog-header">
+    <h1>{{ 'catalog.admin.title' | translate }}</h1>
+    <p>{{ 'catalog.admin.subtitle' | translate }}</p>
+  </header>
+
+  @switch (store.state$ | async) {
+    @case ('loading') {
+      <div class="catalog-state">
+        <mat-spinner diameter="36"></mat-spinner>
+      </div>
+    }
+    @case ('forbidden') {
+      <div class="catalog-state">
+        <mat-icon aria-hidden="true">lock</mat-icon>
+        <p>{{ 'catalog.admin.forbidden' | translate }}</p>
+      </div>
+    }
+    @case ('error') {
+      <div class="catalog-state" role="alert">
+        <mat-icon aria-hidden="true">cloud_off</mat-icon>
+        <p>{{ 'catalog.admin.loadFailed' | translate }}</p>
+        <p class="catalog-state-detail">{{ store.loadError$ | async }}</p>
+        <button mat-stroked-button type="button" (click)="store.loadAll()">
+          <mat-icon>refresh</mat-icon>
+          {{ 'catalog.common.retry' | translate }}
+        </button>
+      </div>
+    }
+    @default {
+      <app-personas-tab class="page-section"></app-personas-tab>
+      <app-models-tab class="page-section"></app-models-tab>
+      <app-import-export-tab class="page-section"></app-import-export-tab>
+    }
+  }
+</div>

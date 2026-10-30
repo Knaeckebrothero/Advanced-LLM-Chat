@@ -1,0 +1,68 @@
+{{- if .Values.ingress.enabled }}
+{{- $fullname := include "llmchat.fullname" . }}
+{{- $frontendHost := include "llmchat.host" .Values.urls.frontend }}
+{{- $backendHost := include "llmchat.host" .Values.urls.backend }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "ingress") | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ $frontendHost | quote }}
+      http:
+        paths:
+          {{- if eq $frontendHost $backendHost }}
+          # One address for both: the API goes to the backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}-backend
+                port:
+                  name: http
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}-frontend
+                port:
+                  name: http
+    {{- if ne $frontendHost $backendHost }}
+    - host: {{ $backendHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}-backend
+                port:
+                  name: http
+    {{- end }}
+    {{- if .Values.keycloak.enabled }}
+    - host: {{ include "llmchat.host" .Values.keycloak.url | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}-keycloak
+                port:
+                  name: http
+    {{- end }}
+{{- end }}

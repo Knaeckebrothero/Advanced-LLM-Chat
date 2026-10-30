@@ -1,0 +1,19 @@
+apiVersion: v2
+name: advanced-llm-chat
+description: Advanced LLM Chat, a chat app for LLMs (Angular PWA and FastAPI), with Postgres and optional Keycloak
+type: application
+# CI publishes every merge into main as <major>.<minor>.<run number>, with the images tagged the
+# same; raise the major or minor version here by hand
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/Knaeckebrothero/Advanced-LLM-Chat
+sources:
+  - https://github.com/Knaeckebrothero/Advanced-LLM-Chat
+keywords:
+  - llm
+  - chat
+  - fastapi
+  - angular
+  - keycloak
+maintainers:
+  - name: Knaeckebrothero

@@ -6,6 +6,7 @@ import { DBService } from '../data/db.service';
 import { ApiService } from '../services/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { Message } from '../data/objects/message';
+import { IConversationSelection } from '../data/models/catalog.model';
 import { MessageRepository } from './message.repository';
 
 // Import from db-schema instead of defining here
@@ -60,10 +61,33 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     }
   }
 
+  /**
+   * Save a conversation returned by the backend (rename, title generation). If the response
+   * leaves out the model fields, the local selection is kept.
+   */
+  async saveFromServer(conversation: Conversation): Promise<Conversation> {
+    this.keepLocalSelection(conversation);
+    return this.save(conversation);
+  }
+
+  private keepLocalSelection(incoming: Conversation): void {
+    const local = this.cache$.getValue().find(c => c.id === incoming.id);
+    if (!local) return;
+    if (local.selectionPending || (incoming.modelId === undefined && incoming.personaId === undefined)) {
+      incoming.modelId = local.modelId;
+      incoming.personaId = local.personaId;
+      incoming.personaValues = local.personaValues;
+      incoming.selectionPending = local.selectionPending;
+    }
+  }
+
   async updateConversation(id: string, name: string): Promise<Conversation> {
     try {
       // Call API to update conversation on backend
-      const updatedConversation = await this.apiService.updateConversationName(id, name);
+      const local = this.cache$.getValue().find(c => c.id === id);
+      const knownSelection = local && local.modelId !== undefined ? local.selection : undefined;
+      const updatedConversation = await this.apiService.updateConversationName(id, name, knownSelection);
+      this.keepLocalSelection(updatedConversation);
       
       // Update local database
       await this.dbService.updateConversation(updatedConversation);
@@ -81,6 +105,68 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       console.error('Failed to update conversation:', error);
       throw error;
     }
+  }
+
+  /**
+   * Change a conversation's model and/or persona: saved locally first, then sent to the backend.
+   * If the backend can't be reached, the change is marked pending and sent with the next sync.
+   */
+  async updateSelection(id: string, changes: Partial<IConversationSelection>): Promise<Conversation | null> {
+    const conversation = this.cache$.getValue().find(c => c.id === id)
+      ?? await this.dbService.getConversation(id);
+    if (!conversation) return null;
+
+    if (changes.modelId !== undefined) conversation.modelId = changes.modelId;
+    if (changes.personaId !== undefined) conversation.personaId = changes.personaId;
+    if (changes.personaValues !== undefined) conversation.personaValues = changes.personaValues;
+    conversation.selectionPending = true;
+    await this.save(conversation);
+
+    await this.pushSelection(conversation);
+    return conversation;
+  }
+
+  /** Send a conversation's selection to the backend; clears the pending flag on success. */
+  private async pushSelection(conversation: Conversation): Promise<boolean> {
+    try {
+      await this.apiService.updateConversationSelection(conversation.id, conversation.name, conversation.selection);
+      // A backend without the catalog accepts the request without storing the fields;
+      // the selection then stays local, there is nothing to retry.
+      conversation.selectionPending = false;
+      await this.save(conversation);
+      return true;
+    } catch (error) {
+      console.warn(`Could not send the model selection of conversation ${conversation.id}, will retry:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Take the model and persona from the server's copy of a conversation, or send ours if it
+   * changed offline. Returns true when the local conversation was changed.
+   */
+  private async mergeSelection(localConv: Conversation, serverConv: Conversation): Promise<boolean> {
+    if (localConv.selectionPending) {
+      await this.pushSelection(localConv);
+      return false;
+    }
+
+    // undefined: the backend doesn't know the fields (no catalog yet)
+    if (serverConv.modelId === undefined && serverConv.personaId === undefined && serverConv.personaValues === undefined) {
+      return false;
+    }
+
+    const server = serverConv.selection;
+    const local = localConv.selection;
+    const changed = server.modelId !== local.modelId ||
+      server.personaId !== local.personaId ||
+      JSON.stringify(server.personaValues) !== JSON.stringify(local.personaValues);
+    if (!changed) return false;
+
+    localConv.modelId = server.modelId;
+    localConv.personaId = server.personaId;
+    localConv.personaValues = server.personaValues;
+    return true;
   }
 
   async delete(id: string): Promise<void> {
@@ -247,9 +333,15 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       const serverConv = serverConversations.find(c => c.id === conversationId);
       
       if (!serverConv) return false;
+
+      // Model and persona may have been switched on another device
+      if (await this.mergeSelection(localConv, serverConv)) {
+        await this.save(localConv);
+      }
       
       // Compute local hash for comparison
-      const localHash = await localConv.computeHash(this.dbService);
+      const messageContents = localMessages.map(m => m.getDisplayContent() || '');
+      const localHash = localConv.computeHashFromContents(messageContents);
       const hasNoMessages = localMessages.length === 0;
       
       // Determine if we need to sync
@@ -445,8 +537,12 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       } else {
         // Existing conversation - only update timestamp if server has newer timestamp
         // This prevents updating just from viewing/syncing
+        let changed = await this.mergeSelection(localConv, serverConv);
         if (serverConv.updatedAt && new Date(serverConv.updatedAt) > new Date(localConv.updatedAt)) {
           localConv.updatedAt = new Date(serverConv.updatedAt);
+          changed = true;
+        }
+        if (changed) {
           await this.dbService.updateConversation(localConv);
         }
         merged.push(localConv);
@@ -526,10 +622,37 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     
     // Messages to keep
     const mergedMessages: Message[] = [];
-    
+
+    // Create map of local messages for attachment data preservation
+    const localMessageMap = new Map(localMessages.map(msg => [msg.id, msg]));
+
     // 1. Add all server messages (these are authoritative)
-    mergedMessages.push(...serverMessages);
-    
+    // But preserve local attachment data (base64Data, transcript) if available
+    for (const serverMsg of serverMessages) {
+      const localMsg = localMessageMap.get(serverMsg.id);
+      if (localMsg && serverMsg.isText() && localMsg.isText()) {
+        // Preserve local attachment data that backend doesn't have
+        const serverAttachments = serverMsg.attachments;
+        const localAttachments = localMsg.attachments;
+        if (serverAttachments && localAttachments) {
+          for (const serverAtt of serverAttachments) {
+            // Find matching local attachment by ID
+            const localAtt = localAttachments.find(la => la.id === serverAtt.id);
+            if (localAtt) {
+              // Preserve offline data from local
+              if (localAtt.base64Data && !serverAtt.base64Data) {
+                serverAtt.base64Data = localAtt.base64Data;
+              }
+              if (localAtt.transcript && !serverAtt.transcript) {
+                serverAtt.transcript = localAtt.transcript;
+              }
+            }
+          }
+        }
+      }
+      mergedMessages.push(serverMsg);
+    }
+
     // 2. Add pending messages that aren't in server response
     for (const pendingMsg of pendingMessages) {
       if (!serverMessageMap.has(pendingMsg.id)) {
@@ -685,9 +808,26 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   async loadConversationMessages(conversationId: string, limit: number = 20): Promise<Message[]> {
     const conversation = await this.dbService.getConversation(conversationId);
     if (!conversation) return [];
-    
-    // Get latest messages using the built-in method
-    return conversation.getLatestMessages(this.dbService, limit);
+
+    // Get latest messages directly from DB
+    try {
+      const messages = await this.dbService.getMessagesByConversationId(conversationId);
+      if (messages !== undefined) {
+        // Sort with ID as tie-breaker for timestamp precision issues
+        messages.sort((a, b) => {
+          const timeDiff = a.time!.getTime() - b.time!.getTime();
+          if (Math.abs(timeDiff) < 1000) {
+            return a.id - b.id;
+          }
+          return timeDiff;
+        });
+        return [...messages.slice(-limit)];
+      }
+      return [];
+    } catch (error) {
+      console.error('Error getting messages:', error);
+      return [];
+    }
   }
 
   /**

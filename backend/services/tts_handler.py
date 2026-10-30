@@ -1,0 +1,269 @@
+# backend/services/tts_handler.py
+"""
+Text-to-Speech handler for generating audio from text.
+Uses OpenAI TTS API (default) or compatible endpoints.
+"""
+
+import logging
+import os
+from pathlib import Path
+from typing import Optional
+
+from openai import AsyncOpenAI
+
+from ..config import (
+    FILES_DIR,
+    TTS_BASE_URL,
+    TTS_MODEL,
+    TTS_VOICE_EN,
+    TTS_VOICE_DE,
+    TTS_TIMEOUT,
+    TTS_PREPROCESS_VERSION,
+)
+
+logger = logging.getLogger(__name__)
+
+# Lazy-loaded client
+_openai_client: Optional[AsyncOpenAI] = None
+
+
+def _get_openai_client() -> Optional[AsyncOpenAI]:
+    """
+    Get OpenAI client for TTS API.
+
+    Returns:
+        AsyncOpenAI client or None if no API key is configured.
+    """
+    global _openai_client
+
+    if _openai_client is not None:
+        return _openai_client
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.warning("No OPENAI_API_KEY configured - TTS will not be available")
+        return None
+
+    _openai_client = AsyncOpenAI(api_key=api_key, base_url=TTS_BASE_URL, timeout=TTS_TIMEOUT)
+    logger.info(f"TTS client initialized: model={TTS_MODEL}, base_url={TTS_BASE_URL}, timeout={TTS_TIMEOUT}s")
+    return _openai_client
+
+
+def get_voice_for_language(language: str) -> str:
+    """
+    Get the configured voice for a language.
+
+    Args:
+        language: Language code ('en', 'de', etc.)
+
+    Returns:
+        Voice name for the specified language.
+    """
+    if language.lower() in ('de', 'german', 'deutsch'):
+        return TTS_VOICE_DE
+    return TTS_VOICE_EN
+
+
+async def generate_speech(
+    text: str,
+    language: str = "en",
+    output_path: Optional[Path] = None
+) -> Optional[bytes]:
+    """
+    Generate speech audio from text.
+
+    Args:
+        text: Text to convert to speech.
+        language: Language code ('en' or 'de') for voice selection.
+        output_path: Optional path to save the audio file.
+
+    Returns:
+        Audio bytes (MP3 format) or None if generation fails.
+    """
+    client = _get_openai_client()
+    if not client:
+        return None
+
+    voice = get_voice_for_language(language)
+
+    try:
+        logger.info(f"Generating TTS: {len(text)} chars, voice={voice}, model={TTS_MODEL}")
+
+        response = await client.audio.speech.create(
+            model=TTS_MODEL,
+            voice=voice,
+            input=text,
+            response_format="mp3"
+        )
+
+        # Get audio bytes
+        audio_bytes = response.content
+
+        # Save to file if path provided
+        if output_path and audio_bytes:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, 'wb') as f:
+                f.write(audio_bytes)
+            logger.info(f"Saved TTS audio to {output_path}")
+
+        logger.info(f"TTS generation complete: {len(audio_bytes)} bytes")
+        return audio_bytes
+
+    except Exception as e:
+        logger.error(f"TTS generation failed: {e}")
+        return None
+
+
+def get_tts_audio_path(message_id: int, conversation_id: str) -> Path:
+    """
+    Get the path where TTS audio for a message would be stored.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+
+    Returns:
+        Path to the TTS audio file.
+    """
+    return Path(FILES_DIR) / f"tts_{conversation_id}_{message_id}.mp3"
+
+
+def get_cached_tts_audio(message_id: int, conversation_id: str) -> Optional[bytes]:
+    """
+    Get cached TTS audio for a message if it exists.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+
+    Returns:
+        Audio bytes or None if not cached.
+    """
+    audio_path = get_tts_audio_path(message_id, conversation_id)
+
+    if audio_path.exists():
+        try:
+            with open(audio_path, 'rb') as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Error reading cached TTS audio: {e}")
+
+    return None
+
+
+def delete_cached_tts_audio(message_id: int, conversation_id: str) -> bool:
+    """
+    Delete cached TTS audio for a message.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+
+    Returns:
+        True if deleted, False otherwise.
+    """
+    audio_path = get_tts_audio_path(message_id, conversation_id)
+
+    if audio_path.exists():
+        try:
+            audio_path.unlink()
+            logger.info(f"Deleted cached TTS audio: {audio_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting cached TTS audio: {e}")
+
+    return False
+
+
+def delete_conversation_tts_cache(conversation_id: str) -> int:
+    """
+    Delete the cached TTS audio and preprocessed texts of all messages of a conversation.
+
+    Args:
+        conversation_id: The conversation ID.
+
+    Returns:
+        Number of files deleted.
+    """
+    files_dir = Path(FILES_DIR)
+    if not files_dir.is_dir():
+        return 0
+
+    deleted = 0
+    prefix = f"tts_{conversation_id}_"
+    for path in files_dir.iterdir():
+        if path.is_file() and path.name.startswith(prefix):
+            try:
+                path.unlink()
+                deleted += 1
+            except Exception as e:
+                logger.error(f"Error deleting cached TTS file {path}: {e}")
+    if deleted:
+        logger.info(f"Deleted {deleted} cached TTS file(s) of conversation {conversation_id}")
+    return deleted
+
+
+def get_preprocessed_text_path(message_id: int, conversation_id: str) -> Path:
+    """
+    Get the path where preprocessed TTS text would be stored.
+
+    Uses a versioned filename to allow cache invalidation when prompt changes.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+
+    Returns:
+        Path to the preprocessed text file.
+    """
+    return Path(FILES_DIR) / f"tts_{conversation_id}_{message_id}_preprocessed_{TTS_PREPROCESS_VERSION}.txt"
+
+
+def get_cached_preprocessed_text(message_id: int, conversation_id: str) -> Optional[str]:
+    """
+    Get cached preprocessed text for a message if it exists.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+
+    Returns:
+        Preprocessed text or None if not cached.
+    """
+    text_path = get_preprocessed_text_path(message_id, conversation_id)
+
+    if text_path.exists():
+        try:
+            with open(text_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            logger.debug(f"Loaded cached preprocessed text for message {message_id}")
+            return text
+        except Exception as e:
+            logger.error(f"Error reading cached preprocessed text: {e}")
+
+    return None
+
+
+def cache_preprocessed_text(message_id: int, conversation_id: str, text: str) -> bool:
+    """
+    Cache preprocessed text for a message.
+
+    Args:
+        message_id: The message ID.
+        conversation_id: The conversation ID.
+        text: The preprocessed text to cache.
+
+    Returns:
+        True if cached successfully, False otherwise.
+    """
+    text_path = get_preprocessed_text_path(message_id, conversation_id)
+
+    try:
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(text_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        logger.debug(f"Cached preprocessed text for message {message_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error caching preprocessed text: {e}")
+        return False

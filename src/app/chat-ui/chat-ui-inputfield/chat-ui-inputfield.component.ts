@@ -117,6 +117,10 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   @Output() filesSelected = new EventEmitter<FilePreview[]>();  // Changed from fileRequested
   @Output() cameraRequested = new EventEmitter<void>();
   @Output() locationRequested = new EventEmitter<void>();
+  @Output() stopRequested = new EventEmitter<void>();
+
+  // Input property to track if AI is currently streaming
+  @Input() isStreaming: boolean = false;
 
   // Device capability flags
   hasCamera: boolean = false;
@@ -190,6 +194,14 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Adjust textarea height based on content
   onTextareaInput(): void {
     this.adjustTextareaHeight();
+  }
+
+  /**
+   * Focus the message input textarea.
+   * Called externally when a new conversation is created.
+   */
+  public focusInput(): void {
+    this.messageTextarea?.nativeElement.focus();
   }
 
   // Method to dynamically adjust the textarea height
@@ -458,7 +470,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Create recording config
       const config: RecordingConfig = {
         isHoldToRecord: this.isHoldToRecord,
-        maxDuration: 300, // 5 minutes maximum
+        maxDuration: 600, // 10 minutes maximum
         audioConstraints: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -496,15 +508,56 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       const result = await this.voiceRecordingService.stopRecording();
 
       if (result) {
-        // Create file preview from recording result
-        const filePreview = this.fileHandlingService.createAudioFilePreview(result);
+        // Create file preview from recording result (now async to include base64)
+        const filePreview = await this.fileHandlingService.createAudioFilePreview(result);
 
-        // Add to file previews
-        this.filePreviews = [...this.filePreviews, filePreview];
-        this.filesSelected.emit(this.filePreviews);
+        // Set status to UPLOADING (not PENDING) for immediate display
+        filePreview.uploadStatus = UploadStatus.UPLOADING;
+
+        // Emit voice file immediately for instant display in chat
+        // The message will show with "Transcribing..." indicator
+        this.filesSelected.emit([filePreview]);
+
+        // Upload in background - will update filePreview with fileId and transcript
+        this.uploadVoiceMessageInBackground(filePreview);
       }
     } catch (error) {
       console.error('Error stopping recording:', error);
+    }
+  }
+
+  // Upload voice message in background and notify when complete
+  private async uploadVoiceMessageInBackground(filePreview: FilePreview): Promise<void> {
+    try {
+      // Check if backend is available
+      const backendAvailable = await this.isBackendAvailable();
+
+      if (!backendAvailable) {
+        filePreview.uploadStatus = UploadStatus.PENDING;
+        filePreview.error = 'Waiting for connection';
+        console.log('Backend not available, voice message marked as pending');
+        return;
+      }
+
+      // Upload the file
+      const uploadResults = await this.apiService.uploadFiles([filePreview]);
+
+      if (uploadResults.length > 0) {
+        const result = uploadResults[0];
+        filePreview.uploadStatus = UploadStatus.COMPLETED;
+        filePreview.id = result.fileId;
+        filePreview.error = undefined;
+
+        // Store transcript for audio files
+        if (result.transcript) {
+          filePreview.transcript = result.transcript;
+          console.log('Voice message transcribed:', filePreview.name, result.transcript.substring(0, 50) + '...');
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading voice message:', error);
+      filePreview.uploadStatus = UploadStatus.FAILED;
+      filePreview.error = 'Upload failed';
     }
   }
 
@@ -588,12 +641,21 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
         filePreview.uploadStatus = UploadStatus.UPLOADING;
 
         // Upload single file
-        const uploadedFileIds = await this.apiService.uploadFiles([filePreview]);
+        const uploadResults = await this.apiService.uploadFiles([filePreview]);
 
-        // Update file with server-assigned ID
-        filePreview.uploadStatus = UploadStatus.COMPLETED;
-        filePreview.id = uploadedFileIds[0] || filePreview.id;
-        filePreview.error = undefined;
+        // Update file with server-assigned ID and transcript (for audio)
+        if (uploadResults.length > 0) {
+          const result = uploadResults[0];
+          filePreview.uploadStatus = UploadStatus.COMPLETED;
+          filePreview.id = result.fileId;
+          filePreview.error = undefined;
+
+          // Store transcript for audio files
+          if (result.transcript) {
+            filePreview.transcript = result.transcript;
+            console.log('Audio file transcribed:', filePreview.name);
+          }
+        }
 
         console.log('File uploaded successfully:', filePreview.name, filePreview.id);
       } catch (error) {

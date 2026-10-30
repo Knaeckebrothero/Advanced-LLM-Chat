@@ -65,8 +65,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
 
   /**
    * Save a new message
+   * @param message - The message to save
+   * @param skipSync - Skip backend sync (used for agent messages already saved by SSE endpoint)
    */
-  async save(message: MessageWithSyncStatus): Promise<MessageWithSyncStatus> {
+  async save(message: MessageWithSyncStatus, skipSync: boolean = false): Promise<MessageWithSyncStatus> {
     try {
       // Handle file uploads if message has attachments
       if (message.isText() && message.attachments?.length) {
@@ -82,6 +84,13 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         const cache = this.conversationCaches.get(conversationId)!;
         const current = cache.getValue();
         cache.next([...current, message]);
+      }
+
+      // Skip sync for agent messages (already saved by backend during streaming)
+      // or when explicitly requested
+      if (skipSync || message.isAgent()) {
+        message.syncStatus = 'synced';
+        return message;
       }
 
       // Mark as pending sync
@@ -232,8 +241,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
 
         // Update file statuses
         pendingFiles.forEach((f, index) => {
+          const uploadResponse = uploadedFileIds[index];
           f.uploadStatus = UploadStatus.COMPLETED;
-          f.id = uploadedFileIds[index] || f.id;
+          f.id = uploadResponse?.fileId || f.id;
+          f.transcript = uploadResponse?.transcript || f.transcript;
           f.error = undefined;
         });
 
@@ -306,8 +317,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         const uploadedFileIds = await this.apiService.uploadFiles(pendingFiles);
 
         pendingFiles.forEach((f, index) => {
+          const uploadResponse = uploadedFileIds[index];
           f.uploadStatus = UploadStatus.COMPLETED;
-          f.id = uploadedFileIds[index] || f.id;
+          f.id = uploadResponse?.fileId || f.id;
+          f.transcript = uploadResponse?.transcript || f.transcript;
         });
 
         this.pendingUploads.delete(message.conversationId);
