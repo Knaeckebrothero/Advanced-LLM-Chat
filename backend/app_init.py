@@ -6,6 +6,7 @@ This script initializes the complete application environment including:
 - Environment configuration (.env file)
 - SSL certificates for development
 - PostgreSQL database (via db_init.py)
+- Model catalog seeded from MODEL_CATALOG_FILE, if set (also in --prod mode)
 - Neo4j knowledge graph (via neo4j_init.py)
 
 Usage:
@@ -294,6 +295,45 @@ def run_db_init(logger: logging.Logger, force_reset: bool = False, seed: bool = 
         return False
 
 
+def run_catalog_seed(logger: logging.Logger, catalog_file_path: str) -> bool:
+    """
+    Seed the model catalog (providers, models, personas) from MODEL_CATALOG_FILE.
+
+    Upserts by natural key and never deletes, so it is safe on every start; entries
+    in the file overwrite the same fields edited in the app. Relative paths are
+    resolved against the repository root.
+
+    Args:
+        logger: Logger instance.
+        catalog_file_path: Path of the catalog JSON file.
+
+    Returns:
+        True if the file was imported (single entries may still have failed and are
+        logged as warnings), False if the file is missing or malformed.
+    """
+    try:
+        from backend.catalog.catalog_file import resolve_catalog_path, seed_from_file
+        from backend.catalog.service import CatalogError
+
+        logger.info(f"  Catalog file: {resolve_catalog_path(catalog_file_path)}")
+        try:
+            result = seed_from_file(catalog_file_path)
+        except CatalogError as e:
+            logger.error(f"  ✗ {e}")
+            return False
+
+        for section in ("providers", "models", "personas"):
+            counts = getattr(result, section)
+            logger.info(f"  ✓ {section.capitalize()}: {counts.created} created, {counts.updated} updated")
+        for error in result.errors:
+            logger.warning(f"  ⚠ {error}")
+        return True
+
+    except Exception as e:
+        logger.error(f"  ✗ Error seeding the model catalog: {e}")
+        return False
+
+
 def run_neo4j_init(logger: logging.Logger, force_reset: bool = False, seed: bool = True) -> bool:
     """
     Run the Neo4j knowledge graph initialization script.
@@ -431,6 +471,10 @@ def main() -> int:
         logger.info("    (Neo4j disabled - set NEO4J_ENABLED=true to initialize the knowledge graph)")
     logger.info("")
 
+    # The model catalog is seeded whenever a catalog file is configured (also with --prod)
+    catalog_file_path = os.getenv("MODEL_CATALOG_FILE")
+    seed_catalog = bool(catalog_file_path) and not args.skip_db
+
     # Calculate total steps based on flags
     total_steps = 6  # Base: filesystem, env, certs, postgres, neo4j, verify
     if args.setup_only:
@@ -442,6 +486,8 @@ def main() -> int:
             total_steps -= 1
         if args.skip_neo4j:
             total_steps -= 1
+        if seed_catalog:
+            total_steps += 1
 
     current_step = 0
 
@@ -489,6 +535,16 @@ def main() -> int:
         if not run_db_init(logger, args.force_reset, args.seed, args.prod):
             logger.error("")
             logger.error("PostgreSQL initialization failed. Aborting.")
+            return 1
+
+    # Step 4b: Seed the model catalog from MODEL_CATALOG_FILE
+    if seed_catalog:
+        current_step += 1
+        logger.info("")
+        logger.info(f"[{current_step}/{total_steps}] Seeding model catalog...")
+        if not run_catalog_seed(logger, catalog_file_path):
+            logger.error("")
+            logger.error("Model catalog seeding failed (check MODEL_CATALOG_FILE). Aborting.")
             return 1
 
     # Step 5: Initialize Neo4j knowledge graph
