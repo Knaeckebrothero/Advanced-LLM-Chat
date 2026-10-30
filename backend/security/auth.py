@@ -234,7 +234,8 @@ async def cleanup_expired_sessions():
     """
     Periodically cleans up expired sessions from the database. This function runs in
     an infinite loop, purging sessions with expiration dates earlier than the
-    current time. It executes this cleanup process every hour.
+    current time, and the guest users (with their conversations) that no session
+    reaches any more. It executes this cleanup process every hour.
 
     :return: None
     """
@@ -242,6 +243,9 @@ async def cleanup_expired_sessions():
         try:
             # Clean expired sessions using the new Database method
             db.delete_expired_sessions()
+            # Guest users whose sessions are gone, with their conversations
+            guest_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
+            db.delete_stale_guest_users(datetime.utcnow() - timedelta(hours=guest_hours))
             log.debug("Expired sessions cleanup completed")
 
         except Exception as e:
@@ -251,27 +255,18 @@ async def cleanup_expired_sessions():
         await asyncio.sleep(3600)
 
 
-def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: bool = False) -> bool:
+def verify_conversation_ownership(conversation_id: str, user_id: int) -> bool:
     """
-    Verifies whether the given user ID owns the specified conversation. This function allows guest users
-    to access any conversation, typically for offline mode functionality. For non-guest users, it checks
-    in the database if the user ID corresponds to the conversation's owner.
+    Verifies whether the given user ID owns the specified conversation. Guests are
+    no exception: every guest login has its own user (see guest_login).
 
     :param conversation_id: The unique identifier of the conversation
     :type conversation_id: str
     :param user_id: The unique identifier of the user
     :type user_id: int
-    :param is_guest: Specifies if the user is a guest. Defaults to False.
-    :type is_guest: bool, optional
-    :return: True if the specified user owns the conversation or if user
-        is a guest, otherwise False
+    :return: True if the specified user owns the conversation, otherwise False
     :rtype: bool
     """
-    # Guest users can access any conversation (for offline mode)
-    if is_guest:
-        log.debug(f"Guest access granted to conversation {conversation_id}")
-        return True
-
     owner_id = db.get_conversation_owner(conversation_id)
 
     if owner_id is None:
@@ -282,6 +277,19 @@ def verify_conversation_ownership(conversation_id: str, user_id: int, is_guest: 
     if not is_owner:
         log.warning(f"Access denied: user_id={user_id} attempted to access conversation {conversation_id} owned by {owner_id}")
     return is_owner
+
+
+def client_ip(request: Request) -> Optional[str]:
+    """
+    The client's IP address, taken from the connection, never from the request body.
+
+    Behind a reverse proxy this is the proxy's address, unless uvicorn trusts the
+    proxy's X-Forwarded-For header (FORWARDED_ALLOW_IPS, default 127.0.0.1).
+
+    :param request: The HTTP request.
+    :return: The address, or None if the server doesn't know it.
+    """
+    return request.client.host if request.client else None
 
 
 async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
@@ -303,7 +311,7 @@ async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depe
     if current_user and not current_user.get("is_guest"):
         return  # Not a guest, no rate limit
 
-    ip_address = request.client.host
+    ip_address = client_ip(request) or "unknown"
     now = datetime.now(UTC)
     limit_duration = timedelta(hours=3)
     max_requests = 5

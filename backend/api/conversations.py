@@ -167,9 +167,9 @@ async def get_conversation(conversation_id: str, response: Response, current_use
         conv = db.get_conversation_by_id(conversation_id, user_id)
 
         if not conv:
+            # Also for conversations of other users, so their IDs aren't confirmed
             logger.debug(f"Conversation {conversation_id} not found for user_id: {user_id}")
-            response.status_code = status.HTTP_404_NOT_FOUND
-            return ErrorResponse(error="Conversation not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
         # Get message count
         message_count = db.get_message_count(conversation_id)
@@ -200,6 +200,8 @@ async def get_conversation(conversation_id: str, response: Response, current_use
             personaValues=conv.get('persona_values')
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching conversation {conversation_id}: {str(e)}", exc_info=True)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -448,9 +450,8 @@ async def get_conversation_messages(
                 detail="Conversation ID and latest timestamp are required"
             )
 
-        # Verify ownership (guests can access any conversation)
-        if not verify_conversation_ownership(conversation_id, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        # Verify ownership
+        if not verify_conversation_ownership(conversation_id, current_user['user_id']):
             logger.warning(f"Access denied for user {current_user['user_id']} to conversation {conversation_id}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -553,6 +554,8 @@ async def get_conversation_messages(
                 response.headers["X-Has-More-Messages"] = "false"
             return []
 
+    except HTTPException:
+        raise  # 400 and 403 above, not a server error
     except Exception as e:
         logger.error(f"Error in get_conversation_messages for {conversation_id}: {str(e)}", exc_info=True)
         # Return empty list on error to satisfy the response model

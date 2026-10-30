@@ -186,8 +186,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
             )
 
         # Verify ownership
-        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"
@@ -314,8 +313,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
 
     try:
         # Verify ownership
-        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
             logger.warning(f"Access denied for user {current_user['user_id']} to conversation {request_body.conversationId}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -401,8 +399,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
             )
 
         # Verify ownership
-        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"
@@ -501,8 +498,7 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
             )
 
         # Verify ownership
-        if not verify_conversation_ownership(conversation_id, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(conversation_id, current_user['user_id']):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"
@@ -557,8 +553,7 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
             )
 
         # Verify ownership
-        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"
@@ -636,8 +631,7 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
 
     try:
         # Verify ownership
-        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"
@@ -728,8 +722,7 @@ async def send_and_generate_message(
     generating AI responses.
     """
     try:
-        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"
@@ -928,8 +921,7 @@ async def stream_generate(
         f"Stream generate called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
 
     # Verify ownership before starting stream
-    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id'],
-                                          current_user.get("is_guest", False)):
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied to this conversation"
@@ -1143,8 +1135,7 @@ async def generate_tts(
 
     try:
         # Verify ownership
-        if not verify_conversation_ownership(conversation_id, current_user['user_id'],
-                                              current_user.get("is_guest", False)):
+        if not verify_conversation_ownership(conversation_id, current_user['user_id']):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"

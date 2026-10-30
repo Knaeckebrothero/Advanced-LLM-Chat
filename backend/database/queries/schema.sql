@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     name TEXT,
+    is_guest BOOLEAN DEFAULT FALSE,  -- created per guest login, deleted once its sessions have expired
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

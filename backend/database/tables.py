@@ -33,6 +33,7 @@ users = Table(
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('email', Text, unique=True, nullable=False),
     Column('name', Text),
+    Column('is_guest', Boolean, server_default='false'),  # One user per guest login
     Column('created_at', DateTime, server_default=func.now()),
 )
 

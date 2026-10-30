@@ -118,7 +118,7 @@ def login(base_url, responses, email=None):
         response = session.post("/api/auth/mock-login", json={"email": email})
     else:
         db.reset_guest_usage("127.0.0.1")  # The guest login is rate limited per IP
-        response = session.post("/api/auth/guest-login", json={"ip_address": "127.0.0.1"})
+        response = session.post("/api/auth/guest-login")
     response.raise_for_status()
     return session
 

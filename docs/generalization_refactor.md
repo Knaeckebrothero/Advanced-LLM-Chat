@@ -169,7 +169,6 @@ All of these were already there before the refactor unless noted.
 
 - **Unit tests:** 58 of 88 fail, mostly `NullInjectorError: No provider for HttpClient` in component specs. `projects/ngx-agent-chat/tsconfig.spec.json` also errors with "No inputs were found".
 - **Expired guest session:** the app lands on the login page instead of creating a new guest session, and a reload fixes it. The auth guard and auto guest login race.
-- **External IP lookup:** auto guest login first sends the visitor's IP to `https://api.ipify.org`. The backend could read the client IP itself.
 - **Dev certificates:** they are regenerated on *every* backend start, by `start_backend.py` and again by importing `backend/main.py`. The backend and the Angular dev server therefore use different certificates, and trusting `devcerts/ca.pem` never lasts. They should only be generated when missing.
 - **Deprecated dependency:** `langchain-community` is being sunset, and the Tavily web search tool uses it. Move to `langchain-tavily`.
 - **Old model default:** the Anthropic default is still `claude-3-haiku-20240307` (`llm_provider.py`, plus the CI-generated `.env.example`). This will be handled with the model work.

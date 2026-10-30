@@ -386,19 +386,20 @@ class Database:
                 log.debug(f"User not found: {email}")
             return user
 
-    def create_user(self, email: str, name: str = None) -> dict:
+    def create_user(self, email: str, name: str = None, is_guest: bool = False) -> dict:
         """
         Create a new user.
 
         Args:
             email: The user's email address.
             name: The user's name (optional).
+            is_guest: A user for one guest login; deleted by delete_stale_guest_users().
 
         Returns:
             The created user dictionary.
         """
         with self.connection() as conn:
-            stmt = insert(users).values(email=email, name=name).returning(users)
+            stmt = insert(users).values(email=email, name=name, is_guest=is_guest).returning(users)
             result = conn.execute(stmt).fetchone()
             log.info(f"Created user: {email}")
             return self._row_to_dict(result)
@@ -1216,6 +1217,37 @@ class Database:
             if count > 0:
                 log.info(f"Cleaned up {count} expired sessions")
             return count
+
+    def delete_stale_guest_users(self, created_before: datetime) -> int:
+        """
+        Delete guest users without an active session, with their conversations and settings.
+
+        Every guest login creates its own user (users.is_guest). Once its sessions
+        have expired nobody can reach that user's data again.
+
+        Args:
+            created_before: Only delete guest users created before this time (UTC).
+
+        Returns:
+            Number of guest users deleted.
+        """
+        with self.connection() as conn:
+            active = select(sessions.c.user_id).where(sessions.c.expires_at >= datetime.utcnow())
+            stale = select(users.c.id).where(
+                users.c.is_guest.is_(True),
+                users.c.created_at < created_before,
+                users.c.id.not_in(active)
+            )
+            stale_ids = [row[0] for row in conn.execute(stale)]
+            if not stale_ids:
+                return 0
+            # Messages go with their conversations (ON DELETE CASCADE)
+            conn.execute(delete(conversations).where(conversations.c.userId.in_(stale_ids)))
+            conn.execute(delete(user_settings).where(user_settings.c.user_id.in_(stale_ids)))
+            conn.execute(delete(sessions).where(sessions.c.user_id.in_(stale_ids)))
+            conn.execute(delete(users).where(users.c.id.in_(stale_ids)))
+            log.info(f"Deleted {len(stale_ids)} expired guest users and their conversations")
+            return len(stale_ids)
 
     def delete_sessions_by_user(self, user_id: int) -> int:
         """

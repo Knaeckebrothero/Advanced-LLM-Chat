@@ -104,23 +104,21 @@ export class AuthService {
 
   private async autoGuestLogin(): Promise<void> {
     try {
-      // Try to get IP address and create guest session
-      const ipResponse = await lastValueFrom(
-        this.http.get<{ ip: string }>('https://api.ipify.org?format=json')
-      ).catch(() => ({ ip: 'unknown' }));
-
-      const ip_address = ipResponse.ip;
-
+      // The backend rate-limits guests by the IP address of the connection
       const response = await lastValueFrom(
         this.http.post<{ user: User, message: string, token: string }>(
           `${this.baseUrl}/api/auth/guest-login`,
-          { ip_address },
+          {},
           { withCredentials: true, observe: 'response' }
         )
       );
 
       // Extract CSRF token
       this.apiService.extractCsrfToken(response);
+
+      // Every guest session is a new user that only reaches its own conversations, so chats
+      // stored in this browser by an earlier (expired) session can't be continued
+      await this.clearLocalUserData();
 
       this.isGuest = true;
       this.setCurrentUser(response.body!.user);
@@ -261,18 +259,21 @@ export class AuthService {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Clear all user data from IndexedDB before switching to guest
+      // Clear all user data before switching to guest
       console.log('Clearing user data on logout...');
-      await this.dbService.clearAllUserData();
-
-      // Clear repository caches
-      this.conversationRepository.clearCache();
-      this.messageRepository.clearAllCaches();
+      await this.clearLocalUserData();
 
       // After logout, automatically create a new guest session
       await this.autoGuestLogin();
       this.router.navigate(['/login']); // Ensure redirection to login page
     }
+  }
+
+  /** Remove the conversations, messages and settings stored in this browser, and the repository caches. */
+  private async clearLocalUserData(): Promise<void> {
+    await this.dbService.clearAllUserData();
+    this.conversationRepository.clearCache();
+    this.messageRepository.clearAllCaches();
   }
 
   // Add method to check specific permissions (useful with IDP)

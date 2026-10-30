@@ -108,6 +108,8 @@ services:
     environment:
       # SSL/TLS
       - USE_DEV_CERTS=True
+      # Reverse proxy whose X-Forwarded-For header is trusted (guest rate limit by IP)
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
       # PostgreSQL
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

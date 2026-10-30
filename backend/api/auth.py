@@ -6,9 +6,9 @@ import os
 import secrets
 from datetime import datetime, timedelta, UTC
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
-from backend.models.auth import MockLoginRequest, GuestLoginRequest, LoginResponse
+from backend.models.auth import MockLoginRequest, LoginResponse
 from backend.security.auth import (
-    create_session, validate_session, delete_session, get_current_user, is_admin
+    client_ip, create_session, validate_session, delete_session, get_current_user, is_admin
 )
 from backend.security.logging import log_security_event
 from backend.database import db
@@ -22,13 +22,14 @@ router = APIRouter(prefix="/api/auth", tags=["Auth"])
              summary="Guest Login",
              description="Creates a guest session for anonymous users with rate limiting based on IP address",
              operation_id="guestLogin")
-async def guest_login(request: GuestLoginRequest, req: Request, response: Response):
+async def guest_login(req: Request, response: Response):
     """
     Handles guest login by verifying IP address rate limits, creating a guest session,
     and managing cookies and headers for client authentication and CSRF protection.
 
-    :param request: The request object containing the guest's login details.
-    :type request: GuestLoginRequest
+    The IP address comes from the connection (client_ip); a body sent by older
+    clients ({"ip_address": ...}) is ignored, so it can't be used to dodge the limit.
+
     :param req: The incoming HTTP request object used to access request-related data.
     :type req: Request
     :param response: The HTTP response object for setting cookies and headers.
@@ -37,11 +38,11 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     :rtype: LoginResponse
     :raises HTTPException: If the rate limit is exceeded based on the guest's IP address.
     """
-    ip_address = request.ip_address
+    ip_address = client_ip(req)
     logger.debug(f"Guest login attempt from IP: {ip_address}")
 
-    # If IP address is 'unknown', use a fallback
-    if ip_address == 'unknown':
+    # If the server doesn't know the address, use a fallback
+    if not ip_address:
         ip_address = f"guest_{secrets.token_hex(4)}"
         logger.debug(f"Unknown IP, generated fallback identifier: {ip_address}")
 
@@ -75,15 +76,18 @@ async def guest_login(request: GuestLoginRequest, req: Request, response: Respon
     # Get existing session to regenerate from
     old_session_key = req.cookies.get("session")
 
-    guest_email = f"guest_{secrets.token_hex(4)}@guest.com"
-    guest_user = {"id": 0, "email": guest_email, "name": "Guest"}
+    # Every guest gets its own user, so guests only reach their own conversations.
+    # It's deleted with its data once its sessions have expired (cleanup_expired_sessions).
+    guest_email = f"guest_{secrets.token_hex(8)}@guest.invalid"
+    guest = db.create_user(guest_email, "Guest", is_guest=True)
+    guest_user = {"id": guest["id"], "email": guest_email, "name": "Guest"}
 
     # Use shorter timeout for guest sessions
     guest_timeout_hours = int(os.getenv('GUEST_SESSION_TIMEOUT_HOURS', '6'))
 
     # Create new guest session with custom timeout, regenerating old session
-    session_key, csrf_token = create_session(0, guest_email, session_duration_hours=guest_timeout_hours, is_guest=True,
-                                              regenerate_from=old_session_key)
+    session_key, csrf_token = create_session(guest["id"], guest_email, session_duration_hours=guest_timeout_hours,
+                                              is_guest=True, regenerate_from=old_session_key)
 
     max_age = guest_timeout_hours * 3600
 
