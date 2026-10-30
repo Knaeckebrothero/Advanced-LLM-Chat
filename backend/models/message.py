@@ -112,6 +112,8 @@ class AgentStep(BaseModel):
     :type duration: Optional[int]
     :ivar metadata: Optional tool-specific metadata (e.g., Neo4j query results).
     :type metadata: Optional[dict]
+    :ivar callId: The model's tool call id on tool_call and tool_result steps, None otherwise.
+    :type callId: Optional[str]
     """
     id: str
     type: Literal["thought", "tool_call", "tool_result", "observation"]
@@ -120,6 +122,7 @@ class AgentStep(BaseModel):
     timestamp: int
     duration: Optional[int] = None
     metadata: Optional[dict] = None
+    callId: Optional[str] = None  # The model's tool call id, links a tool_call step to its tool_result
 
 
 class AgentContent(BaseModel):

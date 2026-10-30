@@ -23,7 +23,14 @@ from backend.models.message import (
 from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
-from backend.llm import ModelConfig, Usage, build_system_prompt, default_tools, model_from_env, run_agent
+from backend.llm import ModelConfig, Usage, build_system_prompt, default_tools, run_agent
+from backend.catalog.resolver import (
+    ModelNotAllowed,
+    ModelNotAvailable,
+    persona_prompt_for_conversation,
+    resolve_auxiliary_model,
+    resolve_model,
+)
 from backend.services.llm import generate_reply
 from backend.services.conversation_history import ConversationHistoryBuilder
 from backend.models.attachments import AttachmentType
@@ -53,19 +60,26 @@ def _resolve_model(current_user: dict, conversation_id: str, model_id: Optional[
     """
     The model that answers in this conversation.
 
-    TODO(integration): replace the body with backend.catalog.resolver.resolve_model(
-    current_user, model_id, conversation) and map ModelNotAvailable to this error
-    (503) and ModelNotAllowed to a 403. Until then the environment model answers
-    and a requested modelId is ignored.
+    An explicitly requested model wins, then the conversation's model, the user's
+    default model, the first catalog model and finally the environment model
+    (see backend.catalog.resolver.resolve_model).
 
     :raises NoModelAvailableError: If no model is configured.
+    :raises HTTPException: 403 if the requested model is not available to the user.
     """
-    if model_id is not None:
-        logger.info(f"Requested model {model_id} ignored: the model catalog is not wired in yet")
-    config = model_from_env()
-    if config is None:
-        raise NoModelAvailableError(NO_MODEL_MESSAGE)
-    return config
+    conversation = db.get_conversation_by_id(conversation_id)
+    try:
+        return resolve_model(current_user, model_id, conversation)
+    except ModelNotAllowed as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ModelNotAvailable as e:
+        raise NoModelAvailableError(str(e) or NO_MODEL_MESSAGE)
+
+
+def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
+    """The system prompt for a conversation: its persona (if any) plus the tool instructions."""
+    conversation = db.get_conversation_by_id(conversation_id)
+    return build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
 
 
 def _resolve_model_or_503(current_user: dict, conversation_id: str) -> ModelConfig:
@@ -306,7 +320,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
         ai_response_content, usage = await generate_reply(
             config,
             request_body.conversationId,
-            system_prompt=request_body.systemPrompt
+            system_prompt=request_body.systemPrompt or _system_prompt(current_user, request_body.conversationId)
         )
 
         message_id = int(time.time() * 1000)
@@ -636,6 +650,7 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
             ai_response_content, usage = await generate_reply(
                 config,
                 request_body.conversationId,
+                system_prompt=_system_prompt(current_user, request_body.conversationId),
                 before_message=message
             )
         except ValueError as e:
@@ -821,7 +836,11 @@ async def send_and_generate_message(
         ai_message_response = None
         if request_body.generateResponse:
             config = _resolve_model_or_503(current_user, request_body.conversationId)
-            ai_response_content, usage = await generate_reply(config, request_body.conversationId)
+            ai_response_content, usage = await generate_reply(
+                config,
+                request_body.conversationId,
+                system_prompt=_system_prompt(current_user, request_body.conversationId)
+            )
 
             ai_message_id = int(time.time() * 1000) + 1
             current_time = int(time.time())
@@ -900,6 +919,13 @@ async def stream_generate(
             detail="Access denied to this conversation"
         )
 
+    # Resolve the model before the stream starts, so a model the user may not use is a 403
+    try:
+        config = _resolve_model(current_user, request_body.conversationId, request_body.modelId)
+    except NoModelAvailableError as e:
+        config = None
+        crud_logger.error(f"Stream generate without a model: {e}")
+
     async def event_generator() -> AsyncGenerator[dict, None]:
         """Generate SSE events for agent reasoning and response."""
         message_id = int(time.time() * 1000)
@@ -908,12 +934,6 @@ async def stream_generate(
         step_positions: dict[str, int] = {}  # Step id -> index in steps, for replaced steps
         final_response = ""
         usage: Optional[Usage] = None
-
-        try:
-            config = _resolve_model(current_user, request_body.conversationId, request_body.modelId)
-        except NoModelAvailableError as e:
-            config = None
-            crud_logger.error(f"Stream generate without a model: {e}")
 
         # Send message envelope FIRST - provides metadata before any content
         message_start = MessageStartEvent(
@@ -970,8 +990,7 @@ async def stream_generate(
                 crud_logger.info(f"Attachments in conversation: {counts}")
 
             tools = default_tools() if config.supports_tools else None
-            # TODO(integration): pass the conversation's rendered persona prompt instead of None
-            system_prompt = build_system_prompt(None, tools)
+            system_prompt = _system_prompt(current_user, request_body.conversationId, tools)
 
             crud_logger.info(
                 f"Running agent with {config.display_name} ({config.provider_name}) on "
@@ -1013,9 +1032,8 @@ async def stream_generate(
                 elif event_type == "usage":
                     usage = event_data
 
-            # Save using JSONB storage (new schema)
-            # TODO(integration): also store config.id, config.display_name and usage.to_api(config)
-            # once db.create_agent_message accepts them (model_id, model_name, usage columns)
+            # Save using JSONB storage, with the model that answered and its usage
+            usage_data = (usage or Usage()).to_api(config)
             db.create_agent_message(
                 message_id=message_id,
                 conversation_id=request_body.conversationId,
@@ -1023,7 +1041,10 @@ async def stream_generate(
                 time=current_time,
                 content=final_response,  # Response text (unified with text messages)
                 status='complete',
-                steps=steps  # Stored as JSONB array
+                steps=steps,  # Stored as JSONB array
+                model_id=config.id,
+                model_name=config.display_name,
+                usage=usage_data
             )
 
             # Signal completion
@@ -1034,7 +1055,7 @@ async def stream_generate(
                     "conversationId": request_body.conversationId,
                     "modelId": config.id,
                     "modelName": config.display_name,
-                    "usage": (usage or Usage()).to_api(config)
+                    "usage": usage_data
                 })
             }
 
@@ -1045,8 +1066,7 @@ async def stream_generate(
         except Exception as e:
             crud_logger.error(f"Error in stream generate: {str(e)}", exc_info=True)
 
-            # Save error state using JSONB storage
-            # TODO(integration): store the model and the partial usage here as well
+            # Save error state using JSONB storage, with the usage until the error
             db.create_agent_message(
                 message_id=message_id,
                 conversation_id=request_body.conversationId,
@@ -1055,7 +1075,10 @@ async def stream_generate(
                 content=final_response,  # Response text (unified with text messages)
                 status='error',
                 error=str(e),
-                steps=steps
+                steps=steps,
+                model_id=config.id,
+                model_name=config.display_name,
+                usage=usage.to_api(config) if usage else None
             )
 
             yield {
@@ -1153,7 +1176,7 @@ async def generate_tts(
             final_text = preprocessed
         else:
             # Try to generate preprocessed text
-            preprocessed = await preprocess_for_tts(text_content)
+            preprocessed = await preprocess_for_tts(text_content, config=resolve_auxiliary_model())
             if preprocessed:
                 final_text = preprocessed
                 cache_preprocessed_text(message_id, conversation_id, preprocessed)

@@ -17,6 +17,7 @@ from backend.models.conversation import (
 )
 from backend.models.message import MessageResponse
 from backend.catalog.service import CatalogError, check_model_choice, check_persona_choice
+from backend.catalog.resolver import resolve_auxiliary_model
 from backend.database import db
 from backend.database.db import UNSET
 from backend.security.auth import get_current_user, verify_conversation_ownership
@@ -282,7 +283,8 @@ async def generate_title(
         from backend.services.title_generator import generate_conversation_title
         new_title = await generate_conversation_title(
             first_message=req.firstMessage,
-            fallback_title=existing['name']
+            fallback_title=existing['name'],
+            config=resolve_auxiliary_model()
         )
         logger.info(f"Generated AI title for conversation {conversation_id}: {new_title}")
     except Exception as e:

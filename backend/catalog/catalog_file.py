@@ -19,6 +19,8 @@ Export writes every column, and the decrypted keys only when asked to.
 Validation is the same as in the admin API (backend/catalog/service.py).
 """
 import json
+import os
+import re
 import logging
 from pathlib import Path
 from typing import Optional
@@ -302,6 +304,62 @@ def resolve_catalog_path(path: str | Path) -> Path:
     return path if path.is_absolute() else REPO_ROOT / path
 
 
+# ${VAR} in a provider's base_url, filled from the environment when seeding
+ENV_PLACEHOLDER = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _apply_environment(data: dict) -> list[str]:
+    """
+    Prepare the providers of a seed file for this server's environment.
+
+    - ${VAR} placeholders in a provider's base_url are replaced with environment
+      values. This keeps private addresses (e.g. a homelab model router) out of a
+      committed catalog file. A provider whose variable is unset is skipped,
+      together with its models.
+    - A provider whose api_key_env variable is unset is imported disabled, so the
+      picker doesn't offer models that can't answer. It is enabled again on the
+      next seed once the key is set, unless the file sets `enabled` itself.
+
+    This only runs when seeding from MODEL_CATALOG_FILE, never for files uploaded
+    in the UI, so an upload can't read the server's environment.
+
+    Args:
+        data: The parsed catalog file; changed in place.
+
+    Returns:
+        Messages about skipped and disabled providers.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("providers"), list):
+        return []
+
+    messages = []
+    skipped = set()
+    providers = []
+    for entry in data["providers"]:
+        base_url = entry.get("base_url") if isinstance(entry, dict) else None
+        if isinstance(base_url, str):
+            missing = [name for name in ENV_PLACEHOLDER.findall(base_url) if not os.getenv(name)]
+            if missing:
+                skipped.add(entry.get("name"))
+                messages.append(f"provider '{entry.get('name')}' skipped: {', '.join(missing)} not set")
+                continue
+            entry["base_url"] = ENV_PLACEHOLDER.sub(lambda match: os.environ[match.group(1)], base_url)
+        key_env = entry.get("api_key_env") if isinstance(entry, dict) else None
+        if key_env and "enabled" not in entry and "api_key" not in entry:
+            entry["enabled"] = bool(os.getenv(key_env))
+            if not entry["enabled"]:
+                messages.append(f"provider '{entry.get('name')}' disabled: {key_env} not set")
+        providers.append(entry)
+    data["providers"] = providers
+
+    if skipped and isinstance(data.get("models"), list):
+        data["models"] = [
+            entry for entry in data["models"]
+            if not (isinstance(entry, dict) and entry.get("provider") in skipped)
+        ]
+    return messages
+
+
 def seed_from_file(path: str | Path) -> ImportResult:
     """
     Import a catalog file from disk (MODEL_CATALOG_FILE).
@@ -324,6 +382,8 @@ def seed_from_file(path: str | Path) -> ImportResult:
         raise CatalogError(f"Catalog file {resolved} is not valid JSON: {e}") from e
 
     log.info(f"Seeding the model catalog from {resolved}")
+    for message in _apply_environment(data):
+        log.warning(f"Catalog file {resolved.name}: {message}")
     result = import_catalog(data)
     for error in result.errors:
         log.warning(f"Catalog file {resolved.name}: {error}")

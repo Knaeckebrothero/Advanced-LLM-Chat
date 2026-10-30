@@ -69,6 +69,14 @@ class FetchModelsResponse(BaseModel):
     models: List[FetchedModel]
 
 
+class ModelTestResult(BaseModel):
+    """Result of POST /api/admin/models/{id}/test: one short request to the model."""
+    ok: bool
+    latencyMs: int
+    reply: Optional[str] = None
+    error: Optional[str] = None
+
+
 # Models
 
 class ModelBase(BaseModel):

@@ -46,14 +46,6 @@ TRUNCATED_NOTE = "\n\n[The answer was cut off at the output token limit.]"
 REFUSAL_NOTE = "[The model declined to answer this request.]"
 
 
-class LoopStep(AgentStep):
-    """
-    An AgentStep with the model's tool call id, which links a tool_call step to its
-    tool_result step. None for other steps.
-    """
-    callId: Optional[str] = None
-
-
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -66,11 +58,11 @@ class _ReasoningStep:
         self.started = _now_ms()
         self.parts: list[str] = []
 
-    def start(self) -> LoopStep:
-        return LoopStep(id=self.id, type="thought", title=THINKING_TITLE, content="", timestamp=self.started)
+    def start(self) -> AgentStep:
+        return AgentStep(id=self.id, type="thought", title=THINKING_TITLE, content="", timestamp=self.started)
 
-    def finish(self) -> LoopStep:
-        return LoopStep(
+    def finish(self) -> AgentStep:
+        return AgentStep(
             id=self.id,
             type="thought",
             title=THINKING_TITLE,
@@ -127,7 +119,7 @@ async def _run_tools(
     parsed = [_parse_arguments(call) for call in calls]
     for call, (arguments, error) in zip(calls, parsed):
         content = json.dumps(arguments, indent=2, ensure_ascii=False) if error is None else call.arguments
-        yield ("step", LoopStep(
+        yield ("step", AgentStep(
             id=str(uuid.uuid4()),
             type="tool_call",
             title=registry.title(call.name),
@@ -153,7 +145,7 @@ async def _run_tools(
                 content = str(output)
             if len(content) > MAX_RESULT_STEP_LENGTH:
                 content = content[:MAX_RESULT_STEP_LENGTH] + "..."
-            yield ("step", LoopStep(
+            yield ("step", AgentStep(
                 id=str(uuid.uuid4()),
                 type="tool_result",
                 title=f"Result: {registry.title(call.name)}",

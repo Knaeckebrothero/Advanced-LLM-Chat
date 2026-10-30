@@ -10,6 +10,7 @@ response contains a key, only its source and a masked version (except the
 export with includeKeys=true).
 """
 import logging
+import time
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
@@ -20,12 +21,15 @@ from fastapi.routing import APIRoute
 
 from backend.catalog import catalog_file, service
 from backend.catalog.fetch import fetch_provider_models
+from backend.catalog.resolver import ModelNotAvailable, get_model_config
 from backend.catalog.service import CatalogError
+from backend.llm import complete
 from backend.models.catalog import (
     FetchModelsResponse,
     ImportResult,
     ModelCreate,
     ModelOut,
+    ModelTestResult,
     ModelUpdate,
     PersonaCreate,
     PersonaOut,
@@ -329,6 +333,51 @@ async def admin_delete_model(model_id: int, admin: dict = Depends(require_admin)
         raise _http_error(e)
     crud_logger.info(f"Model deleted - id: {model_id}, by user {admin['user_id']}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# Prompt and output limit of the model test; thinking models need room to think first
+MODEL_TEST_PROMPT = "Reply with one short sentence that says which model you are."
+MODEL_TEST_MAX_OUTPUT_TOKENS = 4096
+
+
+@router.post("/admin/models/{model_id}/test",
+             response_model=ModelTestResult,
+             responses=ADMIN_ERRORS,
+             summary="Test Catalog Model",
+             operation_id="adminTestModel")
+async def admin_test_model(model_id: int, admin: dict = Depends(require_admin)):
+    """
+    Sends one short request to a catalog model, also when it or its provider is disabled.
+
+    A failing call is reported in the result (ok=false with the provider's error
+    message), not as an HTTP error.
+
+    :param model_id: The model's ID.
+    :type model_id: int
+    :return: Whether the call worked, its latency and the reply or error.
+    :rtype: ModelTestResult
+    :raises HTTPException: 404 if the model doesn't exist.
+    """
+    try:
+        config = get_model_config(model_id)
+    except ModelNotAvailable as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    started = time.monotonic()
+    try:
+        reply, _ = await complete(
+            config,
+            [{"role": "user", "content": MODEL_TEST_PROMPT}],
+            max_output_tokens=MODEL_TEST_MAX_OUTPUT_TOKENS
+        )
+    except Exception as e:
+        latency_ms = int((time.monotonic() - started) * 1000)
+        crud_logger.info(f"Model test failed - id: {model_id}, by user {admin['user_id']}: {e}")
+        return ModelTestResult(ok=False, latencyMs=latency_ms, error=str(e)[:500])
+
+    latency_ms = int((time.monotonic() - started) * 1000)
+    crud_logger.info(f"Model test ok - id: {model_id}, {latency_ms} ms, by user {admin['user_id']}")
+    return ModelTestResult(ok=True, latencyMs=latency_ms, reply=reply.strip()[:500])
 
 
 # =========================================================================

@@ -116,6 +116,11 @@ def model_from_env() -> Optional[ModelConfig]:
 
     if provider == "openai" and os.getenv("OPENAI_API_KEY"):
         model = os.getenv("OPENAI_MODEL", "gpt-5.2")
+        base_url = os.getenv("OPENAI_BASE_URL") or None
+        # OpenAI's own models take images; a custom endpoint only with MODEL_RECEIVE_IMAGES=true
+        custom_endpoint = base_url is not None and "api.openai.com" not in base_url
+        supports_vision = (not custom_endpoint
+                           or os.getenv("MODEL_RECEIVE_IMAGES", "false").lower() == "true")
         return ModelConfig(
             id=None,
             display_name=model,
@@ -123,10 +128,10 @@ def model_from_env() -> Optional[ModelConfig]:
             provider_id=None,
             provider_name="OpenAI (environment)",
             kind=KIND_OPENAI_COMPATIBLE,
-            base_url=os.getenv("OPENAI_BASE_URL") or None,
+            base_url=base_url,
             api_key=os.getenv("OPENAI_API_KEY"),
             privacy_tier="trusted",
-            supports_vision=True,
+            supports_vision=supports_vision,
             reasoning="optional",
             reasoning_effort=os.getenv("REASONING_LEVEL") or None,
         )
@@ -140,7 +145,7 @@ def model_from_env() -> Optional[ModelConfig]:
             provider_id=None,
             provider_name="Anthropic (environment)",
             kind=KIND_ANTHROPIC,
-            base_url=None,
+            base_url=os.getenv("ANTHROPIC_BASE_URL") or None,
             api_key=os.getenv("ANTHROPIC_API_KEY"),
             privacy_tier="trusted",
             supports_vision=True,

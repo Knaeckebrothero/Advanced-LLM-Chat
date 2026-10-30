@@ -21,7 +21,7 @@ from typing import Optional
 
 from backend.catalog import crypto
 from backend.database import db
-from backend.llm.types import ModelConfig, model_from_env
+from backend.llm.types import ModelConfig, auxiliary_model_from_env, model_from_env
 
 log = logging.getLogger(__name__)
 
@@ -291,12 +291,12 @@ def resolve_auxiliary_model() -> Optional[ModelConfig]:
 
     Returns:
         The first enabled model with is_auxiliary (by sort_order), else
-        model_from_env(), which may be None.
+        auxiliary_model_from_env(), which may be None.
     """
     models = db.get_llm_models(enabled_only=True, auxiliary_only=True)
     if models:
         return _config_for_row(models[0])
-    return model_from_env()
+    return auxiliary_model_from_env()
 
 
 def get_model_config(model_id: int) -> ModelConfig:
