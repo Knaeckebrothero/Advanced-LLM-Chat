@@ -164,6 +164,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   createNewConversation(): void {
     this.chatState.createNewConversation();
+    this.router.navigate(['/']);  // Also from other pages, e.g. Agents
     this.uiState.closeSidebarOnMobile();
   }
 

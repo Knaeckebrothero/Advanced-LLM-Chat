@@ -45,7 +45,7 @@
   <div class="user-with-settings">
     <button class="user-button" (click)="handleUserClick()">
       <div class="avatar">{{ getUserInitials() }}</div>
-      <div class="username">{{ getUserName() }}</div>
+      <div class="username" [title]="getUserName()">{{ getUserName() }}</div>
     </button>
     <button class="settings-icon-button" mat-icon-button (click)="openSettings()">
       <mat-icon>settings</mat-icon>

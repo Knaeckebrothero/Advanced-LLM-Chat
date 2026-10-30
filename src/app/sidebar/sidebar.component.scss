@@ -143,6 +143,7 @@
     padding: 8px;
     border-radius: 6px;
     flex: 1;
+    min-width: 0;  // Lets a long name shrink (ellipsis) instead of pushing the settings button out
     transition: background-color 0.2s ease;
 
     &:hover {
@@ -162,6 +163,7 @@
     }
 
     .username {
+      min-width: 0;
       font-size: 14px;
       opacity: 0.9;
       white-space: nowrap;
@@ -172,6 +174,7 @@
   }
 
   .settings-icon-button {
+    flex-shrink: 0;
     color: var(--theme-text);
     background: none;
     border: none;
