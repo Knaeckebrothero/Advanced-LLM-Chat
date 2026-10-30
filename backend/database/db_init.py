@@ -391,6 +391,9 @@ def parse_schema_columns(schema_path: Path) -> dict[str, list[tuple[str, str]]]:
             if not line or line.startswith('--'):
                 continue
 
+            # Strip inline comments, otherwise they end up in ALTER TABLE statements
+            line = re.sub(r'\s*--.*$', '', line)
+
             # Remove trailing comma if present
             if line.endswith(','):
                 line = line[:-1].strip()

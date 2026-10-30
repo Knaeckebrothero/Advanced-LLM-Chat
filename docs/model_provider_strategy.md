@@ -41,14 +41,26 @@ For each model, use the first column that works. Fall back when the model isn't 
 | Claude | – | – | **Anthropic API** (existing credits; native SDK) | – |
 | GPT-5.x | – | – | **OpenAI API** (existing key) | – |
 
-Resulting starting set of provider accounts:
+**Starting set (decided 2026-10-30).** Cortecs serves every model of the first lineup with one key, and is cheaper than Scaleway for DeepSeek (€0.18 / €0.55 for V4.1 Flash 1017), so it is the only new account to start with:
 
-- **Scaleway**: DeepSeek, GLM, Qwen (`eu`, 1M free tokens).
-- **Cortecs**: Kimi K3, MiniMax and anything else EU-hosted. Turn on Sovereign Cloud and ZDR, and exclude Nebius (`eu`).
-- **OpenRouter**: the general fallback. Set ZDR and `data_collection: deny` at account level (`trusted`). It covers almost every model with one key, at a fee of about 5.5% on credits.
+| Model | Source | Tier | € per M tokens in / out |
+|---|---|---|---|
+| DeepSeek V4.1 Flash 1017 | Cortecs | `eu` | 0.18 / 0.55 |
+| DeepSeek V4 Pro 0813 | Cortecs | `eu` | 1.80 / 3.59 |
+| Mistral Large 4 | Cortecs | `eu` | 0.69 / 2.11 |
+| Kimi K3 (K3.1 Pro once EU hosts serve it, expected around 6 Nov) | Cortecs | `eu` | 2.69 / 13.46 |
+| Gemma 4 (MoE) | Homelab model router (`MODEL_ROUTER_API`) | `local` | – |
+| Claude | Anthropic API, existing credits | `trusted` | – |
+| GPT-5.2 | OpenAI API, existing key | `trusted` | – |
+
+GLM and other coding-focused models are left out: they are better tested in the separate agent framework.
+
+Accounts:
+
+- **Cortecs**: turn on Sovereign Cloud and ZDR, and exclude Nebius (`eu`).
+- **Homelab model router**: OpenAI-compatible, already running (`local`).
 - **Anthropic** and **OpenAI**: direct, with existing credits (`trusted`).
-- **Moonshot**: only for Kimi K3.1 Pro until EU or trusted hosts serve it (`untrusted`).
-- **Homelab**: added later (`local`).
+- Later, only if needed: **Scaleway** (direct EU host), **OpenRouter** as the general fallback (with ZDR and `data_collection: deny`, `trusted`, about 5.5% fee on credits), **Moonshot** for models only it serves (`untrusted`).
 
 Not used:
 

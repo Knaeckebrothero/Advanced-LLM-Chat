@@ -76,6 +76,20 @@ class VoiceContent(BaseModel):
     waveform: Optional[List[float]] = None
 
 
+class MessageUsage(BaseModel):
+    """
+    Token usage and cost of one assistant message, summed over all model calls.
+
+    Built by backend.llm.types.Usage.to_api() and stored in messages.usage.
+    """
+    inputTokens: int = 0
+    outputTokens: int = 0  # Includes reasoning tokens
+    reasoningTokens: Optional[int] = None
+    cachedInputTokens: Optional[int] = None
+    cost: Optional[float] = None  # None when the model has no prices
+    currency: Optional[str] = None
+
+
 class AgentStep(BaseModel):
     """
     Represents a single step in the agent's reasoning process.
@@ -343,6 +357,10 @@ class MessageResponse(BaseModel):
     finalResponse: Optional[str] = None
     status: Optional[str] = None
     error: Optional[str] = None
+    # Which model wrote an agent message, and its usage
+    modelId: Optional[int] = None
+    modelName: Optional[str] = None
+    usage: Optional[MessageUsage] = None
 
 
 class SendAndGenerateResponse(BaseModel):
@@ -418,6 +436,8 @@ class StreamGenerateRequest(BaseModel):
     """
     conversationId: str  # UUID
     aiParticipant: str = "Assistant"
+    # Optional: answer with this catalog model instead of the conversation's model
+    modelId: Optional[int] = None
 
 
 class MessageStartEvent(BaseModel):
@@ -444,16 +464,18 @@ class MessageStartEvent(BaseModel):
     roleName: str
     time: int
     type: Literal["agent"] = "agent"
+    modelId: Optional[int] = None  # None for the environment model
+    modelName: Optional[str] = None
 
 
 class StreamEvent(BaseModel):
     """
     Represents an event in the SSE stream.
 
-    :ivar event: Type of event (message_start, step, token, done, error).
-    :type event: Literal["message_start", "step", "token", "done", "error"]
+    :ivar event: Type of event (message_start, step, step_delta, token, done, error).
+    :type event: Literal["message_start", "step", "step_delta", "token", "done", "error"]
     :ivar data: Event payload (MessageStartEvent for message_start, AgentStep for step, string for token, etc.).
     :type data: Union[MessageStartEvent, AgentStep, str, dict]
     """
-    event: Literal["message_start", "step", "token", "done", "error"]
+    event: Literal["message_start", "step", "step_delta", "token", "done", "error"]
     data: Union[MessageStartEvent, AgentStep, str, dict]

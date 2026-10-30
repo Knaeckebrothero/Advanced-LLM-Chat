@@ -148,3 +148,18 @@ LOG_FORMAT = os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %
 LOG_DATE_FORMAT = os.getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S")
 LOG_DIRECTORY = os.getenv("LOG_DIRECTORY", os.path.join(FILESYSTEM_PATH, "logs"))
 LOG_FILE = os.getenv("LOG_FILE", "application.log")
+
+# Model catalog
+# Fernet key for API keys entered in the UI. If unset, a key is generated once and
+# stored next to the uploaded files (see backend/catalog/crypto.py).
+CATALOG_SECRET_KEY = os.getenv("CATALOG_SECRET_KEY")
+# Optional JSON file with providers, models and personas that app_init seeds into the catalog
+MODEL_CATALOG_FILE = os.getenv("MODEL_CATALOG_FILE")
+# Users who may manage the catalog, until roles come from Keycloak (comma-separated emails)
+ADMIN_EMAILS = {
+    email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()
+}
+
+# Agent loop
+# Maximum number of model calls per answer (each tool round counts as one)
+AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "10"))
