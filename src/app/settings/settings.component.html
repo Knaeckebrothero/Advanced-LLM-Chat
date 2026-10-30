@@ -103,16 +103,6 @@
     </div>
   </ng-container>
 
-  <!-- Catalog management for admins -->
-  <div class="setting-option" *ngIf="isAdmin$ | async">
-    <label>{{ 'catalog.settings.catalog' | translate }}</label>
-    <button class="manage-button" (click)="openCatalogAdmin()">
-      <mat-icon>tune</mat-icon>
-      <span>{{ 'catalog.settings.manageCatalog' | translate }}</span>
-      <mat-icon class="manage-button-arrow">chevron_right</mat-icon>
-    </button>
-  </div>
-
   <div class="button-row">
     <button class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
   </div>

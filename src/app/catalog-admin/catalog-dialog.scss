@@ -67,26 +67,6 @@
   font-size: 0.85rem;
 }
 
-.key-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 12px;
-  font-size: 0.875rem;
-  color: var(--theme-text-secondary);
-
-  mat-icon {
-    font-size: 18px;
-    width: 18px;
-    height: 18px;
-  }
-}
-
-.remove-key-button {
-  align-self: flex-start;
-  margin: 4px 0 8px;
-}
-
 .dialog-error {
   display: flex;
   align-items: flex-start;
@@ -145,4 +125,55 @@ mat-dialog-actions mat-spinner {
   margin: 0 0 8px;
   font-size: 0.85rem;
   color: var(--theme-text-secondary);
+}
+
+// Agent tools
+.tool-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+  margin: 0 0 4px -8px;
+}
+
+.tool-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 4px 0;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+}
+
+.tool-option {
+  padding: 0 12px 0 2px;
+
+  .tool-option-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--theme-text-accent);
+    }
+  }
+
+  &.is-unavailable .tool-option-label mat-icon {
+    color: var(--theme-text-secondary);
+  }
+
+  .tool-reason {
+    margin: -6px 0 6px 42px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--theme-text-secondary);
+    overflow-wrap: anywhere;
+  }
+}
+
+.sort-order-field {
+  width: min(220px, 100%);
 }

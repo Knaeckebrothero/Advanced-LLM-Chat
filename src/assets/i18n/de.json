@@ -8,7 +8,7 @@
   "Done": "Fertig",
   "New Chat": "Neuer Chat",
   "Chat": "Chat",
-  "Metrics": "Metriken",
+  "Agents": "Agenten",
   "Today": "Heute",
   "Last 7 Days": "Letzte 7 Tage",
   "This Month": "Diesen Monat",
@@ -64,10 +64,6 @@
       "trusted": "Anbieter außerhalb der EU: kein Training, Speicherung höchstens zur Missbrauchserkennung",
       "untrusted": "Speichert deine Nachrichten möglicherweise oder trainiert damit"
     },
-    "kind": {
-      "openai_compatible": "OpenAI-kompatibel",
-      "anthropic": "Anthropic"
-    },
     "reasoning": {
       "none": "Kein Nachdenken",
       "optional": "Optional",
@@ -79,14 +75,19 @@
       "thinking": "Nachdenken",
       "thinkingOptional": "Nachdenken (optional)"
     },
+    "tools": {
+      "files": "Dateien",
+      "web_search": "Websuche",
+      "knowledge_graph": "Wissensgraph"
+    },
     "untrustedNotice": "Dieser Anbieter speichert deine Nachrichten möglicherweise oder trainiert damit. Teile keine persönlichen Daten.",
     "picker": {
       "model": "Modell",
       "chooseModel": "Modell wählen",
-      "persona": "Persona",
-      "choosePersona": "Persona wählen",
-      "noPersona": "Keine Persona",
-      "usePersona": "Persona verwenden"
+      "persona": "Agent",
+      "choosePersona": "Agent wählen",
+      "noPersona": "Kein Agent",
+      "usePersona": "Agent verwenden"
     },
     "message": {
       "writtenBy": "Geschrieben von {{model}}",
@@ -101,9 +102,7 @@
       "defaultModel": "Standardmodell",
       "defaultModelHint": "Neue Chats beginnen mit diesem Modell. Du kannst es in jedem Chat wechseln.",
       "automatic": "Automatisch",
-      "automaticHint": "Das erste Modell des Katalogs",
-      "catalog": "Modellkatalog",
-      "manageCatalog": "Anbieter, Modelle und Personas verwalten"
+      "automaticHint": "Das erste Modell des Katalogs"
     },
     "common": {
       "cancel": "Abbrechen",
@@ -114,31 +113,16 @@
       "retry": "Erneut versuchen"
     },
     "admin": {
-      "title": "Modellkatalog",
-      "subtitle": "Anbieter, Modelle und Personas für alle, die diese App nutzen",
-      "back": "Zurück zum Chat",
-      "forbidden": "Nur Admins können den Modellkatalog verwalten.",
-      "loadFailed": "Der Katalog konnte nicht geladen werden.",
+      "title": "Agenten",
+      "subtitle": "Prompts, Werkzeuge und Modelle für deine Chats",
+      "forbidden": "Nur Admins können Agenten und Modelle verwalten.",
+      "loadFailed": "Agenten und Modelle konnten nicht geladen werden.",
       "unreachable": "Der Server ist nicht erreichbar.",
       "disabled": "Deaktiviert",
       "providerDisabled": "Anbieter deaktiviert",
       "deleted": "{{name}} gelöscht",
-      "tabs": {
-        "providers": "Anbieter",
-        "models": "Modelle",
-        "personas": "Personas",
-        "transfer": "Import & Export"
-      },
       "fields": {
         "name": "Name",
-        "kind": "API-Typ",
-        "baseUrl": "Basis-URL",
-        "apiKey": "API-Schlüssel",
-        "newApiKey": "Neuer API-Schlüssel",
-        "apiKeyEnv": "Umgebungsvariable für den Schlüssel",
-        "privacyTier": "Datenschutzstufe",
-        "currency": "Währung",
-        "defaultHeaders": "Standard-Header (JSON)",
         "notes": "Notizen",
         "enabled": "Aktiv",
         "guests": "Gäste",
@@ -163,44 +147,21 @@
         "systemPrompt": "Systemprompt",
         "variableName": "Variable",
         "variableLabel": "Bezeichnung",
-        "variableDefault": "Standardwert",
-        "defaultModel": "Standardmodell"
+        "variableDefault": "Standardwert"
       },
       "validation": {
         "required": "Pflichtfeld",
-        "envName": "Nur Buchstaben, Ziffern und Unterstriche",
-        "jsonHeaders": "Ein JSON-Objekt mit Textwerten, z. B. {\"X-Title\": \"Chat\"}",
         "jsonObject": "Ein JSON-Objekt, z. B. {\"key\": \"value\"}",
         "range": "Zwischen {{min}} und {{max}}",
         "variableName": "Buchstaben, Ziffern und Unterstriche, nicht mit einer Ziffer beginnend"
       },
       "providers": {
-        "intro": "Ein Anbieter ist ein API-Konto. Seine Datenschutzstufe wird bei jedem seiner Modelle angezeigt.",
-        "add": "Anbieter hinzufügen",
-        "addTitle": "Anbieter hinzufügen",
-        "editTitle": "Anbieter bearbeiten",
-        "empty": "Noch keine Anbieter. Füge einen hinzu und rufe dann seine Modelle ab.",
-        "saved": "{{name}} gespeichert",
-        "sdkDefault": "Standard-URL des SDK",
-        "baseUrlHint": "Leer lassen für die Standard-URL des SDK (OpenAI oder Anthropic)",
-        "keySection": "API-Schlüssel",
-        "keyStored": "Gespeicherter Schlüssel {{key}}",
-        "keyEnv": "Schlüssel aus {{env}}",
-        "keyNone": "Kein Schlüssel",
-        "keyHintNew": "Wird verschlüsselt gespeichert und nie wieder angezeigt",
-        "keyHintEdit": "Leer lassen, um den aktuellen Schlüssel zu behalten",
-        "keyWillBeRemoved": "Der gespeicherte Schlüssel wird beim Speichern entfernt",
-        "keyEnvHint": "Wird verwendet, wenn kein Schlüssel gespeichert ist",
-        "removeKey": "Gespeicherten Schlüssel entfernen",
-        "keepKey": "Gespeicherten Schlüssel behalten",
-        "privacySection": "Datenschutz und Abrechnung",
-        "currencyHint": "Modellpreise werden in dieser Währung eingegeben",
-        "headersHint": "Werden mit jeder Anfrage gesendet, z. B. der HTTP-Referer für OpenRouter",
-        "notesHint": "Rechtsraum, Speicherdauer, Kontoeinstellungen (ZDR, Opt-outs)",
+        "keyNone": "Kein API-Schlüssel",
         "modelCount": "Modelle: {{count}}",
         "fetchModels": "Modelle abrufen",
-        "deleteTitle": "{{name}} löschen?",
-        "deleteMessage": "Der Anbieter und seine Modelle ({{count}}) werden gelöscht. Chats, die sie nutzen, wechseln zum Standardmodell."
+        "serverHint": "Anbieter und ihre API-Schlüssel werden auf dem Server eingerichtet (catalog/models.json und Umgebungsvariablen). Hier fügst du ihre Modelle hinzu.",
+        "keySet": "gesetzt",
+        "keyMissing": "fehlt"
       },
       "fetch": {
         "title": "Modelle von {{provider}}",
@@ -213,13 +174,13 @@
         "addedCount": "Modelle hinzugefügt: {{count}}"
       },
       "models": {
+        "title": "Modelle",
         "intro": "Modelle erscheinen in der Modellauswahl des Chats, nach Anbieter gruppiert und in ihrer Reihenfolge.",
         "add": "Modell hinzufügen",
         "addTo": "Modell zu {{provider}} hinzufügen",
         "addTitle": "Modell hinzufügen",
         "editTitle": "Modell bearbeiten",
-        "empty": "Noch keine Modelle. Rufe sie bei einem Anbieter ab oder füge eines von Hand hinzu.",
-        "emptyNoProviders": "Füge zuerst einen Anbieter hinzu, dann seine Modelle.",
+        "emptyNoProviders": "Auf dem Server sind noch keine Anbieter eingerichtet. Trage sie in catalog/models.json ein und füge dann hier ihre Modelle hinzu.",
         "saved": "{{name}} gespeichert",
         "context": "{{tokens}} Kontext",
         "price": "{{input}} / {{output}} pro 1 Mio. Tokens",
@@ -244,43 +205,55 @@
         "visibilitySection": "Sichtbarkeit",
         "notesHint": "Ergebnisse von Smoke-Tests, Eigenheiten",
         "deleteTitle": "{{name}} löschen?",
-        "deleteMessage": "Chats, die dieses Modell nutzen, wechseln zum Standardmodell. Seine Antworten behalten seinen Namen."
+        "deleteMessage": "Chats, die dieses Modell nutzen, wechseln zum Standardmodell. Seine Antworten behalten seinen Namen.",
+        "groupEmpty": "Noch keine Modelle. Rufe sie beim Anbieter ab oder füge eines von Hand hinzu."
       },
       "personas": {
-        "intro": "Eine Persona ist ein benannter Systemprompt mit Variablen zum Ausfüllen. Nutzer wählen sie pro Chat.",
-        "add": "Persona hinzufügen",
-        "addTitle": "Persona hinzufügen",
-        "editTitle": "Persona bearbeiten",
-        "empty": "Noch keine Personas.",
+        "title": "Agenten",
+        "intro": "Ein Agent ist ein Systemprompt mit Variablen zum Ausfüllen und einer Auswahl an Werkzeugen. Starte hier einen Chat mit ihm oder wähle ihn im Chat aus.",
+        "add": "Neuer Agent",
+        "addTitle": "Neuer Agent",
+        "editTitle": "Agent bearbeiten",
+        "empty": "Noch keine Agenten. Lege einen an, um dem Assistenten eine Rolle, einen Stil oder eine Aufgabe zu geben.",
         "saved": "{{name}} gespeichert",
-        "descriptionHint": "Wird in der Persona-Auswahl angezeigt",
+        "descriptionHint": "Wird auf der Karte des Agenten und im Agentenmenü des Chats angezeigt",
         "promptPlaceholder": "Du bist ein hilfreicher Assistent, der immer wie ein {{style}} spricht.",
         "promptHint": "Platzhalter wie {{name}} stehen für Variablen. Automatisch ausgefüllt: {{builtIns}}",
         "variablesSection": "Variablen",
-        "noVariables": "Keine Variablen. Diese Persona kann ohne Eingaben gewählt werden.",
+        "noVariables": "Keine Variablen. Ein Chat mit diesem Agenten startet sofort.",
         "addVariable": "Variable hinzufügen",
         "addFromPrompt": "Aus dem Prompt übernehmen: {{names}}",
         "removeVariable": "Variable entfernen",
-        "modelSection": "Modell und Sichtbarkeit",
-        "noDefaultModel": "Kein Standardmodell",
-        "defaultModelHint": "Wird verwendet, wenn im Chat kein Modell gewählt wurde",
         "deleteTitle": "{{name}} löschen?",
-        "deleteMessage": "Chats, die diese Persona nutzen, laufen ohne sie weiter."
+        "deleteMessage": "Chats, die diesen Agenten nutzen, laufen ohne ihn weiter.",
+        "copyTitle": "Agent duplizieren",
+        "copyName": "{{name}} (Kopie)",
+        "copyNameN": "{{name}} (Kopie {{n}})",
+        "duplicate": "Duplizieren",
+        "startChat": "Chat starten",
+        "toolsSection": "Werkzeuge",
+        "toolModeAll": "Alle Werkzeuge, die der Server anbietet",
+        "toolModePick": "Nur diese Werkzeuge",
+        "toolUnavailable": "Auf dem Server nicht verfügbar: {{reason}}",
+        "toolUnavailableUnknown": "kein Grund angegeben",
+        "noToolsHint": "Ohne Werkzeuge antwortet der Agent nur aus dem Gespräch heraus.",
+        "allTools": "Alle Werkzeuge",
+        "noTools": "Keine Werkzeuge",
+        "allToolsHint": "Derzeit: {{tools}}",
+        "allToolsNone": "Der Server bietet gerade keine Werkzeuge an",
+        "asksFor": "Fragt beim Start eines Chats nach: {{names}}",
+        "visibilitySection": "Sichtbarkeit"
       },
       "transfer": {
-        "exportTitle": "Export",
-        "exportIntro": "Lade Anbieter, Modelle und Personas als Katalogdatei herunter, z. B. für eine andere Installation (MODEL_CATALOG_FILE).",
-        "includeKeys": "Gespeicherte API-Schlüssel einschließen",
-        "includeKeysWarning": "Die Datei enthält deine API-Schlüssel im Klartext. Halte sie privat und lösche sie danach.",
+        "title": "Import & Export",
         "download": "JSON herunterladen",
-        "importTitle": "Import",
-        "importIntro": "Lade eine Katalogdatei hoch. Einträge werden über ihren Namen zugeordnet und aktualisiert oder hinzugefügt; gelöscht wird nichts.",
-        "chooseFile": "JSON-Datei wählen",
+        "chooseFile": "JSON-Datei importieren",
         "invalidJson": "Diese Datei ist kein gültiges JSON.",
         "invalidFile": "Diese Datei ist keine Katalogdatei.",
         "created": "Hinzugefügt",
         "updated": "Aktualisiert",
-        "errors": "Probleme: {{count}}"
+        "errors": "Probleme: {{count}}",
+        "intro": "Lade den Katalog als JSON-Datei herunter, z. B. als Sicherung. Ein Import aktualisiert oder ergänzt Modelle und Agenten anhand ihres Namens und löscht nichts; Anbieter darin werden übersprungen, da sie vom Server kommen."
       }
     }
   },

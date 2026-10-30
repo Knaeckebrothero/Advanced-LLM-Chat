@@ -84,8 +84,7 @@ CREATE TABLE llm_providers (
     name TEXT NOT NULL,                     -- "Scaleway", "OpenRouter (ZDR)"
     kind TEXT NOT NULL,                     -- 'openai_compatible' | 'anthropic'
     base_url TEXT,                          -- https://api.scaleway.ai/v1
-    api_key_encrypted TEXT,                 -- entered in the UI, encrypted at rest
-    api_key_env TEXT,                       -- or: name of an env var holding the key
+    api_key_env TEXT,                       -- name of an env var holding the key
     privacy_tier TEXT NOT NULL,             -- 'local' | 'eu' | 'trusted' | 'untrusted'
     notes TEXT,                             -- jurisdiction, retention, account settings
     default_headers JSONB,                  -- e.g. OpenRouter's HTTP-Referer
@@ -127,7 +126,7 @@ CREATE TABLE personas (
     description TEXT,
     system_prompt TEXT NOT NULL,            -- "Answer like a {{style}}. Today is {{date}}."
     variables JSONB,                        -- [{"name": "style", "label": "Style", "default": "pirate"}]
-    default_model_id INTEGER REFERENCES llm_models(id),
+    tools JSONB,                            -- tool groups the persona may use; NULL = all enabled
     available_to_guests BOOLEAN DEFAULT FALSE
 );
 ```
@@ -142,15 +141,16 @@ Plus:
 ### Behavior
 
 - **API keys:**
-  - Keys entered in the UI are encrypted with a server secret, for example Fernet with a `CATALOG_SECRET_KEY` environment variable. They are never sent back to the frontend; it only sees `sk-…1234`.
-  - For deployments, a provider can instead name an environment variable (`api_key_env: SCALEWAY_API_KEY`), so keys live in Kubernetes secrets.
+  - A provider names an environment variable (`api_key_env: SCALEWAY_API_KEY`), so keys live in `.env` or Kubernetes secrets.
+  - *Revised on 2026-10-30:* the first version also let admins enter keys in the UI, Fernet-encrypted with a `CATALOG_SECRET_KEY`. That was dropped: with a single owner in a homelab, environment variables are enough, and there is no server secret to keep. Keys are never stored or shown; the UI only sees whether the variable is set.
 - **Catalog file:**
-  - `app_init` can seed the catalog from a JSON/YAML file (`MODEL_CATALOG_FILE`) that has `providers`, `models` and `personas`, with keys referenced by env var.
-  - The same format is used for import and export in the settings page, like the 2024 JSON config. Exports leave keys out unless asked.
+  - `app_init` seeds the catalog from a JSON file (`MODEL_CATALOG_FILE`, default `catalog/models.json`) that has `providers`, `models` and `personas`, with keys referenced by env var.
+  - *Revised on 2026-10-30:* providers are defined only by that file (read-only in the UI); models and personas are created from it once and then edited in the UI, and seeding never overwrites them. Personas ("agents" in the UI) select tool groups instead of a default model.
+  - The same format is used for import and export in the settings page, like the 2024 JSON config. Exports never contain keys.
   - A fresh homelab deployment comes up already configured.
 - **"Fetch models":** a button per provider calls `GET /v1/models` and offers the IDs as a pick list. EU catalogs change weekly, so model IDs are never typed from memory.
 - **Fallback when the catalog is empty:** the backend creates one model from the current `OPENAI_*` / `ANTHROPIC_*` environment variables, so existing setups keep working.
-- **Who manages it:** only admins can add providers, keys and models. There are no roles today, so start with an `ADMIN_EMAILS` environment variable. Guests only see models marked `available_to_guests`, to protect paid credits.
+- **Who manages it:** only admins can add models and personas (providers and keys come from the server's configuration). There are no roles today, so start with an `ADMIN_EMAILS` environment variable. Guests only see models marked `available_to_guests`, to protect paid credits.
 
 ### Model picker
 

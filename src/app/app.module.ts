@@ -2,7 +2,6 @@
 import { ChatUiComponent } from './chat-ui/chat-ui.component';
 import { ChatUiMessageComponent } from './chat-ui/chat-ui-message/chat-ui-message.component';
 import { SettingsComponent } from './settings/settings.component';
-import { MetricsComponent } from './metrics/metrics.component';
 import { StatusBarComponent } from './status-bar/status-bar.component';
 import { AuthCallbackComponent } from './auth/auth-callback/auth-callback.component';
 import { AuthGuard } from './auth/auth.guard';
@@ -54,14 +53,14 @@ import { MarkdownModule, MARKED_OPTIONS } from 'ngx-markdown';
 const routes: Routes = [
   { path: 'login', component: LoginComponent },
   { path: '', component: ChatUiComponent, canActivate: [AuthGuard] },
-  { path: 'metrics', component: MetricsComponent, canActivate: [AuthGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [AuthGuard] },
-  // Model catalog management for admins, loaded on demand
+  // Agents, models and the catalog file, for admins; loaded on demand
   {
-    path: 'admin/catalog',
+    path: 'agents',
     loadComponent: () => import('./catalog-admin/catalog-admin.component').then(m => m.CatalogAdminComponent),
     canActivate: [AuthGuard, adminGuard]
   },
+  { path: 'admin/catalog', redirectTo: 'agents' },
   { path: 'auth/callback', component: AuthCallbackComponent },
 ];
 
@@ -75,7 +74,6 @@ export function HttpLoaderFactory(http: HttpClient) {
     ChatUiComponent,
     ChatUiMessageComponent,
     AgentStepsComponent,
-    MetricsComponent,
     StatusBarComponent,
     AuthCallbackComponent,
     LoginComponent,

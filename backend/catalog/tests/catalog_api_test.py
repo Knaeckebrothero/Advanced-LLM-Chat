@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """
 End-to-end check of the model catalog: HTTP API, guest filtering, admin rule,
-key handling, import/export, conversations and settings, plus the resolver
-and persona rendering (in-process, against the same database).
+read-only providers with keys from the environment, persona tools, seeding
+from a catalog file (in-process), import/export, conversations and settings,
+the tools stream-generate sends (against a fake model server), plus the
+resolver and persona rendering (in-process, against the same database).
 
 It WIPES the catalog tables (providers, models, personas) of the target
 database, so it refuses to run unless the database name contains "test".
 
-Usage (backend started with the same POSTGRES_DB and ADMIN_EMAILS containing the admin email):
+Usage: create the database once, then start a backend with the same POSTGRES_DB,
+ADMIN_EMAILS containing the admin email, and the test key variable (providers
+only read keys from the environment):
 
-    POSTGRES_DB=llm_chat_catalog_test ADMIN_EMAILS=admin@example.com PORT=8445 python start_backend.py
+    POSTGRES_DB=llm_chat_catalog_test MODEL_CATALOG_FILE= python backend/app_init.py --skip-neo4j --no-certs --seed
+    POSTGRES_DB=llm_chat_catalog_test ADMIN_EMAILS=admin@example.com \
+        ZZ_CATALOG_TEST_API_KEY=sk-test-0123456789abcdefWXYZ PORT=8445 python start_backend.py
     POSTGRES_DB=llm_chat_catalog_test python backend/catalog/tests/catalog_api_test.py --base-url https://localhost:8445
 
 Options: --admin-email, --user-email, --skip-network (no provider calls).
 Exit code 0 if every check passed.
 """
 import argparse
+import json
 import os
 import sys
+import tempfile
 import time
 import warnings
 from datetime import date
@@ -30,11 +38,25 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import httpx  # noqa: E402
 
+from backend.catalog import catalog_file  # noqa: E402
 from backend.config import POSTGRES_DB  # noqa: E402
 from backend.database import db  # noqa: E402
+from backend.llm.tools import TOOL_GROUPS  # noqa: E402
 
+# The key variable of the test providers; the backend must have it set to TEST_KEY
+KEY_ENV = "ZZ_CATALOG_TEST_API_KEY"
 TEST_KEY = "sk-test-0123456789abcdefWXYZ"
+# A key in a seed file, which must be ignored (never stored or returned)
+FILE_KEY = "sk-imported-key-55556666"
 PREFIX = "zz-test"
+ROUTER_URL_ENV = "ZZ_CATALOG_TEST_URL"
+TOGGLE_KEY_ENV = "ZZ_CATALOG_TOGGLE_API_KEY"
+
+PROVIDER_OUT_FIELDS = {"id", "name", "kind", "baseUrl", "apiKeyEnv", "apiKeySet", "privacyTier", "currency",
+                       "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
+PERSONA_OUT_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "availableToGuests",
+                      "enabled", "sortOrder"}
+PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools"}
 
 
 class Checks:
@@ -62,15 +84,15 @@ class Session:
 
     def __init__(self, base_url, responses):
         self.client = httpx.Client(base_url=base_url, verify=False, timeout=60)
-        self.responses = responses  # (allow_keys, text) of every response, for the key leak check
+        self.responses = responses  # Text of every response, for the key leak check
 
-    def request(self, method, path, allow_keys=False, **kwargs):
+    def request(self, method, path, **kwargs):
         headers = kwargs.pop("headers", {})
         csrf = self.client.cookies.get("csrf_token")
         if csrf:
             headers["X-CSRF-Token"] = csrf
         response = self.client.request(method, path, headers=headers, **kwargs)
-        self.responses.append((allow_keys, response.text))
+        self.responses.append(response.text)
         return response
 
     def get(self, path, **kwargs):
@@ -109,10 +131,27 @@ def wipe_catalog():
         db.delete_llm_provider(provider["id"])
 
 
-def provider_body(name, **extra):
-    body = {"name": f"{PREFIX} {name}", "kind": "openai_compatible", "privacyTier": "eu", "currency": "EUR"}
-    body.update(extra)
-    return body
+def provider_entry(name, **extra):
+    """A provider entry of a catalog file."""
+    entry = {"name": f"{PREFIX} {name}", "kind": "openai_compatible", "privacy_tier": "eu", "currency": "EUR"}
+    entry.update(extra)
+    return entry
+
+
+def seed(**sections):
+    """Seed the catalog in-process from a temporary catalog file, as app_init does."""
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "catalog.json"
+        path.write_text(json.dumps({"version": 1, **sections}), encoding="utf-8")
+        return catalog_file.seed_from_file(path)
+
+
+def providers_by_name(admin):
+    return {p["name"]: p for p in admin.get("/api/admin/providers").json()}
+
+
+MAIN_PROVIDER = provider_entry("Main", base_url="https://example.invalid/v1", api_key_env=KEY_ENV, notes="test",
+                               default_headers={"X-Test": "1"})
 
 
 def model_body(provider_id, name, **extra):
@@ -130,10 +169,8 @@ def run_admin_rule(c, admin, user, guest, anonymous):
 
     for method, path, body in [
         ("GET", "/api/admin/providers", None),
-        ("POST", "/api/admin/providers", provider_body("denied")),
-        ("PUT", "/api/admin/providers/1", {"notes": "x"}),
-        ("DELETE", "/api/admin/providers/1", None),
         ("POST", "/api/admin/providers/1/fetch-models", None),
+        ("GET", "/api/admin/tools", None),
         ("GET", "/api/admin/models", None),
         ("POST", "/api/admin/models", model_body(1, "denied")),
         ("PUT", "/api/admin/models/1", {"notes": "x"}),
@@ -155,72 +192,92 @@ def run_admin_rule(c, admin, user, guest, anonymous):
 
 
 def run_providers(c, admin):
-    c.section("Providers")
-    r = admin.post("/api/admin/providers", json=provider_body("Stored", baseUrl="https://example.invalid/v1",
-                                                               apiKey=TEST_KEY, notes="test"))
-    c.check(r.status_code == 201, "create provider with stored key -> 201", r.text)
-    stored = r.json()
-    c.check(stored["apiKeySource"] == "stored" and stored["apiKeyMasked"] == "sk-…WXYZ",
-            "stored key: apiKeySource 'stored', apiKeyMasked 'sk-…WXYZ'", str(stored))
-    c.check("apiKey" not in stored and "apiKeyEncrypted" not in stored, "no key fields in ProviderOut")
+    c.section("Providers (seeded, read-only)")
+    result = seed(providers=[
+        MAIN_PROVIDER,
+        provider_entry("Env", api_key_env="OPENAI_API_KEY", base_url="https://api.openai.com/v1",
+                       privacy_tier="trusted", currency="USD", enabled=True),
+        provider_entry("Unset env", api_key_env="ZZ_NOT_SET_API_KEY"),
+        provider_entry("Disabled", enabled=False, privacy_tier="local"),
+        provider_entry("Router", base_url="${" + ROUTER_URL_ENV + "}/v1", privacy_tier="local"),
+        provider_entry("Old key", api_key=FILE_KEY),
+        provider_entry("Bad env", api_key_env="POSTGRES_PASSWORD"),
+        provider_entry("Bad url", base_url="ftp://x"),
+        provider_entry("Bad tier", privacy_tier="secret"),
+        {"kind": "openai_compatible", "privacy_tier": "eu"},
+    ], models=[
+        {"provider": f"{PREFIX} Router", "display_name": f"{PREFIX} Router Model", "model_id": "r"},
+    ])
+    print("        seed errors:\n          " + "\n          ".join(result.errors))
+    c.check(result.providers.created == 5 and result.providers.updated == 0,
+            "seed creates the valid providers", str(result))
+    errors = " | ".join(result.errors)
+    c.check(len(result.errors) == 5 and "apiKeyEnv 'POSTGRES_PASSWORD' is not allowed" in errors
+            and "must start with http" in errors and "privacy_tier" in errors and "name is required" in errors
+            and "api_key ignored" in errors, "seed reports bad entries and the ignored api_key", errors)
+    c.check(result.models.created == 0, "provider with an unset ${VAR} is skipped with its models")
 
-    r = admin.post("/api/admin/providers", json=provider_body("Env", apiKeyEnv="OPENAI_API_KEY",
-                                                               baseUrl="https://api.openai.com/v1",
-                                                               privacyTier="trusted", currency="USD"))
-    env = r.json()
-    c.check(r.status_code == 201 and env["apiKeySource"] == "env" and env["apiKeyMasked"] is None,
-            "env provider: apiKeySource 'env'", r.text)
+    providers = providers_by_name(admin)
+    main, env = providers[f"{PREFIX} Main"], providers[f"{PREFIX} Env"]
+    unset_env, disabled = providers[f"{PREFIX} Unset env"], providers[f"{PREFIX} Disabled"]
+    c.check(set(main) == PROVIDER_OUT_FIELDS, "ProviderOut fields", str(sorted(main)))
+    c.check(main["baseUrl"] == "https://example.invalid/v1" and main["apiKeyEnv"] == KEY_ENV
+            and main["currency"] == "EUR" and main["defaultHeaders"] == {"X-Test": "1"} and main["notes"] == "test",
+            "provider fields from the file", str(main))
+    c.check(main["apiKeySet"] is True, f"apiKeySet true when {KEY_ENV} is set in the backend",
+            f"(start the backend with {KEY_ENV}=...)")
+    c.check(unset_env["apiKeySet"] is False and unset_env["enabled"] is False,
+            "key variable unset: apiKeySet false, seeded disabled", str(unset_env))
+    c.check(disabled["enabled"] is False and disabled["apiKeySet"] is False, "disabled provider")
+    old_key = providers[f"{PREFIX} Old key"]
+    row = db.get_llm_provider_by_id(old_key["id"])
+    c.check(old_key["apiKeySet"] is False and old_key["apiKeyEnv"] is None and not row.get("api_key_encrypted")
+            and FILE_KEY not in json.dumps(row, default=str), "api_key in the file is not stored", str(row))
+    c.check(f"{PREFIX} Router" not in providers and f"{PREFIX} Bad env" not in providers,
+            "skipped and invalid providers are not created")
 
-    r = admin.post("/api/admin/providers", json=provider_body("Unset env", apiKeyEnv="ZZ_NOT_SET_API_KEY"))
-    c.check(r.status_code == 201 and r.json()["apiKeySource"] == "none",
-            "env var not set: apiKeySource 'none'", r.text)
-    unset_env = r.json()
+    # Read-only: the write endpoints are gone
+    status = admin.post("/api/admin/providers", json={"name": "x"}).status_code
+    c.check(status == 405, "POST /api/admin/providers is gone", f"(got {status})")
+    for method in ("PUT", "DELETE"):
+        status = admin.request(method, f"/api/admin/providers/{main['id']}", json={"notes": "x"}).status_code
+        c.check(status in (404, 405), f"{method} /api/admin/providers/{{id}} is gone", f"(got {status})")
 
-    r = admin.post("/api/admin/providers", json=provider_body("Disabled", enabled=False, privacyTier="local"))
-    disabled = r.json()
-    c.check(r.status_code == 201 and disabled["enabled"] is False, "create disabled provider")
-
-    c.check(admin.post("/api/admin/providers", json=provider_body("Stored")).status_code == 409,
-            "duplicate provider name -> 409")
-    c.check(admin.post("/api/admin/providers", json=provider_body("Bad env", apiKeyEnv="POSTGRES_PASSWORD")
-                       ).status_code == 400, "apiKeyEnv POSTGRES_PASSWORD -> 400")
-    c.check(admin.post("/api/admin/providers", json=provider_body("Bad env 2", apiKeyEnv="CATALOG_SECRET_KEY")
-                       ).status_code == 400, "apiKeyEnv CATALOG_SECRET_KEY -> 400")
-    c.check(admin.post("/api/admin/providers", json=provider_body("Bad url", baseUrl="ftp://x")
-                       ).status_code == 400, "baseUrl ftp:// -> 400")
-    c.check(admin.post("/api/admin/providers", json=provider_body("Bad tier", privacyTier="secret")
-                       ).status_code == 422, "invalid privacyTier -> 422")
-    r = admin.post("/api/admin/providers", json={"kind": "openai_compatible", "privacyTier": "eu", "apiKey": TEST_KEY})
-    c.check(r.status_code == 422 and r.json()["detail"][0]["loc"] == ["body", "name"],
-            "missing name -> 422 (the key leak check covers the echo)", r.text)
-
-    # Partial update: apiKey left out keeps the key; null clears notes; "" removes the key
-    r = admin.put(f"/api/admin/providers/{stored['id']}", json={"notes": None, "currency": None})
-    c.check(r.status_code == 200 and r.json()["apiKeySource"] == "stored" and r.json()["notes"] is None
-            and r.json()["currency"] == "EUR", "update: key kept, notes cleared, null currency ignored", r.text)
-    r = admin.put(f"/api/admin/providers/{unset_env['id']}", json={"apiKey": "sk-ant-api03-abcdefgh9876"})
-    c.check(r.json()["apiKeySource"] == "stored" and r.json()["apiKeyMasked"] == "sk-…9876",
-            "update: new key stored and masked", r.text)
-    r = admin.put(f"/api/admin/providers/{unset_env['id']}", json={"apiKey": ""})
-    c.check(r.json()["apiKeySource"] == "none", "update: apiKey '' removes the key", r.text)
-    c.check(admin.put("/api/admin/providers/999999", json={"notes": "x"}).status_code == 404,
-            "update unknown provider -> 404")
-
-    row = db.get_llm_provider_by_id(stored["id"])
-    c.check(row["api_key_encrypted"] and TEST_KEY not in row["api_key_encrypted"], "key encrypted at rest")
-    return stored, env, unset_env, disabled
+    # The file is the providers' source of truth: a re-seed replaces the entry
+    changed = {key: value for key, value in MAIN_PROVIDER.items() if key != "default_headers"}
+    result = seed(providers=[{**changed, "notes": "changed"}])
+    main_now = providers_by_name(admin)[f"{PREFIX} Main"]
+    c.check(result.providers.updated == 1 and main_now["id"] == main["id"] and main_now["notes"] == "changed"
+            and main_now["defaultHeaders"] is None, "re-seed replaces the provider (removed keys cleared)",
+            str(main_now))
+    seed(providers=[MAIN_PROVIDER])
+    return main, env, unset_env, disabled
 
 
-def run_models(c, admin, user, guest, stored, env, disabled):
+def run_tools(c, admin):
+    c.section("Tools")
+    r = admin.get("/api/admin/tools")
+    groups = r.json()
+    c.check(r.status_code == 200 and [g["id"] for g in groups] == ["files", "web_search", "knowledge_graph"],
+            "GET /api/admin/tools lists the three groups", r.text)
+    c.check(all(set(g) == {"id", "available", "reason"} for g in groups), "tool group fields", r.text)
+    c.check(groups[0] == {"id": "files", "available": True, "reason": None}, "files is always available")
+    c.check(all((g["available"] and g["reason"] is None) or (not g["available"] and g["reason"]) for g in groups),
+            "unavailable groups say why", r.text)
+    print("        " + ", ".join(f"{g['id']}: {'on' if g['available'] else g['reason']}" for g in groups))
+    return [g["id"] for g in groups if g["available"]]
+
+
+def run_models(c, admin, user, guest, main, env, disabled):
     c.section("Models")
     created = {}
     for name, provider, extra in [
-        ("Guest Model", stored, {"availableToGuests": True, "sortOrder": 20, "temperature": 0.3,
+        ("Guest Model", main, {"availableToGuests": True, "sortOrder": 20, "temperature": 0.3,
                                  "inputPricePerMtok": 0.18, "outputPricePerMtok": 0.55, "supportsVision": True}),
-        ("Beta Model", stored, {"sortOrder": 10, "reasoning": "always", "reasoningPassback": True,
+        ("Beta Model", main, {"sortOrder": 10, "reasoning": "always", "reasoningPassback": True,
                                 "extraBody": {"provider": {"zdr": True}}, "privacyTier": "untrusted"}),
-        ("Alpha Model", stored, {"sortOrder": 10}),
-        ("Disabled Model", stored, {"enabled": False, "sortOrder": 0, "availableToGuests": True}),
+        ("Alpha Model", main, {"sortOrder": 10}),
+        ("Disabled Model", main, {"enabled": False, "sortOrder": 0, "availableToGuests": True}),
         ("Aux Model", env, {"isAuxiliary": True, "sortOrder": 50}),
         ("Hidden Provider Model", disabled, {"sortOrder": 0, "availableToGuests": True}),
     ]:
@@ -229,16 +286,16 @@ def run_models(c, admin, user, guest, stored, env, disabled):
         created[name] = r.json()
 
     guest_model = created["Guest Model"]
-    c.check(guest_model["providerName"] == stored["name"] and guest_model["currency"] == "EUR"
+    c.check(guest_model["providerName"] == main["name"] and guest_model["currency"] == "EUR"
             and guest_model["effectivePrivacyTier"] == "eu", "ModelOut joins provider name, currency and tier")
     c.check(created["Beta Model"]["effectivePrivacyTier"] == "untrusted", "model privacy tier overrides provider")
     c.check(abs(guest_model["temperature"] - 0.3) < 1e-6 and guest_model["inputPricePerMtok"] == 0.18,
             "temperature and price round-trip as floats", str(guest_model["temperature"]))
-    c.check(admin.post("/api/admin/models", json=model_body(stored["id"], "Alpha Model")).status_code == 409,
+    c.check(admin.post("/api/admin/models", json=model_body(main["id"], "Alpha Model")).status_code == 409,
             "duplicate display name per provider -> 409")
     c.check(admin.post("/api/admin/models", json=model_body(999999, "Orphan")).status_code == 400,
             "model with unknown provider -> 400")
-    c.check(admin.post("/api/admin/models", json=model_body(stored["id"], "Bad", reasoning="maybe")
+    c.check(admin.post("/api/admin/models", json=model_body(main["id"], "Bad", reasoning="maybe")
                        ).status_code == 422, "invalid reasoning mode -> 422")
 
     r = admin.put(f"/api/admin/models/{guest_model['id']}", json={"temperature": None, "notes": "smoke ok"})
@@ -262,20 +319,23 @@ def run_models(c, admin, user, guest, stored, env, disabled):
     return created
 
 
-def run_personas(c, admin, user, guest, models):
+def run_personas(c, admin, user, guest):
     c.section("Personas")
     r = admin.post("/api/admin/personas", json={
         "name": f"{PREFIX} Pirate", "description": "Arr",
         "systemPrompt": "Talk like a {{style}} to {{user_name}} in {{language}} on {{date}}. {{unknown}} {{ mood }}",
         "variables": [{"name": "style", "label": "Style", "default": "pirate"},
                       {"name": "mood", "label": "Mood"}],
-        "defaultModelId": models["Beta Model"]["id"], "availableToGuests": True, "sortOrder": 1,
+        "tools": ["web_search", "files", "files"], "availableToGuests": True, "sortOrder": 1,
     })
     c.check(r.status_code == 201, "create persona -> 201", r.text)
     pirate = r.json()
+    c.check(set(pirate) == PERSONA_OUT_FIELDS, "PersonaOut fields (no defaultModelId)", str(sorted(pirate)))
+    c.check(pirate["tools"] == ["files", "web_search"], "tools deduplicated, in group order", str(pirate["tools"]))
     r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Private", "systemPrompt": "Private",
                                                  "sortOrder": 2})
     private = r.json()
+    c.check(private["tools"] is None, "tools left out -> null (every enabled tool)", r.text)
     r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Off", "systemPrompt": "Off", "enabled": False,
                                                  "availableToGuests": True})
     off = r.json()
@@ -286,20 +346,27 @@ def run_personas(c, admin, user, guest, models):
         "duplicate variable -> 400")
     c.check(admin.post("/api/admin/personas", json={"name": "Bad var", "systemPrompt": "x", "variables": [
         {"name": "1bad", "label": "A"}]}).status_code == 422, "invalid variable name -> 422")
-    c.check(admin.post("/api/admin/personas", json={"name": "Bad model", "systemPrompt": "x",
-                                                     "defaultModelId": 999999}).status_code == 400,
-            "unknown default model -> 400")
+    c.check(admin.post("/api/admin/personas", json={"name": "Bad tools", "systemPrompt": "x",
+                                                     "tools": ["files", "shell"]}).status_code == 422,
+            "unknown tool group -> 422")
 
     user_personas = user.get("/api/personas").json()
     c.check([p["name"] for p in user_personas] == [f"{PREFIX} Pirate", f"{PREFIX} Private"],
             "GET /api/personas (user): enabled only", str([p["name"] for p in user_personas]))
-    c.check(user_personas[0]["defaultModelId"] == models["Beta Model"]["id"], "user sees persona default model")
+    c.check(set(user_personas[0]) == PUBLIC_PERSONA_FIELDS and user_personas[0]["tools"] == ["files", "web_search"],
+            "PublicPersona fields carry tools", str(user_personas[0]))
     guest_personas = guest.get("/api/personas").json()
     c.check([p["name"] for p in guest_personas] == [f"{PREFIX} Pirate"], "GET /api/personas (guest): guest only")
-    c.check(guest_personas[0]["defaultModelId"] is None, "guest: default model hidden if not a guest model")
 
     r = admin.put(f"/api/admin/personas/{private['id']}", json={"description": "now described"})
-    c.check(r.status_code == 200 and r.json()["systemPrompt"] == "Private", "persona partial update")
+    c.check(r.status_code == 200 and r.json()["systemPrompt"] == "Private" and r.json()["tools"] is None,
+            "persona partial update")
+    r = admin.put(f"/api/admin/personas/{private['id']}", json={"tools": []})
+    c.check(r.status_code == 200 and r.json()["tools"] == [], "update tools [] -> no tools", r.text)
+    r = admin.put(f"/api/admin/personas/{private['id']}", json={"sortOrder": 2})
+    c.check(r.json()["tools"] == [], "update without tools keeps them", r.text)
+    r = admin.put(f"/api/admin/personas/{private['id']}", json={"tools": None})
+    c.check(r.json()["tools"] is None, "update tools null -> every enabled tool again", r.text)
     return pirate, private, off
 
 
@@ -402,7 +469,7 @@ def run_message_sync(c, user, user_id, models):
     db.delete_conversation(conversation_id)
 
 
-def run_fetch_models(c, admin, stored, env):
+def run_fetch_models(c, admin, env):
     c.section("Fetch models (network)")
     r = admin.post(f"/api/admin/providers/{env['id']}/fetch-models")
     ok = c.check(r.status_code == 200 and len(r.json()["models"]) > 0, "OpenAI (api_key_env) -> model list",
@@ -417,117 +484,170 @@ def run_fetch_models(c, admin, stored, env):
                 "alreadyAdded marks the catalog model", first)
         print(f"        OpenAI: {len(fetched)} models, e.g. {[m['id'] for m in fetched[:3]]}")
 
-    r = admin.post("/api/admin/providers", json=provider_body("Cortecs", baseUrl="https://api.cortecs.ai/v1",
-                                                               apiKey="dummy-key-not-real"))
-    cortecs = r.json()
-    r = admin.post(f"/api/admin/providers/{cortecs['id']}/fetch-models")
+    seed(providers=[
+        provider_entry("Cortecs", base_url="https://api.cortecs.ai/v1"),
+        provider_entry("Bad key", base_url="https://api.openai.com/v1", api_key_env=KEY_ENV),
+        provider_entry("Anthropic", kind="anthropic", privacy_tier="trusted", api_key_env=KEY_ENV),
+        provider_entry("Unreachable", base_url="https://127.0.0.1:9/v1"),
+    ])
+    providers = providers_by_name(admin)
+    r = admin.post(f"/api/admin/providers/{providers[f'{PREFIX} Cortecs']['id']}/fetch-models")
     if r.status_code == 200:
         models = r.json()["models"]
         with_context = [m for m in models if m["contextWindow"]]
-        c.check(len(models) > 0 and len(with_context) > 0, "Cortecs with a dummy key -> public list with context sizes")
+        c.check(len(models) > 0 and len(with_context) > 0, "Cortecs without a key -> public list with context sizes")
         print(f"        Cortecs: {len(models)} models, {len(with_context)} with contextWindow, "
               f"e.g. {[(m['id'], m['contextWindow'], m['ownedBy']) for m in models[:2]]}")
     else:
-        c.check(r.status_code == 502, "Cortecs with a dummy key -> clean 502", r.text)
-        print(f"        Cortecs did not accept the dummy key: {r.text[:200]}")
+        c.check(r.status_code == 502, "Cortecs without a key -> clean 502", r.text)
+        print(f"        Cortecs did not answer without a key: {r.text[:200]}")
 
-    r = admin.post("/api/admin/providers", json=provider_body("Bad key", baseUrl="https://api.openai.com/v1",
-                                                               apiKey="sk-invalid-test-key-000000000000"))
-    bad = r.json()
-    r = admin.post(f"/api/admin/providers/{bad['id']}/fetch-models")
-    c.check(r.status_code == 502 and "401" in r.json()["detail"]
-            and "sk-invalid-test-key-000000000000" not in r.text, "invalid key -> 502 with the provider's message",
-            r.text[:300])
+    r = admin.post(f"/api/admin/providers/{providers[f'{PREFIX} Bad key']['id']}/fetch-models")
+    c.check(r.status_code == 502 and "401" in r.json()["detail"] and TEST_KEY not in r.text,
+            "invalid key -> 502 with the provider's message", r.text[:300])
     print(f"        {r.json()['detail'][:160]}")
-
-    r = admin.post("/api/admin/providers", json=provider_body("Anthropic", kind="anthropic", privacyTier="trusted",
-                                                               apiKey="sk-ant-invalid-000000000000"))
-    anthropic = r.json()
-    r = admin.post(f"/api/admin/providers/{anthropic['id']}/fetch-models")
+    r = admin.post(f"/api/admin/providers/{providers[f'{PREFIX} Anthropic']['id']}/fetch-models")
     c.check(r.status_code == 502 and "401" in r.json()["detail"], "Anthropic with invalid key -> 502", r.text[:300])
-
-    r = admin.post("/api/admin/providers", json=provider_body("Unreachable", baseUrl="https://127.0.0.1:9/v1"))
-    unreachable = r.json()
-    r = admin.post(f"/api/admin/providers/{unreachable['id']}/fetch-models")
+    r = admin.post(f"/api/admin/providers/{providers[f'{PREFIX} Unreachable']['id']}/fetch-models")
     c.check(r.status_code == 502, "unreachable provider -> 502", r.text[:200])
-    for provider in (cortecs, bad, anthropic, unreachable):
-        admin.delete(f"/api/admin/providers/{provider['id']}")
+    for name in ("Cortecs", "Bad key", "Anthropic", "Unreachable"):
+        db.delete_llm_provider(providers[f"{PREFIX} {name}"]["id"])
     c.check(admin.post("/api/admin/providers/999999/fetch-models").status_code == 404, "unknown provider -> 404")
 
 
-def run_import_export(c, admin, stored):
+def run_stream_tools(c, admin, user, available_groups):
+    """The tools and system prompt stream-generate sends, per persona tool selection."""
+    from backend.llm.tests.fake_openai_server import FakeOpenAIServer, chunk, usage_chunk
+
+    c.section("Stream-generate tools (fake model server)")
+    everything = sorted(name for group in available_groups for name in TOOL_GROUPS[group])
+    with FakeOpenAIServer() as server:
+        seed(providers=[provider_entry("Fake", base_url=server.base_url, api_key_env=KEY_ENV, privacy_tier="local")])
+        provider = providers_by_name(admin)[f"{PREFIX} Fake"]
+        model = admin.post("/api/admin/models", json=model_body(provider["id"], "Fake Model", sortOrder=200)).json()
+        personas = []
+        for name, prompt, tools in [("No tools", "You only chat.", []), ("Files only", "You read files.", ["files"]),
+                                    ("All tools", "You use everything.", None)]:
+            body = {"name": f"{PREFIX} {name}", "systemPrompt": prompt}
+            if tools is not None:
+                body["tools"] = tools
+            personas.append(admin.post("/api/admin/personas", json=body).json())
+
+        sent = {}
+        for persona in personas:
+            r = user.post("/api/conversation/create", json={
+                "name": "Tools test", "participants": ["user", "assistant"], "modelId": model["id"],
+                "personaId": persona["id"]})
+            cid = r.json()["id"]
+            now = int(time.time())
+            db.create_message(int(time.time() * 1000), cid, "user", "Hello", now)
+            server.script(lambda body: [chunk(content="Ahoy"), chunk(finish_reason="stop"), usage_chunk(5, 2)])
+            r = user.post("/api/message/stream-generate", json={"conversationId": cid, "aiParticipant": "assistant"})
+            request = server.requests[-1] if server.requests else {}
+            system = next((m["content"] for m in request.get("messages", []) if m["role"] == "system"), "")
+            sent[persona["name"]] = ([t["function"]["name"] for t in request.get("tools", [])],
+                                     "tools" in request, system, r.text)
+            db.delete_conversation(cid)
+
+        names, has_tools, system, text = sent[f"{PREFIX} No tools"]
+        c.check("event: done" in text and "Ahoy" in text, "stream-generate answers through the fake server",
+                text[-300:])
+        c.check(not has_tools and system == "You only chat.", "persona tools [] -> no tools, prompt without tool "
+                "sections", f"{names} {system!r}")
+        names, has_tools, system, _ = sent[f"{PREFIX} Files only"]
+        c.check(names == ["get_file_content"] and "## File Access" in system and "## Knowledge Graph" not in system,
+                "persona tools ['files'] -> only get_file_content", f"{names} {system[:200]!r}")
+        names, _, system, _ = sent[f"{PREFIX} All tools"]
+        c.check(sorted(names) == everything and system.startswith("You use everything."),
+                "persona tools null -> every enabled tool", f"{names} vs {everything}")
+        c.check(not server.errors, "fake server saw no unexpected requests", str(server.errors))
+
+    for persona in personas:
+        admin.delete(f"/api/admin/personas/{persona['id']}")
+    db.delete_llm_provider(provider["id"])
+
+
+def run_import_export(c, admin, main):
     c.section("Import and export")
     r = admin.get("/api/admin/catalog/export")
     c.check(r.status_code == 200 and "attachment" in r.headers.get("content-disposition", ""),
             "export -> 200 as a download")
     first = r.json()
-    c.check(first["version"] == 1 and all("api_key" not in p for p in first["providers"]),
-            "export without keys has no api_key")
+    c.check(first["version"] == 1 and all(set(p) == set(catalog_file.PROVIDER_EXPORT_COLUMNS)
+                                          for p in first["providers"]),
+            "export providers without keys", str(first["providers"][:1]))
     model_entry = next(m for m in first["models"] if m["display_name"] == f"{PREFIX} Beta Model")
-    c.check(model_entry["provider"] == stored["name"] and "id" not in model_entry and "provider_id" not in model_entry,
+    c.check(model_entry["provider"] == main["name"] and "id" not in model_entry and "provider_id" not in model_entry,
             "models reference providers by name, no ids")
     persona_entry = next(p for p in first["personas"] if p["name"] == f"{PREFIX} Pirate")
-    c.check(persona_entry["default_model"] == {"provider": stored["name"], "display_name": f"{PREFIX} Beta Model"},
-            "persona default_model by provider and display name", str(persona_entry["default_model"]))
+    c.check(persona_entry["tools"] == ["files", "web_search"] and "default_model" not in persona_entry,
+            "persona entries carry tools, no default_model", str(persona_entry))
 
     r = admin.post("/api/admin/catalog/import", json=first)
     result = r.json()
-    c.check(r.status_code == 200 and result["errors"] == []
-            and result["providers"] == {"created": 0, "updated": len(first["providers"])}
+    c.check(r.status_code == 200 and set(result) == {"models", "personas", "errors"}
+            and result["errors"] == [catalog_file.PROVIDERS_IGNORED]
             and result["models"] == {"created": 0, "updated": len(first["models"])}
             and result["personas"] == {"created": 0, "updated": len(first["personas"])},
-            "re-import of the export: all updated, nothing created, no errors", str(result))
+            "re-import of the export: models and personas updated, providers ignored", str(result))
     second = admin.get("/api/admin/catalog/export").json()
     c.check(second == first, "export -> import -> export is identical")
 
-    with_keys = admin.get("/api/admin/catalog/export?includeKeys=true", allow_keys=True)
-    provider_entry = next(p for p in with_keys.json()["providers"] if p["name"] == stored["name"])
-    c.check(provider_entry.get("api_key") == TEST_KEY and with_keys.headers.get("cache-control") == "no-store",
-            "export with includeKeys has the decrypted key")
-    c.check(all("api_key" not in p for p in with_keys.json()["providers"] if p["name"] != stored["name"]),
-            "includeKeys only adds stored keys")
+    # The export also works as MODEL_CATALOG_FILE: providers replaced, the rest kept
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "export.json"
+        path.write_text(json.dumps(first), encoding="utf-8")
+        seeded = catalog_file.seed_from_file(path)
+    c.check(seeded.errors == [] and seeded.providers.updated == len(first["providers"])
+            and seeded.models.kept == len(first["models"]) and seeded.personas.kept == len(first["personas"])
+            and seeded.models.created == 0 and seeded.personas.created == 0,
+            "export seeds as a catalog file: providers updated, models and personas kept", str(seeded))
+    c.check(admin.get("/api/admin/catalog/export").json() == first, "seeding the export changes nothing")
 
     r = admin.post("/api/admin/catalog/import", json={
         "version": 1,
+        "colour": "red",
         "providers": [
             {"name": f"{PREFIX} Imported", "kind": "openai_compatible", "base_url": "https://api.example.com/v1",
-             "api_key": "sk-imported-key-55556666", "privacy_tier": "eu", "currency": "EUR", "colour": "red"},
-            {"name": f"{PREFIX} Broken", "kind": "nope", "privacy_tier": "eu"},
+             "privacy_tier": "eu", "currency": "EUR"},
             {"kind": "openai_compatible"},
-            "not an object",
         ],
         "models": [
-            {"provider": f"{PREFIX} Imported", "display_name": f"{PREFIX} Imported Model", "model_id": "imp-1",
-             "input_price_per_mtok": 1.5, "output_price_per_mtok": 3, "available_to_guests": True, "sort_order": 99},
+            {"provider": main["name"], "display_name": f"{PREFIX} Imported Model", "model_id": "imp-1",
+             "input_price_per_mtok": 1.5, "output_price_per_mtok": 3, "available_to_guests": True, "sort_order": 99,
+             "colour": "red"},
             {"provider": "No such provider", "display_name": "x", "model_id": "x"},
-            {"provider": f"{PREFIX} Imported", "display_name": f"{PREFIX} No id"},
+            {"provider": main["name"], "display_name": f"{PREFIX} No id"},
+            "not an object",
         ],
         "personas": [
-            {"name": f"{PREFIX} Imported Persona", "system_prompt": "Hi {{user_name}}",
-             "default_model": {"provider": f"{PREFIX} Imported", "display_name": f"{PREFIX} Imported Model"}},
-            {"name": f"{PREFIX} Dangling", "system_prompt": "x",
-             "default_model": {"provider": "Nope", "display_name": "Nope"}},
+            {"name": f"{PREFIX} Imported Persona", "system_prompt": "Hi {{user_name}}", "tools": ["web_search"]},
+            {"name": f"{PREFIX} Old export", "system_prompt": "x",
+             "default_model": {"provider": main["name"], "display_name": f"{PREFIX} Imported Model"}},
+            {"name": f"{PREFIX} Bad tools", "system_prompt": "x", "tools": ["bogus"]},
         ],
     })
     result = r.json()
     print("        import errors:\n          " + "\n          ".join(result["errors"]))
-    c.check(result["providers"]["created"] == 1 and result["models"]["created"] == 1
-            and result["personas"]["created"] == 2, "import creates the valid entries", str(result))
-    c.check(len(result["errors"]) == 7, "import reports each bad entry and unknown key", str(len(result["errors"])))
-    providers = {p["name"]: p for p in admin.get("/api/admin/providers").json()}
-    imported = providers[f"{PREFIX} Imported"]
-    c.check(imported["apiKeySource"] == "stored" and imported["apiKeyMasked"] == "sk-…6666"
-            and imported["modelCount"] == 1, "imported api_key is stored encrypted", str(imported))
+    c.check(result["models"]["created"] == 1 and result["personas"]["created"] == 2,
+            "import creates the valid entries", str(result))
+    c.check(len(result["errors"]) == 8 and result["errors"].count(catalog_file.PROVIDERS_IGNORED) == 1,
+            "import reports each bad entry and unknown key, providers once", str(len(result["errors"])))
+    c.check(any("provider 'No such provider' not found" in e for e in result["errors"]),
+            "model with an unknown provider is reported")
+    providers = providers_by_name(admin)
+    c.check(f"{PREFIX} Imported" not in providers and providers[main["name"]]["modelCount"] >= 1,
+            "import does not create providers")
     personas = {p["name"]: p for p in admin.get("/api/admin/personas").json()}
+    c.check(personas[f"{PREFIX} Imported Persona"]["tools"] == ["web_search"], "imported persona tools")
+    c.check(personas[f"{PREFIX} Old export"]["tools"] is None and f"{PREFIX} Bad tools" not in personas,
+            "old default_model key ignored, invalid tools rejected")
     imported_model = next(m for m in admin.get("/api/admin/models").json()
                           if m["displayName"] == f"{PREFIX} Imported Model")
-    c.check(personas[f"{PREFIX} Imported Persona"]["defaultModelId"] == imported_model["id"],
-            "imported persona default model resolved")
-    c.check(personas[f"{PREFIX} Dangling"]["defaultModelId"] is None, "unknown default model left unset")
 
     # Partial upsert: only the given keys change
     r = admin.post("/api/admin/catalog/import", json={"models": [
-        {"provider": f"{PREFIX} Imported", "display_name": f"{PREFIX} Imported Model", "sort_order": 98}]})
+        {"provider": main["name"], "display_name": f"{PREFIX} Imported Model", "sort_order": 98}]})
     updated = next(m for m in admin.get("/api/admin/models").json() if m["id"] == imported_model["id"])
     c.check(r.json()["models"] == {"created": 0, "updated": 1} and updated["sortOrder"] == 98
             and updated["inputPricePerMtok"] == 1.5, "partial upsert changes only the given keys")
@@ -535,6 +655,90 @@ def run_import_export(c, admin, stored):
             "unsupported file version -> 400")
     c.check(admin.post("/api/admin/catalog/import", json={"providers": {}}).status_code == 400,
             "sections must be lists -> 400")
+
+
+def run_seeding(c, admin, main, models, personas):
+    from backend.config import MODEL_CATALOG_FILE
+
+    c.section("Seeding never overwrites app edits (in-process)")
+    guest_model, pirate = models["Guest Model"], personas[0]
+    before = next(m for m in admin.get("/api/admin/models").json() if m["id"] == guest_model["id"])
+    result = seed(providers=[MAIN_PROVIDER], models=[
+        {"provider": main["name"], "display_name": guest_model["displayName"], "model_id": "changed-id",
+         "description": "from the file", "sort_order": 1},
+        {"provider": main["name"], "display_name": f"{PREFIX} Seeded Model", "model_id": "seeded", "sort_order": 300},
+    ], personas=[
+        {"name": pirate["name"], "system_prompt": "Changed by the file", "tools": []},
+        {"name": f"{PREFIX} Seeded Persona", "system_prompt": "Seeded", "tools": ["files"], "colour": "red"},
+    ])
+    c.check(result.providers.updated == 1 and result.models.created == 1 and result.models.kept == 1
+            and result.personas.created == 1 and result.personas.kept == 1,
+            "seed creates missing models and personas, keeps existing ones", str(result))
+    c.check(result.errors == [f"personas[1] ({PREFIX} Seeded Persona): unknown key 'colour' ignored"],
+            "seed reports unknown keys", str(result.errors))
+    after = next(m for m in admin.get("/api/admin/models").json() if m["id"] == guest_model["id"])
+    c.check(after == before, "existing model untouched by the seed", str(after))
+    pirate_now = next(p for p in admin.get("/api/admin/personas").json() if p["id"] == pirate["id"])
+    c.check(pirate_now["systemPrompt"] == pirate["systemPrompt"] and pirate_now["tools"] == ["files", "web_search"],
+            "existing persona untouched by the seed", str(pirate_now))
+    seeded = {p["name"]: p for p in admin.get("/api/admin/personas").json()}[f"{PREFIX} Seeded Persona"]
+    c.check(seeded["tools"] == ["files"], "new persona from the seed has its tools")
+
+    # An edit in the app survives the next deploy
+    admin.put(f"/api/admin/models/{guest_model['id']}", json={"description": "edited in the app"})
+    seed(providers=[MAIN_PROVIDER], models=[
+        {"provider": main["name"], "display_name": guest_model["displayName"], "model_id": "x",
+         "description": "from the file"}])
+    edited = next(m for m in admin.get("/api/admin/models").json() if m["id"] == guest_model["id"])
+    c.check(edited["description"] == "edited in the app", "app edit kept on re-seed", str(edited["description"]))
+    admin.put(f"/api/admin/models/{guest_model['id']}", json={"description": before["description"]})
+
+    # ${VAR} in base_url: skipped while unset, filled in once set
+    router = provider_entry("Router", base_url="${" + ROUTER_URL_ENV + "}/v1", privacy_tier="local")
+    router_model = {"provider": router["name"], "display_name": f"{PREFIX} Router Model", "model_id": "r",
+                    "sort_order": 300}
+    os.environ.pop(ROUTER_URL_ENV, None)
+    result = seed(providers=[router], models=[router_model])
+    c.check(result.providers.created == 0 and result.models.created == 0 and result.errors == []
+            and router["name"] not in providers_by_name(admin), "unset ${VAR}: provider and its models skipped")
+    os.environ[ROUTER_URL_ENV] = "https://router.invalid"
+    result = seed(providers=[router], models=[router_model])
+    seeded_router = providers_by_name(admin).get(router["name"]) or {}
+    c.check(result.providers.created == 1 and result.models.created == 1
+            and seeded_router.get("baseUrl") == "https://router.invalid/v1", "set ${VAR}: base URL filled in",
+            str(seeded_router))
+    os.environ.pop(ROUTER_URL_ENV, None)
+
+    # A provider without its key starts disabled, is enabled once the key is set; `enabled` in the file wins
+    toggle = provider_entry("Toggle", api_key_env=TOGGLE_KEY_ENV)
+    os.environ.pop(TOGGLE_KEY_ENV, None)
+    seed(providers=[toggle])
+    off = providers_by_name(admin)[toggle["name"]]["enabled"]
+    os.environ[TOGGLE_KEY_ENV] = "sk-toggle-test-0000"
+    seed(providers=[toggle])
+    on = providers_by_name(admin)[toggle["name"]]["enabled"]
+    seed(providers=[{**toggle, "enabled": False}])
+    forced = providers_by_name(admin)[toggle["name"]]["enabled"]
+    os.environ.pop(TOGGLE_KEY_ENV, None)
+    c.check(off is False and on is True and forced is False,
+            "key unset -> disabled, set -> enabled, explicit enabled wins", f"{off} {on} {forced}")
+
+    for name in (router["name"], toggle["name"]):
+        provider = db.get_llm_provider_by_name(name)
+        if provider:
+            db.delete_llm_provider(provider["id"])
+    seeded_model = next(m for m in admin.get("/api/admin/models").json()
+                        if m["displayName"] == f"{PREFIX} Seeded Model")
+    admin.delete(f"/api/admin/models/{seeded_model['id']}")
+    admin.delete(f"/api/admin/personas/{seeded['id']}")
+
+    # The repository's catalog file is the default seed
+    if "MODEL_CATALOG_FILE" not in os.environ:
+        c.check(MODEL_CATALOG_FILE == "catalog/models.json", "MODEL_CATALOG_FILE defaults to catalog/models.json")
+    repo_file = json.loads(catalog_file.resolve_catalog_path("catalog/models.json").read_text(encoding="utf-8"))
+    translator = next(p for p in repo_file["personas"] if p["name"] == "Translator")
+    c.check(translator.get("tools") == [] and all("default_model" not in p for p in repo_file["personas"]),
+            "catalog/models.json: Translator has no tools, no default_model")
 
 
 def run_resolver(c, models, personas, conversation, user_email):
@@ -549,7 +753,7 @@ def run_resolver(c, models, personas, conversation, user_email):
     alpha, disabled = models["Alpha Model"], models["Disabled Model"]
 
     config = resolver.resolve_model(user, model_id=alpha["id"])
-    c.check(config.id == alpha["id"] and config.api_key == TEST_KEY, "explicit model_id; stored key decrypted")
+    c.check(config.id == alpha["id"] and config.api_key == TEST_KEY, "explicit model_id; key from api_key_env")
     try:
         resolver.resolve_model(user, model_id=disabled["id"])
         c.check(False, "explicit disabled model -> ModelNotAllowed")
@@ -593,11 +797,12 @@ def run_resolver(c, models, personas, conversation, user_email):
     c.check(aux and aux.id == models["Aux Model"]["id"] and aux.api_key == os.getenv("OPENAI_API_KEY"),
             "auxiliary model with api_key_env key")
 
-    # Stored key wins over api_key_env
-    provider_id = beta["providerId"]
-    db.update_llm_provider(provider_id, {"api_key_env": "OPENAI_API_KEY"})
-    c.check(resolver.get_model_config(beta["id"]).api_key == TEST_KEY, "stored key wins over api_key_env")
-    db.update_llm_provider(provider_id, {"api_key_env": None})
+    # Keys only come from the environment
+    c.check(resolver.provider_api_key({"name": "x", "api_key_env": None}) is None
+            and resolver.provider_api_key({"name": "x", "api_key_env": "ZZ_NOT_SET_API_KEY"}) is None
+            and resolver.api_key_set({"api_key_env": KEY_ENV}) is True
+            and resolver.api_key_set({"api_key_env": "ZZ_NOT_SET_API_KEY"}) is False,
+            "no key without a set api_key_env variable")
 
     # Guests without guest models get the environment model
     db.update_llm_model(guest_model["id"], {"available_to_guests": False})
@@ -651,20 +856,31 @@ def run_resolver(c, models, personas, conversation, user_email):
     c.check(resolver.persona_prompt_for_conversation(guest, {"persona_id": personas[1]["id"]}) is None,
             "guest with non-guest persona -> None")
 
+    c.section("Persona tool groups (in-process)")
+    pirate_id, private_id, off_id = (p["id"] for p in personas)
+    c.check(resolver.persona_tool_groups(user, {"persona_id": pirate_id}) == ["files", "web_search"],
+            "persona with a selection -> its groups")
+    c.check(resolver.persona_tool_groups(user, {"persona_id": private_id}) is None, "tools null -> None (all)")
+    db.update_persona(private_id, {"tools": []})
+    c.check(resolver.persona_tool_groups(user, {"persona_id": private_id}) == [], "tools [] -> []")
+    c.check(resolver.persona_tool_groups(guest, {"persona_id": private_id}) is None,
+            "guest with non-guest persona -> None")
+    db.update_persona(private_id, {"tools": None})
+    c.check(resolver.persona_tool_groups(user, {"persona_id": off_id}) is None, "disabled persona -> None")
+    c.check(resolver.persona_tool_groups(user, {"persona_id": None}) is None
+            and resolver.persona_tool_groups(user, None) is None, "no persona -> None")
 
-def run_deletes(c, admin, stored, models, personas):
+
+def run_deletes(c, admin, main, models, personas):
     c.section("Deletes")
     model_count = len(admin.get("/api/admin/models").json())
     r = admin.delete(f"/api/admin/models/{models['Alpha Model']['id']}")
     c.check(r.status_code == 204 and len(admin.get("/api/admin/models").json()) == model_count - 1, "delete model")
     c.check(admin.delete(f"/api/admin/models/{models['Alpha Model']['id']}").status_code == 404,
             "delete deleted model -> 404")
-    r = admin.delete(f"/api/admin/providers/{stored['id']}")
-    remaining = [m for m in admin.get("/api/admin/models").json() if m["providerId"] == stored["id"]]
-    c.check(r.status_code == 204 and remaining == [], "delete provider deletes its models")
-    persona = admin.get("/api/admin/personas").json()
-    pirate = next(p for p in persona if p["id"] == personas[0]["id"])
-    c.check(pirate["defaultModelId"] is None, "persona default model cleared when its model is deleted")
+    db.delete_llm_provider(main["id"])
+    remaining = [m for m in admin.get("/api/admin/models").json() if m["providerId"] == main["id"]]
+    c.check(remaining == [], "deleting a provider in the database deletes its models")
     c.check(admin.delete(f"/api/admin/personas/{personas[1]['id']}").status_code == 204, "delete persona")
     c.check(admin.delete("/api/admin/personas/999999").status_code == 404, "delete unknown persona -> 404")
 
@@ -684,6 +900,7 @@ def main():
 
     warnings.filterwarnings("ignore", message="Unverified HTTPS request")
     print(f"Catalog test against {args.base_url}, database {POSTGRES_DB}")
+    os.environ.setdefault(KEY_ENV, TEST_KEY)  # For the in-process resolver; the backend needs it too
     wipe_catalog()
 
     responses = []
@@ -695,26 +912,29 @@ def main():
     user_id = db.get_user_by_email(args.user_email)["id"]
 
     run_admin_rule(c, admin, user, guest, anonymous)
-    stored, env, unset_env, disabled = run_providers(c, admin)
-    models = run_models(c, admin, user, guest, stored, env, disabled)
-    personas = run_personas(c, admin, user, guest, models)
+    main_provider, env, unset_env, disabled = run_providers(c, admin)
+    available_groups = run_tools(c, admin)
+    models = run_models(c, admin, user, guest, main_provider, env, disabled)
+    personas = run_personas(c, admin, user, guest)
     conversation = run_conversations_and_settings(c, user, guest, models, personas)
     run_message_sync(c, user, user_id, models)
+    run_stream_tools(c, admin, user, available_groups)
     if not args.skip_network:
-        run_fetch_models(c, admin, stored, env)
-    run_import_export(c, admin, stored)
+        run_fetch_models(c, admin, env)
+    run_import_export(c, admin, main_provider)
+    run_seeding(c, admin, main_provider, models, personas)
     run_resolver(c, models, personas, conversation, args.user_email)
-    run_deletes(c, admin, stored, models, personas)
+    run_deletes(c, admin, main_provider, models, personas)
 
     c.section("Key leaks")
-    secrets = [TEST_KEY, "sk-ant-api03-abcdefgh9876", "sk-imported-key-55556666"]
+    secrets = [TEST_KEY, FILE_KEY, "sk-toggle-test-0000"]
     if os.getenv("OPENAI_API_KEY"):
         secrets.append(os.getenv("OPENAI_API_KEY"))
-    leaks = [text[:120] for allow, text in responses if not allow for s in secrets if s in text]
-    c.check(not leaks, f"no key in any of {len(responses)} responses (except the includeKeys export)",
-            f"{len(leaks)} leak(s)")
-    c.check(not any("api_key_encrypted" in text or "apiKeyEncrypted" in text for _, text in responses),
-            "no encrypted key in any response")
+    leaks = [text[:120] for text in responses for secret in secrets if secret in text]
+    c.check(not leaks, f"no key in any of {len(responses)} responses", f"{len(leaks)} leak(s)")
+    c.check(not any(field in text for text in responses
+                    for field in ("api_key_encrypted", "apiKeyEncrypted", "apiKeyMasked", "apiKeySource")),
+            "no stored-key fields in any response")
 
     db.delete_conversation(conversation["id"])
     wipe_catalog()

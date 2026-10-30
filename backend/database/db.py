@@ -1539,8 +1539,7 @@ class Database:
         Get all catalog providers with the number of models each one has.
 
         Returns:
-            List of provider dictionaries (including api_key_encrypted and
-            model_count), ordered by name.
+            List of provider dictionaries (including model_count), ordered by name.
         """
         log.debug("Getting all LLM providers")
         with self.connection() as conn:
@@ -1590,8 +1589,8 @@ class Database:
         Create a catalog provider.
 
         Args:
-            values: Column values (name, kind, privacy_tier, ... and optionally
-                api_key_encrypted). Left-out columns take their defaults.
+            values: Column values (name, kind, privacy_tier, ...). Left-out
+                columns take their defaults.
 
         Returns:
             The created provider dictionary.

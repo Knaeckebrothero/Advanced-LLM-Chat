@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { TranslateService } from '@ngx-translate/core';
+import { ToolGroup } from '../data/models/catalog.model';
 
 /** A readable message for a failed request (FastAPI puts it in `detail`). */
 export function describeHttpError(error: unknown, translate?: TranslateService): string {
@@ -79,4 +80,15 @@ export function findPlaceholders(prompt: string): string[] {
     names.add(match[1]);
   }
   return [...names];
+}
+
+const TOOL_ICONS: Record<ToolGroup, string> = {
+  files: 'folder_open',
+  web_search: 'travel_explore',
+  knowledge_graph: 'hub'
+};
+
+/** Material icon of a tool group (its label is the translation catalog.tools.<id>). */
+export function toolIcon(id: ToolGroup): string {
+  return TOOL_ICONS[id] ?? 'build';
 }

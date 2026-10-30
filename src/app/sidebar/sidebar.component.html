@@ -35,9 +35,9 @@
       [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
       {{ 'Chat' | translate }}
     </button>
-    <button class="nav-button" (click)="navigateTo('/metrics')"
-      [class.selected]="router.isActive('/metrics', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      {{ 'Placeholder Component' | translate }}
+    <button *ngIf="isAdmin$ | async" class="nav-button" (click)="navigateTo('/agents')"
+      [class.selected]="router.isActive('/agents', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
+      {{ 'Agents' | translate }}
     </button>
   </div>
 

@@ -1,9 +1,9 @@
 """
-Model catalog API models: providers, models and personas.
+Model catalog API models: providers, models and personas (the "agents" of the UI).
 
-The API contract is described in docs/model_catalog_api.md. API keys are
-write-only: requests may carry `apiKey`, responses only say whether a key is
-set and show a masked version.
+The API contract is described in docs/model_catalog_api.md. Providers are
+read-only: they come from the server's catalog file (MODEL_CATALOG_FILE), and
+their API keys only from environment variables, which responses never contain.
 """
 from datetime import datetime
 from typing import Any, List, Literal, Optional
@@ -13,16 +13,18 @@ ProviderKind = Literal["openai_compatible", "anthropic"]
 PrivacyTier = Literal["local", "eu", "trusted", "untrusted"]
 ReasoningMode = Literal["none", "optional", "always"]
 Currency = Literal["USD", "EUR"]
+# Tool groups a persona can use; the keys of backend.llm.tools.TOOL_GROUPS
+ToolGroup = Literal["files", "web_search", "knowledge_graph"]
 
 
 # Providers
 
 class ProviderBase(BaseModel):
-    """One API account."""
+    """One API account, as defined in the catalog file."""
     name: str
     kind: ProviderKind
     baseUrl: Optional[str] = None  # None = the SDK default
-    apiKeyEnv: Optional[str] = None  # Name of an environment variable holding the key
+    apiKeyEnv: Optional[str] = None  # Name of the environment variable holding the key
     privacyTier: PrivacyTier
     currency: Currency = "USD"
     defaultHeaders: Optional[dict[str, str]] = None
@@ -30,28 +32,9 @@ class ProviderBase(BaseModel):
     enabled: bool = True
 
 
-class ProviderCreate(ProviderBase):
-    apiKey: Optional[str] = None  # Stored encrypted; never returned
-
-
-class ProviderUpdate(BaseModel):
-    """Partial update; fields left out stay unchanged."""
-    name: Optional[str] = None
-    kind: Optional[ProviderKind] = None
-    baseUrl: Optional[str] = None
-    apiKeyEnv: Optional[str] = None
-    privacyTier: Optional[PrivacyTier] = None
-    currency: Optional[Currency] = None
-    defaultHeaders: Optional[dict[str, str]] = None
-    notes: Optional[str] = None
-    enabled: Optional[bool] = None
-    apiKey: Optional[str] = None  # Left out or null = keep the stored key, "" = remove it
-
-
 class ProviderOut(ProviderBase):
     id: int
-    apiKeySource: Literal["stored", "env", "none"]  # Where the key comes from at runtime
-    apiKeyMasked: Optional[str] = None  # "sk-…1234"; only for stored keys
+    apiKeySet: bool  # The apiKeyEnv variable is set and not empty
     modelCount: int = 0
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
@@ -172,7 +155,7 @@ class PersonaBase(BaseModel):
     description: Optional[str] = None
     systemPrompt: str  # May use {{variables}} and the built-ins {{date}}, {{user_name}}, {{language}}
     variables: List[PersonaVariable] = []
-    defaultModelId: Optional[int] = None
+    tools: Optional[List[ToolGroup]] = None  # None = every tool the server has enabled, [] = no tools
     availableToGuests: bool = False
     enabled: bool = True
     sortOrder: int = 0
@@ -188,7 +171,7 @@ class PersonaUpdate(BaseModel):
     description: Optional[str] = None
     systemPrompt: Optional[str] = None
     variables: Optional[List[PersonaVariable]] = None
-    defaultModelId: Optional[int] = None
+    tools: Optional[List[ToolGroup]] = None  # Send null for every enabled tool
     availableToGuests: Optional[bool] = None
     enabled: Optional[bool] = None
     sortOrder: Optional[int] = None
@@ -205,7 +188,14 @@ class PublicPersona(BaseModel):
     description: Optional[str] = None
     systemPrompt: str
     variables: List[PersonaVariable] = []
-    defaultModelId: Optional[int] = None
+    tools: Optional[List[ToolGroup]] = None
+
+
+class ToolGroupStatus(BaseModel):
+    """One entry of GET /api/admin/tools: a tool group and whether the server enables it."""
+    id: ToolGroup
+    available: bool
+    reason: Optional[str] = None  # Why it is unavailable, e.g. "TAVILY_API_KEY is not set"
 
 
 # Import and export
@@ -216,8 +206,11 @@ class ImportCounts(BaseModel):
 
 
 class ImportResult(BaseModel):
-    """Result of POST /api/admin/catalog/import. The file format is in docs/model_catalog_api.md."""
-    providers: ImportCounts
+    """
+    Result of POST /api/admin/catalog/import. The file format is in docs/model_catalog_api.md.
+
+    Providers are not imported (they come from the server's catalog file).
+    """
     models: ImportCounts
     personas: ImportCounts
     errors: List[str] = []

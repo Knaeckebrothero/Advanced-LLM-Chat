@@ -36,6 +36,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
   conversations$: Observable<Conversation[]> = this.chatState.conversations$;
   activeConversationId$: Observable<string | null> = this.uiState.activeConversationId$;
   isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
+  isAdmin$: Observable<boolean> = this.authService.isAdmin$;  // The Agents page is for admins
 
   isDarkMode: boolean = false; // <-- ADD THIS PROPERTY
   private themeSubscription!: Subscription; // <-- ADD THIS PROPERTY

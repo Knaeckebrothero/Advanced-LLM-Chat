@@ -5,17 +5,13 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslateModule } from '@ngx-translate/core';
-import { combineLatest, firstValueFrom, Observable } from 'rxjs';
+import { combineLatest, Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { ChatStateService } from '../../services/chat-state.service';
 import { CatalogService } from '../../services/catalog.service';
-import { IConversationSelection, IPublicModel, IPublicPersona, PersonaValues } from '../../data/models/catalog.model';
+import { IConversationSelection, IPublicModel, IPublicPersona } from '../../data/models/catalog.model';
 import { ModelSelectComponent } from '../../components/catalog/model-select.component';
-import {
-  PersonaValuesDialogComponent,
-  PersonaValuesDialogData,
-  personaInputVariables
-} from './persona-values-dialog.component';
+import { askPersonaValues, personaInputVariables } from './persona-values-dialog.component';
 
 interface PickerView {
   models: IPublicModel[];
@@ -137,24 +133,11 @@ export class ModelPickerComponent {
       return;
     }
 
-    let values: PersonaValues | null = null;
-    if (this.hasInputs(persona)) {
-      // Ask for the variables (prefilled with the stored values when re-picking the same persona)
-      const ref = this.dialog.open<PersonaValuesDialogComponent, PersonaValuesDialogData, PersonaValues>(
-        PersonaValuesDialogComponent,
-        {
-          data: { persona, values: persona.id === view.selection.personaId ? view.selection.personaValues : null },
-          panelClass: 'catalog-dialog-panel',
-          backdropClass: 'custom-backdrop',
-          autoFocus: 'first-tabbable'
-        }
-      );
-      const result = await firstValueFrom(ref.afterClosed());
-      if (result === undefined) return;  // Cancelled
-      values = result;
-    } else if (persona.id === view.selection.personaId) {
-      return;  // Nothing to change
-    }
+    // Ask for the variables (prefilled with the stored values when re-picking the same persona)
+    const samePersona = persona.id === view.selection.personaId;
+    const values = await askPersonaValues(this.dialog, persona, samePersona ? view.selection.personaValues : null);
+    if (values === undefined) return;  // Cancelled
+    if (values === null && samePersona) return;  // Nothing to change
 
     await this.chatState.selectPersona(persona, values);
   }

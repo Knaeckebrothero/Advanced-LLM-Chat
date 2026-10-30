@@ -5,7 +5,7 @@ from .types import ModelConfig, Usage, model_from_env
 from .agent_loop import complete, run_agent
 from .client import ModelConfigError, create_client, get_client
 from .prompts import build_system_prompt
-from .tools import Tool, ToolRegistry, default_tools
+from .tools import TOOL_GROUPS, Tool, ToolRegistry, default_tools, tool_group_status, tools_for_groups
 
 __all__ = [
     "ModelConfig",
@@ -20,4 +20,7 @@ __all__ = [
     "Tool",
     "ToolRegistry",
     "default_tools",
+    "tools_for_groups",
+    "tool_group_status",
+    "TOOL_GROUPS",
 ]

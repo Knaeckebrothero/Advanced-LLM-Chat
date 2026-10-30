@@ -7,7 +7,7 @@ tools), checks the arguments the model sends, and runs the function.
 
 The implementations live in backend/services/tools/; this module only describes
 them to the model. default_tools() returns the tools that are enabled by the
-configuration.
+configuration, tools_for_groups() limits them to a persona's tool groups.
 """
 import asyncio
 import functools
@@ -27,6 +27,13 @@ TOOL_TITLES = {
     "get_graph_schema": "Inspecting Knowledge Graph",
     "search_graph": "Searching Knowledge Graph",
     "query_graph": "Querying Knowledge Graph",
+}
+
+# Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
+TOOL_GROUPS = {
+    "files": ("get_file_content",),
+    "web_search": ("web_search",),
+    "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
 }
 
 # JSON schema types the argument check understands
@@ -312,22 +319,83 @@ def web_search_tool() -> Tool:
     )
 
 
-def default_tools() -> ToolRegistry:
+def tool_group_unavailable_reason(group: str) -> Optional[str]:
     """
-    The tools enabled by the configuration.
+    Why the configuration switches a tool group off.
 
-    get_file_content is always available; the graph tools need NEO4J_ENABLED,
-    web search needs TAVILY_API_KEY.
+    The graph tools need NEO4J_ENABLED, web search needs TAVILY_API_KEY;
+    file access is always available.
+
+    Args:
+        group: A key of TOOL_GROUPS.
+
+    Returns:
+        The reason, or None if the group is available.
     """
     from ..services.tools.web_search_tools import is_web_search_available
 
-    registry = ToolRegistry([file_content_tool()])
-    if NEO4J_ENABLED:
-        for tool in graph_tools():
+    if group == "knowledge_graph" and not NEO4J_ENABLED:
+        return "NEO4J_ENABLED is off"
+    if group == "web_search" and not is_web_search_available():
+        return "TAVILY_API_KEY is not set"
+    return None
+
+
+def tool_group_status() -> list[dict]:
+    """Every tool group with its availability: [{"id", "available", "reason"}], in TOOL_GROUPS order."""
+    status = []
+    for group in TOOL_GROUPS:
+        reason = tool_group_unavailable_reason(group)
+        status.append({"id": group, "available": reason is None, "reason": reason})
+    return status
+
+
+def _group_tools(group: str) -> list[Tool]:
+    """The tool definitions of a group."""
+    if group == "files":
+        return [file_content_tool()]
+    if group == "web_search":
+        return [web_search_tool()]
+    if group == "knowledge_graph":
+        return graph_tools()
+    raise ValueError(f"Unknown tool group '{group}'")
+
+
+def default_tools() -> ToolRegistry:
+    """
+    The tools enabled by the configuration (see tool_group_unavailable_reason()).
+    """
+    registry = ToolRegistry()
+    for group in TOOL_GROUPS:
+        reason = tool_group_unavailable_reason(group)
+        if reason:
+            log.debug(f"Tool group {group} disabled: {reason}")
+            continue
+        for tool in _group_tools(group):
             registry.add(tool)
-    if is_web_search_available():
-        registry.add(web_search_tool())
-    else:
-        log.debug("TAVILY_API_KEY not set - web search tool disabled")
     log.debug(f"Default tools: {', '.join(registry.names())}")
     return registry
+
+
+def tools_for_groups(groups: Optional[Iterable[str]]) -> ToolRegistry:
+    """
+    The enabled tools of the given tool groups, e.g. a persona's selection.
+
+    Args:
+        groups: Keys of TOOL_GROUPS; None for every enabled tool. Unknown
+            groups are ignored.
+
+    Returns:
+        default_tools() limited to those groups; empty for an empty selection.
+    """
+    registry = default_tools()
+    if groups is None:
+        return registry
+    groups = list(groups)
+    unknown = [group for group in groups if group not in TOOL_GROUPS]
+    if unknown:
+        log.warning(f"Ignoring unknown tool group(s): {', '.join(map(str, unknown))}")
+    allowed = {name for group in groups for name in TOOL_GROUPS.get(group, ())}
+    selected = ToolRegistry(tool for tool in registry if tool.name in allowed)
+    log.debug(f"Tools for groups {groups}: {', '.join(selected.names()) or 'none'}")
+    return selected

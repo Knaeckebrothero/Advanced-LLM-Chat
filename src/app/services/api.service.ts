@@ -18,11 +18,10 @@ import {
   IPersonaCreate,
   IPersonaOut,
   IPersonaUpdate,
-  IProviderCreate,
   IProviderOut,
-  IProviderUpdate,
   IPublicModel,
   IPublicPersona,
+  IToolStatus,
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate } from '../data/models/api.model';
 
@@ -599,28 +598,10 @@ export class ApiService {
   // Model catalog: admin endpoints (403 for everyone else)
   // =========================================================================
 
+  /** Providers are configured on the server (catalog file and environment variables) and read-only here. */
   async getAdminProviders(): Promise<IProviderOut[]> {
     return await lastValueFrom(
       this.http.get<IProviderOut[]>(`${this.baseUrl}/api/admin/providers`, this.getHttpOptions())
-    );
-  }
-
-  async createProvider(provider: IProviderCreate): Promise<IProviderOut> {
-    return await lastValueFrom(
-      this.http.post<IProviderOut>(`${this.baseUrl}/api/admin/providers`, provider, this.getHttpOptions())
-    );
-  }
-
-  async updateProvider(id: number, update: IProviderUpdate): Promise<IProviderOut> {
-    return await lastValueFrom(
-      this.http.put<IProviderOut>(`${this.baseUrl}/api/admin/providers/${id}`, update, this.getHttpOptions())
-    );
-  }
-
-  /** Deletes the provider and its models. */
-  async deleteProvider(id: number): Promise<void> {
-    await lastValueFrom(
-      this.http.delete(`${this.baseUrl}/api/admin/providers/${id}`, this.getHttpOptions())
     );
   }
 
@@ -688,16 +669,21 @@ export class ApiService {
     );
   }
 
-  /** The catalog file; API keys are only included when asked for. */
-  async exportCatalog(includeKeys: boolean = false): Promise<ICatalogFile> {
+  /** The tool groups agents can use, and whether the server offers them. */
+  async getAdminTools(): Promise<IToolStatus[]> {
     return await lastValueFrom(
-      this.http.get<ICatalogFile>(
-        `${this.baseUrl}/api/admin/catalog/export?includeKeys=${includeKeys}`, this.getHttpOptions()
-      )
+      this.http.get<IToolStatus[]>(`${this.baseUrl}/api/admin/tools`, this.getHttpOptions())
     );
   }
 
-  /** Upserts providers, models and personas by name; never deletes. */
+  /** The catalog file. */
+  async exportCatalog(): Promise<ICatalogFile> {
+    return await lastValueFrom(
+      this.http.get<ICatalogFile>(`${this.baseUrl}/api/admin/catalog/export`, this.getHttpOptions())
+    );
+  }
+
+  /** Upserts models and personas by name; never deletes. Provider entries are skipped. */
   async importCatalog(file: ICatalogFile): Promise<IImportResult> {
     return await lastValueFrom(
       this.http.post<IImportResult>(`${this.baseUrl}/api/admin/catalog/import`, file, this.getHttpOptions())

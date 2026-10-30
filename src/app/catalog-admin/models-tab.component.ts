@@ -13,6 +13,11 @@ import { ModelCapabilitiesComponent } from '../components/catalog/model-capabili
 import { CatalogAdminStore } from './catalog-admin.store';
 import { CatalogAdminDialogs } from './catalog-admin-dialogs';
 import { ModelDialogComponent, ModelDialogData } from './model-dialog.component';
+import {
+  FetchModelsDialogComponent,
+  FetchModelsDialogData,
+  FetchModelsDialogResult
+} from './fetch-models-dialog.component';
 import { describeHttpError } from './catalog-admin.utils';
 
 interface ProviderModels {
@@ -26,7 +31,11 @@ interface TestState {
   result?: IModelTestResult;
 }
 
-/** Models grouped by provider, with quick switches, a smoke test and the edit dialog. */
+/**
+ * Models grouped by provider, with quick switches, a smoke test and the edit dialog.
+ * Each group starts with its provider (read-only: providers and their keys are configured on
+ * the server) and offers the provider's model list to add models from.
+ */
 @Component({
   selector: 'app-models-tab',
   standalone: true,
@@ -42,9 +51,12 @@ interface TestState {
     ModelCapabilitiesComponent
   ],
   template: `
-    <div class="tab-toolbar">
-      <p class="tab-intro">{{ 'catalog.admin.models.intro' | translate }}</p>
-      <div class="tab-toolbar-actions">
+    <div class="section-header">
+      <div class="section-heading">
+        <h2 class="section-title">{{ 'catalog.admin.models.title' | translate }}</h2>
+        <p class="section-intro">{{ 'catalog.admin.models.intro' | translate }}</p>
+      </div>
+      <div class="section-actions">
         <button mat-flat-button color="primary" type="button" (click)="add()"
                 [disabled]="store.providers.length === 0">
           <mat-icon>add</mat-icon>
@@ -53,27 +65,61 @@ interface TestState {
       </div>
     </div>
 
+    <p class="server-hint">
+      <mat-icon aria-hidden="true">dns</mat-icon>
+      <span>{{ 'catalog.admin.providers.serverHint' | translate }}</span>
+    </p>
+
     @if (groups$ | async; as groups) {
       @for (group of groups; track group.name) {
-        <section class="group">
-          <div class="group-header">
-            <h3 class="group-title">{{ group.name }}</h3>
-            @if (group.provider) {
-              <app-privacy-badge [tier]="group.provider.privacyTier" [compact]="true"></app-privacy-badge>
-              @if (!group.provider.enabled) {
-                <span class="state-tag">{{ 'catalog.admin.providerDisabled' | translate }}</span>
-              }
-            }
-            <span class="group-count">{{ group.models.length }}</span>
-            <span class="group-spacer"></span>
-            @if (group.provider) {
-              <button mat-icon-button type="button" (click)="add(group.provider)"
-                      [matTooltip]="'catalog.admin.models.addTo' | translate: { provider: group.name }"
-                      [attr.aria-label]="'catalog.admin.models.addTo' | translate: { provider: group.name }">
-                <mat-icon>add</mat-icon>
-              </button>
+        <section class="group" [attr.aria-label]="group.name">
+          <div class="provider-bar">
+            <div class="provider-info">
+              <div class="item-title-row">
+                <h3 class="provider-name">{{ group.name }}</h3>
+                @if (group.provider) {
+                  <app-privacy-badge [tier]="group.provider.privacyTier"></app-privacy-badge>
+                  @if (!group.provider.enabled) {
+                    <span class="state-tag">{{ 'catalog.admin.providerDisabled' | translate }}</span>
+                  }
+                }
+              </div>
+              <div class="item-meta">
+                @if (group.provider; as provider) {
+                  @if (provider.apiKeyEnv) {
+                    <span class="key-state" [class.key-state--missing]="!provider.apiKeySet">
+                      <mat-icon aria-hidden="true">{{ provider.apiKeySet ? 'key' : 'key_off' }}</mat-icon>
+                      <span class="mono">{{ provider.apiKeyEnv }}</span>
+                      <span>{{ (provider.apiKeySet ? 'catalog.admin.providers.keySet' : 'catalog.admin.providers.keyMissing') | translate }}</span>
+                    </span>
+                  } @else {
+                    <span class="key-state key-state--none">
+                      <mat-icon aria-hidden="true">key_off</mat-icon>
+                      <span>{{ 'catalog.admin.providers.keyNone' | translate }}</span>
+                    </span>
+                  }
+                }
+                <span>{{ 'catalog.admin.providers.modelCount' | translate: { count: group.models.length } }}</span>
+              </div>
+            </div>
+            @if (group.provider; as provider) {
+              <div class="provider-actions">
+                <button mat-stroked-button type="button" (click)="fetchModels(provider)">
+                  <mat-icon>cloud_download</mat-icon>
+                  {{ 'catalog.admin.providers.fetchModels' | translate }}
+                </button>
+                <button mat-icon-button type="button" (click)="add(provider)"
+                        [matTooltip]="'catalog.admin.models.addTo' | translate: { provider: group.name }"
+                        [attr.aria-label]="'catalog.admin.models.addTo' | translate: { provider: group.name }">
+                  <mat-icon>add</mat-icon>
+                </button>
+              </div>
             }
           </div>
+
+          @if (group.models.length === 0) {
+            <p class="group-empty">{{ 'catalog.admin.models.groupEmpty' | translate }}</p>
+          }
 
           <div class="item-list">
             @for (model of group.models; track model.id) {
@@ -164,8 +210,8 @@ interface TestState {
         </section>
       } @empty {
         <div class="empty-state">
-          <mat-icon aria-hidden="true">smart_toy</mat-icon>
-          <p>{{ (store.providers.length === 0 ? 'catalog.admin.models.emptyNoProviders' : 'catalog.admin.models.empty') | translate }}</p>
+          <mat-icon aria-hidden="true">dns</mat-icon>
+          <p>{{ 'catalog.admin.models.emptyNoProviders' | translate }}</p>
         </div>
       }
     }
@@ -226,6 +272,16 @@ export class ModelsTabComponent {
       ModelDialogComponent, { model: null, providers: this.store.providers, providerId: provider?.id }
     );
     if (saved) this.dialogs.notify('catalog.admin.models.saved', { name: saved.displayName });
+  }
+
+  async fetchModels(provider: IProviderOut): Promise<void> {
+    const result = await this.dialogs.open<FetchModelsDialogComponent, FetchModelsDialogData, FetchModelsDialogResult>(
+      FetchModelsDialogComponent, { provider }
+    );
+    if (result) {
+      this.dialogs.notify('catalog.admin.fetch.addedCount', { count: result.added });
+      if (result.errors.length > 0) this.dialogs.notifyError(new Error(result.errors.join('\n')));
+    }
   }
 
   async edit(model: IModelOut): Promise<void> {

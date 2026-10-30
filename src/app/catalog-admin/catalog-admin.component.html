@@ -1,13 +1,7 @@
 <div class="catalog-admin">
   <header class="catalog-header">
-    <button mat-icon-button type="button" class="back-button" (click)="back()"
-            [attr.aria-label]="'catalog.admin.back' | translate">
-      <mat-icon>arrow_back</mat-icon>
-    </button>
-    <div class="catalog-heading">
-      <h1>{{ 'catalog.admin.title' | translate }}</h1>
-      <p>{{ 'catalog.admin.subtitle' | translate }}</p>
-    </div>
+    <h1>{{ 'catalog.admin.title' | translate }}</h1>
+    <p>{{ 'catalog.admin.subtitle' | translate }}</p>
   </header>
 
   @switch (store.state$ | async) {
@@ -34,29 +28,9 @@
       </div>
     }
     @default {
-      <mat-tab-group class="catalog-tabs" [selectedIndex]="selectedTab" (selectedIndexChange)="onTabChange($event)"
-                     mat-stretch-tabs="false" mat-align-tabs="start" animationDuration="150ms">
-        <mat-tab [label]="'catalog.admin.tabs.providers' | translate">
-          <ng-template matTabContent>
-            <app-providers-tab></app-providers-tab>
-          </ng-template>
-        </mat-tab>
-        <mat-tab [label]="'catalog.admin.tabs.models' | translate">
-          <ng-template matTabContent>
-            <app-models-tab></app-models-tab>
-          </ng-template>
-        </mat-tab>
-        <mat-tab [label]="'catalog.admin.tabs.personas' | translate">
-          <ng-template matTabContent>
-            <app-personas-tab></app-personas-tab>
-          </ng-template>
-        </mat-tab>
-        <mat-tab [label]="'catalog.admin.tabs.transfer' | translate">
-          <ng-template matTabContent>
-            <app-import-export-tab></app-import-export-tab>
-          </ng-template>
-        </mat-tab>
-      </mat-tab-group>
+      <app-personas-tab class="page-section"></app-personas-tab>
+      <app-models-tab class="page-section"></app-models-tab>
+      <app-import-export-tab class="page-section"></app-import-export-tab>
     }
   }
 </div>

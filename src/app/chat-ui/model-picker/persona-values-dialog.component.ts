@@ -1,10 +1,11 @@
 import { Component, Inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { TranslateModule } from '@ngx-translate/core';
+import { firstValueFrom } from 'rxjs';
 import {
   BUILT_IN_PERSONA_VARIABLES,
   IPersonaVariable,
@@ -20,6 +21,31 @@ export interface PersonaValuesDialogData {
 /** The variables of a persona that the user fills in (the built-ins are filled in by the backend). */
 export function personaInputVariables(persona: IPublicPersona): IPersonaVariable[] {
   return (persona.variables || []).filter(v => !BUILT_IN_PERSONA_VARIABLES.includes(v.name));
+}
+
+/**
+ * Asks for the values of a persona's variables before it is used in a chat.
+ * Resolves to the values, to null when the persona has nothing to fill in (no dialog),
+ * or to undefined when the user cancelled.
+ */
+export async function askPersonaValues(
+  dialog: MatDialog,
+  persona: IPublicPersona,
+  values: PersonaValues | null = null
+): Promise<PersonaValues | null | undefined> {
+  if (personaInputVariables(persona).length === 0) {
+    return null;
+  }
+  const ref = dialog.open<PersonaValuesDialogComponent, PersonaValuesDialogData, PersonaValues>(
+    PersonaValuesDialogComponent,
+    {
+      data: { persona, values },
+      panelClass: 'catalog-dialog-panel',
+      backdropClass: 'custom-backdrop',
+      autoFocus: 'first-tabbable'
+    }
+  );
+  return firstValueFrom(ref.afterClosed());
 }
 
 /**

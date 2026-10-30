@@ -12,7 +12,6 @@ anthropic>=2.0.0
 
 # Security
 trustme>=1.1.0
-cryptography>=44.0.0  # Fernet encryption of API keys in the model catalog
 
 # Database
 psycopg2-binary>=2.9.9

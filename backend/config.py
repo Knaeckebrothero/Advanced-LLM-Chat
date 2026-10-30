@@ -128,11 +128,12 @@ LOG_DIRECTORY = os.getenv("LOG_DIRECTORY", os.path.join(FILESYSTEM_PATH, "logs")
 LOG_FILE = os.getenv("LOG_FILE", "application.log")
 
 # Model catalog
-# Fernet key for API keys entered in the UI. If unset, a key is generated once and
-# stored next to the uploaded files (see backend/catalog/crypto.py).
-CATALOG_SECRET_KEY = os.getenv("CATALOG_SECRET_KEY")
-# Optional JSON file with providers, models and personas that app_init seeds into the catalog
-MODEL_CATALOG_FILE = os.getenv("MODEL_CATALOG_FILE")
+# JSON file with providers, models and personas that app_init seeds into the catalog
+# (relative to the repository root). Providers are taken from it on every seed; models
+# and personas are only created when missing, so edits in the app are kept.
+# Set it to an empty value to disable seeding. Provider API keys always come from the
+# environment variables the providers name (api_key_env).
+MODEL_CATALOG_FILE = os.getenv("MODEL_CATALOG_FILE", "catalog/models.json")
 # Users who may manage the catalog, until roles come from Keycloak (comma-separated emails)
 ADMIN_EMAILS = {
     email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()

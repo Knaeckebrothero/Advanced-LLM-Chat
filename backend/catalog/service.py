@@ -1,13 +1,14 @@
 """
 Catalog entries: validation, storage and their API views.
 
-Shared by the HTTP API (backend/api/catalog.py) and the catalog file import
+Shared by the HTTP API (backend/api/catalog.py) and the catalog file
 (catalog_file.py), so both apply the same rules. Errors are CatalogError
 subclasses with an HTTP status; the API turns them into HTTP errors and the
 import into messages in ImportResult.errors.
 
-API keys are write-only: they are encrypted on the way in, and the views only
-contain apiKeySource and apiKeyMasked.
+Providers are only written by seeding from MODEL_CATALOG_FILE (upsert_provider);
+the API lists them. Their keys come from environment variables, so the views
+only say whether the variable is set (apiKeySet).
 """
 import logging
 import re
@@ -16,9 +17,9 @@ from typing import Optional
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
-from backend.catalog import crypto
-from backend.catalog.resolver import api_key_source, is_guest, model_usable, persona_usable
+from backend.catalog.resolver import api_key_set, is_guest, model_usable, persona_usable
 from backend.database import db
+from backend.llm.tools import TOOL_GROUPS, tool_group_status
 from backend.models.catalog import (
     ModelCreate,
     ModelOut,
@@ -27,11 +28,11 @@ from backend.models.catalog import (
     PersonaOut,
     PersonaUpdate,
     PersonaVariable,
-    ProviderCreate,
+    ProviderBase,
     ProviderOut,
-    ProviderUpdate,
     PublicModel,
     PublicPersona,
+    ToolGroupStatus,
 )
 
 log = logging.getLogger(__name__)
@@ -107,12 +108,13 @@ PERSONA_FIELDS = {
     "description": "description",
     "systemPrompt": "system_prompt",
     "variables": "variables",
-    "defaultModelId": "default_model_id",
+    "tools": "tools",
     "availableToGuests": "available_to_guests",
     "enabled": "enabled",
     "sortOrder": "sort_order",
 }
-PERSONA_NULLABLE = {"description", "default_model_id", "variables"}
+# tools: NULL = every enabled tool, so null in an update selects all tools again
+PERSONA_NULLABLE = {"description", "variables", "tools"}
 
 # Columns that must not be empty strings
 REQUIRED_TEXT_COLUMNS = {"name", "display_name", "model_id", "system_prompt"}
@@ -120,7 +122,6 @@ REQUIRED_TEXT_COLUMNS = {"name", "display_name", "model_id", "system_prompt"}
 # api_key_env must name a key-like variable, so a catalog entry can't send
 # server secrets such as POSTGRES_PASSWORD to an arbitrary base URL
 ENV_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(_KEY|_TOKEN)$")
-FORBIDDEN_ENV_NAMES = {"CATALOG_SECRET_KEY"}
 
 
 # =========================================================================
@@ -169,7 +170,7 @@ def _check_env_name(name: Optional[str]) -> None:
     """Reject api_key_env values that don't look like an API key variable."""
     if name is None:
         return
-    if name.upper() in FORBIDDEN_ENV_NAMES or not ENV_NAME_PATTERN.match(name):
+    if not ENV_NAME_PATTERN.match(name):
         raise CatalogError(
             f"apiKeyEnv '{name}' is not allowed: it must name an API key variable "
             "ending in _KEY or _TOKEN (e.g. CORTECS_API_KEY)"
@@ -188,6 +189,12 @@ def _check_variables(variables: Optional[list]) -> None:
     duplicates = sorted({n for n in names if names.count(n) > 1})
     if duplicates:
         raise CatalogError(f"Duplicate persona variable(s): {', '.join(duplicates)}")
+
+
+def _normalize_tools(values: dict) -> None:
+    """A persona's tool groups without duplicates, in TOOL_GROUPS order (None stays None)."""
+    if values.get("tools") is not None:
+        values["tools"] = [group for group in TOOL_GROUPS if group in values["tools"]]
 
 
 def _write(operation, what: str):
@@ -224,27 +231,20 @@ def provider_out(row: dict) -> ProviderOut:
     """
     The admin view of a provider row (from get_llm_providers / get_llm_provider_by_id).
 
-    The key itself never leaves this function: only its source and a mask.
+    The key itself is never part of it, only whether its variable is set.
     """
-    masked = None
-    if row.get("api_key_encrypted"):
-        try:
-            masked = crypto.mask(crypto.decrypt(row["api_key_encrypted"]))
-        except crypto.CatalogSecretError as e:
-            log.error(f"Provider '{row['name']}': {e}")
     return ProviderOut(
         id=row["id"],
         name=row["name"],
         kind=row["kind"],
         baseUrl=row.get("base_url"),
         apiKeyEnv=row.get("api_key_env"),
+        apiKeySet=api_key_set(row),
         privacyTier=row["privacy_tier"],
         currency=row.get("currency") or "USD",
         defaultHeaders=row.get("default_headers"),
         notes=row.get("notes"),
         enabled=row.get("enabled") is not False,
-        apiKeySource=api_key_source(row),
-        apiKeyMasked=masked,
         modelCount=row.get("model_count") or 0,
         createdAt=row.get("created_at"),
         updatedAt=row.get("updated_at"),
@@ -312,6 +312,17 @@ def _variables(row: dict) -> list[PersonaVariable]:
     return result
 
 
+def _tools(row: dict) -> Optional[list[str]]:
+    """A persona's stored tool groups (None = all); unknown groups are skipped with a warning."""
+    tools = row.get("tools")
+    if tools is None:
+        return None
+    unknown = [group for group in tools if group not in TOOL_GROUPS]
+    if unknown:
+        log.warning(f"Persona {row['id']}: skipping unknown tool group(s) {unknown!r}")
+    return [group for group in tools if group in TOOL_GROUPS]
+
+
 def persona_out(row: dict) -> PersonaOut:
     """The admin view of a persona row."""
     return PersonaOut(
@@ -320,23 +331,22 @@ def persona_out(row: dict) -> PersonaOut:
         description=row.get("description"),
         systemPrompt=row["system_prompt"],
         variables=_variables(row),
-        defaultModelId=row.get("default_model_id"),
+        tools=_tools(row),
         availableToGuests=bool(row.get("available_to_guests")),
         enabled=row.get("enabled") is not False,
         sortOrder=row.get("sort_order") or 0,
     )
 
 
-def persona_public(row: dict, visible_model_ids: set) -> PublicPersona:
-    """The picker view of a persona row; a default model the user can't see is left out."""
-    default_model_id = row.get("default_model_id")
+def persona_public(row: dict) -> PublicPersona:
+    """The picker view of a persona row."""
     return PublicPersona(
         id=row["id"],
         name=row["name"],
         description=row.get("description"),
         systemPrompt=row["system_prompt"],
         variables=_variables(row),
-        defaultModelId=default_model_id if default_model_id in visible_model_ids else None,
+        tools=_tools(row),
     )
 
 
@@ -353,10 +363,7 @@ def public_models(user: Optional[dict]) -> list[PublicModel]:
 def public_personas(user: Optional[dict]) -> list[PublicPersona]:
     """Enabled personas the user may use."""
     rows = db.get_personas(enabled_only=True, guests_only=is_guest(user))
-    visible_model_ids = {
-        row["id"] for row in db.get_llm_models(enabled_only=True, guests_only=is_guest(user))
-    }
-    return [persona_public(row, visible_model_ids) for row in rows]
+    return [persona_public(row) for row in rows]
 
 
 # =========================================================================
@@ -368,59 +375,35 @@ def list_providers() -> list[ProviderOut]:
     return [provider_out(row) for row in db.get_llm_providers()]
 
 
-def _require_provider(provider_id: int) -> dict:
-    provider = db.get_llm_provider_by_id(provider_id)
-    if not provider:
-        raise CatalogNotFound(f"Provider {provider_id} not found")
-    return provider
-
-
-def create_provider(data: ProviderCreate) -> ProviderOut:
+def upsert_provider(data: ProviderBase) -> bool:
     """
-    Create a provider. A given apiKey is stored encrypted.
+    Create a provider, or replace the one with the same name (seeding only).
+
+    The catalog file is the only source of providers, so an existing provider
+    takes every value of the entry; fields the entry leaves out get their
+    defaults. Its models are kept.
+
+    Args:
+        data: The provider from the catalog file.
+
+    Returns:
+        True if the provider was created, False if it was updated.
 
     Raises:
         CatalogError: Invalid base URL or api_key_env.
-        CatalogConflict: The name is taken.
     """
+    # Not partial: every field is written, so a value removed from the file is cleared
     values = _to_columns(data, PROVIDER_FIELDS, PROVIDER_NULLABLE, partial=False)
     _check_base_url(values.get("base_url"))
     _check_env_name(values.get("api_key_env"))
-    if data.apiKey and data.apiKey.strip():
-        values["api_key_encrypted"] = crypto.encrypt(data.apiKey.strip())
 
-    row = _write(lambda: db.create_llm_provider(values), f"provider named '{values['name']}'")
-    return provider_out(db.get_llm_provider_by_id(row["id"]))
-
-
-def update_provider(provider_id: int, data: ProviderUpdate) -> ProviderOut:
-    """
-    Update the fields of a provider that were sent.
-
-    apiKey: left out or null keeps the stored key, "" removes it, anything
-    else replaces it.
-
-    Raises:
-        CatalogNotFound: The provider does not exist.
-        CatalogError: Invalid base URL or api_key_env.
-        CatalogConflict: The new name is taken.
-    """
-    _require_provider(provider_id)
-    values = _to_columns(data, PROVIDER_FIELDS, PROVIDER_NULLABLE, partial=True)
-    _check_base_url(values.get("base_url"))
-    _check_env_name(values.get("api_key_env"))
-    if "apiKey" in data.model_fields_set and data.apiKey is not None:
-        key = data.apiKey.strip()
-        values["api_key_encrypted"] = crypto.encrypt(key) if key else None
-
-    _write(lambda: db.update_llm_provider(provider_id, values), f"provider named '{values.get('name')}'")
-    return provider_out(db.get_llm_provider_by_id(provider_id))
-
-
-def delete_provider(provider_id: int) -> None:
-    """Delete a provider and its models."""
-    if not db.delete_llm_provider(provider_id):
-        raise CatalogNotFound(f"Provider {provider_id} not found")
+    existing = db.get_llm_provider_by_name(values["name"])
+    what = f"provider named '{values['name']}'"
+    if existing:
+        _write(lambda: db.update_llm_provider(existing["id"], values), what)
+        return False
+    _write(lambda: db.create_llm_provider(values), what)
+    return True
 
 
 # =========================================================================
@@ -489,22 +472,17 @@ def list_personas() -> list[PersonaOut]:
     return [persona_out(row) for row in db.get_personas()]
 
 
-def _check_default_model(model_id: Optional[int]) -> None:
-    if model_id is not None and not db.get_llm_model_by_id(model_id):
-        raise CatalogError(f"Default model {model_id} not found")
-
-
 def create_persona(data: PersonaCreate) -> PersonaOut:
     """
     Create a persona.
 
     Raises:
-        CatalogError: The default model does not exist or a variable is declared twice.
+        CatalogError: A variable is declared twice.
         CatalogConflict: The name is taken.
     """
     values = _to_columns(data, PERSONA_FIELDS, PERSONA_NULLABLE, partial=False)
     _check_variables(values.get("variables"))
-    _check_default_model(values.get("default_model_id"))
+    _normalize_tools(values)
 
     row = _write(lambda: db.create_persona(values), f"persona named '{values['name']}'")
     return persona_out(row)
@@ -514,9 +492,11 @@ def update_persona(persona_id: int, data: PersonaUpdate) -> PersonaOut:
     """
     Update the fields of a persona that were sent.
 
+    tools: left out keeps the selection, null selects every enabled tool, [] none.
+
     Raises:
         CatalogNotFound: The persona does not exist.
-        CatalogError: The default model does not exist or a variable is declared twice.
+        CatalogError: A variable is declared twice.
         CatalogConflict: The new name is taken.
     """
     if not db.get_persona_by_id(persona_id):
@@ -525,7 +505,7 @@ def update_persona(persona_id: int, data: PersonaUpdate) -> PersonaOut:
     if "variables" in values:
         values["variables"] = values["variables"] or []
         _check_variables(values["variables"])
-    _check_default_model(values.get("default_model_id"))
+    _normalize_tools(values)
 
     row = _write(lambda: db.update_persona(persona_id, values), f"persona named '{values.get('name')}'")
     return persona_out(row)
@@ -535,6 +515,15 @@ def delete_persona(persona_id: int) -> None:
     """Delete a persona."""
     if not db.delete_persona(persona_id):
         raise CatalogNotFound(f"Persona {persona_id} not found")
+
+
+# =========================================================================
+# Tools
+# =========================================================================
+
+def list_tool_groups() -> list[ToolGroupStatus]:
+    """Every tool group a persona can select, with whether the server enables it."""
+    return [ToolGroupStatus(**status) for status in tool_group_status()]
 
 
 # =========================================================================

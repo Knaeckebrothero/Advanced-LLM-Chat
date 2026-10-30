@@ -6,7 +6,7 @@ This script initializes the complete application environment including:
 - Environment configuration (.env file)
 - SSL certificates for development
 - PostgreSQL database (via db_init.py)
-- Model catalog seeded from MODEL_CATALOG_FILE, if set (also in --prod mode)
+- Model catalog seeded from MODEL_CATALOG_FILE (default catalog/models.json, also in --prod mode)
 - Neo4j knowledge graph (via neo4j_init.py)
 
 Usage:
@@ -299,9 +299,9 @@ def run_catalog_seed(logger: logging.Logger, catalog_file_path: str) -> bool:
     """
     Seed the model catalog (providers, models, personas) from MODEL_CATALOG_FILE.
 
-    Upserts by natural key and never deletes, so it is safe on every start; entries
-    in the file overwrite the same fields edited in the app. Relative paths are
-    resolved against the repository root.
+    Safe on every start: providers are created or replaced from the file, models
+    and personas are only created when missing (edits made in the app are kept),
+    and nothing is deleted. Relative paths are resolved against the repository root.
 
     Args:
         logger: Logger instance.
@@ -322,9 +322,11 @@ def run_catalog_seed(logger: logging.Logger, catalog_file_path: str) -> bool:
             logger.error(f"  ✗ {e}")
             return False
 
-        for section in ("providers", "models", "personas"):
+        providers = result.providers
+        logger.info(f"  ✓ Providers: {providers.created} created, {providers.updated} updated")
+        for section in ("models", "personas"):
             counts = getattr(result, section)
-            logger.info(f"  ✓ {section.capitalize()}: {counts.created} created, {counts.updated} updated")
+            logger.info(f"  ✓ {section.capitalize()}: {counts.created} created, {counts.kept} kept as they are")
         for error in result.errors:
             logger.warning(f"  ⚠ {error}")
         return True
@@ -471,8 +473,10 @@ def main() -> int:
         logger.info("    (Neo4j disabled - set NEO4J_ENABLED=true to initialize the knowledge graph)")
     logger.info("")
 
-    # The model catalog is seeded whenever a catalog file is configured (also with --prod)
-    catalog_file_path = os.getenv("MODEL_CATALOG_FILE")
+    # The model catalog is seeded whenever a catalog file is configured (also with --prod);
+    # MODEL_CATALOG_FILE defaults to catalog/models.json, an empty value disables it
+    from backend.config import MODEL_CATALOG_FILE
+    catalog_file_path = MODEL_CATALOG_FILE
     seed_catalog = bool(catalog_file_path) and not args.skip_db
 
     # Calculate total steps based on flags

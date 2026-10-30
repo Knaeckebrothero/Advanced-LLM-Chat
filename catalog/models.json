@@ -177,6 +177,7 @@
       "description": "Translates everything you write",
       "system_prompt": "You are a translator. Translate every message from the user into {{target_language}}. Keep the meaning, tone and formatting, and only output the translation.",
       "variables": [{"name": "target_language", "label": "Target language", "default": "English"}],
+      "tools": [],
       "available_to_guests": true,
       "sort_order": 20
     }

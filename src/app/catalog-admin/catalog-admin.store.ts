@@ -16,24 +16,25 @@ import {
   IPersonaCreate,
   IPersonaOut,
   IPersonaUpdate,
-  IProviderCreate,
   IProviderOut,
-  IProviderUpdate
+  IToolStatus,
+  TOOL_GROUPS
 } from '../data/models/catalog.model';
 import { describeHttpError } from './catalog-admin.utils';
 
 export type AdminLoadState = 'loading' | 'ready' | 'forbidden' | 'error';
 
 /**
- * State of the catalog management page: providers, models and personas as the admin API
- * returns them, plus the write operations. After every change the lists are reloaded, and
- * so is the public catalog the pickers use.
+ * State of the Agents page: providers (read-only, configured on the server), models and
+ * personas as the admin API returns them, the tool groups, plus the write operations.
+ * After every change the lists are reloaded, and so is the public catalog the pickers use.
  */
 @Injectable()
 export class CatalogAdminStore {
   readonly providers$ = new BehaviorSubject<IProviderOut[]>([]);
   readonly models$ = new BehaviorSubject<IModelOut[]>([]);
   readonly personas$ = new BehaviorSubject<IPersonaOut[]>([]);
+  readonly tools$ = new BehaviorSubject<IToolStatus[]>([]);
   readonly state$ = new BehaviorSubject<AdminLoadState>('loading');
   readonly loadError$ = new BehaviorSubject<string | null>(null);
 
@@ -51,18 +52,28 @@ export class CatalogAdminStore {
     return this.models$.value;
   }
 
+  get personas(): IPersonaOut[] {
+    return this.personas$.value;
+  }
+
+  get tools(): IToolStatus[] {
+    return this.tools$.value;
+  }
+
   async loadAll(): Promise<void> {
     this.state$.next('loading');
     this.loadError$.next(null);
     try {
-      const [providers, models, personas] = await Promise.all([
+      const [providers, models, personas, tools] = await Promise.all([
         this.api.getAdminProviders(),
         this.api.getAdminModels(),
-        this.api.getAdminPersonas()
+        this.api.getAdminPersonas(),
+        this.loadTools()
       ]);
       this.providers$.next(providers ?? []);
       this.models$.next(models ?? []);
       this.personas$.next(personas ?? []);
+      this.tools$.next(tools);
       this.state$.next('ready');
     } catch (error) {
       if (error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403)) {
@@ -72,6 +83,20 @@ export class CatalogAdminStore {
         this.state$.next('error');
       }
     }
+  }
+
+  /**
+   * The tool groups the server offers. A failed request doesn't block the page: all groups are
+   * then listed as available (the server only gives an agent the tools it has).
+   */
+  private async loadTools(): Promise<IToolStatus[]> {
+    try {
+      const tools = await this.api.getAdminTools();
+      if (Array.isArray(tools) && tools.length > 0) return tools;
+    } catch (error) {
+      console.warn('Tool groups could not be loaded:', error);
+    }
+    return TOOL_GROUPS.map(id => ({ id, available: true, reason: null }));
   }
 
   private async reload(lists: Array<'providers' | 'models' | 'personas'>): Promise<void> {
@@ -90,21 +115,7 @@ export class CatalogAdminStore {
     this.catalog.refresh();
   }
 
-  // Providers
-
-  async saveProvider(id: number | null, data: IProviderCreate | IProviderUpdate): Promise<IProviderOut> {
-    const saved = id === null
-      ? await this.api.createProvider(data as IProviderCreate)
-      : await this.api.updateProvider(id, data as IProviderUpdate);
-    // Model tiers, currencies and provider names depend on the provider
-    await this.reload(['providers', 'models']);
-    return saved;
-  }
-
-  async deleteProvider(id: number): Promise<void> {
-    await this.api.deleteProvider(id);
-    await this.reload(['providers', 'models', 'personas']);
-  }
+  // Providers (read-only)
 
   fetchProviderModels(id: number): Promise<IFetchModelsResponse> {
     return this.api.fetchProviderModels(id);
@@ -182,14 +193,26 @@ export class CatalogAdminStore {
     await this.reload(['personas']);
   }
 
+  /** A name for a copy that no other persona has yet ("Name (copy)", "Name (copy 2)", ...). */
+  copyName(name: string): string {
+    const taken = new Set(this.personas.map(p => p.name.trim().toLowerCase()));
+    for (let n = 1; ; n++) {
+      const candidate = n === 1
+        ? this.translate.instant('catalog.admin.personas.copyName', { name })
+        : this.translate.instant('catalog.admin.personas.copyNameN', { name, n });
+      if (!taken.has(candidate.trim().toLowerCase())) return candidate;
+    }
+  }
+
   // Import and export
 
-  exportCatalog(includeKeys: boolean): Promise<ICatalogFile> {
-    return this.api.exportCatalog(includeKeys);
+  exportCatalog(): Promise<ICatalogFile> {
+    return this.api.exportCatalog();
   }
 
   async importCatalog(file: ICatalogFile): Promise<IImportResult> {
     const result = await this.api.importCatalog(file);
+    // Providers aren't imported, but their model counts change
     await this.reload(['providers', 'models', 'personas']);
     return result;
   }

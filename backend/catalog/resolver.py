@@ -1,5 +1,5 @@
 """
-Model resolution: which model answers, and with which persona prompt.
+Model resolution: which model answers, with which persona prompt and tools.
 
 The runtime asks resolve_model() for the ModelConfig of a conversation. The
 order is: the explicitly requested model, the conversation's model, the user's
@@ -10,6 +10,9 @@ Guests only get models and personas marked available_to_guests. Disabled
 models, and all models of disabled providers, can't be resolved, except through
 get_model_config(), which skips every check (smoke test, admin test button).
 
+A provider's API key always comes from the environment variable named in its
+api_key_env; keys are never stored in the database.
+
 The user dicts are those of backend.security.auth.get_current_user():
 user_id, email, is_guest. Conversations are rows from db.get_conversation_by_id().
 """
@@ -19,7 +22,6 @@ import re
 from datetime import date
 from typing import Optional
 
-from backend.catalog import crypto
 from backend.database import db
 from backend.llm.types import ModelConfig, auxiliary_model_from_env, model_from_env
 
@@ -106,46 +108,32 @@ def persona_usable(persona: Optional[dict], user: Optional[dict]) -> bool:
 # Building ModelConfig
 # =========================================================================
 
+def _env_key(provider: dict) -> Optional[str]:
+    """The value of the provider's api_key_env variable, or None if unnamed, unset or blank."""
+    env_name = provider.get("api_key_env")
+    value = os.getenv(env_name, "").strip() if env_name else ""
+    return value or None
+
+
 def provider_api_key(provider: dict) -> Optional[str]:
     """
-    The API key of a provider: the stored key (decrypted) wins over api_key_env.
+    The API key of a provider, from the environment variable named in api_key_env.
 
     Args:
         provider: A row from llm_providers.
 
     Returns:
-        The key, or None if neither is set (or the stored key can't be decrypted
-        and no environment variable is available).
+        The key, or None without api_key_env or if the variable is not set.
     """
-    if provider.get("api_key_encrypted"):
-        try:
-            return crypto.decrypt(provider["api_key_encrypted"])
-        except crypto.CatalogSecretError as e:
-            log.error(f"Provider '{provider.get('name')}': {e}")
-
-    env_name = provider.get("api_key_env")
-    if env_name:
-        value = os.getenv(env_name)
-        if value:
-            return value
-        log.warning(f"Provider '{provider.get('name')}': environment variable {env_name} is not set")
-    return None
+    value = _env_key(provider)
+    if value is None and provider.get("api_key_env"):
+        log.warning(f"Provider '{provider.get('name')}': environment variable {provider['api_key_env']} is not set")
+    return value
 
 
-def api_key_source(provider: dict) -> str:
-    """
-    Where a provider's key comes from at runtime.
-
-    Returns:
-        'stored' for a key entered in the UI, 'env' if api_key_env names a
-        variable that is set, else 'none'.
-    """
-    if provider.get("api_key_encrypted"):
-        return "stored"
-    env_name = provider.get("api_key_env")
-    if env_name and os.getenv(env_name):
-        return "env"
-    return "none"
+def api_key_set(provider: dict) -> bool:
+    """Whether the provider's api_key_env variable is set and not empty (for the admin view)."""
+    return _env_key(provider) is not None
 
 
 def _float(value) -> Optional[float]:
@@ -167,7 +155,7 @@ def build_model_config(model: dict, provider: dict) -> ModelConfig:
         provider: The model's llm_providers row.
 
     Returns:
-        The ModelConfig, with the API key decrypted and the effective privacy tier.
+        The ModelConfig, with the API key from the environment and the effective privacy tier.
     """
     return ModelConfig(
         id=model["id"],
@@ -474,3 +462,28 @@ def persona_prompt_for_conversation(
         user_name=user_display_name(user),
         language=language or user_language(user),
     )
+
+
+def persona_tool_groups(user: Optional[dict], conversation: Optional[dict]) -> Optional[list[str]]:
+    """
+    The tool groups the conversation's persona selected, for the runtime.
+
+    Personas the user may not use are skipped, as in persona_prompt_for_conversation().
+
+    Args:
+        user: The current user.
+        conversation: The conversation row (persona_id).
+
+    Returns:
+        The persona's tool groups (keys of backend.llm.tools.TOOL_GROUPS; [] for
+        no tools), or None for every enabled tool: without a usable persona, or
+        if the persona has no selection.
+    """
+    persona_id = (conversation or {}).get("persona_id")
+    if persona_id is None:
+        return None
+    persona = db.get_persona_by_id(persona_id)
+    if not persona_usable(persona, user):
+        return None
+    tools = persona.get("tools")
+    return None if tools is None else list(tools)

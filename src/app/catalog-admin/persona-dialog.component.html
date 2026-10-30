@@ -1,23 +1,16 @@
 <h2 mat-dialog-title>
-  {{ (isNew ? 'catalog.admin.personas.addTitle' : 'catalog.admin.personas.editTitle') | translate }}
+  {{ (isCopy ? 'catalog.admin.personas.copyTitle' : isNew ? 'catalog.admin.personas.addTitle' : 'catalog.admin.personas.editTitle') | translate }}
 </h2>
 
 <form [formGroup]="form" (ngSubmit)="save()">
   <mat-dialog-content class="catalog-dialog-content">
-    <div class="form-row">
-      <mat-form-field appearance="outline">
-        <mat-label>{{ 'catalog.admin.fields.name' | translate }}</mat-label>
-        <input matInput formControlName="name" required>
-        @if (form.controls['name'].hasError('required')) {
-          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
-        }
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>{{ 'catalog.admin.fields.sortOrder' | translate }}</mat-label>
-        <input matInput type="number" formControlName="sortOrder" step="10">
-      </mat-form-field>
-    </div>
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'catalog.admin.fields.name' | translate }}</mat-label>
+      <input matInput formControlName="name" required>
+      @if (form.controls['name'].hasError('required')) {
+        <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+      }
+    </mat-form-field>
 
     <mat-form-field appearance="outline" class="full-width">
       <mat-label>{{ 'catalog.admin.fields.description' | translate }}</mat-label>
@@ -84,23 +77,48 @@
       }
     </div>
 
-    <!-- Model and visibility -->
-    <h3 class="form-section">{{ 'catalog.admin.personas.modelSection' | translate }}</h3>
-    <mat-form-field appearance="outline" class="full-width">
-      <mat-label>{{ 'catalog.admin.fields.defaultModel' | translate }}</mat-label>
-      <mat-select formControlName="defaultModelId">
-        <mat-option [value]="null">{{ 'catalog.admin.personas.noDefaultModel' | translate }}</mat-option>
-        @for (model of models; track model.id) {
-          <mat-option [value]="model.id">{{ model.displayName }} · {{ model.providerName }}</mat-option>
-        }
-      </mat-select>
-      <mat-hint>{{ 'catalog.admin.personas.defaultModelHint' | translate }}</mat-hint>
-    </mat-form-field>
+    <!-- Tools -->
+    <h3 class="form-section" id="persona-tools-label">{{ 'catalog.admin.personas.toolsSection' | translate }}</h3>
+    <mat-radio-group class="tool-mode" formControlName="toolMode" aria-labelledby="persona-tools-label"
+                     (change)="onToolModeChange($event.value)">
+      <mat-radio-button value="all">{{ 'catalog.admin.personas.toolModeAll' | translate }}</mat-radio-button>
+      <mat-radio-button value="pick">{{ 'catalog.admin.personas.toolModePick' | translate }}</mat-radio-button>
+    </mat-radio-group>
+    <div class="tool-options" role="group" [attr.aria-label]="'catalog.admin.personas.toolsSection' | translate">
+      @for (tool of tools; track tool.id) {
+        <div class="tool-option" [class.is-unavailable]="!tool.available">
+          <mat-checkbox color="primary"
+                        [checked]="isToolChecked(tool)"
+                        [disabled]="isToolDisabled(tool)"
+                        (change)="toggleTool(tool.id, $event.checked)">
+            <span class="tool-option-label">
+              <mat-icon aria-hidden="true">{{ toolIcon(tool.id) }}</mat-icon>
+              {{ ('catalog.tools.' + tool.id) | translate }}
+            </span>
+          </mat-checkbox>
+          @if (!tool.available) {
+            <p class="tool-reason">
+              {{ 'catalog.admin.personas.toolUnavailable' | translate: { reason: tool.reason || ('catalog.admin.personas.toolUnavailableUnknown' | translate) } }}
+            </p>
+          }
+        </div>
+      }
+    </div>
+    @if (toolMode === 'pick' && pickedTools.size === 0) {
+      <p class="empty-hint">{{ 'catalog.admin.personas.noToolsHint' | translate }}</p>
+    }
 
+    <!-- Visibility -->
+    <h3 class="form-section">{{ 'catalog.admin.personas.visibilitySection' | translate }}</h3>
     <div class="toggle-grid">
       <mat-slide-toggle formControlName="enabled">{{ 'catalog.admin.fields.enabled' | translate }}</mat-slide-toggle>
       <mat-slide-toggle formControlName="availableToGuests">{{ 'catalog.admin.fields.availableToGuests' | translate }}</mat-slide-toggle>
     </div>
+    <mat-form-field appearance="outline" class="sort-order-field">
+      <mat-label>{{ 'catalog.admin.fields.sortOrder' | translate }}</mat-label>
+      <input matInput type="number" formControlName="sortOrder" step="10">
+      <mat-hint>{{ 'catalog.admin.models.sortOrderHint' | translate }}</mat-hint>
+    </mat-form-field>
 
     @if (error) {
       <p class="dialog-error" role="alert"><mat-icon aria-hidden="true">error_outline</mat-icon>{{ error }}</p>

@@ -1,7 +1,7 @@
 // src/app/services/chat-state.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, of, Subscription } from 'rxjs';
-import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout, take } from 'rxjs/operators';
+import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
 import { SyncEngineService } from '../repositories/sync-engine.service';
@@ -34,11 +34,7 @@ import { DBService } from '../data/db.service';
 import { AppSettings } from '../models/settings.model';
 
 /** Model and persona for a new conversation, kept until it is created with the first message. */
-interface DraftSelection extends IConversationSelection {
-  modelPicked: boolean;  // The user picked the model (a persona's default model then doesn't override it)
-}
-
-const EMPTY_DRAFT: DraftSelection = { modelId: null, personaId: null, personaValues: null, modelPicked: false };
+const EMPTY_DRAFT: IConversationSelection = { modelId: null, personaId: null, personaValues: null };
 
 export interface ChatState {
   activeConversation: Conversation | null;
@@ -70,8 +66,7 @@ export class ChatStateService implements OnDestroy {
   private streamingSubscription: Subscription | null = null;
 
   // Model catalog selection
-  private draftSelection$ = new BehaviorSubject<DraftSelection>(EMPTY_DRAFT);
-  private modelPickedIn = new Set<string>();  // Conversations whose model the user picked in this session
+  private draftSelection$ = new BehaviorSubject<IConversationSelection>(EMPTY_DRAFT);
 
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
@@ -111,8 +106,7 @@ export class ChatStateService implements OnDestroy {
   ]).pipe(
     map(([conversation, draft]) => {
       if (!conversation || conversation.id === '0') {
-        const { modelPicked, ...selection } = draft;
-        return selection;
+        return draft;
       }
       return conversation.selection;
     }),
@@ -1010,10 +1004,6 @@ export class ChatStateService implements OnDestroy {
     if (conversation.modelId === undefined && conversation.personaId === undefined) {
       this.applySelection(conversation, selection);
     }
-    if (this.draftSelection$.getValue().modelPicked) {
-      this.modelPickedIn.add(conversation.id);
-    }
-
     await this.conversationRepository.save(conversation);
     this.isNewConversation$.next(false);
     this.activeConversationId$.next(conversation.id);
@@ -1028,25 +1018,21 @@ export class ChatStateService implements OnDestroy {
   async selectModel(modelId: number | null): Promise<void> {
     const conversationId = this.activeConversationId$.getValue();
     if (!conversationId || conversationId === '0') {
-      this.draftSelection$.next({ ...this.draftSelection$.getValue(), modelId, modelPicked: true });
+      this.draftSelection$.next({ ...this.draftSelection$.getValue(), modelId });
       return;
     }
-    this.modelPickedIn.add(conversationId);
     await this.conversationRepository.updateSelection(conversationId, { modelId });
   }
 
   /**
    * Pick the persona for the active conversation (null = no persona), with the values for its
-   * variables. A persona's default model is used unless the user picked a model for this conversation.
+   * variables. The model stays as it is.
    */
   async selectPersona(persona: IPublicPersona | null, values: PersonaValues | null = null): Promise<void> {
     const changes: Partial<IConversationSelection> = {
       personaId: persona ? persona.id : null,
       personaValues: persona && values && Object.keys(values).length > 0 ? values : null
     };
-    if (persona?.defaultModelId && this.catalogService.getModel(persona.defaultModelId) && !this.userPickedModel()) {
-      changes.modelId = persona.defaultModelId;
-    }
 
     const conversationId = this.activeConversationId$.getValue();
     if (!conversationId || conversationId === '0') {
@@ -1054,22 +1040,6 @@ export class ChatStateService implements OnDestroy {
       return;
     }
     await this.conversationRepository.updateSelection(conversationId, changes);
-  }
-
-  /** Whether the user chose the model of the active conversation themselves. */
-  private userPickedModel(): boolean {
-    const conversationId = this.activeConversationId$.getValue();
-    if (!conversationId || conversationId === '0') {
-      return this.draftSelection$.getValue().modelPicked;
-    }
-    if (this.modelPickedIn.has(conversationId)) {
-      return true;
-    }
-    // A conversation that uses the default model counts as "not picked"
-    let modelId: number | null | undefined;
-    this.conversationRepository.getById(conversationId).pipe(take(1)).subscribe(c => modelId = c?.modelId);
-    const defaultModelId = this.settingsState.getCurrentSettings()?.defaultModelId ?? null;
-    return modelId !== null && modelId !== undefined && modelId !== defaultModelId;
   }
 
   /**
@@ -1155,7 +1125,6 @@ export class ChatStateService implements OnDestroy {
     console.log('Resetting chat state...');
     // Reset to new conversation state
     this.draftSelection$.next(EMPTY_DRAFT);
-    this.modelPickedIn.clear();
     this.activeConversationId$.next('0');
     this.isNewConversation$.next(true);
     this.isLoading$.next(false);

@@ -128,7 +128,7 @@ file_description_cache = Table(
     Column('created_at', DateTime, server_default=func.now()),
 )
 
-# Model catalog: one row per API account
+# Model catalog: one row per API account, seeded from MODEL_CATALOG_FILE
 llm_providers = Table(
     'llm_providers',
     metadata,
@@ -136,8 +136,7 @@ llm_providers = Table(
     Column('name', Text, unique=True, nullable=False),
     Column('kind', Text, nullable=False),  # 'openai_compatible' | 'anthropic'
     Column('base_url', Text),  # NULL = the SDK default
-    Column('api_key_encrypted', Text),  # Key entered in the UI, Fernet-encrypted
-    Column('api_key_env', Text),  # Or the name of an environment variable holding the key
+    Column('api_key_env', Text),  # Name of the environment variable holding the key
     Column('privacy_tier', Text, nullable=False),  # 'local' | 'eu' | 'trusted' | 'untrusted'
     Column('currency', Text, nullable=False, server_default='USD'),  # Currency of the model prices
     Column('default_headers', JSONB),
@@ -179,7 +178,7 @@ llm_models = Table(
     UniqueConstraint('provider_id', 'display_name'),
 )
 
-# Model catalog: a named system prompt with fill-in variables
+# Model catalog: a named system prompt with fill-in variables and a tool selection ("agents" in the UI)
 personas = Table(
     'personas',
     metadata,
@@ -188,7 +187,7 @@ personas = Table(
     Column('description', Text),
     Column('system_prompt', Text, nullable=False),  # May contain {{variable}} placeholders
     Column('variables', JSONB),  # [{"name", "label", "default"}]
-    Column('default_model_id', Integer, ForeignKey('llm_models.id', ondelete='SET NULL')),
+    Column('tools', JSONB),  # Tool groups, e.g. ["files", "web_search"], NULL = every enabled tool
     Column('available_to_guests', Boolean, server_default='false'),
     Column('enabled', Boolean, server_default='true'),
     Column('sort_order', Integer, server_default='0'),

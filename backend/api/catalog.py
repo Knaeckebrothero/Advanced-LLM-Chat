@@ -5,19 +5,19 @@ GET /api/models and GET /api/personas serve the model and persona pickers of
 every user (guests only see what is available to guests). Everything under
 /api/admin manages the catalog and is limited to admins (ADMIN_EMAILS).
 
-The contract is in docs/model_catalog_api.md. API keys are write-only: no
-response contains a key, only its source and a masked version (except the
-export with includeKeys=true).
+Providers are read-only here: they come from the server's catalog file
+(MODEL_CATALOG_FILE), and their API keys from environment variables, which no
+response contains. Models and personas (the "agents" of the UI) are edited here.
+
+The contract is in docs/model_catalog_api.md.
 """
 import logging
 import time
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 
 from backend.catalog import catalog_file, service
 from backend.catalog.fetch import fetch_provider_models
@@ -34,11 +34,10 @@ from backend.models.catalog import (
     PersonaCreate,
     PersonaOut,
     PersonaUpdate,
-    ProviderCreate,
     ProviderOut,
-    ProviderUpdate,
     PublicModel,
     PublicPersona,
+    ToolGroupStatus,
 )
 from backend.security.auth import get_current_user, require_admin
 from backend.security.logging import crud_logger
@@ -46,29 +45,7 @@ from backend.security.logging import crud_logger
 logger = logging.getLogger(__name__)
 
 
-class NoInputEchoRoute(APIRoute):
-    """
-    Route whose validation errors (422) leave out the submitted input.
-
-    FastAPI's default 422 response repeats the request body, which would send
-    an API key back in the response, e.g. for a provider without a name.
-    """
-
-    def get_route_handler(self):
-        handler = super().get_route_handler()
-
-        async def route_handler(request: Request):
-            try:
-                return await handler(request)
-            except RequestValidationError as e:
-                errors = [{key: value for key, value in error.items() if key != "input"} for error in e.errors()]
-                return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                    content={"detail": jsonable_encoder(errors)})
-
-        return route_handler
-
-
-router = APIRouter(prefix="/api", tags=["Catalog"], route_class=NoInputEchoRoute)
+router = APIRouter(prefix="/api", tags=["Catalog"])
 
 ADMIN_ERRORS = {
     status.HTTP_403_FORBIDDEN: {"description": "Admin access required"},
@@ -115,8 +92,7 @@ async def list_personas(current_user: dict = Depends(get_current_user)):
     """
     Lists the personas for the persona picker, sorted by sort order, then name.
 
-    Guests only see personas available to guests. A persona's default model is
-    left out (null) when the user can't use it.
+    Guests only see personas available to guests.
 
     :param current_user: The authenticated user, injected via get_current_user.
     :type current_user: dict
@@ -141,84 +117,13 @@ async def admin_list_providers(admin: dict = Depends(require_admin)):
     """
     Lists all providers (API accounts) with their model counts, by name.
 
-    :return: The providers; keys only as source and mask.
+    Providers are defined in the server's catalog file; there are no endpoints
+    to change them.
+
+    :return: The providers; apiKeySet says whether the key variable is set.
     :rtype: List[ProviderOut]
     """
     return service.list_providers()
-
-
-@router.post("/admin/providers",
-             response_model=ProviderOut,
-             status_code=status.HTTP_201_CREATED,
-             responses=ADMIN_ERRORS,
-             summary="Create Provider",
-             operation_id="adminCreateProvider")
-async def admin_create_provider(req: ProviderCreate, admin: dict = Depends(require_admin)):
-    """
-    Creates a provider. An apiKey in the body is stored encrypted.
-
-    :param req: The provider.
-    :type req: ProviderCreate
-    :return: The created provider.
-    :rtype: ProviderOut
-    :raises HTTPException: 400 for invalid fields, 409 if the name is taken.
-    """
-    try:
-        provider = service.create_provider(req)
-    except CatalogError as e:
-        raise _http_error(e)
-    crud_logger.info(f"Provider created - id: {provider.id}, name: {provider.name}, "
-                     f"key: {provider.apiKeySource}, by user {admin['user_id']}")
-    return provider
-
-
-@router.put("/admin/providers/{provider_id}",
-            response_model=ProviderOut,
-            responses=ADMIN_ERRORS,
-            summary="Update Provider",
-            operation_id="adminUpdateProvider")
-async def admin_update_provider(provider_id: int, req: ProviderUpdate, admin: dict = Depends(require_admin)):
-    """
-    Updates the fields of a provider that are sent.
-
-    apiKey: left out or null keeps the stored key, "" removes it.
-
-    :param provider_id: The provider's ID.
-    :type provider_id: int
-    :param req: The fields to change.
-    :type req: ProviderUpdate
-    :return: The updated provider.
-    :rtype: ProviderOut
-    :raises HTTPException: 404 if not found, 400 for invalid fields, 409 if the name is taken.
-    """
-    try:
-        provider = service.update_provider(provider_id, req)
-    except CatalogError as e:
-        raise _http_error(e)
-    crud_logger.info(f"Provider updated - id: {provider_id}, fields: {sorted(req.model_fields_set)}, "
-                     f"by user {admin['user_id']}")
-    return provider
-
-
-@router.delete("/admin/providers/{provider_id}",
-               status_code=status.HTTP_204_NO_CONTENT,
-               responses=ADMIN_ERRORS,
-               summary="Delete Provider",
-               operation_id="adminDeleteProvider")
-async def admin_delete_provider(provider_id: int, admin: dict = Depends(require_admin)):
-    """
-    Deletes a provider and all of its models.
-
-    :param provider_id: The provider's ID.
-    :type provider_id: int
-    :raises HTTPException: 404 if not found.
-    """
-    try:
-        service.delete_provider(provider_id)
-    except CatalogError as e:
-        raise _http_error(e)
-    crud_logger.info(f"Provider deleted (with its models) - id: {provider_id}, by user {admin['user_id']}")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/admin/providers/{provider_id}/fetch-models",
@@ -413,8 +318,7 @@ async def admin_create_persona(req: PersonaCreate, admin: dict = Depends(require
     :type req: PersonaCreate
     :return: The created persona.
     :rtype: PersonaOut
-    :raises HTTPException: 400 if the default model does not exist or a variable is
-        declared twice, 409 if the name is taken.
+    :raises HTTPException: 400 if a variable is declared twice, 409 if the name is taken.
     """
     try:
         persona = service.create_persona(req)
@@ -431,7 +335,8 @@ async def admin_create_persona(req: PersonaCreate, admin: dict = Depends(require
             operation_id="adminUpdatePersona")
 async def admin_update_persona(persona_id: int, req: PersonaUpdate, admin: dict = Depends(require_admin)):
     """
-    Updates the fields of a persona that are sent.
+    Updates the fields of a persona that are sent. tools: null selects every
+    enabled tool, [] none.
 
     :param persona_id: The persona's ID.
     :type persona_id: int
@@ -472,6 +377,28 @@ async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_ad
 
 
 # =========================================================================
+# Admin: tools
+# =========================================================================
+
+@router.get("/admin/tools",
+            response_model=List[ToolGroupStatus],
+            responses=ADMIN_ERRORS,
+            summary="List Tool Groups",
+            description="The tool groups a persona can select, with whether the server enables them",
+            operation_id="adminListToolGroups")
+async def admin_list_tool_groups(admin: dict = Depends(require_admin)):
+    """
+    Lists every tool group (files, web_search, knowledge_graph) and whether the
+    server's configuration enables it. A persona that selects an unavailable
+    group simply doesn't get its tools.
+
+    :return: The tool groups; reason says why a group is unavailable.
+    :rtype: List[ToolGroupStatus]
+    """
+    return service.list_tool_groups()
+
+
+# =========================================================================
 # Admin: catalog file
 # =========================================================================
 
@@ -480,23 +407,17 @@ async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_ad
             summary="Export Catalog",
             description="The whole catalog in the catalog file format (docs/model_catalog_api.md)",
             operation_id="adminExportCatalog")
-async def admin_export_catalog(
-        includeKeys: bool = Query(False, description="Include the decrypted API keys stored in the catalog"),
-        admin: dict = Depends(require_admin)
-):
+async def admin_export_catalog(admin: dict = Depends(require_admin)):
     """
-    Exports providers, models and personas as a catalog file.
+    Exports providers, models and personas as a catalog file, usable as
+    MODEL_CATALOG_FILE. It contains no API keys, only their variable names.
 
-    :param includeKeys: Add the stored API keys (decrypted) to the providers.
-    :type includeKeys: bool
     :return: The catalog file (JSON, offered as a download).
     :rtype: JSONResponse
     """
-    content = catalog_file.export_catalog(include_keys=includeKeys)
-    crud_logger.info(f"Catalog exported by user {admin['user_id']} (keys {'included' if includeKeys else 'left out'})")
+    content = catalog_file.export_catalog()
+    crud_logger.info(f"Catalog exported by user {admin['user_id']}")
     headers = {"Content-Disposition": 'attachment; filename="model-catalog.json"'}
-    if includeKeys:
-        headers["Cache-Control"] = "no-store"
     return JSONResponse(content=jsonable_encoder(content), headers=headers)
 
 
@@ -504,16 +425,18 @@ async def admin_export_catalog(
              response_model=ImportResult,
              responses=ADMIN_ERRORS,
              summary="Import Catalog",
-             description="Upserts a catalog file by natural key; never deletes",
+             description="Upserts the models and personas of a catalog file by natural key; "
+                         "ignores providers and never deletes",
              operation_id="adminImportCatalog")
 async def admin_import_catalog(
         data: Dict[str, Any] = Body(..., description="A catalog file (docs/model_catalog_api.md)"),
         admin: dict = Depends(require_admin)
 ):
     """
-    Imports a catalog file: providers by name, models by provider and display
-    name, personas by name. Bad entries are reported in errors; the others are
-    still imported.
+    Imports a catalog file: models by provider and display name, personas by
+    name. Provider entries are ignored (providers come from the server's
+    catalog file). Bad entries are reported in errors; the others are still
+    imported.
 
     :param data: The catalog file.
     :type data: dict
@@ -526,8 +449,7 @@ async def admin_import_catalog(
     except CatalogError as e:
         raise _http_error(e)
     crud_logger.info(
-        f"Catalog imported by user {admin['user_id']} - providers {result.providers.created}+"
-        f"{result.providers.updated}, models {result.models.created}+{result.models.updated}, "
+        f"Catalog imported by user {admin['user_id']} - models {result.models.created}+{result.models.updated}, "
         f"personas {result.personas.created}+{result.personas.updated} (created+updated), "
         f"{len(result.errors)} error(s)"
     )

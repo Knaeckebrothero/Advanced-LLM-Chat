@@ -1,12 +1,9 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialogRef } from '@angular/material/dialog';
 import { SettingsStateService } from '../services/settings-state.service';
 import { CatalogService } from '../services/catalog.service';
-import { AuthService } from '../auth/auth.service';
-import { UIStateService } from '../services/ui-state.service';
 import { AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_DIM_MAX, BackgroundChoice } from '../models/settings.model';
 import {
   BackgroundService,
@@ -31,7 +28,6 @@ import {TranslateModule, TranslatePipe, TranslateService} from '@ngx-translate/c
 export class SettingsComponent {
   settings$: Observable<AppSettings | null>;
   models$: Observable<IPublicModel[]>;
-  isAdmin$: Observable<boolean>;
 
   themeOptions = [
     { value: Theme.Light, icon: 'light_mode', label: 'Light' },
@@ -63,15 +59,11 @@ export class SettingsComponent {
     private dialogRef: MatDialogRef<SettingsComponent>,
     private translate: TranslateService,
     private catalogService: CatalogService,
-    private authService: AuthService,
-    private router: Router,
-    private uiState: UIStateService,
     private backgroundService: BackgroundService
   ) {
     this.customImageUrl$ = this.backgroundService.customImageUrl$;
     this.settings$ = this.settingsState.settings$;
     this.models$ = this.catalogService.models$;
-    this.isAdmin$ = this.authService.isAdmin$;
   }
 
   updateTheme(theme: Theme): void {
@@ -169,12 +161,6 @@ export class SettingsComponent {
     this.dimPreview = null;
     this.blurPreview = null;
     this.backgroundService.clearPreview();
-  }
-
-  openCatalogAdmin(): void {
-    this.dialogRef.close();
-    this.uiState.closeSidebarOnMobile();
-    this.router.navigate(['/admin/catalog']);
   }
 
   close(): void {

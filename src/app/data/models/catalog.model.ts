@@ -9,12 +9,14 @@ export type ProviderKind = 'openai_compatible' | 'anthropic';
 export type PrivacyTier = 'local' | 'eu' | 'trusted' | 'untrusted';
 export type ReasoningMode = 'none' | 'optional' | 'always';
 export type Currency = 'USD' | 'EUR';
-export type ApiKeySource = 'stored' | 'env' | 'none';
+/** Tool groups an agent can use (backend/llm/tools.py). */
+export type ToolGroup = 'files' | 'web_search' | 'knowledge_graph';
 
 export const PROVIDER_KINDS: ProviderKind[] = ['openai_compatible', 'anthropic'];
 export const PRIVACY_TIERS: PrivacyTier[] = ['local', 'eu', 'trusted', 'untrusted'];
 export const REASONING_MODES: ReasoningMode[] = ['none', 'optional', 'always'];
 export const CURRENCIES: Currency[] = ['USD', 'EUR'];
+export const TOOL_GROUPS: ToolGroup[] = ['files', 'web_search', 'knowledge_graph'];
 
 /** Persona placeholders the backend fills in itself; they need no input. */
 export const BUILT_IN_PERSONA_VARIABLES = ['date', 'user_name', 'language'];
@@ -37,29 +39,22 @@ export interface IMessageUsage {
 // Providers
 // ============================================================================
 
-export interface IProviderBase {
+/**
+ * A provider (API account). Providers and their API keys are configured on the server
+ * (the catalog file and environment variables); the API only reads them.
+ */
+export interface IProviderOut {
+  id: number;
   name: string;
   kind: ProviderKind;
   baseUrl?: string | null;
-  apiKeyEnv?: string | null;
+  apiKeyEnv?: string | null;  // Environment variable that holds the key
+  apiKeySet: boolean;  // Whether that variable is set on the server
   privacyTier: PrivacyTier;
   currency: Currency;
   defaultHeaders?: Record<string, string> | null;
   notes?: string | null;
   enabled: boolean;
-}
-
-export interface IProviderCreate extends IProviderBase {
-  apiKey?: string | null;
-}
-
-/** Partial update; fields left out stay unchanged. apiKey: left out = keep, "" = remove. */
-export type IProviderUpdate = Partial<IProviderBase> & { apiKey?: string | null };
-
-export interface IProviderOut extends IProviderBase {
-  id: number;
-  apiKeySource: ApiKeySource;
-  apiKeyMasked?: string | null;
   modelCount: number;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -155,7 +150,7 @@ export interface IPersonaBase {
   description?: string | null;
   systemPrompt: string;
   variables: IPersonaVariable[];
-  defaultModelId?: number | null;
+  tools?: ToolGroup[] | null;  // null = all tools the server has, [] = no tools
   availableToGuests: boolean;
   enabled: boolean;
   sortOrder: number;
@@ -175,7 +170,14 @@ export interface IPublicPersona {
   description?: string | null;
   systemPrompt: string;
   variables: IPersonaVariable[];
-  defaultModelId?: number | null;
+  tools?: ToolGroup[] | null;
+}
+
+/** A tool group and whether the server can offer it (GET /api/admin/tools). */
+export interface IToolStatus {
+  id: ToolGroup;
+  available: boolean;
+  reason?: string | null;  // Why it isn't available (e.g. a missing environment variable)
 }
 
 // ============================================================================
@@ -187,8 +189,8 @@ export interface IImportCounts {
   updated: number;
 }
 
+/** Provider entries in an imported file are skipped (reported in `errors`). */
 export interface IImportResult {
-  providers: IImportCounts;
   models: IImportCounts;
   personas: IImportCounts;
   errors: string[];

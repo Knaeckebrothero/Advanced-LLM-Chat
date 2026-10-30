@@ -23,11 +23,12 @@ from backend.models.message import (
 from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
-from backend.llm import ModelConfig, Usage, build_system_prompt, default_tools, run_agent
+from backend.llm import ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups
 from backend.catalog.resolver import (
     ModelNotAllowed,
     ModelNotAvailable,
     persona_prompt_for_conversation,
+    persona_tool_groups,
     resolve_auxiliary_model,
     resolve_model,
 )
@@ -80,6 +81,20 @@ def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
     """The system prompt for a conversation: its persona (if any) plus the tool instructions."""
     conversation = db.get_conversation_by_id(conversation_id)
     return build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
+
+
+def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig) -> Optional[ToolRegistry]:
+    """
+    The tools for an answer: the tools the server enables, limited to the tool
+    groups of the conversation's persona (if it has a selection).
+
+    :return: The tools, or None for none (the model doesn't support tools, or
+        the persona selected no enabled tool group).
+    """
+    if not config.supports_tools:
+        return None
+    tools = tools_for_groups(persona_tool_groups(current_user, conversation))
+    return tools if len(tools) else None
 
 
 def _resolve_model_or_503(current_user: dict, conversation_id: str) -> ModelConfig:
@@ -906,7 +921,8 @@ async def stream_generate(
     - error: An error occurred during processing
 
     The agent loop (backend/llm) runs the model with its tools (file retrieval,
-    web search and the optional Neo4j knowledge graph).
+    web search and the optional Neo4j knowledge graph), limited to the tool
+    groups of the conversation's persona.
     """
     crud_logger.info(
         f"Stream generate called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -958,8 +974,11 @@ async def stream_generate(
             return
 
         try:
-            tools = default_tools() if config.supports_tools else None
-            system_prompt = _system_prompt(current_user, request_body.conversationId, tools)
+            # The persona decides the prompt and which tools the model gets; the
+            # prompt only describes the tools it really has
+            conversation = db.get_conversation_by_id(request_body.conversationId)
+            tools = _agent_tools(current_user, conversation, config)
+            system_prompt = build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
 
             # Build conversation history with placeholders for previous attachments,
             # as much of it as fits the model's context window

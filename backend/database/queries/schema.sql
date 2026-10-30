@@ -90,14 +90,13 @@ CREATE TABLE IF NOT EXISTS file_description_cache (
 );
 
 -- name: create_llm_providers_table
--- One row per API account. See docs/model_provider_strategy.md
+-- One row per API account, seeded from MODEL_CATALOG_FILE. See docs/model_catalog_api.md
 CREATE TABLE IF NOT EXISTS llm_providers (
     id SERIAL PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,               -- "Cortecs", "Homelab"
     kind TEXT NOT NULL,                      -- 'openai_compatible' | 'anthropic'
     base_url TEXT,                           -- NULL = the SDK default
-    api_key_encrypted TEXT,                  -- key entered in the UI, Fernet-encrypted
-    api_key_env TEXT,                        -- or the name of an environment variable holding the key
+    api_key_env TEXT,                        -- name of the environment variable holding the key
     privacy_tier TEXT NOT NULL,              -- 'local' | 'eu' | 'trusted' | 'untrusted'
     currency TEXT NOT NULL DEFAULT 'USD',    -- currency of the model prices: 'USD' | 'EUR'
     default_headers JSONB,                   -- extra HTTP headers, e.g. OpenRouter's HTTP-Referer
@@ -139,14 +138,14 @@ CREATE TABLE IF NOT EXISTS llm_models (
 );
 
 -- name: create_personas_table
--- A named system prompt with fill-in variables ({{name}})
+-- A named system prompt with fill-in variables ({{name}}) and a tool selection ("agents" in the UI)
 CREATE TABLE IF NOT EXISTS personas (
     id SERIAL PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,               -- "Pirate"
     description TEXT,
     system_prompt TEXT NOT NULL,             -- "Answer like a {{style}}. Today is {{date}}."
     variables JSONB,                         -- [{"name": "style", "label": "Style", "default": "pirate"}]
-    default_model_id INTEGER REFERENCES llm_models(id) ON DELETE SET NULL,
+    tools JSONB,                             -- tool groups, e.g. ["files", "web_search"], NULL = every enabled tool
     available_to_guests BOOLEAN DEFAULT FALSE,
     enabled BOOLEAN DEFAULT TRUE,
     sort_order INTEGER DEFAULT 0,

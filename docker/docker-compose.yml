@@ -57,9 +57,9 @@ services:
       - POSTGRES_DB=llm_chat
       - POSTGRES_USER=llm_chat
       - POSTGRES_PASSWORD=llm_chat_dev_password
-      # Seeds the model catalog; key variables decide which providers start enabled
-      - MODEL_CATALOG_FILE=${MODEL_CATALOG_FILE:-}
-      - CATALOG_SECRET_KEY=${CATALOG_SECRET_KEY:-}
+      # Seeds the model catalog (empty MODEL_CATALOG_FILE = no seeding); providers whose
+      # key variable is unset start disabled. Existing models and agents are never overwritten.
+      - MODEL_CATALOG_FILE=${MODEL_CATALOG_FILE-catalog/models.json}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - CORTECS_API_KEY=${CORTECS_API_KEY:-}
@@ -123,7 +123,6 @@ services:
       # - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       # Model catalog (docs/model_catalog_api.md)
       - ADMIN_EMAILS=${ADMIN_EMAILS:-}
-      - CATALOG_SECRET_KEY=${CATALOG_SECRET_KEY:-}
       - CORTECS_API_KEY=${CORTECS_API_KEY:-}
       - MODEL_ROUTER_API=${MODEL_ROUTER_API:-}
       - MODEL_ROUTER_KEY=${MODEL_ROUTER_KEY:-}

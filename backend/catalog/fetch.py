@@ -9,7 +9,6 @@ to another provider's base URL.
 import logging
 from typing import Optional
 
-from backend.catalog.crypto import mask
 from backend.catalog.resolver import provider_api_key
 from backend.catalog.service import CatalogError, CatalogNotFound
 from backend.database import db
@@ -51,6 +50,16 @@ def _context_window(extra: dict) -> Optional[int]:
     return None
 
 
+def _mask(key: str) -> str:
+    """An API key as its prefix and last four characters ("sk-…1234"); short keys show less."""
+    key = key.strip()
+    if len(key) < 12:
+        return "…" + key[-2:] if len(key) >= 8 else "…"
+    dash = key.find("-")
+    prefix = key[:dash + 1] if 0 < dash <= 4 else key[:3]
+    return f"{prefix}…{key[-4:]}"
+
+
 def _error_message(error: Exception, api_key: Optional[str]) -> str:
     """
     A readable message from an SDK error, with the API key masked in case the
@@ -71,7 +80,7 @@ def _error_message(error: Exception, api_key: Optional[str]) -> str:
     if status_code:
         message = f"HTTP {status_code}: {message}"
     if api_key and api_key != NO_KEY:
-        message = message.replace(api_key, mask(api_key) or "***")
+        message = message.replace(api_key, _mask(api_key))
     return message
 
 
