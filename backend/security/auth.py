@@ -279,6 +279,31 @@ def verify_conversation_ownership(conversation_id: str, user_id: int) -> bool:
     return is_owner
 
 
+def verify_file_ownership(file_id: str, user_id: Optional[int]) -> bool:
+    """
+    Verifies whether the given user uploaded the specified file. Only the uploader
+    can read a file, through the files API and through the agent's file tool.
+    Files without an owner (see db.get_file_owner) are nobody's.
+
+    :param file_id: The file ID (the stored filename without extension)
+    :type file_id: str
+    :param user_id: The unique identifier of the user; None is nobody
+    :type user_id: Optional[int]
+    :return: True if the user uploaded the file, otherwise False
+    :rtype: bool
+    """
+    owner_id = db.get_file_owner(file_id)
+
+    if owner_id is None:
+        log.debug(f"File {file_id} has no owner")
+        return False
+
+    is_owner = owner_id == user_id
+    if not is_owner:
+        log.warning(f"Access denied: user_id={user_id} attempted to access file {file_id} owned by {owner_id}")
+    return is_owner
+
+
 def client_ip(request: Request) -> Optional[str]:
     """
     The client's IP address, taken from the connection, never from the request body.

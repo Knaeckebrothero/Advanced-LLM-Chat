@@ -20,15 +20,16 @@ Example usage:
         time=1234567890
     )
 """
+import json
 import logging
 import os
 import re
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Generator
+from typing import Iterable, Optional, Generator
 
-from sqlalchemy import create_engine, text, select, insert, update, delete, null
+from sqlalchemy import create_engine, inspect, text, select, insert, update, delete, null
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.pool import QueuePool
@@ -52,6 +53,7 @@ from backend.database.tables import (
     guest_usage,
     user_settings,
     file_description_cache,
+    uploaded_files,
     llm_providers,
     llm_models,
     personas,
@@ -86,6 +88,61 @@ def _jsonb(value):
     SQLAlchemy would otherwise store None as the JSON value 'null'.
     """
     return null() if value is None else value
+
+
+def _message_attachments(content: str) -> list[dict]:
+    """The attachments of a stored message content ({"content", "attachments"} JSON), else []."""
+    if not content or not content.startswith('{'):
+        return []
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+    attachments = parsed.get('attachments') if isinstance(parsed, dict) else None
+    return [att for att in attachments if isinstance(att, dict)] if isinstance(attachments, list) else []
+
+
+def backfill_uploaded_files(conn: Connection) -> tuple[int, int]:
+    """
+    Give the files uploaded before uploaded_files existed their owner.
+
+    A file that the attachments of a message reference belongs to the owner of
+    that message's conversation (the oldest reference wins). Files nobody
+    references keep no owner, so nobody can read them any more. Runs once, in
+    the transaction that creates the table (init_tables() or db_init); rows
+    that already exist are kept.
+
+    Args:
+        conn: The connection of that transaction.
+
+    Returns:
+        (files that got an owner, uploads in FILES_DIR that have none)
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from backend.services.file_utils import is_file_id, stored_file_ids
+
+    referencing = (
+        select(messages.c.content, conversations.c.userId)
+        .select_from(messages.join(conversations, messages.c.conversationId == conversations.c.id))
+        .where(messages.c.content.like('%attachments%'))
+        .order_by(messages.c.id)
+    )
+    owners: dict[str, int] = {}
+    for content, user_id in conn.execute(referencing):
+        for attachment in _message_attachments(content):
+            file_id = attachment.get('fileId', attachment.get('id'))
+            if is_file_id(file_id):
+                owners.setdefault(file_id, user_id)
+
+    added = 0
+    if owners:
+        stmt = pg_insert(uploaded_files).values(
+            [{"file_id": file_id, "user_id": user_id} for file_id, user_id in owners.items()]
+        ).on_conflict_do_nothing(index_elements=['file_id'])
+        added = conn.execute(stmt).rowcount
+
+    owned = {row[0] for row in conn.execute(select(uploaded_files.c.file_id))}
+    return added, len(stored_file_ids() - owned)
 
 
 class Database:
@@ -326,6 +383,9 @@ class Database:
         pattern = r"--\s*name:\s*\w+\s*\n"
         blocks = re.split(pattern, schema_sql)
 
+        # The run that creates uploaded_files gives the existing files their owner
+        backfill_file_owners = not inspect(self.engine).has_table("uploaded_files")
+
         with self.connection() as conn:
             for block in blocks:
                 block = block.strip()
@@ -337,6 +397,11 @@ class Database:
                             conn.execute(text(stmt))
                         except Exception as e:
                             log.warning(f"Statement warning (may be expected): {e}")
+
+            if backfill_file_owners:
+                added, unowned = backfill_uploaded_files(conn)
+                log.info(f"Created uploaded_files: {added} existing file(s) got the owner of the conversation "
+                         f"that references them, {unowned} without owner can't be read any more")
 
         log.info("Database tables initialized successfully")
 
@@ -1220,10 +1285,13 @@ class Database:
 
     def delete_stale_guest_users(self, created_before: datetime) -> int:
         """
-        Delete guest users without an active session, with their conversations and settings.
+        Delete guest users without an active session, with their conversations,
+        settings and uploaded files.
 
         Every guest login creates its own user (users.is_guest). Once its sessions
-        have expired nobody can reach that user's data again.
+        have expired nobody can reach that user's data again. The uploads (with
+        their derived files) and the cached speech of the conversations are
+        deleted from FILES_DIR after the rows.
 
         Args:
             created_before: Only delete guest users created before this time (UTC).
@@ -1241,13 +1309,32 @@ class Database:
             stale_ids = [row[0] for row in conn.execute(stale)]
             if not stale_ids:
                 return 0
+            file_ids = [row[0] for row in conn.execute(
+                select(uploaded_files.c.file_id).where(uploaded_files.c.user_id.in_(stale_ids)))]
+            conversation_ids = [row[0] for row in conn.execute(
+                select(conversations.c.id).where(conversations.c.userId.in_(stale_ids)))]
             # Messages go with their conversations (ON DELETE CASCADE)
             conn.execute(delete(conversations).where(conversations.c.userId.in_(stale_ids)))
             conn.execute(delete(user_settings).where(user_settings.c.user_id.in_(stale_ids)))
             conn.execute(delete(sessions).where(sessions.c.user_id.in_(stale_ids)))
+            if file_ids:
+                conn.execute(delete(file_description_cache).where(file_description_cache.c.file_id.in_(file_ids)))
+            conn.execute(delete(uploaded_files).where(uploaded_files.c.user_id.in_(stale_ids)))
             conn.execute(delete(users).where(users.c.id.in_(stale_ids)))
-            log.info(f"Deleted {len(stale_ids)} expired guest users and their conversations")
-            return len(stale_ids)
+
+        # The files go once the rows are committed, so a failed transaction keeps them
+        from backend.services.file_utils import delete_stored_file
+        from backend.services.tts_handler import delete_conversation_tts_cache
+        for file_id in file_ids:
+            try:
+                delete_stored_file(file_id)
+            except OSError as e:
+                log.warning(f"Could not delete file {file_id} of an expired guest: {e}")
+        for conversation_id in conversation_ids:
+            delete_conversation_tts_cache(conversation_id)
+        log.info(f"Deleted {len(stale_ids)} expired guest users with their conversations "
+                 f"and {len(file_ids)} uploaded files")
+        return len(stale_ids)
 
     def delete_sessions_by_user(self, user_id: int) -> int:
         """
@@ -1533,6 +1620,73 @@ class Database:
             if count > 0:
                 log.debug(f"Deleted {count} cache entries for file {file_id}")
             return count
+
+    # =========================================================================
+    # Uploaded File Operations
+    # =========================================================================
+
+    def register_uploaded_file(self, file_id: str, user_id: int) -> None:
+        """
+        Record who uploaded a file; only that user can read it.
+
+        Args:
+            file_id: The file ID (stored filename without extension).
+            user_id: The uploader's user ID.
+        """
+        with self.connection() as conn:
+            conn.execute(insert(uploaded_files).values(file_id=file_id, user_id=user_id))
+            log.debug(f"Registered file {file_id} for user {user_id}")
+
+    def get_file_owner(self, file_id: str) -> Optional[int]:
+        """
+        Get the user ID of the user who uploaded a file.
+
+        Args:
+            file_id: The file ID.
+
+        Returns:
+            User ID, or None if the file has no owner (unknown file, or uploaded
+            before uploads had an owner and referenced by no message).
+        """
+        with self.connection() as conn:
+            stmt = select(uploaded_files.c.user_id).where(uploaded_files.c.file_id == file_id)
+            result = conn.execute(stmt).fetchone()
+            return result[0] if result else None
+
+    def get_owned_file_ids(self, user_id: int, file_ids: Iterable[str]) -> set[str]:
+        """
+        Get the file IDs among the given ones that a user uploaded.
+
+        Args:
+            user_id: The user's ID.
+            file_ids: The file IDs to check.
+
+        Returns:
+            The subset of file_ids that belong to the user.
+        """
+        file_ids = list(file_ids)
+        if not file_ids:
+            return set()
+        with self.connection() as conn:
+            stmt = select(uploaded_files.c.file_id).where(
+                (uploaded_files.c.user_id == user_id) &
+                (uploaded_files.c.file_id.in_(file_ids))
+            )
+            return {row[0] for row in conn.execute(stmt)}
+
+    def delete_uploaded_file(self, file_id: str) -> bool:
+        """
+        Delete a file's owner record (after the file itself was deleted).
+
+        Args:
+            file_id: The file ID.
+
+        Returns:
+            True if deleted, False if the file had no record.
+        """
+        with self.connection() as conn:
+            result = conn.execute(delete(uploaded_files).where(uploaded_files.c.file_id == file_id))
+            return result.rowcount > 0
 
     # =========================================================================
     # Model Catalog Operations (providers, models, personas)

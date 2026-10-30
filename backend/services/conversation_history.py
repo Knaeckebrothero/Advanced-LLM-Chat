@@ -7,7 +7,9 @@ format (see backend/llm). Past attachments are replaced with descriptive
 placeholders, while the latest user message includes the full content.
 
 The history holds as many recent messages as fit the model's context window
-(history_token_budget), at most HISTORY_MAX_MESSAGES.
+(history_token_budget), at most HISTORY_MAX_MESSAGES. Attachments of files the
+conversation's owner didn't upload are left out, so a message can't make the
+model read another user's file.
 """
 
 import json
@@ -80,6 +82,7 @@ class ConversationHistoryBuilder:
 
     - Latest user message: full file content included (images only for vision models)
     - Previous messages: file content replaced with placeholders
+    - Files the conversation's owner didn't upload: left out
     """
 
     def __init__(self, db):
@@ -87,7 +90,7 @@ class ConversationHistoryBuilder:
         Initialize the conversation history builder.
 
         Args:
-            db: Database interface for retrieving messages.
+            db: Database interface for retrieving messages and file owners.
         """
         self.db = db
         logger.debug("ConversationHistoryBuilder initialized")
@@ -116,6 +119,27 @@ class ConversationHistoryBuilder:
 
         return {'content': content, 'attachments': []}
 
+    @staticmethod
+    def _attachment_file_id(attachment) -> str:
+        """The file ID of an attachment ('fileId'; 'id' in older messages), '' if it has none."""
+        file_id = attachment.get('fileId', attachment.get('id', '')) if isinstance(attachment, dict) else ''
+        return file_id if isinstance(file_id, str) else ''
+
+    def _readable_file_ids(self, conversation_id: str, raw_messages: List[dict]) -> set:
+        """The file IDs attached to these user messages that the conversation's owner uploaded."""
+        file_ids = {
+            self._attachment_file_id(att)
+            for msg in raw_messages if msg.get('roleName') == 'user'
+            for att in self._parse_content(msg.get('content', '')).get('attachments') or []
+        }
+        file_ids.discard('')
+        if not file_ids:
+            return set()
+        owner_id = self.db.get_conversation_owner(conversation_id)
+        if owner_id is None:
+            return set()
+        return self.db.get_owned_file_ids(owner_id, file_ids)
+
     def _extract_text(self, msg: dict) -> str:
         """Extract plain text content from a message dict."""
         content = msg.get('content', '')
@@ -124,7 +148,7 @@ class ConversationHistoryBuilder:
 
     def _create_placeholder(self, attachment: dict) -> AttachmentPlaceholder:
         """Create an AttachmentPlaceholder from attachment metadata dict."""
-        file_id = attachment.get('fileId', attachment.get('id', ''))
+        file_id = self._attachment_file_id(attachment)
         file_name = attachment.get('name', attachment.get('fileName', 'Unknown'))
         mime_type = attachment.get('mimeType', 'application/octet-stream')
 
@@ -170,7 +194,7 @@ class ConversationHistoryBuilder:
         include_page_images = supports_vision and is_pdf_page_images_enabled()
 
         for att in attachments:
-            file_id = att.get('fileId', att.get('id', ''))
+            file_id = self._attachment_file_id(att)
             mime_type = att.get('mimeType', '')
             name = att.get('name', att.get('fileName', 'Unknown'))
 
@@ -262,6 +286,7 @@ class ConversationHistoryBuilder:
         messages = []
         available_attachments = []
         latest_user_idx = self._find_latest_user_message_idx(raw_messages)
+        readable_file_ids = self._readable_file_ids(conversation_id, raw_messages)
 
         for idx, msg in enumerate(raw_messages):
             is_latest_user = (idx == latest_user_idx)
@@ -270,7 +295,8 @@ class ConversationHistoryBuilder:
                 content, attachments = await self._process_user_message(
                     msg,
                     include_full_content=is_latest_user and include_latest_attachments,
-                    supports_vision=supports_vision
+                    supports_vision=supports_vision,
+                    readable_file_ids=readable_file_ids
                 )
                 messages.append({"role": "user", "content": content})
                 available_attachments.extend(attachments)
@@ -307,12 +333,24 @@ class ConversationHistoryBuilder:
         self,
         msg: dict,
         include_full_content: bool,
-        supports_vision: bool = False
+        supports_vision: bool = False,
+        readable_file_ids: frozenset = frozenset()
     ) -> Tuple[Union[str, List[dict]], List[AttachmentPlaceholder]]:
-        """Process a user message, optionally including full attachment content."""
+        """
+        Process a user message, optionally including full attachment content.
+
+        Only attachments in readable_file_ids (the files the conversation's owner
+        uploaded) are kept; the others are left out entirely.
+        """
         content_obj = self._parse_content(msg.get('content', ''))
         text = content_obj.get('content', '')
-        attachments = content_obj.get('attachments', [])
+        attachments = content_obj.get('attachments') or []
+
+        readable = [att for att in attachments if self._attachment_file_id(att) in readable_file_ids]
+        if len(readable) < len(attachments):
+            logger.warning(f"Left out {len(attachments) - len(readable)} attachment(s) of message {msg.get('id')}: "
+                           f"not uploaded by the conversation's owner")
+        attachments = readable
 
         if not attachments:
             return text, []

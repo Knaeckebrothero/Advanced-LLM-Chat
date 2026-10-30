@@ -175,6 +175,34 @@ def delete_cached_tts_audio(message_id: int, conversation_id: str) -> bool:
     return False
 
 
+def delete_conversation_tts_cache(conversation_id: str) -> int:
+    """
+    Delete the cached TTS audio and preprocessed texts of all messages of a conversation.
+
+    Args:
+        conversation_id: The conversation ID.
+
+    Returns:
+        Number of files deleted.
+    """
+    files_dir = Path(FILES_DIR)
+    if not files_dir.is_dir():
+        return 0
+
+    deleted = 0
+    prefix = f"tts_{conversation_id}_"
+    for path in files_dir.iterdir():
+        if path.is_file() and path.name.startswith(prefix):
+            try:
+                path.unlink()
+                deleted += 1
+            except Exception as e:
+                logger.error(f"Error deleting cached TTS file {path}: {e}")
+    if deleted:
+        logger.info(f"Deleted {deleted} cached TTS file(s) of conversation {conversation_id}")
+    return deleted
+
+
 def get_preprocessed_text_path(message_id: int, conversation_id: str) -> Path:
     """
     Get the path where preprocessed TTS text would be stored.

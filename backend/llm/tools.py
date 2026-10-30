@@ -7,7 +7,9 @@ tools), checks the arguments the model sends, and runs the function.
 
 The implementations live in backend/services/tools/; this module only describes
 them to the model. default_tools() returns the tools that are enabled by the
-configuration, tools_for_groups() limits them to a persona's tool groups.
+configuration, tools_for_groups() limits them to a persona's tool groups. Both
+are built per answer for the user it is for: the file tool only reads that
+user's uploads.
 """
 import asyncio
 import functools
@@ -199,8 +201,15 @@ def _in_thread(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
 # Tool definitions
 # =========================================================================
 
-def file_content_tool() -> Tool:
-    """get_file_content: read files shared earlier in the conversation."""
+def file_content_tool(user_id: Optional[int] = None) -> Tool:
+    """
+    get_file_content: read files shared earlier in the conversation.
+
+    Args:
+        user_id: The user the agent answers for. The tool only reads files this
+            user uploaded; the model can't choose another user (the argument is
+            not in the schema). None reads no file at all.
+    """
     from ..services.tools.file_tools import get_file_content
     return Tool(
         name="get_file_content",
@@ -231,7 +240,7 @@ def file_content_tool() -> Tool:
             },
             "required": ["file_id"],
         },
-        func=get_file_content,
+        func=functools.partial(get_file_content, user_id=user_id),
     )
 
 
@@ -350,10 +359,10 @@ def tool_group_status() -> list[dict]:
     return status
 
 
-def _group_tools(group: str) -> list[Tool]:
-    """The tool definitions of a group."""
+def _group_tools(group: str, user_id: Optional[int]) -> list[Tool]:
+    """The tool definitions of a group, for the user the agent answers for."""
     if group == "files":
-        return [file_content_tool()]
+        return [file_content_tool(user_id)]
     if group == "web_search":
         return [web_search_tool()]
     if group == "knowledge_graph":
@@ -361,9 +370,13 @@ def _group_tools(group: str) -> list[Tool]:
     raise ValueError(f"Unknown tool group '{group}'")
 
 
-def default_tools() -> ToolRegistry:
+def default_tools(user_id: Optional[int] = None) -> ToolRegistry:
     """
     The tools enabled by the configuration (see tool_group_unavailable_reason()).
+
+    Args:
+        user_id: The user the agent answers for; the file tool only reads this
+            user's uploads (None: none at all).
     """
     registry = ToolRegistry()
     for group in TOOL_GROUPS:
@@ -371,24 +384,26 @@ def default_tools() -> ToolRegistry:
         if reason:
             log.debug(f"Tool group {group} disabled: {reason}")
             continue
-        for tool in _group_tools(group):
+        for tool in _group_tools(group, user_id):
             registry.add(tool)
     log.debug(f"Default tools: {', '.join(registry.names())}")
     return registry
 
 
-def tools_for_groups(groups: Optional[Iterable[str]]) -> ToolRegistry:
+def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = None) -> ToolRegistry:
     """
     The enabled tools of the given tool groups, e.g. a persona's selection.
 
     Args:
         groups: Keys of TOOL_GROUPS; None for every enabled tool. Unknown
             groups are ignored.
+        user_id: The user the agent answers for; the file tool only reads this
+            user's uploads (None: none at all).
 
     Returns:
         default_tools() limited to those groups; empty for an empty selection.
     """
-    registry = default_tools()
+    registry = default_tools(user_id)
     if groups is None:
         return registry
     groups = list(groups)

@@ -21,6 +21,9 @@ from .audio_handler import get_transcript
 
 logger = logging.getLogger(__name__)
 
+# The error for a missing file; the file tool also gives it for other users' files
+FILE_NOT_FOUND = "File '{file_id}' not found or has been deleted"
+
 
 @dataclass
 class FileContentResult:
@@ -77,9 +80,7 @@ class FileRetrievalService:
         file_path = get_file_path(file_id)
         if not file_path:
             logger.warning(f"File not found: {file_id}")
-            return FileContentResult(
-                error=f"File '{file_id}' not found or has been deleted"
-            )
+            return FileContentResult(error=FILE_NOT_FOUND.format(file_id=file_id))
 
         try:
             mime_type = self._get_mime_type(file_path)

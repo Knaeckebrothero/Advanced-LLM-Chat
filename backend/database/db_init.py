@@ -8,6 +8,9 @@ with test data. It supports multiple modes:
 2. Force-reset mode: Drops all tables and recreates from scratch
 3. Production mode: Migrates schema by adding missing columns (preserves data)
 
+New tables are created in every mode. The run that creates uploaded_files gives
+the files uploaded before it existed their owner (backfill_uploaded_files).
+
 Usage:
     # Default: Create tables if missing, preserve data
     python -m backend.database.db_init
@@ -55,6 +58,7 @@ EXPECTED_TABLES = [
     "guest_usage",
     "user_settings",
     "file_description_cache",
+    "uploaded_files",
     "llm_providers",
     "llm_models",
     "personas",
@@ -235,6 +239,7 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
         "user_settings",
         "guest_usage",
         "file_description_cache",
+        "uploaded_files",
         "conversations",
         "users",
         "personas",
@@ -280,7 +285,7 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
     logger.info("  ✓ All tables dropped")
 
 
-def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger) -> bool:
+def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfill_file_owners: bool = False) -> bool:
     """
     Execute the schema SQL file to create tables, indexes, and triggers.
 
@@ -290,6 +295,8 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger) -> boo
         engine: SQLAlchemy engine.
         schema_path: Path to the schema.sql file.
         logger: Logger instance.
+        backfill_file_owners: Give existing files their owner in the same
+            transaction (when this run creates uploaded_files).
 
     Returns:
         True if successful, False otherwise.
@@ -308,9 +315,18 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger) -> boo
             # Execute the entire schema as one script
             # PostgreSQL can handle multiple statements
             conn.execute(text(schema_sql))
+            if backfill_file_owners:
+                from backend.database.db import backfill_uploaded_files
+                added, unowned = backfill_uploaded_files(conn)
             conn.commit()
 
         logger.info(f"  ✓ Executed schema from {schema_path.name}")
+        if backfill_file_owners:
+            logger.info(f"  ✓ Created uploaded_files: {added} existing file(s) got the owner of the "
+                        f"conversation that references them")
+            if unowned:
+                logger.warning(f"  ⚠ {unowned} uploaded file(s) in FILES_DIR are referenced by no message: "
+                               f"they have no owner and can't be read any more")
         return True
 
     except Exception as e:
@@ -615,11 +631,13 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
         logger.info("")
         logger.info("  Preserving existing data (use --force-reset to drop tables)")
 
-    # Step 4: Execute schema (creates tables, indexes, triggers)
+    # Step 4: Execute schema (creates tables, indexes, triggers); the run that
+    # creates uploaded_files gives the existing files their owner
     current_step += 1
     logger.info("")
     logger.info(f"[{current_step}/{total_steps}] Creating/updating tables from schema...")
-    if not execute_schema_sql(engine, SCHEMA_FILE, logger):
+    backfill_file_owners = not inspect(engine).has_table("uploaded_files")
+    if not execute_schema_sql(engine, SCHEMA_FILE, logger, backfill_file_owners):
         return False
 
     # Step 5: Insert seed data if requested (runs LAST)

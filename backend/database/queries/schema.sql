@@ -90,6 +90,14 @@ CREATE TABLE IF NOT EXISTS file_description_cache (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- name: create_uploaded_files_table
+-- Who uploaded which file. Only the owner can read it, through the files API and the agent's file tool
+CREATE TABLE IF NOT EXISTS uploaded_files (
+    file_id TEXT PRIMARY KEY,                -- file_<ms>_<hex>, the stored filename without extension
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- name: create_llm_providers_table
 -- One row per API account, seeded from MODEL_CATALOG_FILE. See docs/model_catalog_api.md
 CREATE TABLE IF NOT EXISTS llm_providers (
@@ -161,6 +169,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_agent_status ON messages(agent_status) WHERE type = 'agent';
 CREATE INDEX IF NOT EXISTS idx_cache_file_id ON file_description_cache(file_id);
+CREATE INDEX IF NOT EXISTS idx_uploaded_files_user ON uploaded_files(user_id);
 CREATE INDEX IF NOT EXISTS idx_llm_models_provider ON llm_models(provider_id);
 
 -- name: create_update_timestamp_function

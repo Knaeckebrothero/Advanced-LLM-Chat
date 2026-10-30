@@ -86,14 +86,15 @@ def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
 def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig) -> Optional[ToolRegistry]:
     """
     The tools for an answer: the tools the server enables, limited to the tool
-    groups of the conversation's persona (if it has a selection).
+    groups of the conversation's persona (if it has a selection). The file tool
+    only reads the current user's uploads.
 
     :return: The tools, or None for none (the model doesn't support tools, or
         the persona selected no enabled tool group).
     """
     if not config.supports_tools:
         return None
-    tools = tools_for_groups(persona_tool_groups(current_user, conversation))
+    tools = tools_for_groups(persona_tool_groups(current_user, conversation), user_id=current_user['user_id'])
     return tools if len(tools) else None
 
 

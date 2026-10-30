@@ -6,6 +6,7 @@ The current file attachment system exposes raw file IDs (e.g., `file_17672140277
 
 1. **LLM Extraction Errors**: Long, complex IDs are prone to transcription mistakes when the model extracts them from conversation history to pass to tools
 2. **No Access Control**: The current system doesn't validate that a user has permission to access a file - anyone with a file ID could potentially retrieve it
+   - *Partly solved (October 2026):* every upload now has an owner (table `uploaded_files`, the uploader). The files API (`backend/api/files.py`), the `get_file_content` tool and the conversation history only read the owner's files; other files are a 404 or "not found". Files uploaded before were given the owner of the conversation whose messages reference them (`backfill_uploaded_files()`, run once by the migration that creates the table). Expired guests lose their files with their account (`delete_stale_guest_users()`). Still open: scoping a file to its conversation.
 3. **No Centralized Metadata**: File descriptions, dimensions, and other metadata are scattered or not stored at all
 4. **Poor UX for File References**: Users cannot easily reference previously uploaded files in their messages
 

@@ -7,8 +7,9 @@ Uses a fake database and a temporary FILES_DIR: images go to vision models as
 image_url parts, text-only models get the attachment placeholder (so they can
 call get_file_content), earlier attachments become placeholders, empty
 assistant messages are skipped, regenerating cuts the history at the
-message being regenerated, also within the same second, and the history is
-cut to the newest messages that fit the model's context window.
+message being regenerated, also within the same second, the history is
+cut to the newest messages that fit the model's context window, and
+attachments of files the conversation's owner didn't upload are left out.
 """
 import asyncio
 import json
@@ -34,8 +35,15 @@ FILES_DIR = tempfile.mkdtemp(prefix="history-test-")
 file_utils.FILES_DIR = FILES_DIR
 
 
+# Who uploaded which file; the conversations belong to user 1
+FILE_OWNERS = {"img1": 1, "img2": 1, "img3": 2}
+
+
 class FakeDB:
-    """Just get_messages_by_conversation, with the real query's filters; ties in time come back unordered."""
+    """
+    get_messages_by_conversation, with the real query's filters (ties in time come
+    back unordered), and the owner lookups for conversations and files.
+    """
 
     def __init__(self, rows):
         self.rows = rows
@@ -44,6 +52,12 @@ class FakeDB:
         rows = [r for r in self.rows if before_timestamp is None or r["time"] < before_timestamp]
         # ORDER BY time DESC leaves ties unordered; return them in the worst order
         return sorted(rows, key=lambda r: (r["time"], -r["id"]), reverse=True)[:limit]
+
+    def get_conversation_owner(self, conversation_id):
+        return 1
+
+    def get_owned_file_ids(self, user_id, file_ids):
+        return {file_id for file_id in file_ids if FILE_OWNERS.get(file_id) == user_id}
 
 
 def user(id, time, text, attachments=None):
@@ -90,6 +104,21 @@ async def test_regenerate_cuts_at_message():
     assert all(m["content"] != "Also red." for m in messages)
 
 
+async def test_other_users_files_are_left_out():
+    theirs = {**IMAGE, "fileId": "img3", "fileName": "theirs.png"}
+    rows = [user(900_000, 900, "Earlier", [theirs]), assistant(900_500, 900, "Ok."),
+            user(901_000, 901, "Mine and theirs", [IMAGE, theirs])]
+    messages, attachments = await ConversationHistoryBuilder(FakeDB(rows)).build_history("c", supports_vision=True)
+    # img3 exists on disk but belongs to user 2: no image part, no placeholder
+    assert "img3" not in messages[0]["content"] and "theirs.png" not in messages[0]["content"], messages[0]
+    latest = messages[2]["content"]
+    assert [part["type"] for part in latest] == ["text", "image_url"], latest
+    assert "img3" not in latest[0]["text"]
+    assert [a.file_id for a in attachments] == ["img1"], attachments
+    messages, _ = await ConversationHistoryBuilder(FakeDB(rows)).build_history("c", supports_vision=False)
+    assert "(fileId: img1)" in messages[2]["content"] and "img3" not in messages[2]["content"], messages[2]
+
+
 def config(**overrides):
     return ModelConfig(id=1, display_name="Test", model_id="test", provider_id=1, provider_name="Test",
                        kind="openai_compatible", base_url=None, **overrides)
@@ -132,11 +161,12 @@ async def test_budget_from_context_window():
 
 
 TESTS = [test_vision_model_gets_image, test_text_model_gets_placeholder, test_regenerate_cuts_at_message,
-         test_history_fits_token_budget, test_latest_question_survives_tiny_budget, test_budget_from_context_window]
+         test_other_users_files_are_left_out, test_history_fits_token_budget,
+         test_latest_question_survives_tiny_budget, test_budget_from_context_window]
 
 
 async def main() -> int:
-    for file_id in ("img1", "img2"):
+    for file_id in ("img1", "img2", "img3"):
         with open(os.path.join(FILES_DIR, f"{file_id}.png"), "wb") as f:
             f.write(_png(8, 8, (255, 0, 0)))
     failures = 0

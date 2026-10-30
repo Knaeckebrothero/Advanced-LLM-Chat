@@ -5,12 +5,15 @@ Offline test of the tool groups that personas select (no API keys or database ne
 
 Covers: tools_for_groups() with no selection, an empty one and single groups,
 unavailable groups (NEO4J_ENABLED off, TAVILY_API_KEY unset) and their
-reasons, the system prompt sections for the selected tools, and the tools
+reasons, the system prompt sections for the selected tools, the tools
 stream-generate sends for a conversation's persona (_agent_tools, with a fake
-database).
+database), and that the file tool only reads the uploads of the user it is
+built for (fake file owners, temporary FILES_DIR).
 """
 import asyncio
+import os
 import sys
+import tempfile
 import traceback
 from contextlib import contextmanager
 from dataclasses import replace
@@ -23,6 +26,8 @@ from backend.llm.prompts import FILE_ACCESS_PROMPT, GRAPH_PROMPT, WEB_SEARCH_PRO
 from backend.llm.tools import TOOL_GROUPS, default_tools, tool_group_status, tools_for_groups
 from backend.llm.types import ModelConfig
 from backend.models.catalog import ToolGroup
+from backend.security import auth
+from backend.services import file_utils
 from backend.services.tools import web_search_tools
 
 GRAPH_TOOLS = ["get_graph_schema", "search_graph", "query_graph"]
@@ -128,9 +133,56 @@ async def test_stream_generate_tools_follow_the_persona():
         resolver.db = saved_db
 
 
+class FakeFileDB:
+    """The file owner lookup of verify_file_ownership."""
+
+    def __init__(self, owners):
+        self.owners = owners
+
+    def get_file_owner(self, file_id):
+        return self.owners.get(file_id)
+
+
+async def test_file_tool_reads_only_own_files():
+    files_dir = tempfile.mkdtemp(prefix="file-tool-test-")
+    for file_id, text in (("file_1_aa", "My notes"), ("file_2_bb", "Their notes"), ("file_3_cc", "Nobody's")):
+        with open(os.path.join(files_dir, f"{file_id}.txt"), "w") as f:
+            f.write(text)
+    saved = file_utils.FILES_DIR, auth.db
+    file_utils.FILES_DIR = files_dir
+    auth.db = FakeFileDB({"file_1_aa": 1, "file_2_bb": 2})  # file_3_cc has no owner
+    try:
+        def not_found(file_id):
+            return f"[Error: File '{file_id}' not found or has been deleted]"
+
+        mine = tools_for_groups(["files"], user_id=1)
+        assert await mine.call("get_file_content", {"file_id": "file_1_aa"}) == "My notes"
+        # Another user's file, a file without owner and a missing file give the same error
+        for file_id in ("file_2_bb", "file_3_cc", "file_9_ff"):
+            result = await mine.call("get_file_content", {"file_id": file_id})
+            assert result == not_found(file_id), result
+        # The model can't choose the user: user_id is not in the schema and is dropped
+        assert "user_id" not in mine.get("get_file_content").parameters["properties"]
+        result = await mine.call("get_file_content", {"file_id": "file_2_bb", "user_id": 2})
+        assert result == not_found("file_2_bb"), result
+        # The other user reads their own file; without a user the tool reads nothing
+        theirs = default_tools(user_id=2)
+        assert await theirs.call("get_file_content", {"file_id": "file_2_bb"}) == "Their notes"
+        nobody = tools_for_groups(["files"])
+        assert await nobody.call("get_file_content", {"file_id": "file_1_aa"}) == not_found("file_1_aa")
+        # stream-generate builds the tool for the current user
+        config = ModelConfig(id=1, display_name="Test", model_id="test", provider_id=1, provider_name="Test",
+                             kind="openai_compatible", base_url=None, supports_tools=True)
+        tools = messages._agent_tools({"user_id": 2, "email": "b@example.com", "is_guest": False}, None, config)
+        assert await tools.call("get_file_content", {"file_id": "file_2_bb"}) == "Their notes"
+        assert await tools.call("get_file_content", {"file_id": "file_1_aa"}) == not_found("file_1_aa")
+    finally:
+        file_utils.FILES_DIR, auth.db = saved
+
+
 TESTS = [test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
          test_unavailable_groups_stay_off, test_prompt_only_describes_selected_tools,
-         test_stream_generate_tools_follow_the_persona]
+         test_stream_generate_tools_follow_the_persona, test_file_tool_reads_only_own_files]
 
 
 async def main() -> int:

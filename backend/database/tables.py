@@ -129,6 +129,15 @@ file_description_cache = Table(
     Column('created_at', DateTime, server_default=func.now()),
 )
 
+# Uploaded files: who uploaded which file. Only the owner can read it (API and agent tool)
+uploaded_files = Table(
+    'uploaded_files',
+    metadata,
+    Column('file_id', Text, primary_key=True),  # file_<ms>_<hex>, the stored filename without extension
+    Column('user_id', Integer, ForeignKey('users.id'), nullable=False),
+    Column('created_at', DateTime, server_default=func.now()),
+)
+
 # Model catalog: one row per API account, seeded from MODEL_CATALOG_FILE
 llm_providers = Table(
     'llm_providers',
@@ -209,4 +218,5 @@ idx_messages_agent_status = Index(
 )
 # Index for file description cache - enables efficient deletion by file_id
 idx_cache_file_id = Index('idx_cache_file_id', file_description_cache.c.file_id)
+idx_uploaded_files_user = Index('idx_uploaded_files_user', uploaded_files.c.user_id)
 idx_llm_models_provider = Index('idx_llm_models_provider', llm_models.c.provider_id)

@@ -4,12 +4,18 @@ Shared file handling utilities used across multiple service modules.
 """
 
 import logging
+import re
+import shutil
 from pathlib import Path
 from typing import Optional
 
 from ..config import FILES_DIR
 
 log = logging.getLogger(__name__)
+
+# The IDs upload_files() (backend/api/files.py) gives uploads: file_<milliseconds>_<hex>.
+# Files derived from an upload are named <file ID>_<suffix>, e.g. _text.txt, _page_1.png
+FILE_ID_PATTERN = re.compile(r"file_\d+_[0-9a-f]+")
 
 
 # Supported audio MIME types
@@ -47,6 +53,58 @@ def get_file_path(file_id: str) -> Optional[Path]:
 
     log.debug(f"File not found: {file_id}")
     return None
+
+
+def is_file_id(value) -> bool:
+    """Whether a value has the form of an upload's file ID (FILE_ID_PATTERN)."""
+    return isinstance(value, str) and FILE_ID_PATTERN.fullmatch(value) is not None
+
+
+def stored_file_ids() -> set[str]:
+    """
+    The IDs of the uploads stored in the files directory (not of their derived files).
+
+    Returns:
+        The file IDs; empty if the directory does not exist.
+    """
+    files_dir = Path(FILES_DIR)
+    if not files_dir.is_dir():
+        return set()
+    return {path.stem for path in files_dir.iterdir() if path.is_file() and is_file_id(path.stem)}
+
+
+def delete_stored_file(file_id: str) -> int:
+    """
+    Delete an upload and the files derived from it: the extracted text and page
+    images of a PDF, the transcript of an audio file.
+
+    Args:
+        file_id: The file ID (filename without extension).
+
+    Returns:
+        Number of files (or directories) deleted; 0 for a value that is not a file ID.
+
+    Raises:
+        OSError: If a file cannot be deleted.
+    """
+    if not is_file_id(file_id):
+        log.warning(f"Not deleting '{file_id}': not a file ID")
+        return 0
+    files_dir = Path(FILES_DIR)
+    if not files_dir.is_dir():
+        return 0
+
+    deleted = 0
+    for path in files_dir.iterdir():
+        if path.stem != file_id and not path.name.startswith(f"{file_id}_"):
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        log.debug(f"Deleted {path}")
+        deleted += 1
+    return deleted
 
 
 def is_audio(mime_type: str) -> bool:

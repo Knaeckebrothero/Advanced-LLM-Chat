@@ -1,5 +1,8 @@
 """
 File upload and retrieval API endpoints.
+
+Every upload belongs to the user who uploaded it (table uploaded_files); the
+other endpoints answer 404 for files of other users, as for missing files.
 """
 import logging
 import secrets
@@ -10,9 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from backend.models.common import ErrorResponse
-from backend.security.auth import get_current_user
+from backend.database import db
+from backend.security.auth import get_current_user, verify_file_ownership
 from backend.services.document_handler import process_pdf, get_extracted_text
 from backend.services.audio_handler import is_audio, process_audio, get_transcript
+from backend.services.file_utils import get_file_path, delete_stored_file
 from backend.config import FILES_DIR as FILES_DIR_STR
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
@@ -48,7 +53,7 @@ async def upload_files(
     """
     Handles the upload of multiple files via a POST request. This endpoint validates
     the files against a maximum allowed size, generates unique IDs for the files,
-    and saves them to a local directory.
+    records the current user as their owner, and saves them to a local directory.
 
     For audio files, transcription is automatically performed using Whisper and
     the transcript is included in the response.
@@ -91,6 +96,9 @@ async def upload_files(
                 stored_filename = f"{file_id}{original_ext}"
             else:
                 stored_filename = file_id
+
+            # Record the owner before the file exists: only the uploader can read it
+            db.register_uploaded_file(file_id, current_user['user_id'])
 
             # Save file to disk
             file_path = FILES_DIR / stored_filename
@@ -143,20 +151,21 @@ async def upload_files(
         raise HTTPException(status_code=500, detail="Error uploading files")
 
 
-def _find_file_by_id(file_id: str) -> Path | None:
+def _own_file_path(file_id: str, current_user: dict) -> Path:
     """
-    Find a file in the files directory by its ID (without extension).
-    Returns the full path if found, None otherwise.
+    The stored file with this ID (without extension), if the current user uploaded it.
+
+    Files of other users are a 404 like missing files, so file IDs can't be probed.
+
+    :raises HTTPException: 404 if the file is missing or not the user's
     """
-    if not FILES_DIR.exists():
-        return None
+    if not verify_file_ownership(file_id, current_user['user_id']):
+        raise HTTPException(status_code=404, detail="File not found")
 
-    # Search for files matching the fileId with any extension
-    for file_path in FILES_DIR.iterdir():
-        if file_path.is_file() and file_path.stem == file_id:
-            return file_path
-
-    return None
+    file_path = get_file_path(file_id)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    return file_path
 
 
 def _get_media_type(file_path: Path) -> str:
@@ -201,19 +210,16 @@ async def get_file(
     Retrieves a file by its ID.
 
     Looks up the file in the files directory and returns it with the appropriate
-    Content-Type header based on the file extension.
+    Content-Type header based on the file extension. Only the uploader gets it.
 
     :param file_id: The unique identifier of the file (without extension)
     :type file_id: str
     :param current_user: The currently authenticated user making the request
     :type current_user: dict
     :return: The file content with appropriate Content-Type header
-    :raises HTTPException: 404 if file not found, 401 if not authenticated
+    :raises HTTPException: 404 if file not found or not the user's, 401 if not authenticated
     """
-    file_path = _find_file_by_id(file_id)
-
-    if file_path is None:
-        raise HTTPException(status_code=404, detail="File not found")
+    file_path = _own_file_path(file_id, current_user)
 
     media_type = _get_media_type(file_path)
 
@@ -241,6 +247,7 @@ async def get_file_text(
     For PDFs, returns the extracted text from the _text.txt file.
     For TXT/MD files, returns the original file content.
     For audio files, returns the transcript from the _transcript.txt file.
+    Only the uploader gets it.
 
     :param file_id: The unique identifier of the file (without extension)
     :type file_id: str
@@ -248,12 +255,10 @@ async def get_file_text(
     :type current_user: dict
     :return: The extracted text content or audio transcript
     :rtype: str
-    :raises HTTPException: 404 if file or text not found, 401 if not authenticated
+    :raises HTTPException: 404 if file or text not found or not the user's, 401 if not authenticated
     """
-    # First check if the original file exists
-    file_path = _find_file_by_id(file_id)
-    if file_path is None:
-        raise HTTPException(status_code=404, detail="File not found")
+    # First check that the original file exists and is the user's
+    _own_file_path(file_id, current_user)
 
     # Try to get document text first
     text_content = get_extracted_text(file_id)
@@ -284,35 +289,21 @@ async def delete_file(
     """
     Delete a file and its associated data.
 
-    Removes the original file, any extracted text/page images,
-    and clears the description cache.
+    Removes the original file, any extracted text/page images, clears the
+    description cache and the owner record. Only the uploader can delete it.
 
     :param file_id: The unique identifier of the file (without extension)
     :type file_id: str
     :param current_user: The currently authenticated user making the request
     :type current_user: dict
-    :raises HTTPException: 404 if file not found, 401 if not authenticated
+    :raises HTTPException: 404 if file not found or not the user's, 401 if not authenticated
     """
-    import shutil
-
-    file_path = _find_file_by_id(file_id)
-    if file_path is None:
-        raise HTTPException(status_code=404, detail="File not found")
+    _own_file_path(file_id, current_user)
 
     try:
-        # Delete the main file
-        file_path.unlink()
-        logger.info(f"Deleted file: {file_path}")
-
-        # Delete associated files (extracted text, page images, transcripts)
-        associated_files = list(FILES_DIR.glob(f"{file_id}_*"))
-        for assoc_file in associated_files:
-            if assoc_file.is_file():
-                assoc_file.unlink()
-                logger.debug(f"Deleted associated file: {assoc_file}")
-            elif assoc_file.is_dir():
-                shutil.rmtree(assoc_file)
-                logger.debug(f"Deleted associated directory: {assoc_file}")
+        # Delete the file and its associated files (extracted text, page images, transcripts)
+        deleted = delete_stored_file(file_id)
+        logger.info(f"Deleted file {file_id} ({deleted} file(s) on disk)")
 
         # Clear the description cache for this file
         try:
@@ -321,6 +312,8 @@ async def delete_file(
             await cache.delete_by_file(file_id)
         except Exception as e:
             logger.warning(f"Failed to clear cache for {file_id}: {e}")
+
+        db.delete_uploaded_file(file_id)
 
     except Exception as e:
         logger.error(f"Error deleting file {file_id}: {e}")
