@@ -153,14 +153,17 @@
     },
     {
       "provider": "OpenAI",
-      "display_name": "GPT-5.2",
-      "model_id": "gpt-5.2-2025-12-11",
-      "supports_tools": true,
+      "display_name": "GPT-6 Astra",
+      "model_id": "gpt-6-astra",
+      "supports_tools": false,
       "supports_vision": true,
-      "reasoning": "optional",
-      "reasoning_effort": "high",
-      "context_window": 400000,
-      "sort_order": 70
+      "reasoning": "always",
+      "reasoning_effort": "xhigh",
+      "context_window": 524288,
+      "input_price_per_mtok": 10.0,
+      "output_price_per_mtok": 50.0,
+      "sort_order": 70,
+      "notes": "Without tools: Chat Completions rejects tools together with reasoning on this model, and it always reasons (tested 2026-10-30). Tools need the Responses API, which the runtime doesn't use yet. Above 272k input tokens OpenAI charges twice the input and 1.5 times the output price."
     }
   ],
   "personas": [
