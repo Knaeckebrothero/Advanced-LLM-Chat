@@ -281,5 +281,15 @@
     "blur": "Blur",
     "errorNotImage": "This file can't be used as an image.",
     "errorTooLarge": "This image is too large (40 MB at most)."
+  },
+  "conversations": {
+    "title": "Conversations",
+    "import": "Import conversations",
+    "importing": "Importing…",
+    "hint": "JSON files from Export in a conversation's menu. They are added as new conversations.",
+    "guestHint": "Log in to import conversations.",
+    "imported": "Imported: {{count}}",
+    "invalidJson": "{{file}} isn't valid JSON.",
+    "invalidFile": "{{file}} isn't a conversation file."
   }
 }

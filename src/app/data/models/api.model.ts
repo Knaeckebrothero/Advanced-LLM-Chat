@@ -92,6 +92,18 @@ export interface IApiConversationUpdate {
   personaValues?: PersonaValues | null;
 }
 
+/**
+ * A conversation with all its messages, as GET /api/conversation/{id}/export returns it and
+ * POST /api/conversation/import takes it (docs/conversation_file.md).
+ */
+export interface IConversationFile {
+  type: 'advanced-llm-chat-conversation';
+  version: number;
+  exportedAt?: string;
+  conversation: { name: string; createdAt?: string; updatedAt?: string };
+  messages: Record<string, unknown>[];
+}
+
 export interface IApiConversationResponse {
   id: string;
   userId: number;

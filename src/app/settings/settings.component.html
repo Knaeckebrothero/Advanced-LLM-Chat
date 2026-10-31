@@ -103,6 +103,21 @@
     </div>
   </ng-container>
 
+  <!-- Conversations: files exported from a conversation's menu (guests' conversations are not kept) -->
+  <div class="setting-option">
+    <label>{{ 'conversations.title' | translate }}</label>
+    <button type="button" class="text-button" [disabled]="!canImport || importing" (click)="importInput.click()">
+      <mat-icon aria-hidden="true">upload_file</mat-icon>
+      {{ (importing ? 'conversations.importing' : 'conversations.import') | translate }}
+    </button>
+    <input #importInput type="file" accept="application/json,.json" multiple hidden (change)="onImportSelected($event)">
+    <p class="setting-hint">{{ (canImport ? 'conversations.hint' : 'conversations.guestHint') | translate }}</p>
+    <p class="setting-hint" *ngIf="importedCount > 0" role="status">
+      {{ 'conversations.imported' | translate: { count: importedCount } }}
+    </p>
+    <p class="setting-hint setting-error" *ngFor="let error of importErrors" role="alert">{{ error }}</p>
+  </div>
+
   <div class="button-row">
     <button class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
   </div>

@@ -16,6 +16,11 @@ import { IPublicModel } from '../data/models/catalog.model';
 import { ModelSelectComponent } from '../components/catalog/model-select.component';
 import { Observable } from 'rxjs';
 import {TranslateModule, TranslatePipe, TranslateService} from '@ngx-translate/core';
+import { ChatStateService } from '../services/chat-state.service';
+import { AuthService } from '../auth/auth.service';
+import { Conversation } from '../data/objects/conversation';
+import { IConversationFile } from '../data/models/api.model';
+import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
 
 
 @Component({
@@ -53,14 +58,22 @@ export class SettingsComponent {
   dimPreview: number | null = null;
   blurPreview: number | null = null;
   imageError: string | null = null;
+  // Conversation import; guests can't, their conversations are not kept
+  readonly canImport: boolean;
+  importing = false;
+  importedCount = 0;
+  importErrors: string[] = [];
 
   constructor(
     private settingsState: SettingsStateService,
     private dialogRef: MatDialogRef<SettingsComponent>,
     private translate: TranslateService,
     private catalogService: CatalogService,
-    private backgroundService: BackgroundService
+    private backgroundService: BackgroundService,
+    private chatState: ChatStateService,
+    authService: AuthService
   ) {
+    this.canImport = !authService.isGuest;
     this.customImageUrl$ = this.backgroundService.customImageUrl$;
     this.settings$ = this.settingsState.settings$;
     this.models$ = this.catalogService.models$;
@@ -161,6 +174,43 @@ export class SettingsComponent {
     this.dimPreview = null;
     this.blurPreview = null;
     this.backgroundService.clearPreview();
+  }
+
+  /** Imports the chosen conversation files. If all of them worked, the dialog closes and the last one opens. */
+  async onImportSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';  // Picking the same file again still fires change
+    if (files.length === 0) {
+      return;
+    }
+    this.importing = true;
+    this.importedCount = 0;
+    this.importErrors = [];
+    let imported: Conversation | null = null;
+    for (const file of files) {
+      let parsed: IConversationFile;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch {
+        this.importErrors.push(this.translate.instant('conversations.invalidJson', { file: file.name }));
+        continue;
+      }
+      if (parsed?.type !== 'advanced-llm-chat-conversation') {
+        this.importErrors.push(this.translate.instant('conversations.invalidFile', { file: file.name }));
+        continue;
+      }
+      try {
+        imported = await this.chatState.importConversation(parsed);
+        this.importedCount++;
+      } catch (error) {
+        this.importErrors.push(`${file.name}: ${describeHttpError(error, this.translate)}`);
+      }
+    }
+    this.importing = false;
+    if (imported && this.importErrors.length === 0) {
+      this.dialogRef.close({ openConversationId: imported.id });
+    }
   }
 
   close(): void {
