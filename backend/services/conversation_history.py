@@ -7,7 +7,9 @@ format (see backend/llm). Past attachments are replaced with descriptive
 placeholders, while the latest user message includes the full content.
 
 The history holds as many recent messages as fit the model's context window
-(history_token_budget), at most HISTORY_MAX_MESSAGES. Attachments of files the
+(history_token_budget), at most HISTORY_MAX_MESSAGES. When the conversation has
+a summary of its oldest messages (conversation_summary.py), the history starts
+with the summary instead of the messages it covers. Attachments of files the
 conversation's owner didn't upload are left out, so a message can't make the
 model read another user's file.
 """
@@ -35,6 +37,16 @@ from .audio_handler import prepare_audio_for_llm
 
 logger = logging.getLogger(__name__)
 
+# One message of the history: its id (the order of the conversation) and the message in the OpenAI format
+HistoryEntry = Tuple[int, dict]
+
+# The summary goes back as a user message, ahead of the messages that follow it word for word
+SUMMARY_LEAD_IN = (
+    "Earlier messages of this conversation were summarized to save space. The summary below "
+    "records them; the messages after it continue the conversation word for word."
+)
+SUMMARY_CONTINUE = "Continue the conversation from there. Do not mention or recap this summary."
+
 # Token estimate without a tokenizer: about 3 characters per token errs on the
 # safe side for most tokenizers and languages (English text is closer to 4)
 CHARS_PER_TOKEN = 3
@@ -54,6 +66,11 @@ def estimate_tokens(content: Union[str, List[dict], None]) -> int:
             for part in content
         )
     return 0
+
+
+def summary_message(summary: str) -> dict:
+    """The summary of the oldest messages as the user message that starts the history."""
+    return {"role": "user", "content": f"{SUMMARY_LEAD_IN}\n\n{summary.strip()}\n\n{SUMMARY_CONTINUE}"}
 
 
 def history_token_budget(
@@ -252,6 +269,9 @@ class ConversationHistoryBuilder:
         """
         Build conversation history with placeholders for past attachments.
 
+        The conversation's stored summary replaces the messages it covers (not
+        when regenerating a message it covers).
+
         Args:
             conversation_id: The conversation to build history for
             limit: Maximum number of messages to include
@@ -264,6 +284,37 @@ class ConversationHistoryBuilder:
 
         Returns:
             Tuple of (messages in the OpenAI message format, available_attachments)
+        """
+        summary = self.db.get_conversation_summary(conversation_id)
+        if summary and before_message is not None and summary['covers_until'] >= before_message['id']:
+            summary = None
+        entries, available_attachments = await self.build_entries(
+            conversation_id,
+            limit=limit,
+            include_latest_attachments=include_latest_attachments,
+            supports_vision=supports_vision,
+            before_message=before_message,
+            summary=summary
+        )
+        return self.assemble(conversation_id, entries, summary, token_budget), available_attachments
+
+    async def build_entries(
+        self,
+        conversation_id: str,
+        limit: int = HISTORY_MAX_MESSAGES,
+        include_latest_attachments: bool = True,
+        supports_vision: bool = False,
+        before_message: Optional[dict] = None,
+        summary: Optional[dict] = None
+    ) -> Tuple[List[HistoryEntry], List[AttachmentPlaceholder]]:
+        """
+        The conversation's messages in the OpenAI message format, with their ids, oldest first.
+
+        Arguments as in build_history(); without the messages that summary covers.
+        Nothing is cut to a token budget here (see assemble()).
+
+        Returns:
+            Tuple of (history entries, available_attachments)
         """
         before_timestamp = None
         if before_message is not None:
@@ -281,9 +332,11 @@ class ConversationHistoryBuilder:
         # The order the server stored them in: the id is its clock in milliseconds. Older
         # user messages carry the time of the sender's device, which may be off.
         raw_messages = sorted(raw_messages, key=lambda msg: msg.get('id') or 0)
+        if summary:
+            raw_messages = [msg for msg in raw_messages if (msg.get('id') or 0) > summary['covers_until']]
         logger.debug(f"Building history for conversation {conversation_id}: {len(raw_messages)} messages")
 
-        messages = []
+        entries: List[HistoryEntry] = []
         available_attachments = []
         latest_user_idx = self._find_latest_user_message_idx(raw_messages)
         readable_file_ids = self._readable_file_ids(conversation_id, raw_messages)
@@ -298,7 +351,7 @@ class ConversationHistoryBuilder:
                     supports_vision=supports_vision,
                     readable_file_ids=readable_file_ids
                 )
-                messages.append({"role": "user", "content": content})
+                entries.append((msg['id'], {"role": "user", "content": content}))
                 available_attachments.extend(attachments)
             elif msg.get('roleName') == 'system':
                 # E.g. the system prompt of an imported conversation: shown, but the model
@@ -308,17 +361,32 @@ class ConversationHistoryBuilder:
                 # AI/assistant message - extract text only; skip empty ones (failed answers)
                 text = self._extract_text(msg)
                 if text and text.strip():
-                    messages.append({"role": "assistant", "content": text})
+                    entries.append((msg['id'], {"role": "assistant", "content": text}))
 
+        logger.debug(f"Built history: {len(entries)} messages, {len(available_attachments)} attachments")
+        return entries, available_attachments
+
+    def assemble(
+        self,
+        conversation_id: str,
+        entries: List[HistoryEntry],
+        summary: Optional[dict] = None,
+        token_budget: Optional[int] = None
+    ) -> List[dict]:
+        """
+        The history to send: the summary (if any) and the newest entries that fit token_budget.
+
+        The entries must be the ones after the summary (build_entries() with it).
+        """
+        messages = [message for _, message in entries]
+        prefix = [summary_message(summary['content'])] if summary else []
         if token_budget is not None:
-            fitting = self._fit_to_budget(messages, token_budget)
+            fitting = self._fit_to_budget(messages, token_budget - sum(estimate_tokens(m["content"]) for m in prefix))
             if len(fitting) < len(messages):
                 logger.info(f"History of {conversation_id} trimmed to the newest {len(fitting)} of "
                             f"{len(messages)} messages (budget {token_budget} tokens)")
             messages = fitting
-
-        logger.debug(f"Built history: {len(messages)} messages, {len(available_attachments)} attachments")
-        return messages, available_attachments
+        return prefix + messages
 
     @staticmethod
     def _fit_to_budget(messages: List[dict], token_budget: int) -> List[dict]:

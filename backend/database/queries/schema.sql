@@ -50,6 +50,19 @@ CREATE TABLE IF NOT EXISTS messages (
     usage JSONB                  -- {"inputTokens", "outputTokens", "reasoningTokens", "cachedInputTokens", "cost", "currency"}
 );
 
+-- name: create_conversation_summaries_table
+-- The summary the model gets instead of a conversation's oldest messages, when they no longer
+-- fit its context window (backend/services/conversation_summary.py). Deleted when a message it
+-- covers is edited, deleted or inserted.
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    covers_until BIGINT NOT NULL,    -- id of the newest message it covers (it covers every message up to it)
+    message_count INTEGER NOT NULL,  -- how many messages it covers
+    content TEXT NOT NULL,           -- the summary (Markdown)
+    model_name TEXT,                 -- the model that wrote it
+    created_at BIGINT NOT NULL       -- unix seconds
+);
+
 -- name: create_sessions_table
 CREATE TABLE IF NOT EXISTS sessions (
     session_key TEXT PRIMARY KEY,

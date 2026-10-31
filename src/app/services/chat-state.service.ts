@@ -1,7 +1,7 @@
 // src/app/services/chat-state.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, of, Subscription } from 'rxjs';
-import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
+import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout, distinctUntilChanged } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository, MessageWithSyncStatus } from '../repositories/message.repository';
 import { SyncEngineService } from '../repositories/sync-engine.service';
@@ -29,6 +29,7 @@ import {
   PersonaValues
 } from '../data/models/catalog.model';
 import { IConversationFile } from '../data/models/api.model';
+import { IConversationSummary } from '../data/models/conversation.model';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { DBService } from '../data/db.service';
@@ -68,6 +69,10 @@ export class ChatStateService implements OnDestroy {
 
   // Model catalog selection
   private draftSelection$ = new BehaviorSubject<IConversationSelection>(EMPTY_DRAFT);
+
+  // The summary the model gets instead of the active conversation's oldest messages (kept on the server only)
+  private summary$ = new BehaviorSubject<IConversationSummary | null>(null);
+  public conversationSummary$: Observable<IConversationSummary | null> = this.summary$.asObservable();
 
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
@@ -186,6 +191,7 @@ export class ChatStateService implements OnDestroy {
   ) {
     this.initializeService();
     this.listenToAuthChanges();
+    this.watchSummary();
   }
 
   private async initializeService(): Promise<void> {
@@ -210,8 +216,46 @@ export class ChatStateService implements OnDestroy {
         if (this.authService.isGuest) {
           console.log('Guest user detected, resetting chat state');
           this.resetState();
+        } else {
+          // The first conversation may have been opened before there was a session
+          this.loadSummary(this.activeConversationId$.getValue());
         }
       });
+  }
+
+  /** Load the summary of every conversation that becomes active (a new one has none). */
+  private watchSummary(): void {
+    this.activeConversationId$
+      .pipe(distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe(id => {
+        this.summary$.next(null);
+        this.loadSummary(id);
+      });
+  }
+
+  /** Fetch a conversation's summary; offline, or for a conversation the server doesn't know, there is none. */
+  private async loadSummary(conversationId: string | null): Promise<void> {
+    if (!conversationId || conversationId === '0') return;
+    try {
+      // Also makes sure there is a session: a 401 would open the login page
+      if (!(await this.isBackendAvailable())) return;
+      const summary = await this.apiService.getConversationSummary(conversationId);
+      if (this.activeConversationId$.getValue() === conversationId) {
+        this.summary$.next(summary);
+      }
+    } catch (error: any) {
+      if (error?.status !== 404) {
+        console.warn('Could not load the summary of the conversation:', error);
+      }
+    }
+  }
+
+  /** The server drops the summary when a message it covers changes; so does this browser. */
+  private dropSummaryCovering(messageId: number): void {
+    const summary = this.summary$.getValue();
+    if (summary && messageId > 0 && messageId <= summary.coversUntil) {
+      this.summary$.next(null);
+    }
   }
 
   /**
@@ -506,6 +550,15 @@ export class ChatStateService implements OnDestroy {
         message.content.status = 'responding';
         break;
 
+      case 'summary': {
+        // The oldest messages were summarized before the answer
+        const summary = event.data as IConversationSummary;
+        if (summary.conversationId === this.activeConversationId$.getValue()) {
+          this.summary$.next(summary);
+        }
+        break;
+      }
+
       case 'done': {
         // Mark as complete (ID should already be set from message_start)
         const doneData = event.data as DoneEventData;
@@ -759,6 +812,7 @@ export class ChatStateService implements OnDestroy {
         );
 
         await this.messageRepository.update(updatedMessage);
+        this.dropSummaryCovering(messageId);
 
         // Show success notification if we had retries
         if (retryCount > 0) {
@@ -803,6 +857,7 @@ export class ChatStateService implements OnDestroy {
    */
   async deleteMessage(messageId: number): Promise<void> {
     await this.messageRepository.delete(messageId);
+    this.dropSummaryCovering(messageId);
   }
 
   /**
@@ -836,6 +891,7 @@ export class ChatStateService implements OnDestroy {
   ): Promise<void> {
     const inserted = await this.apiService.insertMessage(next.conversationId, next.id, position, roleName, content);
     await this.messageRepository.save(inserted, true);
+    this.dropSummaryCovering(inserted.id);
   }
 
   /**
@@ -858,6 +914,7 @@ export class ChatStateService implements OnDestroy {
     try {
       // Delete the old AI message immediately
       await this.messageRepository.delete(message.id);
+      this.dropSummaryCovering(message.id);
 
       // Start streaming a new response (backend will use the last user message)
       await this._streamResponse(message.conversationId, modelId);

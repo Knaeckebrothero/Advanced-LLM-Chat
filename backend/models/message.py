@@ -499,14 +499,48 @@ class MessageStartEvent(BaseModel):
     modelName: Optional[str] = None
 
 
+class ConversationSummary(BaseModel):
+    """
+    The summary the model gets instead of a conversation's oldest messages.
+
+    Sent in the summary event of the stream when one is written, and by
+    GET /api/conversation/{id}/summary.
+
+    :ivar conversationId: UUID of the conversation.
+    :ivar coversUntil: Id of the newest message it covers; it covers every message up to it.
+    :ivar messageCount: How many messages it covers.
+    :ivar content: The summary (Markdown).
+    :ivar modelName: The model that wrote it.
+    :ivar createdAt: Unix timestamp (seconds) when it was written.
+    """
+    conversationId: str
+    coversUntil: int
+    messageCount: int
+    content: str
+    modelName: Optional[str] = None
+    createdAt: int
+
+    @classmethod
+    def from_row(cls, row: dict) -> "ConversationSummary":
+        """From a conversation_summaries row."""
+        return cls(
+            conversationId=row['conversation_id'],
+            coversUntil=row['covers_until'],
+            messageCount=row['message_count'],
+            content=row['content'],
+            modelName=row.get('model_name'),
+            createdAt=row['created_at'],
+        )
+
+
 class StreamEvent(BaseModel):
     """
     Represents an event in the SSE stream.
 
-    :ivar event: Type of event (message_start, step, step_delta, token, done, error).
-    :type event: Literal["message_start", "step", "step_delta", "token", "done", "error"]
+    :ivar event: Type of event (message_start, step, step_delta, token, summary, done, error).
+    :type event: Literal["message_start", "step", "step_delta", "token", "summary", "done", "error"]
     :ivar data: Event payload (MessageStartEvent for message_start, AgentStep for step, string for token, etc.).
     :type data: Union[MessageStartEvent, AgentStep, str, dict]
     """
-    event: Literal["message_start", "step", "step_delta", "token", "done", "error"]
-    data: Union[MessageStartEvent, AgentStep, str, dict]
+    event: Literal["message_start", "step", "step_delta", "token", "summary", "done", "error"]
+    data: Union[MessageStartEvent, AgentStep, ConversationSummary, str, dict]

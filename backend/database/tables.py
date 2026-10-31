@@ -81,6 +81,18 @@ messages = Table(
     Column('usage', JSONB),  # inputTokens, outputTokens, reasoningTokens, cachedInputTokens, cost, currency
 )
 
+# The summary the model gets instead of a conversation's oldest messages (one per conversation)
+conversation_summaries = Table(
+    'conversation_summaries',
+    metadata,
+    Column('conversation_id', Text, ForeignKey('conversations.id', ondelete='CASCADE'), primary_key=True),
+    Column('covers_until', BigInteger, nullable=False),  # Id of the newest message it covers
+    Column('message_count', Integer, nullable=False),  # How many messages it covers
+    Column('content', Text, nullable=False),
+    Column('model_name', Text),  # The model that wrote it
+    Column('created_at', BigInteger, nullable=False),  # Unix seconds
+)
+
 # Sessions table
 sessions = Table(
     'sessions',

@@ -11,6 +11,7 @@ import { ThemeService } from '../services/theme.service';
 import { ChatUiInputfieldComponent } from './chat-ui-inputfield/chat-ui-inputfield.component';
 import { ChatUiMessageComponent } from './chat-ui-message/chat-ui-message.component';
 import { IPublicModel } from '../data/models/catalog.model';
+import { IConversationSummary } from '../data/models/conversation.model';
 
 
 @Component({
@@ -71,6 +72,18 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
 
   // For template compatibility
   messages = this.messages$;
+
+  // The summary of the oldest messages, shown after the newest message it covers that is loaded
+  summaryDivider$: Observable<{ summary: IConversationSummary; afterId: number } | null> = combineLatest([
+    this.messages$,
+    this.chatState.conversationSummary$
+  ]).pipe(
+    map(([messages, summary]) => {
+      if (!summary) return null;
+      const covered = messages.filter(m => m.id > 0 && m.id <= summary.coversUntil);
+      return covered.length > 0 ? { summary, afterId: covered[covered.length - 1].id } : null;
+    })
+  );
 
   // Mobile state from UIStateService
   isMobile$ = this.uiState.isMobile$;

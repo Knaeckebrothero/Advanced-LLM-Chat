@@ -1,0 +1,84 @@
+:host {
+  display: block;
+  width: 100%;
+  max-width: 768px;
+  margin: 16px auto;
+}
+
+// A rule on both sides of the button
+.summary-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    border-top: 1px dashed var(--theme-border);
+  }
+}
+
+.summary-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 8px 4px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 16px;
+  background-color: var(--theme-surface);
+  color: var(--theme-text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
+
+  &:hover {
+    background-color: var(--theme-hover);
+    color: var(--theme-text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+  }
+}
+
+.summary-panel {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
+}
+
+.summary-hint {
+  margin: 0 0 8px;
+  color: var(--theme-text-secondary);
+  font-size: 0.85rem;
+}
+
+.summary-text {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+
+  ::ng-deep {
+    h1, h2, h3 {
+      margin: 12px 0 4px;
+      font-size: 0.95rem;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+  }
+}

@@ -18,7 +18,7 @@ from backend.models.conversation import (
     ConversationWithDetails
 )
 from backend.models.conversation_file import ConversationFile
-from backend.models.message import MessageResponse
+from backend.models.message import ConversationSummary, MessageResponse
 from backend.services import conversation_file
 from backend.catalog.service import CatalogError, check_model_choice, check_persona_choice
 from backend.catalog.resolver import resolve_auxiliary_model
@@ -283,6 +283,30 @@ async def export_conversation(conversation_id: str, current_user: dict = Depends
     crud_logger.info(f"Conversation {conversation_id} exported by user {user_id} ({len(messages)} messages)")
     headers = {"Content-Disposition": 'attachment; filename="conversation.json"'}
     return JSONResponse(content=jsonable_encoder(content), headers=headers)
+
+
+@router.get("/conversation/{conversation_id}/summary",
+            response_model=Optional[ConversationSummary],
+            responses={
+                status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Conversation not found"}
+            })
+async def get_conversation_summary(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Returns the summary the model gets instead of the conversation's oldest messages
+    (backend/services/conversation_summary.py), or null if it has none.
+
+    :param conversation_id: The conversation.
+    :type conversation_id: str
+    :param current_user: The authenticated user, who must own the conversation.
+    :type current_user: dict
+    :return: The summary, or None.
+    :rtype: Optional[ConversationSummary]
+    :raises HTTPException: 404 if the conversation does not exist for the user.
+    """
+    if not db.get_conversation_by_id(conversation_id, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    row = db.get_conversation_summary(conversation_id)
+    return ConversationSummary.from_row(row) if row else None
 
 
 @router.post("/conversation/import",

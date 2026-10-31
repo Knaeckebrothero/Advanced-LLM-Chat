@@ -1,0 +1,15 @@
+<div class="summary-divider">
+  <button type="button" class="summary-toggle" (click)="toggle()"
+          [attr.aria-expanded]="expanded" [attr.aria-controls]="panelId">
+    <mat-icon aria-hidden="true">summarize</mat-icon>
+    <span>{{ (summary.messageCount === 1 ? 'summary.titleOne' : 'summary.title') | translate: { count: summary.messageCount } }}</span>
+    <mat-icon class="chevron" aria-hidden="true">{{ expanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+  </button>
+</div>
+<div class="summary-panel" *ngIf="expanded" [id]="panelId">
+  <p class="summary-hint">
+    {{ 'summary.hint' | translate }}
+    <ng-container *ngIf="summary.modelName">{{ 'summary.writtenBy' | translate: { model: summary.modelName } }}</ng-container>
+  </p>
+  <markdown class="summary-text" [data]="summary.content"></markdown>
+</div>

@@ -34,6 +34,14 @@ log = logging.getLogger(__name__)
 
 THINKING_TITLE = "Thinking"
 
+class IncompleteAnswer(RuntimeError):
+    """A complete() call stopped before the answer was finished: cut off at the output limit, or refused."""
+
+    def __init__(self, stop_reason: str):
+        super().__init__(f"The model stopped early ({stop_reason})")
+        self.stop_reason = stop_reason
+
+
 # Longest step content shown for a tool result
 MAX_RESULT_STEP_LENGTH = 1000
 
@@ -286,6 +294,7 @@ async def complete(
     system_prompt: Optional[str] = None,
     max_output_tokens: Optional[int] = None,
     client: Any = None,
+    require_complete: bool = False,
 ) -> tuple[str, Usage]:
     """
     One model call without tools or streaming.
@@ -297,15 +306,19 @@ async def complete(
         max_output_tokens: Output limit for this call; defaults to the model's.
             Keep it generous for thinking models, whose reasoning counts toward it.
         client: An SDK client to use instead of the shared one.
+        require_complete: Raise IncompleteAnswer when the model hit the output
+            limit or refused, instead of returning what it wrote.
 
     Returns:
         The answer text (reasoning removed) and the usage.
     """
     client = client or get_client(config)
     adapter = anthropic_chat if config.kind == KIND_ANTHROPIC else openai_chat
-    text, usage = await adapter.complete_once(
+    text, usage, stop_reason = await adapter.complete_once(
         client, config, messages, system_prompt=system_prompt, max_output_tokens=max_output_tokens
     )
-    log.debug(f"Completion from {config.model_id}: {len(text)} chars, input={usage.input_tokens}, "
-              f"output={usage.output_tokens} tokens")
+    log.debug(f"Completion from {config.model_id}: {len(text)} chars, stop={stop_reason}, "
+              f"input={usage.input_tokens}, output={usage.output_tokens} tokens")
+    if require_complete and stop_reason in (STOP_MAX_TOKENS, STOP_REFUSAL):
+        raise IncompleteAnswer(stop_reason)
     return text, usage

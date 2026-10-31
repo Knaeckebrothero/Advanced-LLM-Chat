@@ -4,19 +4,20 @@ import { Observable, Subscriber } from 'rxjs';
 import { environment } from '../environments/environment';
 import { AgentStep } from '../data/objects/message';
 import { IMessageUsage } from '../data/models/catalog.model';
+import { IConversationSummary } from '../data/models/conversation.model';
 import { ApiService } from './api.service';
 
 /**
  * Types of events that can be received from the SSE stream
  */
-export type StreamEventType = 'message_start' | 'step' | 'step_delta' | 'token' | 'done' | 'error';
+export type StreamEventType = 'message_start' | 'step' | 'step_delta' | 'token' | 'summary' | 'done' | 'error';
 
 /**
  * Represents an event from the SSE stream
  */
 export interface StreamEvent {
   type: StreamEventType;
-  data: MessageStartEventData | AgentStep | StepDeltaEventData | string | DoneEventData | ErrorEventData;
+  data: MessageStartEventData | AgentStep | StepDeltaEventData | string | IConversationSummary | DoneEventData | ErrorEventData;
 }
 
 /**
@@ -67,6 +68,7 @@ export interface ErrorEventData {
  * an Observable interface for consuming streaming events. It handles:
  * - Agent reasoning steps (thoughts, tool calls, observations)
  * - Token streaming for the final response
+ * - A new summary of the conversation's oldest messages
  * - Completion and error events
  */
 @Injectable({ providedIn: 'root' })
@@ -228,6 +230,10 @@ export class StreamingService {
         case 'step_delta':
           // Text to append to the content of an earlier step
           return { type, data: JSON.parse(data) as StepDeltaEventData };
+
+        case 'summary':
+          // A new summary of the oldest messages, written before the answer
+          return { type, data: JSON.parse(data) as IConversationSummary };
 
         case 'done':
           // Done events contain messageId, conversationId, the model and its usage

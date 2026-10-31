@@ -24,6 +24,7 @@ import {
   IToolStatus,
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
+import { IConversationSummary } from '../data/models/conversation.model';
 
 /**
  * Response from file upload endpoint
@@ -543,6 +544,13 @@ export class ApiService {
   async exportConversation(id: string): Promise<IConversationFile> {
     return await lastValueFrom(
       this.http.get<IConversationFile>(`${this.baseUrl}/api/conversation/${id}/export`, this.getHttpOptions())
+    );
+  }
+
+  /** The summary the model gets instead of the conversation's oldest messages, null if it has none. */
+  async getConversationSummary(id: string): Promise<IConversationSummary | null> {
+    return await lastValueFrom(
+      this.http.get<IConversationSummary | null>(`${this.baseUrl}/api/conversation/${id}/summary`, this.getHttpOptions())
     );
   }
 
