@@ -7,6 +7,7 @@ import { ApiService } from '../services/api.service';
 import { Conversation } from '../data/objects/conversation';
 import { Message } from '../data/objects/message';
 import { IConversationSelection } from '../data/models/catalog.model';
+import { IConversationFile } from '../data/models/api.model';
 import { MessageRepository } from './message.repository';
 
 // Import from db-schema instead of defining here
@@ -79,6 +80,17 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       incoming.personaValues = local.personaValues;
       incoming.selectionPending = local.selectionPending;
     }
+  }
+
+  /** A conversation with all its messages as a conversation file (the backend has all of them). */
+  exportConversation(id: string): Promise<IConversationFile> {
+    return this.apiService.exportConversation(id);
+  }
+
+  /** Imports a conversation file as a new conversation; its messages load when it opens. */
+  async importConversation(file: IConversationFile): Promise<Conversation> {
+    const conversation = await this.apiService.importConversation(file);
+    return this.save(conversation);
   }
 
   async updateConversation(id: string, name: string): Promise<Conversation> {

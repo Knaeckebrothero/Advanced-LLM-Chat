@@ -179,8 +179,13 @@ h2 {
     height: 18px;
   }
 
-  &:hover {
+  &:hover:not(:disabled) {
     background-color: var(--theme-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 }
 
@@ -214,14 +219,15 @@ h2 {
   }
 }
 
-.setting-error {
-  color: #d93025;
-}
-
 .setting-hint {
   margin: 6px 2px 0;
   font-size: 0.8rem;
   color: var(--theme-text-secondary);
+}
+
+// After .setting-hint, so an error hint is red
+.setting-error {
+  color: #d93025;
 }
 
 .button-row {

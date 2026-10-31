@@ -28,6 +28,7 @@ import {
   IPublicPersona,
   PersonaValues
 } from '../data/models/catalog.model';
+import { IConversationFile } from '../data/models/api.model';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { DBService } from '../data/db.service';
@@ -903,6 +904,20 @@ export class ChatStateService implements OnDestroy {
         await this.createNewConversation();
       }
     }
+  }
+
+  /**
+   * A conversation with all its messages, e.g. for a download
+   */
+  exportConversation(conversationId: string): Promise<IConversationFile> {
+    return this.conversationRepository.exportConversation(conversationId);
+  }
+
+  /**
+   * Import a conversation file as a new conversation
+   */
+  importConversation(file: IConversationFile): Promise<Conversation> {
+    return this.conversationRepository.importConversation(file);
   }
 
   /**

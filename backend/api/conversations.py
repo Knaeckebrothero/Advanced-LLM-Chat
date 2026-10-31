@@ -6,6 +6,8 @@ import logging
 import time
 from typing import List, Optional
 from fastapi import APIRouter, Response, Depends, HTTPException, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from backend.models.common import ErrorResponse
 from backend.models.conversation import (
@@ -15,7 +17,9 @@ from backend.models.conversation import (
     ConversationUpdateRequest,
     ConversationWithDetails
 )
+from backend.models.conversation_file import ConversationFile
 from backend.models.message import MessageResponse
+from backend.services import conversation_file
 from backend.catalog.service import CatalogError, check_model_choice, check_persona_choice
 from backend.catalog.resolver import resolve_auxiliary_model
 from backend.database import db
@@ -249,6 +253,71 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name}, "
                      f"model_id: {req.modelId}, persona_id: {req.personaId}")
 
+    return Conversation.from_row(new_conv)
+
+
+@router.get("/conversation/{conversation_id}/export",
+            responses={
+                status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Conversation not found"}
+            })
+async def export_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Exports a conversation with all its messages as a conversation file
+    (docs/conversation_file.md). Uploaded files are referenced, not included.
+
+    :param conversation_id: The conversation to export.
+    :type conversation_id: str
+    :param current_user: The authenticated user, who must own the conversation.
+    :type current_user: dict
+    :return: The conversation file (JSON, offered as a download).
+    :rtype: JSONResponse
+    :raises HTTPException: 404 if the conversation does not exist for the user.
+    """
+    user_id = current_user['user_id']
+    conv = db.get_conversation_by_id(conversation_id, user_id)
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    messages = db.get_messages_by_conversation(conversation_id, limit=None)
+    content = conversation_file.export_conversation(conv, messages)
+    crud_logger.info(f"Conversation {conversation_id} exported by user {user_id} ({len(messages)} messages)")
+    headers = {"Content-Disposition": 'attachment; filename="conversation.json"'}
+    return JSONResponse(content=jsonable_encoder(content), headers=headers)
+
+
+@router.post("/conversation/import",
+             response_model=Conversation,
+             status_code=status.HTTP_201_CREATED,
+             responses={
+                 status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "The file can't be imported"},
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Guests can't import"}
+             })
+async def import_conversation(file: ConversationFile, current_user: dict = Depends(get_current_user)):
+    """
+    Imports a conversation file (docs/conversation_file.md) as a new conversation
+    of the user. The messages keep their times; the conversation has no model or
+    agent, so the user's default model answers when it goes on.
+
+    :param file: The conversation file.
+    :type file: ConversationFile
+    :param current_user: The authenticated user; guests can't import, as their
+        conversations are not kept.
+    :type current_user: dict
+    :return: The new conversation.
+    :rtype: Conversation
+    :raises HTTPException: 403 for guests, 400 if a message can't be imported.
+    """
+    if current_user.get("is_guest"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Log in to import conversations")
+
+    user_id = current_user['user_id']
+    try:
+        new_conv = conversation_file.import_conversation(file, user_id)
+    except conversation_file.ConversationFileError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    crud_logger.info(f"Conversation imported - id: {new_conv['id']}, user_id: {user_id}, "
+                     f"messages: {len(file.messages)}")
     return Conversation.from_row(new_conv)
 
 

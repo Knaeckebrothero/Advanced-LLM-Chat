@@ -97,8 +97,13 @@ export class SidebarComponent implements OnInit, OnDestroy {
       maxHeight: 'calc(100dvh - 24px)'
     });
 
-    dialogRef.afterClosed().subscribe(() => {
-      // Logic after dialog closes
+    // After an import, the imported conversation opens
+    dialogRef.afterClosed().subscribe((result?: { openConversationId?: string }) => {
+      if (result?.openConversationId) {
+        this.chatState.loadConversation(result.openConversationId);
+        this.router.navigate(['/']);
+        this.uiState.closeSidebarOnMobile();
+      }
     });
   }
 

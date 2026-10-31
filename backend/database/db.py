@@ -25,7 +25,7 @@ import logging
 import os
 import re
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional, Generator
 
@@ -668,6 +668,69 @@ class Database:
             log.info(f"Created conversation: {conversation_id}")
             return self._row_to_dict(result)
 
+    def import_conversation(
+        self,
+        conversation_id: str,
+        user_id: int,
+        name: str,
+        created_at: datetime,
+        updated_at: datetime,
+        message_rows: list[dict]
+    ) -> dict:
+        """
+        Create a conversation with its messages in one transaction (conversation import).
+
+        Message ids are unique across all conversations, so an id that is taken
+        (e.g. by the same file imported before) moves to the next free millisecond.
+        The ids keep the order of message_rows, and each message's time is its id
+        in seconds, like the messages the server stores itself.
+
+        Args:
+            conversation_id: UUID for the conversation.
+            user_id: Owner's user ID.
+            name: Conversation name.
+            created_at: When the conversation was created (naive UTC).
+            updated_at: When the conversation was last changed (naive UTC).
+            message_rows: Column values of the messages in conversation order; 'id' is
+                the wanted id (the message's time in milliseconds).
+
+        Returns:
+            The created conversation dictionary.
+        """
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        with self.connection() as conn:
+            result = conn.execute(insert(conversations).values(
+                id=conversation_id,
+                userId=user_id,
+                name=name,
+                participants=json.dumps(['user', 'Assistant']),
+                createdAt=created_at,
+                updatedAt=updated_at,
+                lastModified=int(updated_at.replace(tzinfo=timezone.utc).timestamp()),
+            ).returning(conversations)).fetchone()
+
+            previous_id = 0
+            for row in message_rows:
+                values = {key: _jsonb(value) if key in ('agent_steps', 'usage') else value
+                          for key, value in row.items()}
+                message_id = max(values.pop('id'), previous_id + 1)
+                while True:
+                    stmt = pg_insert(messages).values(
+                        **values,
+                        id=message_id,
+                        conversationId=conversation_id,
+                        time=message_id // 1000,
+                        version=1,
+                        lastModified=message_id // 1000,
+                    ).on_conflict_do_nothing(index_elements=['id'])
+                    if conn.execute(stmt).rowcount:
+                        break
+                    message_id += 1
+                previous_id = message_id
+
+            log.info(f"Imported conversation {conversation_id} with {len(message_rows)} messages")
+            return self._row_to_dict(result)
+
     def update_conversation(
         self,
         conversation_id: str,
@@ -808,7 +871,7 @@ class Database:
             conversation_id: The conversation's UUID.
             before_timestamp: Get messages before this timestamp (pagination).
             after_timestamp: Get messages after this timestamp (incremental sync).
-            limit: Maximum number of messages to return.
+            limit: Maximum number of messages to return (None: all of them).
 
         Returns:
             List of message dictionaries.

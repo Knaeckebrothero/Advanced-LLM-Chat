@@ -23,7 +23,7 @@ import {
   IPublicPersona,
   IToolStatus,
 } from '../data/models/catalog.model';
-import { IApiConversationCreate, IApiConversationUpdate } from '../data/models/api.model';
+import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
 
 /**
  * Response from file upload endpoint
@@ -519,6 +519,21 @@ export class ApiService {
       console.error('Error deleting conversation:', error);
       throw error;
     }
+  }
+
+  /** A conversation with all its messages, as a conversation file. */
+  async exportConversation(id: string): Promise<IConversationFile> {
+    return await lastValueFrom(
+      this.http.get<IConversationFile>(`${this.baseUrl}/api/conversation/${id}/export`, this.getHttpOptions())
+    );
+  }
+
+  /** Creates a new conversation from a conversation file (not for guests). */
+  async importConversation(file: IConversationFile): Promise<Conversation> {
+    const responseData = await lastValueFrom(
+      this.http.post<any>(`${this.baseUrl}/api/conversation/import`, file, this.getHttpOptions())
+    );
+    return Conversation.fromApiResponse(responseData);
   }
 
   // Fetch a file by its ID

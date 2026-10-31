@@ -281,5 +281,15 @@
     "blur": "Unschärfe",
     "errorNotImage": "Diese Datei kann nicht als Bild verwendet werden.",
     "errorTooLarge": "Dieses Bild ist zu groß (höchstens 40 MB)."
+  },
+  "conversations": {
+    "title": "Unterhaltungen",
+    "import": "Unterhaltungen importieren",
+    "importing": "Wird importiert…",
+    "hint": "JSON-Dateien von „Export“ im Menü einer Unterhaltung. Sie werden als neue Unterhaltungen hinzugefügt.",
+    "guestHint": "Melde dich an, um Unterhaltungen zu importieren.",
+    "imported": "Importiert: {{count}}",
+    "invalidJson": "{{file}} ist kein gültiges JSON.",
+    "invalidFile": "{{file}} ist keine Unterhaltungsdatei."
   }
 }

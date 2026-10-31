@@ -300,6 +300,10 @@ class ConversationHistoryBuilder:
                 )
                 messages.append({"role": "user", "content": content})
                 available_attachments.extend(attachments)
+            elif msg.get('roleName') == 'system':
+                # E.g. the system prompt of an imported conversation: shown, but the model
+                # gets the app's own system prompt
+                continue
             else:
                 # AI/assistant message - extract text only; skip empty ones (failed answers)
                 text = self._extract_text(msg)

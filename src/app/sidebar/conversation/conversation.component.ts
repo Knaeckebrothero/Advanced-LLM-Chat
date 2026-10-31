@@ -8,6 +8,7 @@ import { firstValueFrom } from 'rxjs';
 import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 
 
 @Component({
@@ -130,10 +131,34 @@ export class ConversationComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Downloads the conversation with all its messages as a JSON file, which Settings can import again.
+   */
+  async exportConversation(): Promise<void> {
+    try {
+      const file = await this.chatState.exportConversation(this.conversation.id);
+      const blob = new Blob([JSON.stringify(file, null, 2) + '\n'], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = exportFileName(this.conversation.name);
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      alert(`The conversation could not be exported: ${describeHttpError(error)}`);
+    }
+  }
+
   ngOnDestroy(): void {
     // Clean up any pending timers
     if (this.longPressTimer) {
       clearTimeout(this.longPressTimer);
     }
   }
+}
+
+/** The conversation's name as a file name, without the characters that file systems reject (also at the end). */
+export function exportFileName(name: string): string {
+  const safe = name.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').slice(0, 80).replace(/^[\s.]+|[\s.]+$/g, '');
+  return `${safe || 'conversation'}.json`;
 }
