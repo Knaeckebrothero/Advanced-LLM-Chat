@@ -3,7 +3,7 @@ import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, lastValueFrom, of, Subscription } from 'rxjs';
 import { map, shareReplay, switchMap, takeUntil, tap, catchError, filter, timeout } from 'rxjs/operators';
 import { ConversationRepository } from '../repositories/conversation.repository';
-import { MessageRepository } from '../repositories/message.repository';
+import { MessageRepository, MessageWithSyncStatus } from '../repositories/message.repository';
 import { SyncEngineService } from '../repositories/sync-engine.service';
 import { Conversation } from '../data/objects/conversation';
 import { Message, AgentContent, AgentStep } from '../data/objects/message';
@@ -87,15 +87,7 @@ export class ChatStateService implements OnDestroy {
       }
       return this.messageRepository.getByConversationId(id);
     }),
-    map(messages => messages.sort((a, b) => {
-      const timeDiff = (a.time?.getTime() || 0) - (b.time?.getTime() || 0);
-      // Use ID as tie-breaker when timestamps are within 1 second
-      // This fixes ordering issues caused by timestamp precision loss in SSE streaming
-      if (Math.abs(timeDiff) < 1000) {
-        return a.id - b.id;
-      }
-      return timeDiff;
-    })),
+    map(messages => messages.sort(Message.compare)),
     shareReplay(1)
   );
 
@@ -277,7 +269,7 @@ export class ChatStateService implements OnDestroy {
     // Create and save user message
     const userMessage = Message.createText(
       {
-        id: Math.floor(Date.now() / 1000),
+        id: Message.localId(),
         conversationId,
         roleName,
         time: new Date()
@@ -349,7 +341,7 @@ export class ChatStateService implements OnDestroy {
     // Create user message with file attachments
     const userMessage = Message.createText(
       {
-        id: Math.floor(Date.now() / 1000),
+        id: Message.localId(),
         conversationId,
         roleName,
         time: new Date()
@@ -389,7 +381,7 @@ export class ChatStateService implements OnDestroy {
     // Create user message with voice file attachment
     const userMessage = Message.createText(
       {
-        id: Math.floor(Date.now() / 1000),
+        id: Message.localId(),
         conversationId,
         roleName: 'user',
         time: new Date()
@@ -436,19 +428,17 @@ export class ChatStateService implements OnDestroy {
     this.pendingVoiceMessage.version = (this.pendingVoiceMessage.version || 1) + 1;
     this.pendingVoiceMessage.lastModified = Math.floor(Date.now() / 1000);
 
-    // Update in local repository
-    await this.messageRepository.update(this.pendingVoiceMessage);
-
     // Mark that we're sending a message to prevent immediate re-sync
     await this.conversationRepository.markMessageSent(conversationId);
 
     // Clear the pending reference
-    const messageToSync = this.pendingVoiceMessage;
+    const messageToSync: MessageWithSyncStatus = this.pendingVoiceMessage;
     this.pendingVoiceMessage = null;
 
-    // Now sync with backend (this will send the message)
+    // Update it locally and send it to the backend, which gives it its id and time
+    messageToSync.syncStatus = 'pending';
     try {
-      await this.apiService.sendMessage(messageToSync);
+      await this.messageRepository.update(messageToSync);
     } catch (error) {
       console.error('Failed to sync voice message with backend:', error);
       // Continue anyway - message is saved locally
@@ -671,7 +661,7 @@ export class ChatStateService implements OnDestroy {
     if (!backendAvailable) {
       const offlineMessage = Message.createText(
         {
-          id: Math.floor(Date.now() / 1000),
+          id: Message.localId(),
           conversationId: this.activeConversationId$.getValue()!,
           roleName: participant,
           time: new Date()
@@ -718,7 +708,7 @@ export class ChatStateService implements OnDestroy {
         console.error('Error generating message:', error);
         const errorMessage = Message.createText(
           {
-            id: Math.floor(Date.now() / 1000),
+            id: Message.localId(),
             conversationId: this.activeConversationId$.getValue()!,
             roleName: participant,
             time: new Date()

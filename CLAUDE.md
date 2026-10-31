@@ -182,6 +182,7 @@ Uses discriminated union pattern with factory methods:
 - **TextContent**: Regular text messages with optional file attachments (including voice messages)
 - **AgentContent**: Agent responses with reasoning steps and final response
 - Voice messages are TextContent with audio file attachment; transcript is in text content
+- Order and time come from the server's clock, never the device's: the server stamps a message's time when it stores it, and its ids are that clock in milliseconds. `Message.compare` sorts stored messages by id, then the ones only in the browser (negative ids from `Message.localId()`, e.g. a failed send) by time
 
 ## Agent Streaming Protocol
 

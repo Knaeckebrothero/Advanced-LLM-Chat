@@ -426,14 +426,9 @@ export class DBService {
     // Use the existing method to get all messages for the conversation
     const messages = await this.getMessagesByConversationId(conversationId);
     
-    // Sort by time descending and take the limit
-    messages.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-    const recentMessages = messages.slice(0, limit);
-    
-    // Sort back to chronological order for display
-    recentMessages.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-    
-    return recentMessages;
+    // The last ones in conversation order
+    messages.sort(Message.compare);
+    return messages.slice(-limit);
   }
 
   /**

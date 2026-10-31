@@ -175,6 +175,10 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
                              current_user: dict = Depends(get_current_user)):
     """
     Handles the sending of a message in a conversation.
+
+    Returns the message's id and time. The server's clock decides both, like a messenger's
+    server: the id is the time it stored the message in milliseconds, so the ids give the
+    order of a conversation, and the client's time is ignored, since device clocks drift.
     """
     crud_logger.info(
         f"Message send called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
@@ -194,6 +198,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
             )
 
         message_id = int(time.time() * 1000)
+        msg_time = message_id // 1000
 
         # Extract content based on message type
         content_str = ""
@@ -261,11 +266,11 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
                 message_id=message_id,
                 conversation_id=request_body.conversationId,
                 role_name=request_body.roleName,
-                msg_time=request_body.time,
+                msg_time=msg_time,
                 content=request_body.content
             )
             crud_logger.info(f"Agent message sent successfully - Message ID: {message_id}")
-            return {"id": message_id}
+            return {"id": message_id, "time": msg_time}
 
         # For text/voice messages, use regular message storage
         db.create_message(
@@ -273,14 +278,14 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
             conversation_id=request_body.conversationId,
             role_name=request_body.roleName,
             content=content_str,
-            time=request_body.time,
+            time=msg_time,
             msg_type=message_type,
             version=request_body.version or 1,
-            last_modified=request_body.lastModified or int(time.time())
+            last_modified=msg_time
         )
 
         crud_logger.info(f"Message sent successfully - Message ID: {message_id}")
-        return {"id": message_id}
+        return {"id": message_id, "time": msg_time}
 
     except HTTPException:
         raise
@@ -729,7 +734,9 @@ async def send_and_generate_message(
                 detail="Access denied to this conversation"
             )
 
+        # The server stamps the time, as in /send
         user_message_id = int(time.time() * 1000)
+        user_message_time = user_message_id // 1000
         content_str = ""
         message_type = request_body.type
         if message_type == 'text':
@@ -791,7 +798,7 @@ async def send_and_generate_message(
                 message_id=user_message_id,
                 conversation_id=request_body.conversationId,
                 role_name=request_body.roleName,
-                msg_time=request_body.time,
+                msg_time=user_message_time,
                 content=request_body.content
             )
             # Extract agent fields for response
@@ -807,10 +814,10 @@ async def send_and_generate_message(
                 conversationId=request_body.conversationId,
                 roleName=request_body.roleName,
                 content='',  # Empty for JSONB-stored agent messages
-                time=request_body.time,
+                time=user_message_time,
                 type='agent',
                 version=request_body.version or 1,
-                lastModified=request_body.lastModified or int(time.time()),
+                lastModified=user_message_time,
                 steps=agent_data.get('steps', []),
                 finalResponse=agent_data.get('finalResponse', ''),
                 status=agent_data.get('status', 'complete'),
@@ -825,10 +832,10 @@ async def send_and_generate_message(
             conversation_id=request_body.conversationId,
             role_name=request_body.roleName,
             content=content_str,
-            time=request_body.time,
+            time=user_message_time,
             msg_type=message_type,
             version=request_body.version or 1,
-            last_modified=request_body.lastModified or int(time.time())
+            last_modified=user_message_time
         )
 
         user_message_response = MessageResponse(
@@ -836,10 +843,10 @@ async def send_and_generate_message(
             conversationId=request_body.conversationId,
             roleName=request_body.roleName,
             content=content_str,
-            time=request_body.time,
+            time=user_message_time,
             type=message_type,
             version=request_body.version or 1,
-            lastModified=request_body.lastModified or int(time.time())
+            lastModified=user_message_time
         )
 
         ai_message_response = None

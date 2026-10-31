@@ -171,9 +171,9 @@ class ApiMessageSend(BaseModel):
         string, while for enhanced functionality, it can be an object of TextContent
         or VoiceContent.
     :type content: Union[str, TextContent, VoiceContent]
-    :ivar time: The timestamp of when the message was created, expressed as an
-        integer.
-    :type time: int
+    :ivar time: Ignored: the server stamps the time when it stores the message, since
+        device clocks drift. Optional, older clients still send it.
+    :type time: Optional[int]
     :ivar version: Optional integer indicating the version of the message format
         being used. Defaults to 1.
     :type version: Optional[int]
@@ -187,7 +187,7 @@ class ApiMessageSend(BaseModel):
     roleName: str
     type: Literal["text", "voice", "agent"]
     content: Union[str, TextContent, VoiceContent, AgentContent]  # Backwards compatible - str for legacy, objects for new types
-    time: int
+    time: Optional[int] = None
     version: Optional[int] = 1
     lastModified: Optional[int] = None
     attachments: Optional[List[dict]] = None  # Frontend sends attachments at top level
@@ -248,8 +248,9 @@ class ApiMessageSendAndGenerate(BaseModel):
     :ivar content: The content of the message, which may be a string, text content,
         or voice content.
     :type content: Union[str, TextContent, VoiceContent]
-    :ivar time: The timestamp of the message in seconds since the epoch.
-    :type time: int
+    :ivar time: Ignored: the server stamps the time when it stores the message, since
+        device clocks drift. Optional, older clients still send it.
+    :type time: Optional[int]
     :ivar version: (Optional) Version of the message format. Defaults to 1 if not
         provided.
     :type version: Optional[int]
@@ -269,7 +270,7 @@ class ApiMessageSendAndGenerate(BaseModel):
     roleName: str
     type: Literal["text", "voice", "agent"]
     content: Union[str, TextContent, VoiceContent, AgentContent]
-    time: int
+    time: Optional[int] = None
     version: Optional[int] = 1
     lastModified: Optional[int] = None
     generateResponse: bool = True

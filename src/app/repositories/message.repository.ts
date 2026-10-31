@@ -345,12 +345,13 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     try {
       // For now, just use the regular send message endpoint
       // In the future, this could handle updates differently
-      const serverId = await this.apiService.sendMessage(message);
+      const stored = await this.apiService.sendMessage(message);
 
-      // Update the message ID with the server-assigned ID if it's different
-      if (serverId && serverId !== message.id) {
+      // Take the id and time the server gave it: they decide its place in the conversation
+      if (stored.id && stored.id !== message.id) {
         const oldId = message.id;
-        message.id = serverId;
+        message.id = stored.id;
+        if (stored.time) message.time = new Date(stored.time * 1000);
 
         // Update in IndexedDB with new ID
         await this.dbService.deleteMessage(oldId);
@@ -406,10 +407,11 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         try {
           const result = await this.apiService.sendAndGenerateMessage(message, generateResponse);
 
-          // Update user message ID if different
+          // Take the id and time the server gave the user message
           if (result.userMessageId && result.userMessageId !== message.id) {
             const oldId = message.id;
             message.id = result.userMessageId;
+            if (result.userMessageTime) message.time = new Date(result.userMessageTime * 1000);
 
             // Update in IndexedDB
             await this.dbService.deleteMessage(oldId);
