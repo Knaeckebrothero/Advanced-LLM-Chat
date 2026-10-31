@@ -1,6 +1,6 @@
 # Generalization refactor (October 2026)
 
-Handover notes for picking the project back up: what was decided, what was done, what was found along the way and what comes next. Written on 2026-10-30, after the cleanup was merged into `develop` (PR #137), and updated the same evening after the model catalog work (see "Status" below; it is the place to start).
+Handover notes for picking the project back up: what was decided, what was done, what was found along the way and what comes next. Written on 2026-10-30, after the cleanup was merged into `develop` (PR #137), updated the same evening after the model catalog work, and on 2026-10-31 after the first release and the homelab deployment (see "Status" below; it is the place to start).
 
 ## Goals and agreed plan
 
@@ -16,14 +16,14 @@ Agreed order of work:
 1. Repository setup and downstream repos (done)
 2. Clean up and generalize upstream `develop` (done, PR #137)
 3. Choose model providers and set the app up as a proper chat app (done on 2026-10-30, see "Status")
-4. **Deployment to the homelab (next)**
-5. Merge `develop` into `main`, then deploy and test in production
+4. Deployment to the homelab (done on 2026-10-30 with the Helm chart, see "Status")
+5. Merge `develop` into `main`, then deploy and test in production (done: release 0.1.175)
 
 The user explicitly wants providers and setup settled before the deployment and before touching `main`.
 
-## Status on 2026-10-30 (evening)
+## Status on 2026-10-31
 
-Everything below is committed and pushed to `develop` (pushed directly with the admin bypass; `main` is untouched).
+Everything up to `0a55d68` is pushed to `develop` (directly, with the admin bypass) and released as **0.1.175** (`main` at `7492ce8`, PR #138), which runs in the homelab. The commits after `0a55d68` are **committed locally and not pushed yet**; the user asked to hold the push.
 
 ### Commits since PR #137
 
@@ -44,6 +44,11 @@ Everything below is committed and pushed to `develop` (pushed directly with the 
 | `89440e4` | The Keycloak compose file mounts the realm from `helm/advanced-llm-chat/files/` (the file moved there in `0c6bea7`) |
 | `ccb1d57` | Compose keeps uploads, the TTS cache and logs on the volume (they were lost with the container), and passes `TAVILY_API_KEY` |
 | `2083ec7` | Helm chart `helm/advanced-llm-chat` and releases from `main` (images, chart on GHCR, GitHub release with the chart and a compose bundle). Its first run on `develop` passed all jobs (version 0.1.172, chart and bundle as artifacts) |
+| `0a55d68` | Handover notes after the Helm chart |
+| `7492ce8` (on `main`) | **Release 0.1** (PR #138 from `release/0.1`, merged with the admin bypass; `03f60c4` merged `main` into `release/0.1` first, keeping the files `main` had edited but `develop` had deleted). The release run published the images and chart as 0.1.175 and the GitHub release `v0.1.175` (chart and compose bundle); the chart and images pull without credentials |
+| `b127b7e` (local) | Messages are ordered by the server's clock: the server stamps the time when it stores a message and the chat sorts by server id (see "How the app works now") |
+| `25144bf` (local) | GPT-6 Astra replaces GPT-5.2 in the starter catalog, marked without tools (see "Model test results") |
+| `dc45f59` (local) | The sidebar banner shows only "LLM Chat"; the Fessi-era robot logo is gone (redesign pending, see "Next steps") |
 
 The contract for the runtime, the catalog, agents, tools and the history budget is in `docs/model_catalog_api.md`; provider choices are in `docs/model_provider_strategy.md`.
 
@@ -55,7 +60,8 @@ The contract for the runtime, the catalog, agents, tools and the history budget 
 - **Login** (`AUTH_MODE`, `docs/authentication.md`): `oidc` through Keycloak or another OpenID Connect provider (the backend runs the code flow, no token reaches the browser, logout ends the provider's session too), `mock` for development, `none` (default) for guests only. Users are found by the provider's subject id; a first login links an existing user with the same verified email.
 - **Admins** are users with `OIDC_ADMIN_ROLE`, or listed in `ADMIN_EMAILS` (with `oidc` only if the email is verified). Only they see the Agents page; everyone else uses the models and agents in the chat's pickers. Guests only get models and agents marked "available to guests".
 - **History** sent to the model: the newest messages that fit the model's `context_window` (estimated at 3 characters per token, minus room for the answer, tool results, system prompt and tool definitions; `DEFAULT_CONTEXT_WINDOW` 32768 for models without one).
-- **Guests:** each guest login creates its own user (`users.is_guest`), deleted with its conversations and files by the hourly cleanup once its sessions have expired. Guests are rate-limited per IP (5 answers per 3 hours); behind a reverse proxy set `FORWARDED_ALLOW_IPS`.
+- **Guests:** each guest login creates its own user (`users.is_guest`), deleted with its conversations and files by the hourly cleanup once its sessions have expired. Guests are rate-limited per IP with one counter (`guest_usage`, 5 per 3 hours, hard-coded in `backend/api/auth.py` and `backend/security/auth.py`): every answer counts, a guest login only counts when the IP has no entry yet, and once the count reaches 5 both answers and new guest logins are refused until 3 hours after the last counted request. Behind a reverse proxy set `FORWARDED_ALLOW_IPS`.
+- **Message order** (`b127b7e`, local): order and time come from the server's clock, never the device's. The server stamps a message's time when it stores it, and message ids are its clock in milliseconds. `Message.compare` sorts stored messages by id, then the messages only in the browser (negative ids from `Message.localId()`, e.g. a failed send) by time; the history sent to the model is ordered by id too. Before, the user message carried the device's time and the answer the server's, so a device clock running ahead put answers above their questions (seen with this PC 42 s fast).
 - **Files:** only the uploader can read a file (API, agent tool and history).
 - **Privacy:** the browser only talks to the app's own frontend and backend (no Google Fonts, no IP lookup service).
 
@@ -66,7 +72,7 @@ The contract for the runtime, the catalog, agents, tools and the history budget 
 | Cortecs (EU router, Vienna; account settings to use: Sovereign Cloud and ZDR on, Nebius excluded) | DeepSeek V4.1 Flash, DeepSeek V4 Pro, Mistral Large 4, Kimi K3 | 512k | high | Prices in EUR from `api.cortecs.ai/v1/models` |
 | Homelab router (`${MODEL_ROUTER_API}`) | Gemma 4 MoE (`gemma-4-26b-a4b`) | 128k | – | Auxiliary model (titles, speech preprocessing) and the guest model |
 | Anthropic | Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 | 512k | xhigh | Disabled until `ANTHROPIC_API_KEY` is set |
-| OpenAI | GPT-5.2 | 400k (its maximum) | high | |
+| OpenAI | GPT-6 Astra (replaced GPT-5.2 in `25144bf`; databases seeded before keep GPT-5.2) | 512k (of 1.05M) | xhigh | Without tools (see "Model test results"); $10/$50 per million tokens, above 272k input twice the input and 1.5 times the output price |
 
 Personas: Pirate (all tools) and Translator (no tools).
 
@@ -76,12 +82,13 @@ Personas: Pirate (all tools) and Translator (no tools).
 - Start with the newest DeepSeek, Mistral and Kimi models plus one good general model; no coding-focused models such as GLM (those are tested in the user's agent framework instead).
 - Gemma 4 MoE from the homelab router.
 - **Context:** 512k for every model that supports it; Gemma stays at 128k.
-- **Reasoning effort: the second-highest level per model,** because the top level ("max") tends to overthink. That is xhigh for Claude and high for the others: DeepSeek and Kimi go low/high/max, GPT-5.2 none…xhigh, Mistral only has high.
+- **Reasoning effort: the second-highest level per model,** because the top level ("max") tends to overthink. That is xhigh for Claude and GPT-6 Astra (low…max) and high for the others: DeepSeek and Kimi go low/high/max, Mistral only has high.
 - **Single-admin setup:** no per-user API keys, billing or private agents; provider keys stay in env vars and the catalog is edited by the admin in the app.
 - Agents don't include a model, and there is no side-by-side comparison of agents or models.
 - **Login:** Keycloak is optional: bundled (docker compose or the Helm chart), the user's own, or none. Guest logins stay. The homelab deployment is public for guests (the user shows the AI to others) and adds login through the user's existing homelab Keycloak, which stays reachable only at home: the user's phone reaches it through a VPN that is on demand for the homelab's internal domain. Guest mode never contacts Keycloak (checked with a backend whose Keycloak doesn't exist), so visitors only hit a dead end if they press "Log in". The homelab realm allows self-registration, so the deployment sets `OIDC_REQUIRED_ROLE=user`.
 - **Deployment:** a Helm chart next to the docker compose files; images and chart are built and published when `develop` is merged into `main`. The chart will replace the current homelab deployment, which still runs old Fessi-era images.
 - **Releases:** every merge into `main` is a release `<major>.<minor>.<run number>` (major and minor in `Chart.yaml`): images tagged with the version and `latest`, the chart at `oci://ghcr.io/knaeckebrothero/charts/advanced-llm-chat`, and a GitHub release with the chart and a docker compose bundle.
+- **2026-10-30/31:** the old homelab deployment was replaced without keeping its data. GPT-6 Astra replaces GPT-5.2. Messages are ordered the way messengers do it: the server's order and the server's time, never the device's clock.
 
 ### Model test results (2026-10-30)
 
@@ -92,13 +99,25 @@ Personas: Pirate (all tools) and Translator (no tools).
 - **Gemma 4** must not get its reasoning back (it repeats tool calls), ignores `reasoning_effort`, thinks about 250 tokens even for titles, and returns its reasoning in the `reasoning` field (vLLM).
 - **Cortecs** accepts every effort value and maps a level a model lacks to the next lower one.
 - **Homelab router:** about 15% of requests failed with "Backend unavailable: All connection attempts failed", in bursts, and some requests stalled for 60–90 s. Long prompts work (45k tokens tested). This is a router problem to look at, not an app problem. The router also serves Whisper (`whisper-large-v3`), Kokoro TTS (`kokoro`, `tts-1`, `tts-1-hd`), Qwen3 embeddings and rerankers, which the app's voice features (`WHISPER_BASE_URL`, `TTS_BASE_URL`) and a future vector search could use.
+- **GPT-6 Astra** (`gpt-6-astra`, official specs: 1.05M context with 922k input, 128k output, effort low…max, knowledge cutoff 2026-04-30): plain chats work. On Chat Completions it always reasons (`reasoning_effort: none` is rejected) and rejects tools together with any `reasoning_effort` (400), so tools with reasoning need the **Responses API**, which the runtime doesn't use. The catalog marks it `supports_tools: false`, so the app sends it no tools. It's disabled in the dev database.
+- **The original GPT-4** can't be added: `gpt-4`, `gpt-4-0613`, `gpt-4-turbo` and `gpt-3.5-turbo` answer 404 "deprecated" although `/v1/models` still lists them. `gpt-4o` and `gpt-4.1` still work (the user doesn't want GPT-4o).
+
+### Homelab deployment (2026-10-30)
+
+- The Fessi-era deployment was replaced by the chart, release 0.1.175, through Fleet in the HomeLab repository (`~/Repositories/HomeLab`, private; the addresses and the details are in its `deployments_managed/advanced-llm-chat/README.md`). Two bundles: `advanced-llm-chat-config` (an ExternalSecret from Vault with `POSTGRES_PASSWORD`, `OIDC_CLIENT_SECRET`, `MODEL_ROUTER_KEY` and the provider keys) and `advanced-llm-chat` (the OCI chart with its values: `auth.mode: oidc`, `adminRole: admin`, `requiredRole: user`, the bundled Postgres on Longhorn, no ingress).
+- **Public for guests** through the homelab's Cloudflare Tunnel; **login** through the homelab Keycloak (client `llm-chat`), which stays reachable only at home or through the VPN. The old namespace, its volumes and the old manifests were deleted (it had no important data).
+- **Upgrades:** bump `version:` in the HomeLab `fleet.yaml` to a newer release; the init container migrates the database. Catalog changes (e.g. GPT-6 Astra) only arrive with a release, and seeding adds models but never removes them, so the production database keeps GPT-5.2 until it's disabled on the Agents page.
+- **Checks:** a public check as a guest passed 13 of 14 steps (frontend, health, `oidc` mode, mock login gone, guest login, guest models, a streamed answer, the login redirect to Keycloak with the registered client); the only failure was Gemma, while one of the router's backends was down for maintenance. Keycloak accepts the client (its login form is shown).
+- **PWA (2026-10-31):** the deployed app is installable (Chromium reports no installability errors with a normal profile; manifest, service worker and icons load) and starts offline from the service worker's cache as "Guest (Offline)". Not tested: Safari on iOS, and the Keycloak login from the installed app (it leaves the app's scope for the backend and Keycloak addresses, so check once on the phone that the session arrives).
 
 ### Next steps
 
-1. **Helm chart and releases:** done in `2083ec7` (CLAUDE.md, "Kubernetes and releases"). Versions continue from the workflow's run counter (0.1.172 on the first run). The first real publish comes with the first merge into `main`; if GHCR creates the chart package as private, make it public (or give the cluster pull credentials).
-2. **Homelab deployment with the chart:** the homelab's Keycloak needs a client for the app (`docs/authentication.md`, "Option 3"); no public route (see the decisions). Values: `auth.mode: oidc`, the realm's issuer, `adminRole: admin`, `requiredRole: user` (`OIDC_REQUIRED_ROLE`: the realm's role `user`, which isn't a default role; assign it, and `admin`, to the user's account, and only to people who may use the chat). Also set the provider keys (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MODEL_ROUTER_API`, `MODEL_ROUTER_KEY`) and `FORWARDED_ALLOW_IPS`, and run `app_init --prod` on the existing database. Until then the old deployment pulls `develop-latest` on every pod restart, which would start today's code without migration or settings; pinning its image avoids that.
-3. Look at the homelab router's failures.
-4. Merge `develop` into `main` (a separate step the user triggers).
+1. **Push `develop`** (the four local commits after `0a55d68`) when the user says so.
+2. **GPT-6 Astra with tools:** a Responses API adapter in `backend/llm/` (tools together with reasoning, its reasoning shown as "Thinking"). Waiting for the user's decision.
+3. **Sidebar banner and app icons:** the robot logo is gone; the redesign is open. Options discussed: A, a quiet wordmark; B, a custom SVG mark plus wordmark that also replaces the favicon and PWA icons (still the 2024 cyborg portrait; recommended); C, no brand in the sidebar. Also the name: "LLM Chat" or "Advanced LLM Chat".
+4. **Refused guest login:** when the IP's guest quota is used up, the guest login gets a 429, the app creates an offline guest, the next requests get 401s and send the visitor to the login page, where "Continue as guest" fails again. Show the limit message with the reset time instead, and make the limit configurable (5 per 3 hours is tight for people sharing one connection). Offered to the user, not started.
+5. **Next release:** merge `develop` into `main`, then bump the HomeLab `fleet.yaml` version to deploy the message order fix, Astra and the banner.
+6. Look at the homelab router's failures.
 
 ## Repositories
 
@@ -128,13 +147,10 @@ Personas: Pirate (all tools) and Translator (no tools).
 - The ruleset **"Main & develop"** applies to the default branch, `main` and `develop`. It blocks deletion and force pushes, requires linear history, and requires PRs with 2 approvals (`merge` or `rebase` only). It also requires CodeQL and Copilot code review. The ruleset **"Backup-and-Deployment-Protection"** protects `backup-**-**-****` and `gh-pages`.
 - As the sole maintainer, the user can't satisfy the approvals, so PRs are merged with the admin bypass when asked: `gh pr merge <n> --rebase --admin`. Rebase keeps the linear history.
 - Since PR #137 the user prefers committing **directly to `develop`** (no feature branches or PRs) and pushing with the admin bypass; GitHub logs these pushes as "Bypassed rule violations". Merging into `main` stays a separate step the user asks for.
-- On every push to `develop` and `main`, `docker-build.yml` builds `ghcr.io/knaeckebrothero/advanced-llm-chat-{frontend,backend}`. Images from `develop` are tagged `develop-latest`, `develop` and `sha-<commit>`; images from `main` get `latest`. On pull requests it builds without pushing.
+- On every push to `develop` and `main`, `docker-build.yml` builds `ghcr.io/knaeckebrothero/advanced-llm-chat-{frontend,backend}`. Images from `develop` are tagged `develop-latest`, `develop` and `sha-<commit>`; a merge into `main` is a release (version tag and `latest`, plus the chart and the GitHub release; CLAUDE.md, "Kubernetes and releases"). On pull requests it builds without pushing.
 - `deploy-gh-pages.yml` deploys `develop` to https://knaeckebrothero.github.io/Advanced-LLM-Chat/. It uses the `DEPLOY_GH_PAGES` secret and takes its base path from the repository name.
 - After the merge of PR #137, both workflows passed on `develop` (`a45a68d`). The backend image takes about 9.5 minutes, the frontend about 2.5.
-- `main` is 90 commits behind `develop` and has 10 commits of its own:
-  - 2 March 2026 edits to `backend_mockup.py`, a file `develop` replaced in November 2025;
-  - a 2024 `LICENSE.txt` edit;
-  - 7 PR merge commits.
+- Release 0.1 (PR #138, `7492ce8`) brought `main` up to `develop` at `0a55d68`. The branch `release/0.1` is kept. Before that, `main` was 90 commits behind and had 10 of its own (2 March 2026 edits to `backend_mockup.py`, which `develop` had deleted and the release keeps deleted, a 2024 `LICENSE.txt` edit and 7 PR merge commits). Later releases: a PR from a `release/<major>.<minor>` branch (or `develop`) into `main`, merged with `gh pr merge <n> --admin` when the user asks.
 
 ## What changed in PR #137
 
@@ -251,7 +267,9 @@ Since the catalog work (evening of 2026-10-30):
   - model smoke test: `python -m backend.llm.smoke_test --model <id>`;
   - frontend: `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and the unit tests (57 of 89 fail since `a8c83a6`, all of them failing before; compare the failing spec names, not just the count).
 - **Chart checks:** `helm lint helm/advanced-llm-chat`, `helm template` with different values, and `kubeconform -strict` on the output (helm 3.20, kubeconform and k3d are installed). For a real install, a throwaway k3d cluster with its own kubeconfig (`k3d cluster create <name> -p "18080:80@loadbalancer" --kubeconfig-update-default=false --kubeconfig-switch-context=false`) and `localhost:18080` / `keycloak.localhost:18080` as the addresses. On this machine k3d nodes can't pull from Docker Hub (EOF), and `k3d image import` silently skips multi-platform images: import with `docker save --platform linux/amd64 <image> | docker exec -i <node> ctr -n k8s.io images import -`. The backend image is 3.6 GB (PyTorch for local Whisper) and pulls at about 1.5 MB/s here; for chart tests, an image built from `requirements.txt` without `openai-whisper` works (Whisper is imported lazily).
-- **Browser checks:** the Playwright MCP browser hung on start on 2026-10-30; a headless script with the cached `playwright-core` and `~/.cache/ms-playwright/chromium_headless_shell-1217` worked. Keycloak's login form: `#username`, `#password`, `#kc-login`.
+- **Browser checks:** the Playwright MCP browser hung on start on 2026-10-30; a headless script with the cached `playwright-core` and `~/.cache/ms-playwright/chromium_headless_shell-1217` worked. Keycloak's login form: `#username`, `#password`, `#kc-login`. For installability checks use a persistent profile (`launchPersistentContext`; a normal context reports "in-incognito") and the full `chromium-1217` build; Playwright's offline mode doesn't stop the service worker's own requests, so test offline with `--host-resolver-rules=MAP * ~NOTFOUND`. To test clock skew, `context.clock.install({ time: Date.now() + 5 * 60 * 1000 })` runs the page's clock ahead.
+- **Checks against the production deployment** from home use the home connection's guest quota (5 guest logins or answers per 3 hours): every fresh browser profile or script is a new guest login. Keep them few; the 429's detail gives the reset time, and a 429 doesn't count.
+- **This PC's clock** was 42 s fast on 2026-10-31: chrony runs but has never synced, because its only sources (the gateway and one from DHCP) don't answer. That clock skew is how the message order bug showed up.
 - **Browser checks as an admin:** mock-login with an `@example.invalid` address and start a backend with that address added to `ADMIN_EMAILS` in the process environment (`load_dotenv` doesn't override variables that are already set).
 - **Dev database:** test users from the sessions were deleted. Still there: the seed users (`guest@guest.local` as user 0, `test@`, `admin@`, `demo@example.com`), the user's account, and three users named `test`, `testsetst` and `tetse` (probably the user's own test logins). Two uploads from December 2025 (`file_1766482527957_…`, `file_1766482575933_…`) have no owner, because no message refers to them, so nobody can read them.
 
@@ -268,7 +286,7 @@ Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependenc
 **Security and privacy (before exposing the app):**
 
 - **Session token in the body:** the guest login response also returns the session key as `token`, so scripts in the page can read what the httpOnly cookie hides. The frontend doesn't use it.
-- **Guest logins aren't rate-limited themselves:** only answers are (5 per IP per 3 hours). Every guest login creates a user row (deleted after the session expires), so a script could fill the database.
+- **Guest logins are barely rate-limited:** they share the answers' counter per IP (5 per 3 hours) but only count when the IP has no entry yet, so a script that doesn't ask anything can create many guest users (each deleted after its session expires). Once the counter is used up, new guest logins are refused, which the frontend doesn't handle (see "Next steps").
 - **Session expiring while the app is open:** the next request gets a 401 and `AuthInterceptor` sends the user to the login page; a guest could get a new guest session instead. (At startup this is fixed: a missing or expired session starts a guest session in the chat.)
 - Files belong to users, not to conversations (see `docs/attachment_rework.md`). Deleting a conversation leaves its TTS cache on disk.
 - The guest isolation and file ownership end-to-end checks from 2026-10-30 only existed as scratch scripts. They are worth adding to the backend tests.
@@ -286,6 +304,8 @@ Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependenc
 **Frontend:**
 
 - **Unit tests:** 57 of 89 fail, mostly `NullInjectorError: No provider for HttpClient` in component specs. `projects/ngx-agent-chat/tsconfig.spec.json` also errors with "No inputs were found".
+- **Unsent messages after a reload:** the sync status (`pending`, `failed`) only lives in memory; IndexedDB doesn't store it. After a reload the next sync treats an unsent message as obsolete and drops it. There's no outbox that retries unsent messages either.
+- **Error notice of a failed answer:** if an answer fails before the server starts it, the error notice exists only in the browser and sorts last. If the user sends another message instead of regenerating, the notice stays below the newer messages until the next sync drops it.
 - **Console errors:**
   - `ExpressionChangedAfterItHasBeenCheckedError` (NG0100) in the chat input field;
   - `assets/env.js` 404 in development.
