@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { CommonModule, NgOptimizedImage } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { Conversation } from '../data/objects/conversation';
 import { ConversationComponent } from './conversation/conversation.component';
@@ -22,7 +22,6 @@ import { ThemeService } from '../services/theme.service'; // <-- IMPORT THEME SE
   styleUrls: ['./sidebar.component.scss'],
   imports: [
     CommonModule,
-    NgOptimizedImage,
     ConversationComponent,
     MatIcon,
     MatDialogModule,

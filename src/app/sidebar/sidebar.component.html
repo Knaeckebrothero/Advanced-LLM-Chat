@@ -1,12 +1,7 @@
 <div class="sidebar">
   <div class="sidebar-header">
     <div class="logo" [class.dark-theme]="isDarkMode">
-      <img [ngSrc]="isDarkMode ? 'assets/icons/robot_dark_new.svg' : 'assets/icons/robo_light_modev2.svg'" alt="Logo"
-        height="50" width="50" />
-      <div class="logo-text">
-        <span>LLM</span>
-        <span>Chat</span>
-      </div>
+      <div class="logo-text">LLM Chat</div>
     </div>
     <button class="sidebar-close-btn" (click)="closeSidebar()" aria-label="Close sidebar">
       <mat-icon>chevron_left</mat-icon>
