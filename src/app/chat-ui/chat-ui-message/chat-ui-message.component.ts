@@ -31,6 +31,9 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   backupContent!: string;
   messageTextContent: string = '';
 
+  // Phones: your own messages show edit and delete only after a tap on them
+  actionsOpen = false;
+
   // Model catalog: per-message model and usage
   showUsage = false;
   catalogModels$: Observable<IPublicModel[]>;
@@ -158,6 +161,19 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
     // Enable editing
     this.editing = true;
+  }
+
+  // A tap on your own message shows or hides its actions (only phones hide them, see the styles)
+  toggleActions(event: MouseEvent) {
+    if (this.message.roleName !== 'user' || this.editing) {
+      return;
+    }
+    // Taps on links, buttons, attachments and the audio player keep their own meaning
+    const target = event.target as HTMLElement;
+    if (target.closest('a, button, input, audio, .message-attachments, .editable-message')) {
+      return;
+    }
+    this.actionsOpen = !this.actionsOpen;
   }
 
   // Delete message button

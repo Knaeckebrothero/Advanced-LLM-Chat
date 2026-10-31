@@ -88,9 +88,13 @@ export class SidebarComponent implements OnInit, OnDestroy {
   }
 
   openSettings(): void {
+    // Never larger than the screen: the dialog scrolls instead (dvh leaves out the browser bars on phones)
     const dialogRef = this.dialog.open(SettingsComponent, {
       panelClass: 'settings-dialog-panel',
-      backdropClass: 'custom-backdrop'
+      backdropClass: 'custom-backdrop',
+      width: '420px',
+      maxWidth: 'calc(100vw - 24px)',
+      maxHeight: 'calc(100dvh - 24px)'
     });
 
     dialogRef.afterClosed().subscribe(() => {

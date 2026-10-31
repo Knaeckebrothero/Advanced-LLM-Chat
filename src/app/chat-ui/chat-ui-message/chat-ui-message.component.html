@@ -1,21 +1,30 @@
 <!-- Modern Chat Message Component -->
 <div class="message-row" [class.message-row--user]="message.roleName === 'user'"
   [class.message-row--assistant]="message.roleName !== 'user'"
-  [class.message-row--system]="message.roleName === 'system'">
+  [class.message-row--system]="message.roleName === 'system'"
+  [class.message-row--actions-open]="actionsOpen">
+
+  <ng-template #avatarIcon>
+    <mat-icon *ngIf="message.roleName === 'user'">person</mat-icon>
+    <mat-icon *ngIf="message.roleName !== 'user' && !message.isAgent()">smart_toy</mat-icon>
+    <mat-icon *ngIf="message.isAgent()">psychology</mat-icon>
+  </ng-template>
 
   <!-- Avatar -->
   <div class="message-avatar" [class.message-avatar--user]="message.roleName === 'user'">
     <span class="avatar-icon">
-      <mat-icon *ngIf="message.roleName === 'user'">person</mat-icon>
-      <mat-icon *ngIf="message.roleName !== 'user' && !message.isAgent()">smart_toy</mat-icon>
-      <mat-icon *ngIf="message.isAgent()">psychology</mat-icon>
+      <ng-container *ngTemplateOutlet="avatarIcon"></ng-container>
     </span>
   </div>
 
-  <!-- Message Content Wrapper -->
-  <div class="message-content-wrapper">
+  <!-- Message Content Wrapper (phones: a tap on your own message shows its actions) -->
+  <div class="message-content-wrapper" (click)="toggleActions($event)">
     <!-- Role Label -->
     <div class="message-role-label">
+      <!-- Phones: a small avatar next to the name instead of the avatar column -->
+      <span *ngIf="message.roleName !== 'user'" class="message-avatar message-avatar--inline" aria-hidden="true">
+        <span class="avatar-icon"><ng-container *ngTemplateOutlet="avatarIcon"></ng-container></span>
+      </span>
       <span class="role-name">{{ message.roleName === 'user' ? 'You' : (message.roleName === 'system' ? 'System' :
         'Assistant') }}</span>
       <!-- Which model wrote this answer; tokens and cost on hover or tap -->

@@ -60,6 +60,13 @@ export class AgentStepsComponent {
   }
 
   /**
+   * Spelled-out step count for the tooltip and screen readers (the badge shows only the number)
+   */
+  get stepCountLabel(): string {
+    return `${this.steps.length} ${this.steps.length === 1 ? 'step' : 'steps'}`;
+  }
+
+  /**
    * Get icon for agent step type
    */
   getStepIcon(type: AgentStepType): string {
