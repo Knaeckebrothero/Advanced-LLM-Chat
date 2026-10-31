@@ -19,11 +19,12 @@ OPTIONAL_FIELDS = {
     "background": "background",
     "backgroundDim": "background_dim",
     "backgroundBlur": "background_blur",
+    "editingMode": "editing_mode",
 }
 
 
-def _appearance(settings: dict) -> dict:
-    """The background fields of a user_settings row, with defaults for rows from before they existed."""
+def _optional_settings(settings: dict) -> dict:
+    """The optional fields of a user_settings row, with defaults for rows from before they existed."""
     defaults = AppSettings.model_fields
     return {
         field: settings.get(column) if settings.get(column) is not None else defaults[field].default
@@ -81,7 +82,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
             theme=settings['theme'],
             language=settings['language'],
             defaultModelId=settings.get('default_model_id'),
-            **_appearance(settings),
+            **_optional_settings(settings),
             lastUpdated=last_updated_ts
         )
     else:
@@ -133,8 +134,8 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
             logger.warning(f"Rejected default model {default_model_id} for user_id {user_id}: {e}")
             raise HTTPException(status_code=e.status_code, detail=str(e))
 
-    # Background settings: left out = keep the stored values
-    appearance = {
+    # Optional settings: left out = keep the stored values
+    optional = {
         column: getattr(new_settings, field)
         for field, column in OPTIONAL_FIELDS.items()
         if field in new_settings.model_fields_set
@@ -146,7 +147,7 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         theme=new_settings.theme,
         language=new_settings.language,
         default_model_id=default_model_id,
-        **appearance
+        **optional
     )
 
     logger.info(f"Settings updated for user_id {user_id}: theme={new_settings.theme}, language={new_settings.language}, "
@@ -169,6 +170,6 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         theme=settings['theme'],
         language=settings['language'],
         defaultModelId=settings.get('default_model_id'),
-        **_appearance(settings),
+        **_optional_settings(settings),
         lastUpdated=last_updated_ts
     )

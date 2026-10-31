@@ -10,6 +10,7 @@ export interface IAppSettings {
   background?: 'none' | 'aurora' | 'ridges' | 'custom';  // Chat background
   backgroundDim?: number;   // 0-80 %
   backgroundBlur?: number;  // 0-20 px
+  editingMode?: 'guided' | 'manual';  // How messages are edited
 }
 
 export interface IAppSettingsWithMeta extends IAppSettings {

@@ -103,6 +103,24 @@
     </div>
   </ng-container>
 
+  <!-- Editing: guided (an edited message is answered again) or manual (edit and insert any message) -->
+  <div class="setting-option">
+    <label>{{ 'editing.title' | translate }}</label>
+    <div class="options-group">
+      <button
+        *ngFor="let option of editingOptions"
+        class="option-button"
+        [class.active]="editingMode(settings) === option.value"
+        (click)="updateEditingMode(option.value)"
+        [attr.aria-pressed]="editingMode(settings) === option.value"
+      >
+        <mat-icon>{{ option.icon }}</mat-icon>
+        <span>{{ option.label | translate }}</span>
+      </button>
+    </div>
+    <p class="setting-hint">{{ (editingMode(settings) === 'manual' ? 'editing.manualHint' : 'editing.guidedHint') | translate }}</p>
+  </div>
+
   <!-- Conversations: files exported from a conversation's menu (guests' conversations are not kept) -->
   <div class="setting-option">
     <label>{{ 'conversations.title' | translate }}</label>

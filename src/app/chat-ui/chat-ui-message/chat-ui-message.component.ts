@@ -11,6 +11,7 @@ import { CatalogService } from '../../services/catalog.service';
 import { IMessageUsage, IPublicModel } from '../../data/models/catalog.model';
 import { TranslateService } from '@ngx-translate/core';
 import { Observable } from 'rxjs';
+import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -30,6 +31,25 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   editing: boolean = false;
   backupContent!: string;
   messageTextContent: string = '';
+  @ViewChild('editableDiv') editableDiv?: ElementRef<HTMLDivElement>;
+  // Why the last edit couldn't be saved
+  editError: string | null = null;
+
+  // Manual editing: a message inserted above or below this one
+  inserting = false;
+  insertPosition: 'before' | 'after' = 'after';
+  insertRole: 'user' | 'Assistant' = 'user';
+  insertText = '';
+  insertBusy = false;
+  insertError: string | null = null;
+  readonly insertRoles: { value: 'user' | 'Assistant'; label: string }[] = [
+    { value: 'user', label: 'message.insertUser' },
+    { value: 'Assistant', label: 'message.insertAssistant' },
+  ];
+  readonly insertPositions: { value: 'before' | 'after'; label: string }[] = [
+    { value: 'after', label: 'message.insertBelow' },
+    { value: 'before', label: 'message.insertAbove' },
+  ];
 
   // Phones: your own messages show edit and delete only after a tap on them
   actionsOpen = false;
@@ -146,21 +166,27 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     });
   }
 
-  // Edit message button
+  // Edit message button: the text of a text message, the answer text of an agent message
   editMessage() {
-    // Only allow editing text messages
-    if (!this.message.isText()) {
-      console.log('Cannot edit non-text messages');
+    if (!this.isEditable) {
       return;
     }
 
-    console.log('Started editing message:', this.message.id);
-
     // Backup the current content
-    this.backupContent = this.message.textContent || '';
+    this.backupContent = this.editableText;
+    this.editError = null;
 
     // Enable editing
     this.editing = true;
+    setTimeout(() => this.editableDiv?.nativeElement.focus());
+  }
+
+  /** The text an edit changes. */
+  get editableText(): string {
+    if (this.message.isAgent()) {
+      return this.message.content.content || '';
+    }
+    return this.message.isText() ? this.message.textContent || '' : '';
   }
 
   // A tap on your own message shows or hides its actions (only phones hide them, see the styles)
@@ -189,15 +215,36 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     this.backupContent = newContent;
   }
 
-  doneEditing() {
-    console.log('Successfully edited message:', this.message.id);
+  /**
+   * Save the edit. Manual editing only changes the text; guided editing answers your
+   * message again, which deletes the messages after it (asked first if more than its answer).
+   */
+  async doneEditing() {
+    const content = this.editableDiv?.nativeElement.innerText ?? this.backupContent;
+    if (content === undefined || content === this.editableText) {
+      this.editing = false;
+      return;
+    }
 
-    // Disable editing
+    const resend = this.resendsOnEdit;
+    if (resend) {
+      const following = this.chatUI.countMessagesAfter(this.message);
+      if (following > 1 && !confirm(this.translate.instant('message.resendConfirm', { count: following }))) {
+        return;
+      }
+    }
+
     this.editing = false;
-
-    // Trigger a request to update the message with the new content
-    if (this.message.isText() && this.backupContent !== undefined) {
-      this.chatUI.patchMessage(this.message.id!, this.backupContent);
+    this.editError = null;
+    try {
+      if (resend) {
+        await this.chatUI.resendEditedMessage(this.message.id, content);
+      } else {
+        await this.chatUI.patchMessage(this.message.id, content);
+      }
+    } catch (error) {
+      console.error('Failed to save the edited message:', error);
+      this.editError = this.translate.instant('message.editFailed', { error: describeHttpError(error, this.translate) });
     }
   }
 
@@ -233,9 +280,63 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     return false;
   }
 
-  // Check if message is editable
+  /** Manual editing (the setting): edit any message and insert messages; nothing is generated. */
+  get manualEditing(): boolean {
+    return this.settingsState.getCurrentSettings()?.editingMode === 'manual';
+  }
+
+  /**
+   * Manual: any stored message (an agent message once complete). Guided: only your own
+   * messages. Not while an answer streams, nor for messages only this browser has.
+   */
   get isEditable(): boolean {
-    return this.message.isText();
+    if (this.message.isLocal || this.chatUI.isStreaming) {
+      return false;
+    }
+    if (this.manualEditing) {
+      return this.message.isText() || (this.message.isAgent() && this.message.content.status === 'complete');
+    }
+    return this.message.isText() && this.message.roleName === 'user';
+  }
+
+  /** Whether saving an edit answers the message again (guided editing of your own message). */
+  get resendsOnEdit(): boolean {
+    return !this.manualEditing && this.message.roleName === 'user';
+  }
+
+  get canInsert(): boolean {
+    return this.manualEditing && !this.message.isLocal && !this.chatUI.isStreaming;
+  }
+
+  startInsert() {
+    this.inserting = true;
+    this.insertError = null;
+  }
+
+  cancelInsert() {
+    this.inserting = false;
+    this.insertText = '';
+    this.insertError = null;
+    this.insertRole = 'user';
+    this.insertPosition = 'after';
+  }
+
+  async submitInsert() {
+    const content = this.insertText.trim();
+    if (!content || this.insertBusy) {
+      return;
+    }
+    this.insertBusy = true;
+    this.insertError = null;
+    try {
+      await this.chatUI.insertMessage(this.message, this.insertPosition, this.insertRole, content);
+      this.cancelInsert();
+    } catch (error) {
+      console.error('Failed to insert the message:', error);
+      this.insertError = this.translate.instant('message.insertFailed', { error: describeHttpError(error, this.translate) });
+    } finally {
+      this.insertBusy = false;
+    }
   }
 
   // Check if message can be regenerated

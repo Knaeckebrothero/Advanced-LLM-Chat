@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field
 # Chat backgrounds: none, the two built-in images, or an image kept in the user's browser
 Background = Literal["none", "aurora", "ridges", "custom"]
 
+# Guided: editing your message answers it again. Manual: edit and insert any message, nothing is generated
+EditingMode = Literal["guided", "manual"]
+
 
 class AppSettings(BaseModel):
     """
@@ -31,6 +34,9 @@ class AppSettings(BaseModel):
     :type backgroundDim: int
     :ivar backgroundBlur: Blur of the background image, 0-20 px.
     :type backgroundBlur: int
+    :ivar editingMode: 'guided' or 'manual' (see EditingMode). Left out in an
+        update, the stored value is kept.
+    :type editingMode: EditingMode
     """
     theme: str
     language: str
@@ -38,6 +44,7 @@ class AppSettings(BaseModel):
     background: Background = "none"
     backgroundDim: int = Field(25, ge=0, le=80)
     backgroundBlur: int = Field(0, ge=0, le=20)
+    editingMode: EditingMode = "guided"
 
 
 class AppSettingsResponse(AppSettings):

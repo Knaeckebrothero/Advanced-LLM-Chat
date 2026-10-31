@@ -183,6 +183,7 @@ Uses discriminated union pattern with factory methods:
 - **TextContent**: Regular text messages with optional file attachments (including voice messages)
 - **AgentContent**: Agent responses with reasoning steps and final response
 - Voice messages are TextContent with audio file attachment; transcript is in text content
+- Editing (setting `editingMode`): **guided** edits only your own messages and answers an edited one again (`PATCH /api/message/patch` with `deleteFollowing` deletes the later messages, then stream-generate); **manual** edits the text of any message (an agent message keeps its steps) and inserts user or assistant messages next to any message (`POST /api/message/insert`, which picks an id between the neighbours), without generating. A patch keeps a text message's attachments
 - Conversations are exported and imported as conversation files (`docs/conversation_file.md`); `scripts/convert_legacy_conversations.py` converts the exports of the 2023/24 app
 - Order and time come from the server's clock, never the device's: the server stamps a message's time when it stores it, and its ids are that clock in milliseconds. `Message.compare` sorts stored messages by id, then the ones only in the browser (negative ids from `Message.localId()`, e.g. a failed send) by time
 
