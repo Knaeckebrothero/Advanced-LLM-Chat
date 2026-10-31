@@ -618,10 +618,20 @@ a.file-preview-item {
 // RESPONSIVE
 // ============================================
 @media (max-width: 768px) {
+  // Lined up with the messages (8px from the edges), and slimmer so the chat keeps the space
   .input-field-container {
-    margin: 12px 12px 16px;
-    padding: 10px 12px;
+    margin: 6px 8px 8px;
+    padding: 6px 10px;
     border-radius: 20px;
+  }
+
+  .input-content-area {
+    padding: 4px 0;
+  }
+
+  .action-buttons-bar {
+    padding-top: 2px;
+    min-height: 40px;
   }
 
   .file-preview-item {

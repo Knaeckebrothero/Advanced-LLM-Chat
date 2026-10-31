@@ -22,7 +22,7 @@
       </div>
     </mat-panel-title>
     <mat-panel-description>
-      <span class="step-count">({{ steps.length }} {{ steps.length === 1 ? 'step' : 'steps' }})</span>
+      <span class="step-count" [title]="stepCountLabel" [attr.aria-label]="stepCountLabel">{{ steps.length }}</span>
     </mat-panel-description>
   </mat-expansion-panel-header>
 

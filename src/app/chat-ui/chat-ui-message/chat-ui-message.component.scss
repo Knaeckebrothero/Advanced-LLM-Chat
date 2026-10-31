@@ -90,6 +90,19 @@
     max-width: min(85%, 640px);
   }
 
+  // Phones: slimmer cards, and your own messages keep the tint of their bubble
+  @media (max-width: 768px) {
+    .message-content-wrapper {
+      padding: 8px 10px 4px;
+    }
+
+    .message-row--user .message-content-wrapper {
+      padding: 6px 10px 2px;
+      border-radius: 16px 16px 4px 16px;
+      background: color-mix(in srgb, color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface)) 88%, transparent);
+    }
+  }
+
   // Desktop: the actions (shown on hover) sit just below the card instead of
   // leaving an empty strip inside it. On touch screens they are always shown and stay inside.
   @media (hover: hover) and (min-width: 769px) {
@@ -132,6 +145,11 @@
       height: 20px;
     }
   }
+}
+
+// Small avatar in the role label, only on phones (see RESPONSIVE)
+.message-avatar--inline {
+  display: none;
 }
 
 // ============================================
@@ -1068,26 +1086,78 @@ em {
 // ============================================
 @media (max-width: 768px) {
   .message-row {
-    padding: 16px 12px;
-    gap: 12px;
+    padding: 6px 0;
+    gap: 0;
   }
 
-  .message-avatar {
-    width: 32px;
-    height: 32px;
+  // The avatar moves into the role label, so the message gets the full width
+  .message-avatar:not(.message-avatar--inline) {
+    display: none;
+  }
+
+  .message-avatar--inline {
+    display: flex;
+    width: 22px;
+    height: 22px;
     border-radius: 6px;
+    box-shadow: none;
 
     .avatar-icon mat-icon {
-      font-size: 18px;
-      width: 18px;
-      height: 18px;
+      font-size: 15px;
+      width: 15px;
+      height: 15px;
     }
   }
 
+  .message-content-wrapper {
+    gap: 4px;
+  }
+
+  .message-body {
+    line-height: 1.5;
+  }
+
+  // Your own messages: a bubble without avatar and name, like in a messenger
+  .message-row--user {
+    .message-role-label {
+      display: none;
+    }
+
+    .message-content-wrapper {
+      flex: 0 1 auto;
+      max-width: 85%;
+      align-items: stretch;
+      padding: 6px 10px 2px;
+      gap: 0;
+      border-radius: 16px 16px 4px 16px;
+      background: color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface));
+    }
+
+    .message-body {
+      text-align: left;
+    }
+
+    .message-actions {
+      margin-top: 0;
+      min-height: 18px;
+    }
+  }
+
+  // Actions and time on one line
   .message-actions {
     opacity: 1;
     visibility: visible;
-    flex-wrap: wrap;
+    gap: 0;
+    margin-top: 2px;
+
+    .message-timestamp {
+      padding-left: 6px;
+      font-size: 11px;
+    }
+  }
+
+  .agent-message {
+    gap: 8px;
   }
 
   .attachment-item.is-image {
@@ -1128,5 +1198,12 @@ em {
         padding: 0.1em 0.3em;
       }
     }
+  }
+}
+
+// Touch screens: your own messages show edit and delete only after a tap on them
+@media (max-width: 768px) and (hover: none) {
+  .message-row--user:not(.message-row--actions-open) .message-actions:not(.message-actions--visible) .action-btn {
+    display: none;
   }
 }

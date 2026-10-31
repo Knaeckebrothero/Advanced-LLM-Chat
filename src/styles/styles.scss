@@ -129,25 +129,16 @@ body.theme-initialized {
   }
 }
 
-// **UPDATED:** Custom dialog panel for settings
+// Settings dialog (its size is set where it opens, in the sidebar)
 .settings-dialog-panel {
-  // Set the width of the dialog pane itself
-  max-width: 95vw;
-  width: 400px;
-
-  // Target the container that holds the component
   .mat-mdc-dialog-container {
-    // Apply the theme variables for the dialog's frame
-    background-color: var(--theme-surface);
-    border: 1px solid var(--theme-border);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-    border-radius: 20px;
-    padding: 0; // Remove default padding
+    --mdc-dialog-container-color: var(--theme-surface);
+    --mdc-dialog-container-shape: 20px;
   }
 
-  // Responsive adjustments for mobile
-  @media (max-width: 480px) {
-    width: 90vw;
+  .mat-mdc-dialog-surface {
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   }
 }
 

@@ -74,37 +74,9 @@
   }
 }
 
-// End of conversation indicator
-.end-of-conversation {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-  max-width: 768px;
-  margin: 0 auto;
-
-  span {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--theme-text-secondary);
-    opacity: 0.6;
-
-    &::before,
-    &::after {
-      content: '';
-      width: 40px;
-      height: 1px;
-      background: var(--theme-border);
-    }
-  }
-}
-
-// With a background image (settings), status lines get a backing so they stay readable
+// With a background image (settings), the status line gets a backing so it stays readable
 :host-context(body.has-background-image) {
-  .loading-older-messages span,
-  .end-of-conversation span {
+  .loading-older-messages span {
     padding: 4px 12px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
@@ -188,8 +160,7 @@ app-chat-ui-inputfield {
     padding-bottom: 16px;
   }
 
-  .loading-older-messages,
-  .end-of-conversation {
+  .loading-older-messages {
     padding: 16px;
   }
 }
