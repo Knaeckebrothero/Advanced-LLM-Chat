@@ -74,28 +74,12 @@
   flex: 1;
   min-width: 0;
 
-  img {
-    height: 50px;
-    width: 50px;
-    object-fit: contain;
-    flex-shrink: 0;
-  }
-
   .logo-text {
-    display: flex;
-    flex-direction: column;
     color: var(--theme-primary-contrast);
-    line-height: 1.1;
-
-    span:first-child {
-      font-weight: 700;
-      font-size: 1.1rem;
-    }
-
-    span:last-child {
-      font-weight: 700;
-      font-size: 1.1rem;
-    }
+    font-weight: 700;
+    font-size: 1.1rem;
+    line-height: 1.2;
+    white-space: nowrap;
   }
 }
 
