@@ -23,7 +23,7 @@ The user explicitly wants providers and setup settled before the deployment and 
 
 ## Status on 2026-10-31
 
-Everything up to `0a55d68` is pushed to `develop` (directly, with the admin bypass) and released as **0.1.175** (`main` at `7492ce8`, PR #138), which runs in the homelab. The commits after `0a55d68` are **committed locally and not pushed yet**; the user asked to hold the push.
+Release **0.1.175** (`main` at `7492ce8`, PR #138, `develop` at `0a55d68`) runs in the homelab. The commits after `0a55d68` in the table below were pushed to `develop` on 2026-10-31 (directly, with the admin bypass), and a **PR from `develop` into `main`** is open for the next release (0.1.<run number>). It merges cleanly: `main`'s own commits from before release 0.1 change nothing in the result, which is `develop`'s tree. After the merge, the HomeLab's `fleet.yaml` needs the new chart version (see "Next steps").
 
 ### Commits since PR #137
 
@@ -46,9 +46,12 @@ Everything up to `0a55d68` is pushed to `develop` (directly, with the admin bypa
 | `2083ec7` | Helm chart `helm/advanced-llm-chat` and releases from `main` (images, chart on GHCR, GitHub release with the chart and a compose bundle). Its first run on `develop` passed all jobs (version 0.1.172, chart and bundle as artifacts) |
 | `0a55d68` | Handover notes after the Helm chart |
 | `7492ce8` (on `main`) | **Release 0.1** (PR #138 from `release/0.1`, merged with the admin bypass; `03f60c4` merged `main` into `release/0.1` first, keeping the files `main` had edited but `develop` had deleted). The release run published the images and chart as 0.1.175 and the GitHub release `v0.1.175` (chart and compose bundle); the chart and images pull without credentials |
-| `b127b7e` (local) | Messages are ordered by the server's clock: the server stamps the time when it stores a message and the chat sorts by server id (see "How the app works now") |
-| `25144bf` (local) | GPT-6 Astra replaces GPT-5.2 in the starter catalog, marked without tools (see "Model test results") |
-| `dc45f59` (local) | The sidebar banner shows only "LLM Chat"; the Fessi-era robot logo is gone (redesign pending, see "Next steps") |
+| `b127b7e` | Messages are ordered by the server's clock: the server stamps the time when it stores a message and the chat sorts by server id (see "How the app works now") |
+| `25144bf` | GPT-6 Astra replaces GPT-5.2 in the starter catalog, marked without tools (see "Model test results") |
+| `dc45f59` | The sidebar banner shows only "LLM Chat"; the Fessi-era robot logo is gone (redesign pending, see "Next steps") |
+| `673dca6` | Handover notes after the first release |
+| `c826153` | Compact chat on phones: no avatar column, the user's message as a bubble with its actions on tap, a slimmer steps panel with the step count as a badge, the leftover box above the first message removed; the settings dialog scrolls and fits the screen |
+| `014e015` | Conversation export (a conversation's menu) and import (Settings), and `scripts/convert_legacy_conversations.py` for the exports of the 2023/24 app (`docs/conversation_file.md`) |
 
 The contract for the runtime, the catalog, agents, tools and the history budget is in `docs/model_catalog_api.md`; provider choices are in `docs/model_provider_strategy.md`.
 
@@ -61,7 +64,7 @@ The contract for the runtime, the catalog, agents, tools and the history budget 
 - **Admins** are users with `OIDC_ADMIN_ROLE`, or listed in `ADMIN_EMAILS` (with `oidc` only if the email is verified). Only they see the Agents page; everyone else uses the models and agents in the chat's pickers. Guests only get models and agents marked "available to guests".
 - **History** sent to the model: the newest messages that fit the model's `context_window` (estimated at 3 characters per token, minus room for the answer, tool results, system prompt and tool definitions; `DEFAULT_CONTEXT_WINDOW` 32768 for models without one).
 - **Guests:** each guest login creates its own user (`users.is_guest`), deleted with its conversations and files by the hourly cleanup once its sessions have expired. Guests are rate-limited per IP with one counter (`guest_usage`, 5 per 3 hours, hard-coded in `backend/api/auth.py` and `backend/security/auth.py`): every answer counts, a guest login only counts when the IP has no entry yet, and once the count reaches 5 both answers and new guest logins are refused until 3 hours after the last counted request. Behind a reverse proxy set `FORWARDED_ALLOW_IPS`.
-- **Message order** (`b127b7e`, local): order and time come from the server's clock, never the device's. The server stamps a message's time when it stores it, and message ids are its clock in milliseconds. `Message.compare` sorts stored messages by id, then the messages only in the browser (negative ids from `Message.localId()`, e.g. a failed send) by time; the history sent to the model is ordered by id too. Before, the user message carried the device's time and the answer the server's, so a device clock running ahead put answers above their questions (seen with this PC 42 s fast).
+- **Message order** (`b127b7e`): order and time come from the server's clock, never the device's. The server stamps a message's time when it stores it, and message ids are its clock in milliseconds. `Message.compare` sorts stored messages by id, then the messages only in the browser (negative ids from `Message.localId()`, e.g. a failed send) by time; the history sent to the model is ordered by id too. Before, the user message carried the device's time and the answer the server's, so a device clock running ahead put answers above their questions (seen with this PC 42 s fast).
 - **Files:** only the uploader can read a file (API, agent tool and history).
 - **Privacy:** the browser only talks to the app's own frontend and backend (no Google Fonts, no IP lookup service).
 
@@ -112,12 +115,11 @@ Personas: Pirate (all tools) and Translator (no tools).
 
 ### Next steps
 
-1. **Push `develop`** (the four local commits after `0a55d68`) when the user says so.
+1. **Release:** merge the PR from `develop` into `main` when the user asks (`gh pr merge <n> --merge --admin`), wait for the release build, then bump `version:` in the HomeLab's `fleet.yaml` (ask first, a push deploys) to roll out the message order fix, Astra, the banner, the phone layout and the conversation import/export. Import the converted 2023/24 conversations afterwards.
 2. **GPT-6 Astra with tools:** a Responses API adapter in `backend/llm/` (tools together with reasoning, its reasoning shown as "Thinking"). Waiting for the user's decision.
 3. **Sidebar banner and app icons:** the robot logo is gone; the redesign is open. Options discussed: A, a quiet wordmark; B, a custom SVG mark plus wordmark that also replaces the favicon and PWA icons (still the 2024 cyborg portrait; recommended); C, no brand in the sidebar. Also the name: "LLM Chat" or "Advanced LLM Chat".
 4. **Refused guest login:** when the IP's guest quota is used up, the guest login gets a 429, the app creates an offline guest, the next requests get 401s and send the visitor to the login page, where "Continue as guest" fails again. Show the limit message with the reset time instead, and make the limit configurable (5 per 3 hours is tight for people sharing one connection). Offered to the user, not started.
-5. **Next release:** merge `develop` into `main`, then bump the HomeLab `fleet.yaml` version to deploy the message order fix, Astra and the banner.
-6. Look at the homelab router's failures.
+5. Look at the homelab router's failures.
 
 ## Repositories
 
