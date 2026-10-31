@@ -273,6 +273,21 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   }
 
   /**
+   * Remove messages from this browser only, e.g. the ones the server deleted after an edited message.
+   */
+  async removeLocally(conversationId: string, ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      await this.dbService.deleteMessage(id);
+    }
+    const cache = this.conversationCaches.get(conversationId);
+    if (cache) {
+      const removed = new Set(ids);
+      cache.next(cache.getValue().filter(m => !removed.has(m.id)));
+    }
+  }
+
+  /**
    * Refresh cache after external database updates (e.g., after sync)
    */
   async refreshConversationCache(conversationId: string): Promise<void> {

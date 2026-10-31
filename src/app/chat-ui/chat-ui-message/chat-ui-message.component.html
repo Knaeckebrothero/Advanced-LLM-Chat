@@ -1,4 +1,36 @@
 <!-- Modern Chat Message Component -->
+<!-- Manual editing: a message inserted above or below this one (shown where it will go) -->
+<ng-template #insertComposer>
+  <form class="insert-composer" (ngSubmit)="submitInsert()">
+    <div class="insert-options">
+      <div class="insert-toggle" role="group" [attr.aria-label]="'message.insertAs' | translate">
+        <button type="button" *ngFor="let role of insertRoles" [class.active]="insertRole === role.value"
+          [attr.aria-pressed]="insertRole === role.value" (click)="insertRole = role.value">
+          {{ role.label | translate }}
+        </button>
+      </div>
+      <div class="insert-toggle" role="group" [attr.aria-label]="'message.insertWhere' | translate">
+        <button type="button" *ngFor="let position of insertPositions" [class.active]="insertPosition === position.value"
+          [attr.aria-pressed]="insertPosition === position.value" (click)="insertPosition = position.value">
+          {{ position.label | translate }}
+        </button>
+      </div>
+    </div>
+    <textarea class="insert-text" name="insertText" rows="3" [(ngModel)]="insertText"
+      [placeholder]="'message.insertPlaceholder' | translate" [attr.aria-label]="'message.insertPlaceholder' | translate"
+      (keydown.escape)="cancelInsert()"></textarea>
+    <p class="message-action-error" *ngIf="insertError" role="alert">{{ insertError }}</p>
+    <div class="insert-actions">
+      <button type="button" class="insert-button" (click)="cancelInsert()">{{ 'message.insertCancel' | translate }}</button>
+      <button type="submit" class="insert-button insert-button--primary" [disabled]="!insertText.trim() || insertBusy">
+        {{ 'message.insertSave' | translate }}
+      </button>
+    </div>
+  </form>
+</ng-template>
+
+<ng-container *ngIf="inserting && insertPosition === 'before'" [ngTemplateOutlet]="insertComposer"></ng-container>
+
 <div class="message-row" [class.message-row--user]="message.roleName === 'user'"
   [class.message-row--assistant]="message.roleName !== 'user'"
   [class.message-row--system]="message.roleName === 'system'"
@@ -111,7 +143,7 @@
           clipboard>
         </markdown>
 
-        <!-- Edit mode - only for text messages -->
+        <!-- Edit mode -->
         <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
           [innerText]="message.textContent" (blur)="updateContent(editableDiv.innerText)">
         </div>
@@ -138,12 +170,17 @@
           </app-agent-steps>
 
           <!-- Final response with streaming cursor -->
-          <div class="agent-response" *ngIf="message.content.content || message.content.status === 'responding'">
+          <div class="agent-response" *ngIf="!editing && (message.content.content || message.content.status === 'responding')">
             <markdown class="response-text"
               [data]="agentResponseContent"
               clipboard>
             </markdown>
             <span class="streaming-cursor" *ngIf="message.content.status === 'responding'"></span>
+          </div>
+
+          <!-- Edit mode (manual editing): only the answer text, the steps stay -->
+          <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
+            [innerText]="message.content.content" (blur)="updateContent(editableDiv.innerText)">
           </div>
 
           <!-- Error display -->
@@ -154,6 +191,8 @@
         </div>
       </ng-container>
     </div>
+
+    <p class="message-action-error" *ngIf="editError" role="alert">{{ editError }}</p>
 
     <!-- TTS Audio Player (expandable) -->
     <div class="tts-player-container" *ngIf="ttsAudioUrl || isGeneratingTTS || ttsError">
@@ -206,10 +245,18 @@
           <mat-icon>content_copy</mat-icon>
         </button>
 
-        <!-- Edit button - only for text messages -->
-        <button *ngIf="isEditable" mat-icon-button class="action-btn" (click)="editMessage()" title="Edit"
-          aria-label="Edit message">
+        <!-- Edit button: guided editing your own messages, manual editing every message -->
+        <button *ngIf="isEditable" mat-icon-button class="action-btn" (click)="editMessage()"
+          [title]="'message.edit' | translate" [attr.aria-label]="'message.edit' | translate">
           <mat-icon>edit</mat-icon>
+        </button>
+
+        <!-- Insert a message above or below (manual editing) -->
+        <button *ngIf="canInsert" mat-icon-button class="action-btn" [class.action-btn--active]="inserting"
+          (click)="inserting ? cancelInsert() : startInsert()"
+          [title]="'message.insert' | translate" [attr.aria-label]="'message.insert' | translate"
+          [attr.aria-expanded]="inserting">
+          <mat-icon>add_comment</mat-icon>
         </button>
 
         <!-- Regenerate button - only for AI messages that are the last AI message -->
@@ -250,12 +297,14 @@
 
       <!-- Edit mode actions -->
       <ng-container *ngIf="editing">
+        <!-- Guided editing answers your message again -->
         <button mat-icon-button class="action-btn action-btn--confirm" (click)="doneEditing()"
-          aria-label="Save changes">
-          <mat-icon>check</mat-icon>
+          [title]="(resendsOnEdit ? 'message.saveAndResend' : 'message.save') | translate"
+          [attr.aria-label]="(resendsOnEdit ? 'message.saveAndResend' : 'message.save') | translate">
+          <mat-icon>{{ resendsOnEdit ? 'send' : 'check' }}</mat-icon>
         </button>
         <button mat-icon-button class="action-btn action-btn--cancel" (click)="abortEditing()"
-          aria-label="Cancel editing">
+          [title]="'message.cancelEdit' | translate" [attr.aria-label]="'message.cancelEdit' | translate">
           <mat-icon>close</mat-icon>
         </button>
       </ng-container>
@@ -265,3 +314,5 @@
     </div>
   </div>
 </div>
+
+<ng-container *ngIf="inserting && insertPosition === 'after'" [ngTemplateOutlet]="insertComposer"></ng-container>

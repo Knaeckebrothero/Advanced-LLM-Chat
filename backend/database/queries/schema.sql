@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     background TEXT DEFAULT 'none',          -- chat background: 'none' | 'aurora' | 'ridges' | 'custom' (image kept in the browser)
     background_dim INTEGER DEFAULT 25,       -- 0-80, % of the theme background color over the image
     background_blur INTEGER DEFAULT 0,       -- 0-20 px
+    editing_mode TEXT DEFAULT 'guided',      -- 'guided' (an edited message is answered again) | 'manual' (edit and insert any message)
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

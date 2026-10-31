@@ -118,6 +118,7 @@ user_settings = Table(
     Column('background', Text, server_default='none'),  # 'none' | 'aurora' | 'ridges' | 'custom'
     Column('background_dim', Integer, server_default='25'),  # 0-80 %
     Column('background_blur', Integer, server_default='0'),  # 0-20 px
+    Column('editing_mode', Text, server_default='guided'),  # 'guided' | 'manual'
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 

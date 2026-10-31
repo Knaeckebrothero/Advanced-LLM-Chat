@@ -723,14 +723,16 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Update (patch) a message with conflict resolution
+   * Update (patch) a message's text with conflict resolution: a text message keeps its
+   * attachments, an agent message its steps.
+   * @param deleteFollowing - Also delete the messages after it (only online), so it can be answered again
    */
-  async patchMessage(messageId: number, content: string, maxRetries: number = 3): Promise<void> {
+  async patchMessage(messageId: number, content: string, maxRetries: number = 3, deleteFollowing = false): Promise<void> {
     const messages = await firstValueFrom(this.messages$);
     const message = messages.find(m => m.id === messageId);
 
-    if (!message || !message.isText()) {
-      throw new Error('Message not found or not a text message');
+    if (!message || !(message.isText() || message.isAgent())) {
+      throw new Error('Message not found or not a text or agent message');
     }
 
     const conversationId = this.activeConversationId$.getValue()!;
@@ -741,25 +743,19 @@ export class ChatStateService implements OnDestroy {
       try {
         // Update via API if online
         if (await this.isBackendAvailable()) {
-          await this.apiService.patchMessage(conversationId, messageId, content, message.version);
+          await this.apiService.patchMessage(conversationId, messageId, content, message.version, deleteFollowing);
           success = true;
+        } else if (deleteFollowing) {
+          throw new Error('The server is not reachable');
         } else {
           // Offline mode - just update locally
           success = true;
         }
 
-        // Create updated message with incremented version
-        const updatedMessage = Message.createText(
-          {
-            id: message.id,
-            conversationId: message.conversationId,
-            roleName: message.roleName,
-            time: message.time,
-            version: message.version + 1,
-            lastModified: Math.floor(Date.now() / 1000)
-          },
-          content,
-          message.content.attachments
+        // The same message (rating, model, steps) with the new text and an incremented version
+        const updatedMessage = new Message(
+          { ...message.metadata, version: message.version + 1, lastModified: Math.floor(Date.now() / 1000) },
+          { ...message.content, content }
         );
 
         await this.messageRepository.update(updatedMessage);
@@ -807,6 +803,39 @@ export class ChatStateService implements OnDestroy {
    */
   async deleteMessage(messageId: number): Promise<void> {
     await this.messageRepository.delete(messageId);
+  }
+
+  /**
+   * Save the edited text of one of the user's messages and answer it again (guided editing):
+   * the messages after it are deleted, then a new answer streams in.
+   */
+  async resendEditedMessage(messageId: number, content: string): Promise<void> {
+    if (this.isStreaming$.getValue()) {
+      throw new Error('Wait until the answer is complete');
+    }
+    const conversationId = this.activeConversationId$.getValue()!;
+    this.error$.next(null);
+
+    await this.patchMessage(messageId, content, 3, true);
+
+    // The server deleted the later messages; so does this browser (also the ones it only has itself)
+    const messages = await firstValueFrom(this.messages$);
+    const edited = messages.find(m => m.id === messageId);
+    const following = edited ? messages.filter(m => Message.compare(m, edited) > 0) : [];
+    await this.messageRepository.removeLocally(conversationId, following.map(m => m.id));
+
+    await this._streamResponse(conversationId);
+  }
+
+  /**
+   * Insert a text message of the user or the assistant before or after a message (manual editing).
+   * The server picks its id between the two neighbours, so it sorts there; nothing answers it.
+   */
+  async insertMessage(
+    next: Message, position: 'before' | 'after', roleName: 'user' | 'Assistant', content: string
+  ): Promise<void> {
+    const inserted = await this.apiService.insertMessage(next.conversationId, next.id, position, roleName, content);
+    await this.messageRepository.save(inserted, true);
   }
 
   /**

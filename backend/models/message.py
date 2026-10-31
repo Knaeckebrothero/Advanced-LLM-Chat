@@ -292,16 +292,43 @@ class MessagePatch(BaseModel):
     :ivar conversationId: The identifier of the conversation to which the
         message belongs. It uses a UUID format for unique identification.
     :type conversationId: str
-    :ivar content: The updated content of the message.
+    :ivar content: The updated text of the message (the answer text of an agent
+        message); a text message keeps its attachments.
     :type content: str
     :ivar version: The version number of the update used for optimistic
         locking. Ensures that concurrent updates do not overwrite changes.
     :type version: int
+    :ivar deleteFollowing: Also delete every later message of the conversation,
+        so the edited message can be answered again.
+    :type deleteFollowing: bool
     """
     id: int
     conversationId: str  # Now using UUID
     content: str
     version: int  # Required for optimistic locking
+    deleteFollowing: bool = False
+
+
+class MessageInsert(BaseModel):
+    """
+    A text message inserted before or after a message of a conversation, without an answer.
+
+    :ivar conversationId: The conversation.
+    :type conversationId: str
+    :ivar messageId: The message it goes next to.
+    :type messageId: int
+    :ivar position: 'before' or 'after' that message.
+    :type position: Literal["before", "after"]
+    :ivar roleName: Who wrote it: 'user' or 'Assistant'.
+    :type roleName: Literal["user", "Assistant"]
+    :ivar content: The text.
+    :type content: str
+    """
+    conversationId: str
+    messageId: int
+    position: Literal["before", "after"] = "after"
+    roleName: Literal["user", "Assistant"]
+    content: str = Field(min_length=1)
 
 
 class MessageResponse(BaseModel):

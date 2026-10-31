@@ -4,7 +4,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatDialogRef } from '@angular/material/dialog';
 import { SettingsStateService } from '../services/settings-state.service';
 import { CatalogService } from '../services/catalog.service';
-import { AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_DIM_MAX, BackgroundChoice } from '../models/settings.model';
+import { AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_DIM_MAX, BackgroundChoice, EditingMode } from '../models/settings.model';
 import {
   BackgroundService,
   BUILT_IN_BACKGROUNDS,
@@ -51,6 +51,10 @@ export class SettingsComponent {
     { value: 'ridges', label: 'background.ridges' },
     { value: 'custom', label: 'background.custom' },
   ];
+  editingOptions: { value: EditingMode; icon: string; label: string }[] = [
+    { value: 'guided', icon: 'auto_awesome', label: 'editing.guided' },
+    { value: 'manual', icon: 'edit_note', label: 'editing.manual' },
+  ];
   readonly dimMax = BACKGROUND_DIM_MAX;
   readonly blurMax = BACKGROUND_BLUR_MAX;
   customImageUrl$: Observable<string | null>;
@@ -90,6 +94,14 @@ export class SettingsComponent {
   /** Model for new conversations; null = the first model of the catalog. */
   updateDefaultModel(defaultModelId: number | null): void {
     this.settingsState.updateSettings({ defaultModelId });
+  }
+
+  editingMode(settings: AppSettings): EditingMode {
+    return settings.editingMode ?? 'guided';
+  }
+
+  updateEditingMode(editingMode: EditingMode) {
+    this.settingsState.updateSettings({ editingMode });
   }
 
   /** A default model that is gone from the catalog counts as automatic. */
