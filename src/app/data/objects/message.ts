@@ -135,6 +135,8 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
   public metadata: IMessageMetadata;
   public content: T;
 
+  private static lastLocalId = 0;
+
   constructor(metadata: IMessageMetadata, content: T) {
     this.metadata = metadata;
     this.content = content;
@@ -156,6 +158,37 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
   set roleName(newRoleName: string) { this.metadata.roleName = newRoleName; }
   set time(newTime: Date) { this.metadata.time = newTime; }
   set version(newVersion: number) { this.metadata.version = newVersion; }
+
+  // =========================================================================
+  // Order
+  // =========================================================================
+
+  /**
+   * An id for a message the server hasn't stored yet. The server's ids are positive (its
+   * clock in milliseconds), so local ids are negative and unique in this browser.
+   */
+  static localId(): number {
+    Message.lastLocalId = Math.min(-Date.now(), Message.lastLocalId - 1);
+    return Message.lastLocalId;
+  }
+
+  /** Whether only this browser has the message (sending it failed or is still running). */
+  get isLocal(): boolean { return this.id < 0; }
+
+  /**
+   * The order of a conversation, like a messenger's: the messages the server stored in the
+   * order it stored them (by id), then those only in this browser, in the order they were written.
+   * Times come from different clocks (the device's, the server's), so they don't decide the order.
+   */
+  static compare(a: Message, b: Message): number {
+    if (a.isLocal !== b.isLocal) {
+      return a.isLocal ? 1 : -1;
+    }
+    if (a.isLocal) {
+      return a.time.getTime() - b.time.getTime() || b.id - a.id;
+    }
+    return a.id - b.id;
+  }
   set lastModified(newLastModified: number) { this.metadata.lastModified = newLastModified; }
   set rating(newRating: number | null | undefined) { this.metadata.rating = newRating; }
 
@@ -183,7 +216,7 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
   ): Message<IAgentContent> {
     return new Message(
       {
-        id: Date.now(),
+        id: Message.localId(),
         conversationId,
         roleName: 'assistant',
         time: new Date(),

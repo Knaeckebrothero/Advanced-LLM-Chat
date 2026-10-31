@@ -682,10 +682,8 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       console.log(`- Preserved ${preservedOlderMessages} older messages from local storage`);
     }
     
-    // Sort messages by time
-    mergedMessages.sort((a, b) => 
-      new Date(a.time).getTime() - new Date(b.time).getTime()
-    );
+    // Conversation order (stored messages by server id, then local ones)
+    mergedMessages.sort(Message.compare);
     
     // Remove duplicates - this is critical to prevent duplicate messages in UI
     const uniqueMessages: Message[] = [];
@@ -727,13 +725,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       console.warn(`Removed ${duplicateCount} duplicate messages during merge for conversation ${conversationId}`);
     }
     
-    // Sort both arrays by time for accurate comparison
-    const sortedLocal = [...localMessages].sort((a, b) => 
-      new Date(a.time).getTime() - new Date(b.time).getTime()
-    );
-    const sortedUnique = [...uniqueMessages].sort((a, b) => 
-      new Date(a.time).getTime() - new Date(b.time).getTime()
-    );
+    // Sort both arrays the same way for accurate comparison
+    const sortedLocal = [...localMessages].sort(Message.compare);
+    const sortedUnique = [...uniqueMessages].sort(Message.compare);
     
     // Check if messages actually changed
     const messagesChanged = sortedUnique.length !== sortedLocal.length ||
@@ -813,14 +807,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     try {
       const messages = await this.dbService.getMessagesByConversationId(conversationId);
       if (messages !== undefined) {
-        // Sort with ID as tie-breaker for timestamp precision issues
-        messages.sort((a, b) => {
-          const timeDiff = a.time!.getTime() - b.time!.getTime();
-          if (Math.abs(timeDiff) < 1000) {
-            return a.id - b.id;
-          }
-          return timeDiff;
-        });
+        messages.sort(Message.compare);
         return [...messages.slice(-limit)];
       }
       return [];

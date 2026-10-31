@@ -278,9 +278,9 @@ class ConversationHistoryBuilder:
         if before_message is not None:
             raw_messages = [msg for msg in raw_messages if msg['id'] < before_message['id']][:limit]
 
-        # Chronological order. Times have second resolution, so a question and its answer
-        # often tie; the id (a millisecond timestamp) breaks the tie.
-        raw_messages = sorted(raw_messages, key=lambda msg: (msg.get('time') or 0, msg.get('id') or 0))
+        # The order the server stored them in: the id is its clock in milliseconds. Older
+        # user messages carry the time of the sender's device, which may be off.
+        raw_messages = sorted(raw_messages, key=lambda msg: msg.get('id') or 0)
         logger.debug(f"Building history for conversation {conversation_id}: {len(raw_messages)} messages")
 
         messages = []

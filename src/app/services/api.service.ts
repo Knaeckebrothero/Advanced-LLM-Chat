@@ -234,7 +234,8 @@ export class ApiService {
     }
   }
 
-  async sendMessage(message: Message): Promise<number> {
+  /** Store a message on the server. Returns the id and time (seconds) the server gave it. */
+  async sendMessage(message: Message): Promise<{ id: number, time: number }> {
     const endpoint = `${this.baseUrl}/api/message/send`;
 
     // Use the new toApiSend method which handles all message types
@@ -242,15 +243,14 @@ export class ApiService {
 
     try {
       const response = await lastValueFrom(
-        this.http.post<{ id: number }>(endpoint, body, {
+        this.http.post<{ id: number, time: number }>(endpoint, body, {
           ...this.getHttpOptions(),
           observe: 'response'
         })
       );
 
       if (response.status === 201) {
-        // Update the message ID with the server-assigned ID
-        return response.body!.id;
+        return response.body!;
       } else if (response.status === 400) {
         throw new Error('Bad Request: Please check the input data');
       } else if (response.status === 500) {
@@ -283,7 +283,7 @@ export class ApiService {
   async sendAndGenerateMessage(
     message: Message,
     generateResponse: boolean = true
-  ): Promise<{ userMessageId: number; aiMessage?: Message }> {
+  ): Promise<{ userMessageId: number; userMessageTime: number; aiMessage?: Message }> {
     const endpoint = `${this.baseUrl}/api/message/send-and-generate`;
 
     // Build request body combining message and generation settings
@@ -298,8 +298,9 @@ export class ApiService {
       );
 
       // Response contains both user message ID and optional AI message
-      const result: { userMessageId: number; aiMessage?: Message } = {
-        userMessageId: response.userMessage.id
+      const result: { userMessageId: number; userMessageTime: number; aiMessage?: Message } = {
+        userMessageId: response.userMessage.id,
+        userMessageTime: response.userMessage.time
       };
 
       if (response.aiMessage) {
