@@ -23,6 +23,20 @@ export interface IConversation {
   selectionPending?: boolean;
 }
 
+/**
+ * The summary the model gets instead of a conversation's oldest messages, once they no
+ * longer fit its context window. Only on the server: loaded with the conversation and
+ * sent in the stream when a new one is written.
+ */
+export interface IConversationSummary {
+  conversationId: string;
+  coversUntil: number;   // id of the newest message it covers; it covers every message up to it
+  messageCount: number;
+  content: string;       // Markdown
+  modelName?: string | null;
+  createdAt: number;     // unix seconds
+}
+
 // For sync checking
 export interface IConversationState {
   id: string;

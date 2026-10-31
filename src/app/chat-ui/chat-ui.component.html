@@ -4,10 +4,16 @@
       <mat-spinner diameter="30"></mat-spinner>
       <span>Loading older messages...</span>
     </div>
-    <app-chat-ui-message *ngFor="let message of messages | async; let i = index"
-                         [message]="message"
-                         [isLastAiMessage]="isLastAiMessage(message, i)"
-                         (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
+    <ng-container *ngIf="{ divider: summaryDivider$ | async } as view">
+      <ng-container *ngFor="let message of messages | async; let i = index">
+        <app-chat-ui-message [message]="message"
+                             [isLastAiMessage]="isLastAiMessage(message, i)"
+                             (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
+        <!-- From here on the model gets the summary instead of the messages above -->
+        <app-chat-ui-summary *ngIf="view.divider && view.divider.afterId === message.id"
+                             [summary]="view.divider.summary"></app-chat-ui-summary>
+      </ng-container>
+    </ng-container>
     <!-- Streaming message (displayed separately from persisted messages) -->
     <app-chat-ui-message *ngIf="streamingMessage$ | async as streamingMessage"
                          [message]="streamingMessage"

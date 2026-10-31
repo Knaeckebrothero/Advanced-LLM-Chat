@@ -49,6 +49,7 @@ from backend.database.tables import (
     users,
     conversations,
     messages,
+    conversation_summaries,
     sessions,
     guest_usage,
     user_settings,
@@ -924,6 +925,70 @@ class Database:
             log.debug(f"Message count for {conversation_id}: {count}")
             return count
 
+    def get_conversation_summary(self, conversation_id: str) -> Optional[dict]:
+        """
+        Get the summary of a conversation's oldest messages (see backend/services/conversation_summary.py).
+
+        Args:
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            The summary row (conversation_id, covers_until, message_count, content,
+            model_name, created_at), or None if the conversation has none.
+        """
+        with self.connection() as conn:
+            row = conn.execute(select(conversation_summaries).where(
+                conversation_summaries.c.conversation_id == conversation_id)).fetchone()
+            return self._row_to_dict(row)
+
+    def save_conversation_summary(
+        self,
+        conversation_id: str,
+        covers_until: int,
+        message_count: int,
+        content: str,
+        model_name: Optional[str] = None
+    ) -> dict:
+        """
+        Store a conversation's summary, replacing the one it had.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            covers_until: Id of the newest message it covers; it covers every message up to it.
+            message_count: How many messages it covers.
+            content: The summary text.
+            model_name: The model that wrote it.
+
+        Returns:
+            The stored summary row.
+        """
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        import time as time_module
+
+        values = {
+            'covers_until': covers_until,
+            'message_count': message_count,
+            'content': content,
+            'model_name': model_name,
+            'created_at': int(time_module.time()),
+        }
+        with self.connection() as conn:
+            stmt = pg_insert(conversation_summaries).values(conversation_id=conversation_id, **values)
+            stmt = stmt.on_conflict_do_update(index_elements=['conversation_id'], set_=values)
+            row = conn.execute(stmt.returning(conversation_summaries)).fetchone()
+            log.info(f"Stored the summary of {conversation_id}: {message_count} messages up to {covers_until}")
+            return self._row_to_dict(row)
+
+    @staticmethod
+    def _drop_summary_covering(conn, conversation_id: str, message_id: int) -> None:
+        """Delete the conversation's summary if it covers this (changed) message: it no longer matches."""
+        dropped = conn.execute(delete(conversation_summaries).where(
+            (conversation_summaries.c.conversation_id == conversation_id) &
+            (conversation_summaries.c.covers_until >= message_id)
+        )).rowcount
+        if dropped:
+            log.info(f"Dropped the summary of {conversation_id}: message {message_id} it covers changed")
+
     def create_message(
         self,
         message_id: int,
@@ -1012,6 +1077,7 @@ class Database:
             result = conn.execute(stmt).fetchone()
             if result:
                 log.debug(f"Updated message: {message_id}")
+                self._drop_summary_covering(conn, conversation_id, message_id)
                 if delete_following:
                     deleted = conn.execute(delete(messages).where(
                         (messages.c.conversationId == conversation_id) & (messages.c.id > message_id)
@@ -1089,6 +1155,7 @@ class Database:
                 if result:
                     log.info(f"Inserted message {candidate} {'before' if before else 'after'} {message_id} "
                              f"in conversation {conversation_id}")
+                    self._drop_summary_covering(conn, conversation_id, candidate)
                     return self._row_to_dict(result)
 
             log.warning(f"No free id {'before' if before else 'after'} message {message_id} "
@@ -1149,6 +1216,7 @@ class Database:
             deleted = result.rowcount > 0
             if deleted:
                 log.info(f"Deleted message: {message_id}")
+                self._drop_summary_covering(conn, conversation_id, message_id)
             else:
                 log.debug(f"Message not found for deletion: {message_id}")
             return deleted
@@ -1168,6 +1236,8 @@ class Database:
             stmt = delete(messages).where(messages.c.conversationId == conversation_id)
             result = conn.execute(stmt)
             count = result.rowcount
+            conn.execute(delete(conversation_summaries).where(
+                conversation_summaries.c.conversation_id == conversation_id))
             if count > 0:
                 log.info(f"Deleted {count} messages from conversation {conversation_id}")
             return count

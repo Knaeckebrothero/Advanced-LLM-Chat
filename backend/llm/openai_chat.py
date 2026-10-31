@@ -263,8 +263,8 @@ async def complete_once(
     *,
     system_prompt: Optional[str] = None,
     max_output_tokens: Optional[int] = None,
-) -> tuple[str, Usage]:
-    """One non-streaming call without tools; returns the answer text (reasoning removed) and usage."""
+) -> tuple[str, Usage, str]:
+    """One non-streaming call without tools; returns the answer text (reasoning removed), usage and stop reason."""
     kwargs: dict[str, Any] = {
         "model": config.model_id,
         "messages": prepare_messages(config, messages, system_prompt),
@@ -273,7 +273,9 @@ async def complete_once(
     apply_extra_body(config, kwargs)
     response = await client.chat.completions.create(**kwargs)
     content = ""
+    finish_reason = None
     if response.choices:
         content = response.choices[0].message.content or ""
+        finish_reason = response.choices[0].finish_reason
     _, answer = split_think_tags(content)
-    return answer.strip(), _usage_of(response.usage)
+    return answer.strip(), _usage_of(response.usage), _STOP_REASONS.get(finish_reason, STOP_END)

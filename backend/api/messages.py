@@ -19,7 +19,9 @@ from backend.models.message import (
     RateMessageRequest,
     RegenerateMessageRequest,
     StreamGenerateRequest,
-    MessageStartEvent
+    MessageStartEvent,
+    ConversationSummary,
+    AgentStep
 )
 from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
@@ -35,6 +37,7 @@ from backend.catalog.resolver import (
 )
 from backend.services.llm import generate_reply
 from backend.services.conversation_history import ConversationHistoryBuilder, history_token_budget
+from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
 from backend.models.attachments import AttachmentType
 from backend.services.tts_handler import (
     generate_speech,
@@ -47,6 +50,9 @@ from backend.services.tts_preprocessor import preprocess_for_tts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/message", tags=["Message"])
+
+# Id prefix of the step that shows a summary of the oldest messages being written (the frontend knows it)
+SUMMARY_STEP_PREFIX = "summary-"
 
 NO_MODEL_MESSAGE = (
     "No language model is configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, "
@@ -113,6 +119,23 @@ def _step_to_dict(step) -> dict:
     if step_dict.get('callId') is None:
         step_dict.pop('callId', None)
     return step_dict
+
+
+def _summary_step(step_id: str, started_ms: int, count: int, state: str, detail: str = "") -> dict:
+    """The step that shows a summary of the oldest messages being written ('running', 'done' or 'failed')."""
+    plural = "message" if count == 1 else "messages"
+    title, content = {
+        "running": (f"Summarizing {count} earlier {plural}",
+                    "They no longer fit the model's context window."),
+        "done": (f"Summarized {count} earlier {plural}",
+                 f"From here on the model gets a summary instead of them. {detail}".strip()),
+        "failed": ("Could not summarize earlier messages",
+                   f"The oldest messages that don't fit the context window are left out. ({detail})"),
+    }[state]
+    now_ms = int(time.time() * 1000)
+    step = AgentStep(id=step_id, type="observation", title=title, content=content, timestamp=started_ms,
+                     duration=now_ms - started_ms if state != "running" else None)
+    return _step_to_dict(step)
 
 
 def _save_agent_message(
@@ -981,6 +1004,9 @@ async def stream_generate(
       a step with the id of an earlier one replaces it
     - step_delta: Text appended to an earlier step ({"id", "delta"}), the model's live reasoning
     - token: A token from the final response stream
+    - summary: A new summary of the oldest messages (ConversationSummary), written
+      before the answer when the history nearly fills the model's context window;
+      a step shows it being written
     - done: Signals completion with the message ID, the model and the token usage
     - error: An error occurred during processing
 
@@ -1013,6 +1039,27 @@ async def stream_generate(
         step_positions: dict[str, int] = {}  # Step id -> index in steps, for replaced steps
         final_response = ""
         usage: Optional[Usage] = None
+        summary_usage: Optional[Usage] = None
+
+        def step_event(step_dict: dict) -> dict:
+            """Record a step (a known id replaces the earlier one) and make its event."""
+            position = step_positions.get(step_dict['id'])
+            if position is None:
+                step_positions[step_dict['id']] = len(steps)
+                steps.append(step_dict)
+            else:
+                steps[position] = step_dict
+            return {"event": "step", "data": json.dumps(step_dict)}
+
+        def total_usage() -> Optional[Usage]:
+            """The answer's usage, with the summary's model calls."""
+            if summary_usage is None:
+                return usage
+            total = Usage()
+            total.add(summary_usage)
+            if usage is not None:
+                total.add(usage)
+            return total
 
         # Send message envelope FIRST - provides metadata before any content
         message_start = MessageStartEvent(
@@ -1043,15 +1090,48 @@ async def stream_generate(
             tools = _agent_tools(current_user, conversation, config)
             system_prompt = build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
 
-            # Build conversation history with placeholders for previous attachments,
-            # as much of it as fits the model's context window
+            # Build conversation history with placeholders for previous attachments: the
+            # summary of the oldest messages, then as many messages as fit the model's context window
             history_builder = ConversationHistoryBuilder(db)
-            history_messages, available_attachments = await history_builder.build_history(
+            token_budget = history_token_budget(config, system_prompt, tools)
+            summary = db.get_conversation_summary(request_body.conversationId)
+            entries, available_attachments = await history_builder.build_entries(
                 request_body.conversationId,
                 include_latest_attachments=True,
                 supports_vision=config.supports_vision,
-                token_budget=history_token_budget(config, system_prompt, tools)
+                summary=summary
             )
+
+            # Fold the oldest messages into the summary once the history nearly fills the window
+            fold_count = messages_to_summarize(entries, summary, token_budget)
+            if fold_count:
+                started_ms = int(time.time() * 1000)
+                step_id = f"{SUMMARY_STEP_PREFIX}{started_ms}"
+                yield step_event(_summary_step(step_id, started_ms, fold_count, "running"))
+                summary_usage = Usage()
+                try:
+                    content, summary_usage = await summarize(
+                        config, entries[:fold_count], summary['content'] if summary else None, token_budget)
+                    summary = db.save_conversation_summary(
+                        request_body.conversationId,
+                        covers_until=entries[fold_count - 1][0],
+                        message_count=(summary['message_count'] if summary else 0) + fold_count,
+                        content=content,
+                        model_name=config.display_name
+                    )
+                    entries = entries[fold_count:]
+                    covered = summary['message_count']
+                    detail = (f"It covers all {covered} messages up to here." if covered > fold_count else "")
+                    yield step_event(_summary_step(step_id, started_ms, fold_count, "done", detail))
+                    yield {
+                        "event": "summary",
+                        "data": json.dumps(ConversationSummary.from_row(summary).model_dump())
+                    }
+                except SummaryFailed as e:
+                    summary_usage = e.usage
+                    crud_logger.warning(f"Summary of {request_body.conversationId} failed ({e.reason}): {e}")
+                    yield step_event(_summary_step(step_id, started_ms, fold_count, "failed", e.reason))
+            history_messages = history_builder.assemble(request_body.conversationId, entries, summary, token_budget)
 
             if not history_messages:
                 yield {
@@ -1086,17 +1166,7 @@ async def stream_generate(
                 tools=tools
             ):
                 if event_type == "step":
-                    step_dict = _step_to_dict(event_data)
-                    position = step_positions.get(step_dict['id'])
-                    if position is None:
-                        step_positions[step_dict['id']] = len(steps)
-                        steps.append(step_dict)
-                    else:
-                        steps[position] = step_dict
-                    yield {
-                        "event": "step",
-                        "data": json.dumps(step_dict)
-                    }
+                    yield step_event(_step_to_dict(event_data))
                 elif event_type == "step_delta":
                     # Keep the stored step current, in case the stream breaks before the step completes
                     position = step_positions.get(event_data['id'])
@@ -1116,7 +1186,7 @@ async def stream_generate(
                     usage = event_data
 
             # Save using JSONB storage, with the model that answered and its usage
-            usage_data = (usage or Usage()).to_api(config)
+            usage_data = (total_usage() or Usage()).to_api(config)
             db.create_agent_message(
                 message_id=message_id,
                 conversation_id=request_body.conversationId,
@@ -1161,7 +1231,7 @@ async def stream_generate(
                 steps=steps,
                 model_id=config.id,
                 model_name=config.display_name,
-                usage=usage.to_api(config) if usage else None
+                usage=total_usage().to_api(config) if total_usage() else None
             )
 
             yield {

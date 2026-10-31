@@ -138,6 +138,7 @@ backend/
 │   └── tests/            # Offline test scripts (fake OpenAI server, mocked Anthropic API)
 ├── services/
 │   ├── conversation_history.py  # Conversation history in the OpenAI message format, cut to the model's context window
+│   ├── conversation_summary.py  # Rolling summary of the oldest messages once the history nearly fills the window
 │   ├── conversation_file.py  # Export and import of conversation files (docs/conversation_file.md)
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
@@ -184,6 +185,7 @@ Uses discriminated union pattern with factory methods:
 - **AgentContent**: Agent responses with reasoning steps and final response
 - Voice messages are TextContent with audio file attachment; transcript is in text content
 - Editing (setting `editingMode`): **guided** edits only your own messages and answers an edited one again (`PATCH /api/message/patch` with `deleteFollowing` deletes the later messages, then stream-generate); **manual** edits the text of any message (an agent message keeps its steps) and inserts user or assistant messages next to any message (`POST /api/message/insert`, which picks an id between the neighbours), without generating. A patch keeps a text message's attachments
+- History: the newest messages that fit the model's context window. Past 80% of it, the chat's model folds the oldest exchanges into a rolling summary before answering (`conversation_summaries`, the history starts with it; dropped when a message it covers is edited, deleted or inserted); the chat shows it as a divider. See `docs/model_catalog_api.md`
 - Conversations are exported and imported as conversation files (`docs/conversation_file.md`); `scripts/convert_legacy_conversations.py` converts the exports of the 2023/24 app
 - Order and time come from the server's clock, never the device's: the server stamps a message's time when it stores it, and its ids are that clock in milliseconds. `Message.compare` sorts stored messages by id, then the ones only in the browser (negative ids from `Message.localId()`, e.g. a failed send) by time
 
@@ -194,6 +196,7 @@ The `/api/message/stream-generate` SSE endpoint emits:
 - **step**: Agent reasoning step (thought, tool_call, tool_result, observation); a step with an existing id replaces it, tool steps carry a `callId`
 - **step_delta**: `{"id", "delta"}`, text appended to a step (the model's live "Thinking")
 - **token**: Individual text tokens for final response
+- **summary**: A new summary of the conversation's oldest messages (conversationId, coversUntil, messageCount, content, modelName, createdAt), written before the answer; a step (id `summary-…`) shows it being written
 - **done**: Signals completion (messageId, modelId, modelName, usage)
 - **error**: Error information
 

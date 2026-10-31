@@ -315,5 +315,11 @@
     "manual": "Manuell",
     "guidedHint": "Du bearbeitest deine eigenen Nachrichten, und eine bearbeitete Nachricht wird neu beantwortet.",
     "manualHint": "Du bearbeitest jede Nachricht, auch die Antworten, und fügst überall Nachrichten ein. Es wird nichts generiert."
+  },
+  "summary": {
+    "title": "{{count}} frühere Nachrichten zusammengefasst",
+    "titleOne": "1 frühere Nachricht zusammengefasst",
+    "hint": "Ab hier bekommt das Modell diese Zusammenfassung statt der Nachrichten darüber, die nicht mehr in sein Kontextfenster passen.",
+    "writtenBy": "Geschrieben von {{model}}."
   }
 }
