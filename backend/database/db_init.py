@@ -54,6 +54,7 @@ EXPECTED_TABLES = [
     "users",
     "conversations",
     "messages",
+    "conversation_summaries",
     "sessions",
     "guest_usage",
     "user_settings",
@@ -235,6 +236,7 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
     """
     # Drop order respects foreign key dependencies
     drop_order = [
+        "conversation_summaries",
         "messages",
         "sessions",
         "user_settings",

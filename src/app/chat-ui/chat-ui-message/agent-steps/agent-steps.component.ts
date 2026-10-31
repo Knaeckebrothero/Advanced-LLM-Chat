@@ -1,6 +1,9 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { IAgentStep, AgentStepType, AgentStatus } from '../../../data/models/message.model';
 
+// Id prefix of the step that shows the oldest messages being summarized (backend/api/messages.py)
+const SUMMARY_STEP_PREFIX = 'summary-';
+
 @Component({
   selector: 'app-agent-steps',
   templateUrl: './agent-steps.component.html',
@@ -67,9 +70,13 @@ export class AgentStepsComponent {
   }
 
   /**
-   * Get icon for agent step type
+   * Get icon for an agent step: by its type, or the summary of the oldest messages
    */
-  getStepIcon(type: AgentStepType): string {
+  getStepIcon(step: IAgentStep): string {
+    if (step.id.startsWith(SUMMARY_STEP_PREFIX)) {
+      return 'summarize';
+    }
+    const type: AgentStepType = step.type;
     const icons: Record<AgentStepType, string> = {
       thought: 'psychology',
       tool_call: 'build',

@@ -8,7 +8,7 @@ import importlib
 import logging
 import sys
 
-MODULES = ("test_openai_loop", "test_anthropic_loop", "test_history", "test_tools")
+MODULES = ("test_openai_loop", "test_anthropic_loop", "test_history", "test_summary", "test_tools")
 
 
 def main() -> int:

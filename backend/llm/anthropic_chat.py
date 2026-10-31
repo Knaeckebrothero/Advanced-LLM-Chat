@@ -380,8 +380,8 @@ async def complete_once(
     *,
     system_prompt: Optional[str] = None,
     max_output_tokens: Optional[int] = None,
-) -> tuple[str, Usage]:
-    """One non-streaming call without tools; thinking is left at the model's default."""
+) -> tuple[str, Usage, str]:
+    """One non-streaming call without tools (thinking is left at the model's default); text, usage, stop reason."""
     system, claude_messages = to_anthropic_messages(messages, system_prompt)
     kwargs: dict[str, Any] = {
         "model": config.model_id,
@@ -393,4 +393,4 @@ async def complete_once(
     apply_extra_body(config, kwargs)
     message = await client.messages.create(**kwargs)
     turn = turn_from_message(message)
-    return turn.text.strip(), turn.usage
+    return turn.text.strip(), turn.usage, turn.stop_reason

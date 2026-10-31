@@ -315,5 +315,11 @@
     "manual": "Manual",
     "guidedHint": "You edit your own messages, and an edited message is answered again.",
     "manualHint": "You edit any message, the answers too, and insert messages anywhere. Nothing is generated."
+  },
+  "summary": {
+    "title": "{{count}} earlier messages summarized",
+    "titleOne": "1 earlier message summarized",
+    "hint": "From here on the model gets this summary instead of the messages above, which no longer fit its context window.",
+    "writtenBy": "Written by {{model}}."
   }
 }

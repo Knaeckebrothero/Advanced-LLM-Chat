@@ -42,7 +42,7 @@ FILE_OWNERS = {"img1": 1, "img2": 1, "img3": 2}
 class FakeDB:
     """
     get_messages_by_conversation, with the real query's filters (ties in time come
-    back unordered), and the owner lookups for conversations and files.
+    back unordered), the owner lookups for conversations and files, and no summary.
     """
 
     def __init__(self, rows):
@@ -55,6 +55,9 @@ class FakeDB:
 
     def get_conversation_owner(self, conversation_id):
         return 1
+
+    def get_conversation_summary(self, conversation_id):
+        return None
 
     def get_owned_file_ids(self, user_id, file_ids):
         return {file_id for file_id in file_ids if FILE_OWNERS.get(file_id) == user_id}
