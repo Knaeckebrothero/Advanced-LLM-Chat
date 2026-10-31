@@ -58,7 +58,24 @@
   "message": {
     "readOutLoud": "Read out loud",
     "generatingAudio": "Generating audio...",
-    "ttsError": "Failed to generate audio"
+    "ttsError": "Failed to generate audio",
+    "edit": "Edit",
+    "save": "Save",
+    "saveAndResend": "Save and answer again",
+    "cancelEdit": "Cancel editing",
+    "resendConfirm": "Answering it again deletes the {{count}} messages after it. Continue?",
+    "editFailed": "The message couldn't be saved: {{error}}",
+    "insert": "Insert a message",
+    "insertAs": "Written by",
+    "insertWhere": "Position",
+    "insertUser": "You",
+    "insertAssistant": "Assistant",
+    "insertBelow": "Below",
+    "insertAbove": "Above",
+    "insertPlaceholder": "Text of the message",
+    "insertSave": "Insert",
+    "insertCancel": "Cancel",
+    "insertFailed": "The message couldn't be inserted: {{error}}"
   },
   "catalog": {
     "tierLabel": "Privacy",
@@ -291,5 +308,12 @@
     "imported": "Imported: {{count}}",
     "invalidJson": "{{file}} isn't valid JSON.",
     "invalidFile": "{{file}} isn't a conversation file."
+  },
+  "editing": {
+    "title": "Editing",
+    "guided": "Guided",
+    "manual": "Manual",
+    "guidedHint": "You edit your own messages, and an edited message is answered again.",
+    "manualHint": "You edit any message, the answers too, and insert messages anywhere. Nothing is generated."
   }
 }

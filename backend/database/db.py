@@ -972,7 +972,8 @@ class Database:
         conversation_id: str,
         content: str,
         version: int,
-        last_modified: int = None
+        last_modified: int = None,
+        delete_following: bool = False
     ) -> Optional[dict]:
         """
         Update a message's content with optimistic locking.
@@ -983,6 +984,8 @@ class Database:
             content: New message content.
             version: Expected current version (for optimistic locking).
             last_modified: Unix timestamp (optional).
+            delete_following: Also delete the conversation's later messages (higher ids),
+                in the same transaction.
 
         Returns:
             Updated message dictionary or None if version mismatch/not found.
@@ -1009,9 +1012,88 @@ class Database:
             result = conn.execute(stmt).fetchone()
             if result:
                 log.debug(f"Updated message: {message_id}")
+                if delete_following:
+                    deleted = conn.execute(delete(messages).where(
+                        (messages.c.conversationId == conversation_id) & (messages.c.id > message_id)
+                    )).rowcount
+                    log.info(f"Deleted {deleted} message(s) after edited message {message_id}")
             else:
                 log.warning(f"Message update failed (version mismatch or not found): {message_id}")
             return self._row_to_dict(result)
+
+    def insert_message_next_to(
+        self,
+        conversation_id: str,
+        message_id: int,
+        before: bool,
+        role_name: str,
+        content: str
+    ) -> Optional[dict]:
+        """
+        Insert a text message right before or after another message of the conversation.
+
+        The id is the order of a conversation, so the new message gets a free id
+        between the message and its neighbour (and that time): the middle of the
+        gap, or the next free one. Before the first message it goes a second
+        earlier; after the last one it gets the server's clock, like a sent message.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            message_id: The message it goes next to.
+            before: Insert before the message instead of after it.
+            role_name: 'user' or 'Assistant'.
+            content: The message's text.
+
+        Returns:
+            The created message dictionary, or None if no id is free there
+            (the neighbours are a millisecond apart).
+        """
+        from sqlalchemy import func
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        import time as time_module
+
+        now_ms = int(time_module.time() * 1000)
+        with self.connection() as conn:
+            same_conversation = messages.c.conversationId == conversation_id
+            if before:
+                upper = message_id
+                lower = conn.execute(select(func.max(messages.c.id)).where(
+                    same_conversation & (messages.c.id < message_id))).scalar()
+                if lower is None:
+                    lower = upper - 2000
+            else:
+                lower = message_id
+                upper = conn.execute(select(func.min(messages.c.id)).where(
+                    same_conversation & (messages.c.id > message_id))).scalar()
+
+            if upper is None:
+                # After the last message: now, or later ids if they are taken
+                candidates = range(max(now_ms, lower + 1), max(now_ms, lower + 1) + 100)
+            else:
+                # Ids are unique across conversations: from the middle up, then down
+                middle = (lower + upper) // 2
+                candidates = [*range(middle, upper), *range(middle - 1, lower, -1)][:100]
+
+            for candidate in candidates:
+                stmt = pg_insert(messages).values(
+                    id=candidate,
+                    conversationId=conversation_id,
+                    roleName=role_name,
+                    content=content,
+                    time=candidate // 1000,
+                    type='text',
+                    version=1,
+                    lastModified=now_ms // 1000,
+                ).on_conflict_do_nothing(index_elements=['id']).returning(messages)
+                result = conn.execute(stmt).fetchone()
+                if result:
+                    log.info(f"Inserted message {candidate} {'before' if before else 'after'} {message_id} "
+                             f"in conversation {conversation_id}")
+                    return self._row_to_dict(result)
+
+            log.warning(f"No free id {'before' if before else 'after'} message {message_id} "
+                        f"in conversation {conversation_id}")
+            return None
 
     def update_message_rating(
         self,
@@ -1597,7 +1679,8 @@ class Database:
         default_model_id=UNSET,
         background=UNSET,
         background_dim=UNSET,
-        background_blur=UNSET
+        background_blur=UNSET,
+        editing_mode=UNSET
     ) -> dict:
         """
         Create or update user settings.
@@ -1611,6 +1694,7 @@ class Database:
             background: Chat background ('none', 'aurora', 'ridges', 'custom'); UNSET keeps it.
             background_dim: Dimming of the background image in percent; UNSET keeps it.
             background_blur: Blur of the background image in pixels; UNSET keeps it.
+            editing_mode: 'guided' or 'manual'; UNSET keeps it.
 
         Returns:
             The user settings dictionary.
@@ -1623,6 +1707,7 @@ class Database:
             ("background", background),
             ("background_dim", background_dim),
             ("background_blur", background_blur),
+            ("editing_mode", editing_mode),
         ):
             if value is not UNSET:
                 values[column] = value

@@ -314,14 +314,18 @@ export class ApiService {
     }
   }
 
-  // Patch an existing message
-  async patchMessage(conversationId: string | number, messageId: number, content: string, version: number): Promise<Message> {
+  // Patch an existing message (its text; an agent message keeps its steps), with deleteFollowing
+  // also deleting the messages after it, so it can be answered again
+  async patchMessage(
+    conversationId: string | number, messageId: number, content: string, version: number, deleteFollowing = false
+  ): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/patch`;
     const body = {
       id: messageId,
       conversationId: conversationId,
       content: content,
-      version: version
+      version: version,
+      ...(deleteFollowing && { deleteFollowing })
     };
 
     try {
@@ -333,6 +337,20 @@ export class ApiService {
       console.error('Error patching message:', error);
       throw error;
     }
+  }
+
+  /** Insert a text message of the user or the assistant before or after a message; nothing answers it. */
+  async insertMessage(
+    conversationId: string, messageId: number, position: 'before' | 'after', roleName: 'user' | 'Assistant', content: string
+  ): Promise<Message> {
+    const response = await lastValueFrom(
+      this.http.post<any>(
+        `${this.baseUrl}/api/message/insert`,
+        { conversationId, messageId, position, roleName, content },
+        this.getHttpOptions()
+      )
+    );
+    return Message.fromApiResponse(response);
   }
 
   // Delete a message

@@ -947,6 +947,120 @@
   }
 }
 
+.message-action-error {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: #ef4444;
+}
+
+// ============================================
+// INSERT A MESSAGE (manual editing)
+// ============================================
+.insert-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 768px;
+  margin: 8px auto;
+  padding: 12px;
+  border: 2px dashed color-mix(in srgb, var(--theme-primary) 55%, var(--theme-border));
+  border-radius: 12px;
+  background-color: var(--theme-surface);
+}
+
+.insert-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.insert-toggle {
+  display: inline-flex;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  overflow: hidden;
+
+  button {
+    padding: 4px 12px;
+    border: none;
+    background: transparent;
+    color: var(--theme-text-secondary);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+
+    & + button {
+      border-left: 1px solid var(--theme-border);
+    }
+
+    &:hover {
+      background-color: var(--theme-hover);
+    }
+
+    &.active {
+      background-color: var(--theme-primary);
+      color: var(--theme-primary-contrast);
+    }
+  }
+}
+
+.insert-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
+  font: inherit;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: var(--theme-primary);
+  }
+}
+
+.insert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.insert-button {
+  padding: 6px 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theme-text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--theme-hover);
+  }
+
+  &--primary {
+    border-color: var(--theme-primary);
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+
+    &:hover:not(:disabled) {
+      background-color: var(--theme-primary);
+      filter: brightness(1.08);
+    }
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
 // Display parts of the message in italic if wrapped in <em> tags
 em {
   font-style: italic;

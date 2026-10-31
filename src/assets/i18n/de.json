@@ -58,7 +58,24 @@
   "message": {
     "readOutLoud": "Vorlesen",
     "generatingAudio": "Audio wird generiert...",
-    "ttsError": "Audio konnte nicht generiert werden"
+    "ttsError": "Audio konnte nicht generiert werden",
+    "edit": "Bearbeiten",
+    "save": "Speichern",
+    "saveAndResend": "Speichern und neu beantworten",
+    "cancelEdit": "Bearbeiten abbrechen",
+    "resendConfirm": "Beim neuen Beantworten werden die {{count}} Nachrichten danach gelöscht. Fortfahren?",
+    "editFailed": "Die Nachricht konnte nicht gespeichert werden: {{error}}",
+    "insert": "Nachricht einfügen",
+    "insertAs": "Geschrieben von",
+    "insertWhere": "Position",
+    "insertUser": "Du",
+    "insertAssistant": "Assistent",
+    "insertBelow": "Darunter",
+    "insertAbove": "Darüber",
+    "insertPlaceholder": "Text der Nachricht",
+    "insertSave": "Einfügen",
+    "insertCancel": "Abbrechen",
+    "insertFailed": "Die Nachricht konnte nicht eingefügt werden: {{error}}"
   },
   "catalog": {
     "tierLabel": "Datenschutz",
@@ -291,5 +308,12 @@
     "imported": "Importiert: {{count}}",
     "invalidJson": "{{file}} ist kein gültiges JSON.",
     "invalidFile": "{{file}} ist keine Unterhaltungsdatei."
+  },
+  "editing": {
+    "title": "Bearbeiten",
+    "guided": "Geführt",
+    "manual": "Manuell",
+    "guidedHint": "Du bearbeitest deine eigenen Nachrichten, und eine bearbeitete Nachricht wird neu beantwortet.",
+    "manualHint": "Du bearbeitest jede Nachricht, auch die Antworten, und fügst überall Nachrichten ein. Es wird nichts generiert."
   }
 }

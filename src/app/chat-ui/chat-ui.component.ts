@@ -645,9 +645,34 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.chatState.deleteMessage(messageId);
   }
 
-  // Method to change a message
-  patchMessage(messageId: number, content: string) {
-    this.chatState.patchMessage(messageId, content);
+  // Method to change a message's text
+  patchMessage(messageId: number, content: string): Promise<void> {
+    return this.chatState.patchMessage(messageId, content);
+  }
+
+  // Save an edited message of the user and answer it again (guided editing)
+  resendEditedMessage(messageId: number, content: string): Promise<void> {
+    // Follow the new answer at the bottom, as when regenerating
+    this.useAnchorMode = false;
+    this.anchorMessageIndex = null;
+    this.userIsAtBottom = true;
+    this.shouldScrollToBottom = true;
+
+    return this.chatState.resendEditedMessage(messageId, content);
+  }
+
+  // Insert a message next to another one (manual editing)
+  insertMessage(next: Message, position: 'before' | 'after', roleName: 'user' | 'Assistant', content: string): Promise<void> {
+    return this.chatState.insertMessage(next, position, roleName, content);
+  }
+
+  // How many messages come after this one (an edit in guided mode deletes them)
+  countMessagesAfter(message: Message): number {
+    return this.currentMessages.filter(m => Message.compare(m, message) > 0).length;
+  }
+
+  get isStreaming(): boolean {
+    return this.chatState.isCurrentlyStreaming();
   }
 
   // Method to regenerate a message (optionally once with another catalog model)

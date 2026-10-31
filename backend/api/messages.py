@@ -12,6 +12,7 @@ from backend.models.message import (
     ApiMessageSend,
     ApiMessageGenerate,
     ApiMessageSendAndGenerate,
+    MessageInsert,
     MessagePatch,
     MessageResponse,
     SendAndGenerateResponse,
@@ -393,6 +394,11 @@ async def patch_message(request_body: MessagePatch, response: Response,
                         current_user: dict = Depends(get_current_user)):
     """
     Handles the patching of a message within a conversation.
+
+    The content is the message's text: a text message keeps its attachments, an
+    agent message keeps its steps (only the answer text changes). With
+    deleteFollowing, the later messages are deleted too, so the edited message
+    can be answered again (stream-generate).
     """
     crud_logger.info(
         f"Patch message called - User: {current_user['user_id']}, Message: {request_body.id}, Conversation: {request_body.conversationId}")
@@ -411,29 +417,39 @@ async def patch_message(request_body: MessagePatch, response: Response,
                 detail="Access denied to this conversation"
             )
 
-        # First check current version
-        current_version = db.get_message_version(request_body.id, request_body.conversationId)
+        current = db.get_message_by_id(request_body.id, request_body.conversationId)
 
-        if current_version is None:
+        if current is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Message not found"
             )
 
         # Check for version conflict
-        if current_version != request_body.version:
+        if current['version'] != request_body.version:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Version conflict: current version is {current_version}, provided version is {request_body.version}"
+                detail=f"Version conflict: current version is {current['version']}, provided version is {request_body.version}"
             )
+
+        # A text message with attachments is stored as {"content", "attachments"} JSON; keep them
+        content = request_body.content
+        if (current.get('type') or 'text') == 'text' and (current['content'] or '').startswith('{'):
+            try:
+                stored = json.loads(current['content'])
+            except json.JSONDecodeError:
+                stored = None
+            if isinstance(stored, dict) and stored.get('attachments'):
+                content = json.dumps({**stored, 'content': request_body.content})
 
         # Update with version increment
         updated_message = db.update_message(
             message_id=request_body.id,
             conversation_id=request_body.conversationId,
-            content=request_body.content,
+            content=content,
             version=request_body.version,
-            last_modified=int(time.time())
+            last_modified=int(time.time()),
+            delete_following=request_body.deleteFollowing
         )
 
         if not updated_message:
@@ -530,6 +546,53 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete message: {str(e)}. Please check your connection and try again."
         )
+
+
+@router.post("/insert",
+             response_model=MessageResponse,
+             status_code=status.HTTP_201_CREATED,
+             responses={
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                 status.HTTP_404_NOT_FOUND: {"description": "Message not found"},
+                 status.HTTP_409_CONFLICT: {"model": ErrorResponse, "description": "No room next to the message"},
+             })
+async def insert_message(request_body: MessageInsert, current_user: dict = Depends(get_current_user)):
+    """
+    Insert a text message of the user or the assistant before or after a message, without an answer.
+
+    Its id (the order) lies between the message and its neighbour, so its time does too.
+    """
+    crud_logger.info(
+        f"Insert message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}, "
+        f"{request_body.position} {request_body.messageId}")
+
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+    if db.get_message_by_id(request_body.messageId, request_body.conversationId) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+
+    inserted = db.insert_message_next_to(
+        conversation_id=request_body.conversationId,
+        message_id=request_body.messageId,
+        before=request_body.position == "before",
+        role_name=request_body.roleName,
+        content=request_body.content
+    )
+    if inserted is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="There is no room for a message here; insert it next to another message")
+
+    return MessageResponse(
+        id=inserted['id'],
+        conversationId=inserted['conversationId'],
+        roleName=inserted['roleName'],
+        content=inserted['content'],
+        time=inserted['time'],
+        type='text',
+        version=inserted['version'],
+        lastModified=inserted['lastModified'],
+        rating=inserted.get('rating')
+    )
 
 
 @router.post("/rate",
