@@ -129,16 +129,25 @@ body.theme-initialized {
   }
 }
 
-// Settings dialog (its size is set where it opens, in the sidebar)
+// Settings dialog: one column, two on wide screens (its maximum size is set where it opens, in the sidebar)
 .settings-dialog-panel {
+  width: 420px;
+
+  @media (min-width: 900px) {
+    width: 840px;
+  }
+
   .mat-mdc-dialog-container {
     --mdc-dialog-container-color: var(--theme-surface);
     --mdc-dialog-container-shape: 20px;
   }
 
+  // Scrolls on small screens: a thin scrollbar in the theme's colors, like the chat's
   .mat-mdc-dialog-surface {
     border: 1px solid var(--theme-border);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    scrollbar-width: thin;
+    scrollbar-color: var(--theme-border) transparent;
   }
 }
 

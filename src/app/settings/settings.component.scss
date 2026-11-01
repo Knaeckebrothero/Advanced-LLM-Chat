@@ -258,6 +258,21 @@ h2 {
   }
 }
 
+// Wide screens: two columns side by side (the dialog is wider there, see .settings-dialog-panel)
+@media (min-width: 900px) {
+  .settings-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 48px;
+    align-items: start;
+  }
+
+  // The Done row keeps its own distance
+  .settings-column > .setting-option:last-child {
+    margin-bottom: 0;
+  }
+}
+
 // Phones: less padding and spacing, so more fits on the screen
 @media (max-width: 480px) {
   .settings-container {

@@ -1,139 +1,146 @@
 <div class="settings-container" *ngIf="settings$ | async as settings">
   <h2>{{ 'Settings' | translate }}</h2>
 
-  <div class="setting-option">
-    <label>{{ 'Theme' | translate }}</label>
-    <div class="options-group">
-      <button
-        *ngFor="let option of themeOptions"
-        class="option-button"
-        [class.active]="settings.theme === option.value"
-        (click)="updateTheme(option.value)"
-        [attr.aria-pressed]="settings.theme === option.value"
-      >
-        <mat-icon>{{ option.icon }}</mat-icon>
-        <span>{{ option.label | translate }}</span>
-      </button>
-    </div>
-  </div>
-
-  <div class="setting-option">
-    <label>{{ 'Language' | translate }}</label>
-    <div class="options-group">
-      <button
-        *ngFor="let option of languageOptions"
-        class="option-button"
-        [class.active]="settings.language === option.value"
-        (click)="updateLanguage(option.value)"
-        [attr.aria-pressed]="settings.language === option.value"
-      >
-        <span>{{ option.label }}</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Chat background: built-in images or the user's own (kept in this browser) -->
-  <div class="setting-option" *ngIf="{ url: customImageUrl$ | async } as custom">
-    <label id="background-label">{{ 'background.title' | translate }}</label>
-    <div class="background-options" role="radiogroup" aria-labelledby="background-label">
-      <button
-        *ngFor="let option of backgroundOptions"
-        type="button"
-        role="radio"
-        class="background-tile"
-        [class.active]="activeBackground(settings) === option.value"
-        [attr.aria-checked]="activeBackground(settings) === option.value"
-        (click)="chooseBackground(option.value, custom.url, fileInput)"
-      >
-        <span class="background-thumb" [style.background-image]="backgroundThumb(option.value, custom.url)">
-          <mat-icon *ngIf="option.value === 'none'" aria-hidden="true">block</mat-icon>
-          <mat-icon *ngIf="option.value === 'custom' && !custom.url" aria-hidden="true">add_photo_alternate</mat-icon>
-        </span>
-        <span class="background-name">{{ option.label | translate }}</span>
-      </button>
-    </div>
-    <input #fileInput type="file" accept="image/*" hidden (change)="onImageSelected($event)">
-
-    <div class="background-image-actions" *ngIf="custom.url">
-      <button type="button" class="text-button" (click)="fileInput.click()">
-        <mat-icon aria-hidden="true">image</mat-icon>{{ 'background.changeImage' | translate }}
-      </button>
-      <button type="button" class="text-button" (click)="removeCustomImage()">
-        <mat-icon aria-hidden="true">delete</mat-icon>{{ 'background.removeImage' | translate }}
-      </button>
-    </div>
-    <p class="setting-hint" *ngIf="activeBackground(settings) === 'custom' && !custom.url">
-      {{ 'background.missingImage' | translate }}
-    </p>
-    <p class="setting-hint setting-error" *ngIf="imageError" role="alert">{{ imageError | translate }}</p>
-
-    <div class="background-sliders" *ngIf="activeBackground(settings) !== 'none'">
-      <div class="background-slider">
-        <label for="background-dim">{{ 'background.dim' | translate }}</label>
-        <input id="background-dim" type="range" min="0" [max]="dimMax" step="5"
-               [value]="backgroundDim(settings)"
-               (input)="previewDim($event)" (change)="saveBackgroundAdjustments()">
-        <output for="background-dim">{{ backgroundDim(settings) }}%</output>
+  <!-- Wide screens: two columns, how the app looks on the left and how you chat on the right -->
+  <div class="settings-columns">
+    <div class="settings-column">
+      <div class="setting-option">
+        <label>{{ 'Theme' | translate }}</label>
+        <div class="options-group">
+          <button
+            *ngFor="let option of themeOptions"
+            class="option-button"
+            [class.active]="settings.theme === option.value"
+            (click)="updateTheme(option.value)"
+            [attr.aria-pressed]="settings.theme === option.value"
+          >
+            <mat-icon>{{ option.icon }}</mat-icon>
+            <span>{{ option.label | translate }}</span>
+          </button>
+        </div>
       </div>
-      <div class="background-slider">
-        <label for="background-blur">{{ 'background.blur' | translate }}</label>
-        <input id="background-blur" type="range" min="0" [max]="blurMax" step="1"
-               [value]="backgroundBlur(settings)"
-               (input)="previewBlur($event)" (change)="saveBackgroundAdjustments()">
-        <output for="background-blur">{{ backgroundBlur(settings) }} px</output>
+
+      <div class="setting-option">
+        <label>{{ 'Language' | translate }}</label>
+        <div class="options-group">
+          <button
+            *ngFor="let option of languageOptions"
+            class="option-button"
+            [class.active]="settings.language === option.value"
+            (click)="updateLanguage(option.value)"
+            [attr.aria-pressed]="settings.language === option.value"
+          >
+            <span>{{ option.label }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat background: built-in images or the user's own (kept in this browser) -->
+      <div class="setting-option" *ngIf="{ url: customImageUrl$ | async } as custom">
+        <label id="background-label">{{ 'background.title' | translate }}</label>
+        <div class="background-options" role="radiogroup" aria-labelledby="background-label">
+          <button
+            *ngFor="let option of backgroundOptions"
+            type="button"
+            role="radio"
+            class="background-tile"
+            [class.active]="activeBackground(settings) === option.value"
+            [attr.aria-checked]="activeBackground(settings) === option.value"
+            (click)="chooseBackground(option.value, custom.url, fileInput)"
+          >
+            <span class="background-thumb" [style.background-image]="backgroundThumb(option.value, custom.url)">
+              <mat-icon *ngIf="option.value === 'none'" aria-hidden="true">block</mat-icon>
+              <mat-icon *ngIf="option.value === 'custom' && !custom.url" aria-hidden="true">add_photo_alternate</mat-icon>
+            </span>
+            <span class="background-name">{{ option.label | translate }}</span>
+          </button>
+        </div>
+        <input #fileInput type="file" accept="image/*" hidden (change)="onImageSelected($event)">
+
+        <div class="background-image-actions" *ngIf="custom.url">
+          <button type="button" class="text-button" (click)="fileInput.click()">
+            <mat-icon aria-hidden="true">image</mat-icon>{{ 'background.changeImage' | translate }}
+          </button>
+          <button type="button" class="text-button" (click)="removeCustomImage()">
+            <mat-icon aria-hidden="true">delete</mat-icon>{{ 'background.removeImage' | translate }}
+          </button>
+        </div>
+        <p class="setting-hint" *ngIf="activeBackground(settings) === 'custom' && !custom.url">
+          {{ 'background.missingImage' | translate }}
+        </p>
+        <p class="setting-hint setting-error" *ngIf="imageError" role="alert">{{ imageError | translate }}</p>
+
+        <div class="background-sliders" *ngIf="activeBackground(settings) !== 'none'">
+          <div class="background-slider">
+            <label for="background-dim">{{ 'background.dim' | translate }}</label>
+            <input id="background-dim" type="range" min="0" [max]="dimMax" step="5"
+                   [value]="backgroundDim(settings)"
+                   (input)="previewDim($event)" (change)="saveBackgroundAdjustments()">
+            <output for="background-dim">{{ backgroundDim(settings) }}%</output>
+          </div>
+          <div class="background-slider">
+            <label for="background-blur">{{ 'background.blur' | translate }}</label>
+            <input id="background-blur" type="range" min="0" [max]="blurMax" step="1"
+                   [value]="backgroundBlur(settings)"
+                   (input)="previewBlur($event)" (change)="saveBackgroundAdjustments()">
+            <output for="background-blur">{{ backgroundBlur(settings) }} px</output>
+          </div>
+        </div>
+        <p class="setting-hint">{{ 'background.customHint' | translate }}</p>
       </div>
     </div>
-    <p class="setting-hint">{{ 'background.customHint' | translate }}</p>
-  </div>
 
-  <!-- Default model for new conversations (only with a model catalog) -->
-  <ng-container *ngIf="(models$ | async) as models">
-    <div class="setting-option" *ngIf="models.length > 0">
-      <label id="default-model-label">{{ 'catalog.settings.defaultModel' | translate }}</label>
-      <app-model-select
-        class="default-model-select"
-        variant="field"
-        [models]="models"
-        [selectedId]="selectedDefaultModel(settings, models)"
-        [automaticLabel]="'catalog.settings.automatic' | translate"
-        [automaticHint]="'catalog.settings.automaticHint' | translate"
-        (selectedChange)="updateDefaultModel($event)">
-      </app-model-select>
-      <p class="setting-hint">{{ 'catalog.settings.defaultModelHint' | translate }}</p>
+    <div class="settings-column">
+      <!-- Default model for new conversations (only with a model catalog) -->
+      <ng-container *ngIf="(models$ | async) as models">
+        <div class="setting-option" *ngIf="models.length > 0">
+          <label id="default-model-label">{{ 'catalog.settings.defaultModel' | translate }}</label>
+          <app-model-select
+            class="default-model-select"
+            variant="field"
+            [models]="models"
+            [selectedId]="selectedDefaultModel(settings, models)"
+            [automaticLabel]="'catalog.settings.automatic' | translate"
+            [automaticHint]="'catalog.settings.automaticHint' | translate"
+            (selectedChange)="updateDefaultModel($event)">
+          </app-model-select>
+          <p class="setting-hint">{{ 'catalog.settings.defaultModelHint' | translate }}</p>
+        </div>
+      </ng-container>
+
+      <!-- Editing: guided (an edited message is answered again) or manual (edit and insert any message) -->
+      <div class="setting-option">
+        <label>{{ 'editing.title' | translate }}</label>
+        <div class="options-group">
+          <button
+            *ngFor="let option of editingOptions"
+            class="option-button"
+            [class.active]="editingMode(settings) === option.value"
+            (click)="updateEditingMode(option.value)"
+            [attr.aria-pressed]="editingMode(settings) === option.value"
+          >
+            <mat-icon>{{ option.icon }}</mat-icon>
+            <span>{{ option.label | translate }}</span>
+          </button>
+        </div>
+        <p class="setting-hint">{{ (editingMode(settings) === 'manual' ? 'editing.manualHint' : 'editing.guidedHint') | translate }}</p>
+      </div>
+
+      <!-- Conversations: files exported from a conversation's menu (guests' conversations are not kept) -->
+      <div class="setting-option">
+        <label>{{ 'conversations.title' | translate }}</label>
+        <button type="button" class="text-button" [disabled]="!canImport || importing" (click)="importInput.click()">
+          <mat-icon aria-hidden="true">upload_file</mat-icon>
+          {{ (importing ? 'conversations.importing' : 'conversations.import') | translate }}
+        </button>
+        <input #importInput type="file" accept="application/json,.json" multiple hidden (change)="onImportSelected($event)">
+        <p class="setting-hint">{{ (canImport ? 'conversations.hint' : 'conversations.guestHint') | translate }}</p>
+        <p class="setting-hint" *ngIf="importedCount > 0" role="status">
+          {{ 'conversations.imported' | translate: { count: importedCount } }}
+        </p>
+        <p class="setting-hint setting-error" *ngFor="let error of importErrors" role="alert">{{ error }}</p>
+      </div>
     </div>
-  </ng-container>
-
-  <!-- Editing: guided (an edited message is answered again) or manual (edit and insert any message) -->
-  <div class="setting-option">
-    <label>{{ 'editing.title' | translate }}</label>
-    <div class="options-group">
-      <button
-        *ngFor="let option of editingOptions"
-        class="option-button"
-        [class.active]="editingMode(settings) === option.value"
-        (click)="updateEditingMode(option.value)"
-        [attr.aria-pressed]="editingMode(settings) === option.value"
-      >
-        <mat-icon>{{ option.icon }}</mat-icon>
-        <span>{{ option.label | translate }}</span>
-      </button>
-    </div>
-    <p class="setting-hint">{{ (editingMode(settings) === 'manual' ? 'editing.manualHint' : 'editing.guidedHint') | translate }}</p>
-  </div>
-
-  <!-- Conversations: files exported from a conversation's menu (guests' conversations are not kept) -->
-  <div class="setting-option">
-    <label>{{ 'conversations.title' | translate }}</label>
-    <button type="button" class="text-button" [disabled]="!canImport || importing" (click)="importInput.click()">
-      <mat-icon aria-hidden="true">upload_file</mat-icon>
-      {{ (importing ? 'conversations.importing' : 'conversations.import') | translate }}
-    </button>
-    <input #importInput type="file" accept="application/json,.json" multiple hidden (change)="onImportSelected($event)">
-    <p class="setting-hint">{{ (canImport ? 'conversations.hint' : 'conversations.guestHint') | translate }}</p>
-    <p class="setting-hint" *ngIf="importedCount > 0" role="status">
-      {{ 'conversations.imported' | translate: { count: importedCount } }}
-    </p>
-    <p class="setting-hint setting-error" *ngFor="let error of importErrors" role="alert">{{ error }}</p>
   </div>
 
   <div class="button-row">
