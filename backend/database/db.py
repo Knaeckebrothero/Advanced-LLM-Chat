@@ -904,6 +904,24 @@ class Database:
             log.debug(f"Retrieved {len(msg_list)} messages for conversation {conversation_id}")
             return msg_list
 
+    def get_system_messages(self, conversation_id: str, before_id: int = None) -> list[dict]:
+        """
+        Get a conversation's system messages, oldest first.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            before_id: Only the ones before this message id.
+
+        Returns:
+            List of message dictionaries.
+        """
+        with self.connection() as conn:
+            condition = (messages.c.conversationId == conversation_id) & (messages.c.roleName == 'system')
+            if before_id is not None:
+                condition &= messages.c.id < before_id
+            results = conn.execute(select(messages).where(condition).order_by(messages.c.id)).fetchall()
+            return [self._row_to_dict(row) for row in results]
+
     def get_message_count(self, conversation_id: str) -> int:
         """
         Get the number of messages in a conversation.
@@ -981,7 +999,11 @@ class Database:
 
     @staticmethod
     def _drop_summary_covering(conn, conversation_id: str, message_id: int) -> None:
-        """Delete the conversation's summary if it covers this (changed) message: it no longer matches."""
+        """
+        Delete the conversation's summary if it covers this (changed) message: it no longer matches.
+
+        Not for system messages: they go into the system prompt, never into the summary.
+        """
         dropped = conn.execute(delete(conversation_summaries).where(
             (conversation_summaries.c.conversation_id == conversation_id) &
             (conversation_summaries.c.covers_until >= message_id)
@@ -1077,7 +1099,8 @@ class Database:
             result = conn.execute(stmt).fetchone()
             if result:
                 log.debug(f"Updated message: {message_id}")
-                self._drop_summary_covering(conn, conversation_id, message_id)
+                if result.roleName != 'system':
+                    self._drop_summary_covering(conn, conversation_id, message_id)
                 if delete_following:
                     deleted = conn.execute(delete(messages).where(
                         (messages.c.conversationId == conversation_id) & (messages.c.id > message_id)
@@ -1107,7 +1130,7 @@ class Database:
             conversation_id: The conversation's UUID.
             message_id: The message it goes next to.
             before: Insert before the message instead of after it.
-            role_name: 'user' or 'Assistant'.
+            role_name: 'user', 'Assistant' or 'system'.
             content: The message's text.
 
         Returns:
@@ -1155,7 +1178,8 @@ class Database:
                 if result:
                     log.info(f"Inserted message {candidate} {'before' if before else 'after'} {message_id} "
                              f"in conversation {conversation_id}")
-                    self._drop_summary_covering(conn, conversation_id, candidate)
+                    if role_name != 'system':
+                        self._drop_summary_covering(conn, conversation_id, candidate)
                     return self._row_to_dict(result)
 
             log.warning(f"No free id {'before' if before else 'after'} message {message_id} "
@@ -1211,12 +1235,13 @@ class Database:
             stmt = delete(messages).where(
                 (messages.c.id == message_id) &
                 (messages.c.conversationId == conversation_id)
-            )
-            result = conn.execute(stmt)
-            deleted = result.rowcount > 0
+            ).returning(messages.c.roleName)
+            role_name = conn.execute(stmt).scalar()
+            deleted = role_name is not None
             if deleted:
                 log.info(f"Deleted message: {message_id}")
-                self._drop_summary_covering(conn, conversation_id, message_id)
+                if role_name != 'system':
+                    self._drop_summary_covering(conn, conversation_id, message_id)
             else:
                 log.debug(f"Message not found for deletion: {message_id}")
             return deleted

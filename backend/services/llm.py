@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 
 from backend.database import db
-from backend.llm import ModelConfig, Usage, build_system_prompt, complete
+from backend.llm import ModelConfig, Usage, build_system_prompt, complete, with_instructions
 from .conversation_history import ConversationHistoryBuilder, history_token_budget
 
 log = logging.getLogger(__name__)
@@ -41,12 +41,14 @@ async def generate_reply(
     :param config: The model that answers.
     :param conversation_id: The conversation to answer.
     :param system_prompt: Optional system prompt; defaults to the assistant's identity prompt.
+        The conversation's system messages before the answer are added to it.
     :param before_message: Only use messages before this message row (regenerating it).
     :return: The reply text and the token usage.
     :raises ValueError: If the conversation has no messages.
     """
-    system_prompt = system_prompt or build_system_prompt(None, None)
     history_builder = ConversationHistoryBuilder(db)
+    system_prompt = with_instructions(system_prompt or build_system_prompt(None, None),
+                                      history_builder.system_instructions(conversation_id, before_message))
     messages, _ = await history_builder.build_history(
         conversation_id,
         include_latest_attachments=True,

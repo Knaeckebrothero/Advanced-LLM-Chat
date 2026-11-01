@@ -3,7 +3,8 @@ System prompt for the agent.
 
 The prompt is the identity paragraph (or a persona's prompt in its place),
 followed by one section per enabled tool group, so the file access and graph
-instructions stay when a persona is used.
+instructions stay when a persona is used. A conversation's system messages
+come last (with_instructions()).
 """
 from typing import Iterable, Optional, Union
 
@@ -37,6 +38,9 @@ GRAPH_PROMPT = """## Knowledge Graph:
 You have read access to a Neo4j knowledge graph. Call get_graph_schema first to learn which node labels, relationship types and properties exist. Then use search_graph to find nodes by text, or query_graph to run a read-only Cypher query."""
 
 GRAPH_TOOL_NAMES = {"get_graph_schema", "search_graph", "query_graph"}
+
+# Heads a conversation's system messages, after the rest of the prompt
+INSTRUCTIONS_HEADING = "## Instructions for this conversation:"
 
 
 def build_system_prompt(
@@ -74,3 +78,16 @@ def build_system_prompt(
         sections.append(GRAPH_PROMPT)
 
     return "\n\n".join(sections)
+
+
+def with_instructions(system_prompt: str, instructions: Iterable[str]) -> str:
+    """
+    The system prompt followed by a conversation's instructions (its system messages, oldest first).
+
+    They go here rather than in their place in the history: many chat templates of
+    open models accept a system message only at the start.
+    """
+    texts = [text.strip() for text in instructions if text and text.strip()]
+    if not texts:
+        return system_prompt
+    return f"{system_prompt}\n\n{INSTRUCTIONS_HEADING}\n" + "\n\n".join(texts)

@@ -70,6 +70,8 @@
     "insertWhere": "Position",
     "insertUser": "Du",
     "insertAssistant": "Assistent",
+    "insertSystem": "System",
+    "insertSystemHint": "Eine Anweisung an das Modell für alle Antworten danach. Sie kommt in den Systemprompt und wird daher nie abgeschnitten oder zusammengefasst.",
     "insertBelow": "Darunter",
     "insertAbove": "Darüber",
     "insertPlaceholder": "Text der Nachricht",
