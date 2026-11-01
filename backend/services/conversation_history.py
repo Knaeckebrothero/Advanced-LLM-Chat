@@ -11,7 +11,9 @@ The history holds as many recent messages as fit the model's context window
 a summary of its oldest messages (conversation_summary.py), the history starts
 with the summary instead of the messages it covers. Attachments of files the
 conversation's owner didn't upload are left out, so a message can't make the
-model read another user's file.
+model read another user's file. System messages are not part of the history:
+they are instructions to the model and go into the system prompt
+(system_instructions()), so they are never cut or summarized.
 """
 
 import json
@@ -354,8 +356,7 @@ class ConversationHistoryBuilder:
                 entries.append((msg['id'], {"role": "user", "content": content}))
                 available_attachments.extend(attachments)
             elif msg.get('roleName') == 'system':
-                # E.g. the system prompt of an imported conversation: shown, but the model
-                # gets the app's own system prompt
+                # Instructions to the model: they go into the system prompt (system_instructions())
                 continue
             else:
                 # AI/assistant message - extract text only; skip empty ones (failed answers)
@@ -365,6 +366,21 @@ class ConversationHistoryBuilder:
 
         logger.debug(f"Built history: {len(entries)} messages, {len(available_attachments)} attachments")
         return entries, available_attachments
+
+    def system_instructions(self, conversation_id: str, before_message: Optional[dict] = None) -> List[str]:
+        """
+        The texts of the conversation's system messages, oldest first.
+
+        A system message is an instruction to the model for every answer after it,
+        however far back it is (see backend.llm.with_instructions()).
+
+        Args:
+            conversation_id: The conversation.
+            before_message: Only the ones before this message row (regenerating it).
+        """
+        rows = self.db.get_system_messages(
+            conversation_id, before_id=before_message['id'] if before_message is not None else None)
+        return [text for text in (self._extract_text(row).strip() for row in rows) if text]
 
     def assemble(
         self,

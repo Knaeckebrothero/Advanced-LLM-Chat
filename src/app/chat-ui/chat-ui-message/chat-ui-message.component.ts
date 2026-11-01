@@ -38,13 +38,14 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Manual editing: a message inserted above or below this one
   inserting = false;
   insertPosition: 'before' | 'after' = 'after';
-  insertRole: 'user' | 'Assistant' = 'user';
+  insertRole: 'user' | 'Assistant' | 'system' = 'user';
   insertText = '';
   insertBusy = false;
   insertError: string | null = null;
-  readonly insertRoles: { value: 'user' | 'Assistant'; label: string }[] = [
+  readonly insertRoles: { value: 'user' | 'Assistant' | 'system'; label: string }[] = [
     { value: 'user', label: 'message.insertUser' },
     { value: 'Assistant', label: 'message.insertAssistant' },
+    { value: 'system', label: 'message.insertSystem' },
   ];
   readonly insertPositions: { value: 'before' | 'after'; label: string }[] = [
     { value: 'after', label: 'message.insertBelow' },
@@ -304,6 +305,11 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     return !this.manualEditing && this.message.roleName === 'user';
   }
 
+  /** An answer of the assistant: not your message, nor a system message (an instruction to the model). */
+  get isAnswer(): boolean {
+    return this.message.roleName !== 'user' && this.message.roleName !== 'system';
+  }
+
   get canInsert(): boolean {
     return this.manualEditing && !this.message.isLocal && !this.chatUI.isStreaming;
   }
@@ -342,7 +348,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Check if message can be regenerated
   get canRegenerate(): boolean {
     // Only AI messages can be regenerated
-    if (this.message.roleName === 'user') {
+    if (!this.isAnswer) {
       return false;
     }
 
@@ -605,8 +611,8 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
    * Check if TTS is available for this message
    */
   get canReadOutLoud(): boolean {
-    // Only for AI messages (not user)
-    if (this.message.roleName === 'user') return false;
+    // Only for AI messages (not user or system)
+    if (!this.isAnswer) return false;
 
     // Must have text content
     if (this.message.isText()) {

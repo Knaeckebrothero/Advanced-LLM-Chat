@@ -250,10 +250,13 @@ export class ChatStateService implements OnDestroy {
     }
   }
 
-  /** The server drops the summary when a message it covers changes; so does this browser. */
-  private dropSummaryCovering(messageId: number): void {
+  /**
+   * The server drops the summary when a message it covers changes; so does this browser.
+   * Not for a system message: it goes into the system prompt, never into the summary.
+   */
+  private dropSummaryCovering(messageId: number, roleName?: string): void {
     const summary = this.summary$.getValue();
-    if (summary && messageId > 0 && messageId <= summary.coversUntil) {
+    if (summary && roleName !== 'system' && messageId > 0 && messageId <= summary.coversUntil) {
       this.summary$.next(null);
     }
   }
@@ -812,7 +815,7 @@ export class ChatStateService implements OnDestroy {
         );
 
         await this.messageRepository.update(updatedMessage);
-        this.dropSummaryCovering(messageId);
+        this.dropSummaryCovering(messageId, message.roleName);
 
         // Show success notification if we had retries
         if (retryCount > 0) {
@@ -856,8 +859,9 @@ export class ChatStateService implements OnDestroy {
    * Delete a message
    */
   async deleteMessage(messageId: number): Promise<void> {
+    const message = (await firstValueFrom(this.messages$)).find(m => m.id === messageId);
     await this.messageRepository.delete(messageId);
-    this.dropSummaryCovering(messageId);
+    this.dropSummaryCovering(messageId, message?.roleName);
   }
 
   /**
@@ -883,15 +887,16 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Insert a text message of the user or the assistant before or after a message (manual editing).
-   * The server picks its id between the two neighbours, so it sorts there; nothing answers it.
+   * Insert a text message of the user, the assistant or the system before or after a message
+   * (manual editing). The server picks its id between the two neighbours, so it sorts there;
+   * nothing answers it. A system message is an instruction to the model for the answers after it.
    */
   async insertMessage(
-    next: Message, position: 'before' | 'after', roleName: 'user' | 'Assistant', content: string
+    next: Message, position: 'before' | 'after', roleName: 'user' | 'Assistant' | 'system', content: string
   ): Promise<void> {
     const inserted = await this.apiService.insertMessage(next.conversationId, next.id, position, roleName, content);
     await this.messageRepository.save(inserted, true);
-    this.dropSummaryCovering(inserted.id);
+    this.dropSummaryCovering(inserted.id, inserted.roleName);
   }
 
   /**

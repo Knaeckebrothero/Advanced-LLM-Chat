@@ -22,7 +22,8 @@ A port of the rolling-fold summarizer of Superhuman Remote Worker
 
 The chat model that answers writes the summary. It is stored per conversation
 (conversation_summaries) and dropped when a message it covers is edited,
-deleted or inserted (db._drop_summary_covering).
+deleted or inserted (db._drop_summary_covering); not for a system message,
+which goes into the system prompt instead of the summary.
 """
 
 import asyncio

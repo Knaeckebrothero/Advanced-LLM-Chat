@@ -26,7 +26,9 @@ from backend.models.message import (
 from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
-from backend.llm import ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups
+from backend.llm import (
+    ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups, with_instructions
+)
 from backend.catalog.resolver import (
     ModelNotAllowed,
     ModelNotAvailable,
@@ -581,9 +583,11 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
              })
 async def insert_message(request_body: MessageInsert, current_user: dict = Depends(get_current_user)):
     """
-    Insert a text message of the user or the assistant before or after a message, without an answer.
+    Insert a text message of the user, the assistant or the system before or after a message, without an answer.
 
-    Its id (the order) lies between the message and its neighbour, so its time does too.
+    Its id (the order) lies between the message and its neighbour, so its time does too. A
+    system message is an instruction to the model for the answers after it (see
+    ConversationHistoryBuilder.system_instructions).
     """
     crud_logger.info(
         f"Insert message called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}, "
@@ -1085,14 +1089,17 @@ async def stream_generate(
 
         try:
             # The persona decides the prompt and which tools the model gets; the
-            # prompt only describes the tools it really has
+            # prompt only describes the tools it really has. The conversation's
+            # system messages are instructions to the model and come last.
             conversation = db.get_conversation_by_id(request_body.conversationId)
             tools = _agent_tools(current_user, conversation, config)
-            system_prompt = build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
+            history_builder = ConversationHistoryBuilder(db)
+            system_prompt = with_instructions(
+                build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
+                history_builder.system_instructions(request_body.conversationId))
 
             # Build conversation history with placeholders for previous attachments: the
             # summary of the oldest messages, then as many messages as fit the model's context window
-            history_builder = ConversationHistoryBuilder(db)
             token_budget = history_token_budget(config, system_prompt, tools)
             summary = db.get_conversation_summary(request_body.conversationId)
             entries, available_attachments = await history_builder.build_entries(

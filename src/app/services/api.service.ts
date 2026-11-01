@@ -340,9 +340,10 @@ export class ApiService {
     }
   }
 
-  /** Insert a text message of the user or the assistant before or after a message; nothing answers it. */
+  /** Insert a text message of the user, the assistant or the system before or after a message; nothing answers it. */
   async insertMessage(
-    conversationId: string, messageId: number, position: 'before' | 'after', roleName: 'user' | 'Assistant', content: string
+    conversationId: string, messageId: number, position: 'before' | 'after', roleName: 'user' | 'Assistant' | 'system',
+    content: string
   ): Promise<Message> {
     const response = await lastValueFrom(
       this.http.post<any>(
