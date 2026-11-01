@@ -16,6 +16,7 @@
         </button>
       </div>
     </div>
+    <p class="insert-hint" *ngIf="insertRole === 'system'">{{ 'message.insertSystemHint' | translate }}</p>
     <textarea class="insert-text" name="insertText" rows="3" [(ngModel)]="insertText"
       [placeholder]="'message.insertPlaceholder' | translate" [attr.aria-label]="'message.insertPlaceholder' | translate"
       (keydown.escape)="cancelInsert()"></textarea>
@@ -38,7 +39,8 @@
 
   <ng-template #avatarIcon>
     <mat-icon *ngIf="message.roleName === 'user'">person</mat-icon>
-    <mat-icon *ngIf="message.roleName !== 'user' && !message.isAgent()">smart_toy</mat-icon>
+    <mat-icon *ngIf="message.roleName === 'system'">tune</mat-icon>
+    <mat-icon *ngIf="isAnswer && !message.isAgent()">smart_toy</mat-icon>
     <mat-icon *ngIf="message.isAgent()">psychology</mat-icon>
   </ng-template>
 
@@ -277,12 +279,12 @@
         </app-model-select>
 
         <!-- Rating buttons - only for AI messages -->
-        <button *ngIf="message.roleName !== 'user'" mat-icon-button class="action-btn"
+        <button *ngIf="isAnswer" mat-icon-button class="action-btn"
           [class.action-btn--active]="message.rating === 1" (click)="rateMessage(1)" title="Good response"
           aria-label="Thumbs up">
           <mat-icon>thumb_up</mat-icon>
         </button>
-        <button *ngIf="message.roleName !== 'user'" mat-icon-button class="action-btn"
+        <button *ngIf="isAnswer" mat-icon-button class="action-btn"
           [class.action-btn--active]="message.rating === 0" (click)="rateMessage(0)" title="Bad response"
           aria-label="Thumbs down">
           <mat-icon>thumb_down</mat-icon>

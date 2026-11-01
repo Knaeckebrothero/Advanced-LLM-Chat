@@ -319,15 +319,15 @@ class MessageInsert(BaseModel):
     :type messageId: int
     :ivar position: 'before' or 'after' that message.
     :type position: Literal["before", "after"]
-    :ivar roleName: Who wrote it: 'user' or 'Assistant'.
-    :type roleName: Literal["user", "Assistant"]
+    :ivar roleName: Who wrote it: 'user' or 'Assistant', or 'system' for an instruction to the model.
+    :type roleName: Literal["user", "Assistant", "system"]
     :ivar content: The text.
     :type content: str
     """
     conversationId: str
     messageId: int
     position: Literal["before", "after"] = "after"
-    roleName: Literal["user", "Assistant"]
+    roleName: Literal["user", "Assistant", "system"]
     content: str = Field(min_length=1)
 
 

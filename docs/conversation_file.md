@@ -26,7 +26,7 @@ A conversation file holds one conversation with all its messages as JSON. **Expo
 ```
 
 - **Messages** have no id; the order of the list is the order of the conversation (oldest first). `time` is ISO 8601; without a time zone it counts as UTC.
-- **`roleName`** is `user`, `Assistant` or `system` (`assistant` is read as `Assistant`). System messages are shown as "System" but not sent to the model, which gets the app's own system prompt.
+- **`roleName`** is `user`, `Assistant` or `system` (`assistant` is read as `Assistant`). System messages are shown as "System" and are instructions to the model: they are added to the end of the app's system prompt for every answer after them.
 - **`type`** is `text`, `voice` (old voice messages, content as stored) or `agent`. Only agent messages have `steps`, `status`, `error`, `modelName` and `usage`; `rating` (1 or 0) can be on any message.
 - **Left out:** ids, the conversation's model and agent (catalog ids belong to one server; an imported conversation uses the user's default model) and the uploaded files themselves. An attachment stays on import only if the importing user uploaded that file, so a re-import into the same account keeps them.
 

@@ -70,6 +70,8 @@
     "insertWhere": "Position",
     "insertUser": "You",
     "insertAssistant": "Assistant",
+    "insertSystem": "System",
+    "insertSystemHint": "An instruction to the model for every answer after it. It goes into the system prompt, so it is never cut off or summarized.",
     "insertBelow": "Below",
     "insertAbove": "Above",
     "insertPlaceholder": "Text of the message",

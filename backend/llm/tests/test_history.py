@@ -8,8 +8,9 @@ image_url parts, text-only models get the attachment placeholder (so they can
 call get_file_content), earlier attachments become placeholders, empty
 assistant messages are skipped, regenerating cuts the history at the
 message being regenerated, also within the same second, the history is
-cut to the newest messages that fit the model's context window, and
-attachments of files the conversation's owner didn't upload are left out.
+cut to the newest messages that fit the model's context window,
+attachments of files the conversation's owner didn't upload are left out,
+and system messages become instructions in the system prompt instead.
 """
 import asyncio
 import json
@@ -19,6 +20,7 @@ import tempfile
 import traceback
 
 from backend.config import DEFAULT_CONTEXT_WINDOW
+from backend.llm.prompts import INSTRUCTIONS_HEADING, with_instructions
 from backend.llm.smoke_test import _png
 from backend.llm.types import ModelConfig
 from backend.services import file_utils
@@ -42,7 +44,8 @@ FILE_OWNERS = {"img1": 1, "img2": 1, "img3": 2}
 class FakeDB:
     """
     get_messages_by_conversation, with the real query's filters (ties in time come
-    back unordered), the owner lookups for conversations and files, and no summary.
+    back unordered), get_system_messages, the owner lookups for conversations and
+    files, and no summary.
     """
 
     def __init__(self, rows):
@@ -52,6 +55,10 @@ class FakeDB:
         rows = [r for r in self.rows if before_timestamp is None or r["time"] < before_timestamp]
         # ORDER BY time DESC leaves ties unordered; return them in the worst order
         return sorted(rows, key=lambda r: (r["time"], -r["id"]), reverse=True)[:limit]
+
+    def get_system_messages(self, conversation_id, before_id=None):
+        return sorted((r for r in self.rows if r["roleName"] == "system" and (before_id is None or r["id"] < before_id)),
+                      key=lambda r: r["id"])
 
     def get_conversation_owner(self, conversation_id):
         return 1
@@ -70,6 +77,10 @@ def user(id, time, text, attachments=None):
 
 def assistant(id, time, text):
     return {"id": id, "time": time, "roleName": "Assistant", "content": text, "type": "agent"}
+
+
+def system(id, time, text):
+    return {"id": id, "time": time, "roleName": "system", "content": text, "type": "text"}
 
 
 IMAGE = {"fileId": "img1", "fileName": "red.png", "mimeType": "image/png", "fileSize": 100}
@@ -122,6 +133,23 @@ async def test_other_users_files_are_left_out():
     assert "(fileId: img1)" in messages[2]["content"] and "img3" not in messages[2]["content"], messages[2]
 
 
+async def test_system_messages_become_instructions():
+    rows = [system(800_000, 800, "You are a helpful assistant."),  # e.g. an imported conversation's
+            user(800_500, 800, "Hi"), assistant(801_000, 801, "Hello!"),
+            system(801_500, 801, json.dumps({"content": "  Answer in German.  "})),
+            system(801_600, 801, "   "),
+            user(802_000, 802, "How are you?"), assistant(802_500, 802, "Gut, danke!")]
+    builder = ConversationHistoryBuilder(FakeDB(rows))
+    messages, _ = await builder.build_history("c")
+    assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"], messages
+    assert builder.system_instructions("c") == ["You are a helpful assistant.", "Answer in German."]
+    # Regenerating an answer: only the instructions before it
+    assert builder.system_instructions("c", before_message=rows[2]) == ["You are a helpful assistant."]
+    prompt = with_instructions("Base prompt.", builder.system_instructions("c"))
+    assert prompt == f"Base prompt.\n\n{INSTRUCTIONS_HEADING}\nYou are a helpful assistant.\n\nAnswer in German.", prompt
+    assert with_instructions("Base prompt.", []) == "Base prompt."
+
+
 def config(**overrides):
     return ModelConfig(id=1, display_name="Test", model_id="test", provider_id=1, provider_name="Test",
                        kind="openai_compatible", base_url=None, **overrides)
@@ -164,7 +192,7 @@ async def test_budget_from_context_window():
 
 
 TESTS = [test_vision_model_gets_image, test_text_model_gets_placeholder, test_regenerate_cuts_at_message,
-         test_other_users_files_are_left_out, test_history_fits_token_budget,
+         test_other_users_files_are_left_out, test_system_messages_become_instructions, test_history_fits_token_budget,
          test_latest_question_survives_tiny_budget, test_budget_from_context_window]
 
 

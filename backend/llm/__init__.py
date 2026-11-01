@@ -4,7 +4,7 @@ LLM runtime: clients, agent loop and tools on the official openai and anthropic 
 from .types import ModelConfig, Usage, model_from_env
 from .agent_loop import complete, run_agent
 from .client import ModelConfigError, create_client, get_client
-from .prompts import build_system_prompt
+from .prompts import build_system_prompt, with_instructions
 from .tools import TOOL_GROUPS, Tool, ToolRegistry, default_tools, tool_group_status, tools_for_groups
 
 __all__ = [
@@ -17,6 +17,7 @@ __all__ = [
     "get_client",
     "ModelConfigError",
     "build_system_prompt",
+    "with_instructions",
     "Tool",
     "ToolRegistry",
     "default_tools",

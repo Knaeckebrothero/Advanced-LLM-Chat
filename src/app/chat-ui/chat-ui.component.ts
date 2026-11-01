@@ -675,7 +675,9 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   }
 
   // Insert a message next to another one (manual editing)
-  insertMessage(next: Message, position: 'before' | 'after', roleName: 'user' | 'Assistant', content: string): Promise<void> {
+  insertMessage(
+    next: Message, position: 'before' | 'after', roleName: 'user' | 'Assistant' | 'system', content: string
+  ): Promise<void> {
     return this.chatState.insertMessage(next, position, roleName, content);
   }
 
@@ -711,9 +713,9 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     }
   }
 
-  // Check if a message is the last AI message in the conversation
+  // Check if a message is the last AI message in the conversation (system messages are no answers)
   isLastAiMessage(message: Message, index: number): boolean {
-    if (message.roleName === 'user') {
+    if (message.roleName === 'user' || message.roleName === 'system') {
       return false;
     }
 
@@ -723,7 +725,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     }
 
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].roleName !== 'user') {
+      if (messages[i].roleName !== 'user' && messages[i].roleName !== 'system') {
         return messages[i].id === message.id;
       }
     }

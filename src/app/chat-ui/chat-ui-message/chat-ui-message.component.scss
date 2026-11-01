@@ -1006,6 +1006,12 @@
   }
 }
 
+.insert-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--theme-text-secondary);
+}
+
 .insert-text {
   box-sizing: border-box;
   width: 100%;
