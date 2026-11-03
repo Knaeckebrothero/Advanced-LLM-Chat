@@ -37,8 +37,9 @@
       justify-content: flex-end;
     }
 
+    // The text block sits on the right, its lines start on the left
     .message-body {
-      text-align: right;
+      text-align: left;
     }
 
     .message-actions {
@@ -1251,10 +1252,6 @@ em {
       gap: 0;
       border-radius: 16px 16px 4px 16px;
       background: color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface));
-    }
-
-    .message-body {
-      text-align: left;
     }
 
     .message-actions {
