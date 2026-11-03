@@ -107,7 +107,8 @@
     "tools": {
       "files": "Dateien",
       "web_search": "Websuche",
-      "knowledge_graph": "Wissensgraph"
+      "knowledge_graph": "Wissensgraph",
+      "knowledge_base": "Wissensdatenbank"
     },
     "untrustedNotice": "Dieser Anbieter speichert deine Nachrichten möglicherweise oder trainiert damit. Teile keine persönlichen Daten.",
     "picker": {
@@ -265,6 +266,7 @@
         "toolModePick": "Nur diese Werkzeuge",
         "toolUnavailable": "Auf dem Server nicht verfügbar: {{reason}}",
         "toolUnavailableUnknown": "kein Grund angegeben",
+        "toolOptIn": "Nur wenn hier ausgewählt, und nur für angemeldete Nutzer: Jeder hat eigene Notizen",
         "noToolsHint": "Ohne Werkzeuge antwortet der Agent nur aus dem Gespräch heraus.",
         "allTools": "Alle Werkzeuge",
         "noTools": "Keine Werkzeuge",

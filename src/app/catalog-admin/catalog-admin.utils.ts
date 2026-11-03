@@ -85,7 +85,8 @@ export function findPlaceholders(prompt: string): string[] {
 const TOOL_ICONS: Record<ToolGroup, string> = {
   files: 'folder_open',
   web_search: 'travel_explore',
-  knowledge_graph: 'hub'
+  knowledge_graph: 'hub',
+  knowledge_base: 'menu_book'
 };
 
 /** Material icon of a tool group (its label is the translation catalog.tools.<id>). */

@@ -107,7 +107,8 @@
     "tools": {
       "files": "Files",
       "web_search": "Web search",
-      "knowledge_graph": "Knowledge graph"
+      "knowledge_graph": "Knowledge graph",
+      "knowledge_base": "Knowledge base"
     },
     "untrustedNotice": "This provider may store or train on your messages. Don't share personal information.",
     "picker": {
@@ -265,6 +266,7 @@
         "toolModePick": "Only these tools",
         "toolUnavailable": "Not available on the server: {{reason}}",
         "toolUnavailableUnknown": "no reason given",
+        "toolOptIn": "Only when picked here, and only for signed-in users: each user has their own notes",
         "noToolsHint": "Without tools, the agent answers from the conversation alone.",
         "allTools": "All tools",
         "noTools": "No tools",

@@ -5,10 +5,12 @@ Offline test of the tool groups that personas select (no API keys or database ne
 
 Covers: tools_for_groups() with no selection, an empty one and single groups,
 unavailable groups (NEO4J_ENABLED off, TAVILY_API_KEY unset) and their
-reasons, the system prompt sections for the selected tools, the tools
+reasons, the opt-in knowledge base (only when selected, only for signed-in
+users), the system prompt sections for the selected tools, the tools
 stream-generate sends for a conversation's persona (_agent_tools, with a fake
 database), and that the file tool only reads the uploads of the user it is
-built for (fake file owners, temporary FILES_DIR).
+built for (fake file owners, temporary FILES_DIR). The knowledge base tools
+themselves need Postgres: backend/services/tests/knowledge_base_test.py.
 """
 import asyncio
 import os
@@ -22,8 +24,8 @@ from typing import get_args
 from backend.api import messages
 from backend.catalog import resolver
 from backend.llm import tools as tools_module
-from backend.llm.prompts import FILE_ACCESS_PROMPT, GRAPH_PROMPT, WEB_SEARCH_PROMPT, build_system_prompt
-from backend.llm.tools import TOOL_GROUPS, default_tools, tool_group_status, tools_for_groups
+from backend.llm.prompts import FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, WEB_SEARCH_PROMPT, build_system_prompt
+from backend.llm.tools import OPT_IN_GROUPS, TOOL_GROUPS, default_tools, tool_group_status, tools_for_groups
 from backend.llm.types import ModelConfig
 from backend.models.catalog import ToolGroup
 from backend.security import auth
@@ -31,6 +33,7 @@ from backend.services import file_utils
 from backend.services.tools import web_search_tools
 
 GRAPH_TOOLS = ["get_graph_schema", "search_graph", "query_graph"]
+KB_TOOLS = ["kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive"]
 
 
 @contextmanager
@@ -62,17 +65,35 @@ async def test_selection_filters_the_enabled_tools():
             sorted(["get_file_content", *GRAPH_TOOLS])
 
 
+async def test_knowledge_base_is_opt_in():
+    assert OPT_IN_GROUPS == {"knowledge_base"} and TOOL_GROUPS["knowledge_base"] == tuple(KB_TOOLS)
+    with configured(neo4j=True, tavily=True):
+        # Never part of "every enabled tool"
+        assert not set(KB_TOOLS) & set(default_tools(user_id=1).names())
+        assert not set(KB_TOOLS) & set(tools_for_groups(None, user_id=1).names())
+        # Selected: for a signed-in user only
+        assert tools_for_groups(["knowledge_base"], user_id=1).names() == KB_TOOLS
+        assert tools_for_groups(["files", "knowledge_base"], user_id=1).names() == ["get_file_content", *KB_TOOLS]
+        assert len(tools_for_groups(["knowledge_base"], user_id=1, guest=True)) == 0
+        assert len(tools_for_groups(["knowledge_base"])) == 0
+        # The user is bound, not a schema argument
+        for tool in tools_for_groups(["knowledge_base"], user_id=1):
+            assert tool.parameters["type"] == "object"
+            assert not {"user_id", "writer"} & set(tool.parameters["properties"]), tool.name
+
+
 async def test_unavailable_groups_stay_off():
     with configured(neo4j=False, tavily=False):
         assert default_tools().names() == ["get_file_content"]
         assert len(tools_for_groups(["web_search", "knowledge_graph"])) == 0
         status = {entry["id"]: entry for entry in tool_group_status()}
         assert list(status) == list(TOOL_GROUPS)
-        assert status["files"] == {"id": "files", "available": True, "reason": None}
+        assert status["files"] == {"id": "files", "available": True, "reason": None, "optIn": False}
         assert status["web_search"] == {"id": "web_search", "available": False,
-                                        "reason": "TAVILY_API_KEY is not set"}
+                                        "reason": "TAVILY_API_KEY is not set", "optIn": False}
         assert status["knowledge_graph"] == {"id": "knowledge_graph", "available": False,
-                                             "reason": "NEO4J_ENABLED is off"}
+                                             "reason": "NEO4J_ENABLED is off", "optIn": False}
+        assert status["knowledge_base"] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True}
     with configured(neo4j=True, tavily=True):
         assert all(entry["available"] and entry["reason"] is None for entry in tool_group_status())
 
@@ -85,6 +106,10 @@ async def test_prompt_only_describes_selected_tools():
         assert WEB_SEARCH_PROMPT not in files_only
         everything = build_system_prompt(None, tools_for_groups(None))
         assert FILE_ACCESS_PROMPT in everything and GRAPH_PROMPT in everything and WEB_SEARCH_PROMPT in everything
+        assert KB_PROMPT not in everything and KB_PROMPT not in files_only
+        notebook = build_system_prompt("You keep notes.", tools_for_groups(["knowledge_base"], user_id=1))
+        assert notebook.startswith("You keep notes.") and notebook.endswith(KB_PROMPT)
+        assert FILE_ACCESS_PROMPT not in notebook
         assert build_system_prompt("You translate.", None) == "You translate."
 
 
@@ -110,7 +135,8 @@ async def test_stream_generate_tools_follow_the_persona():
                          kind="openai_compatible", base_url=None, supports_tools=True)
     saved_db = resolver.db
     resolver.db = FakeDB([persona(1, []), persona(2, ["files"]), persona(3, None),
-                          persona(4, [], enabled=False)])
+                          persona(4, [], enabled=False), persona(6, ["files", "knowledge_base"]),
+                          persona(7, ["knowledge_base"], available_to_guests=True)])
     try:
         with configured(neo4j=True, tavily=True):
             def names(user, persona_id, config=config):
@@ -125,6 +151,14 @@ async def test_stream_generate_tools_follow_the_persona():
             assert names(user, 4) == everything, "disabled persona is skipped"
             assert names(guest, 1) == everything, "persona not available to guests is skipped"
             assert names(user, 2, replace(config, supports_tools=False)) is None
+            # The knowledge base only with a selection, never for guests
+            assert names(user, 6) == sorted(["get_file_content", *KB_TOOLS])
+            assert names(user, 7) == sorted(KB_TOOLS)
+            assert names(guest, 7) is None, "a guest gets no knowledge base, and here no tools at all"
+            # Its writes record the conversation and its agent
+            tools = messages._agent_tools(user, {"id": "conv-1", "persona_id": 6}, config)
+            writer = tools.get("kb_write").func.__wrapped__.keywords["writer"]
+            assert (writer.user_id, writer.conversation_id, writer.persona_id) == (1, "conv-1", 6), writer
         with configured(neo4j=False, tavily=False):
             # Only unavailable groups selected: no tools, not an empty tool list
             resolver.db = FakeDB([persona(5, ["web_search"])])
@@ -181,7 +215,7 @@ async def test_file_tool_reads_only_own_files():
 
 
 TESTS = [test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
-         test_unavailable_groups_stay_off, test_prompt_only_describes_selected_tools,
+         test_knowledge_base_is_opt_in, test_unavailable_groups_stay_off, test_prompt_only_describes_selected_tools,
          test_stream_generate_tools_follow_the_persona, test_file_tool_reads_only_own_files]
 
 

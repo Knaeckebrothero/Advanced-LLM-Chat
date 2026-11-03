@@ -63,6 +63,9 @@ EXPECTED_TABLES = [
     "llm_providers",
     "llm_models",
     "personas",
+    "kb_notes",
+    "kb_note_revisions",
+    "kb_links",
 ]
 
 
@@ -236,6 +239,9 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
     """
     # Drop order respects foreign key dependencies
     drop_order = [
+        "kb_links",
+        "kb_note_revisions",
+        "kb_notes",
         "conversation_summaries",
         "messages",
         "sessions",
@@ -260,6 +266,7 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
             ("update_llm_providers_timestamp", "llm_providers"),
             ("update_llm_models_timestamp", "llm_models"),
             ("update_personas_timestamp", "personas"),
+            ("update_kb_notes_timestamp", "kb_notes"),
         ]
         for trigger_name, table_name in triggers:
             try:
@@ -612,6 +619,10 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
 
     # Get engine for the target database
     engine = get_engine(args.host, args.port, args.user, args.password, args.database)
+
+    # Rebuild the indexes once after the switch from the Alpine image, enable pgvector
+    from backend.database.db import prepare_database
+    prepare_database(engine)
 
     # Step 2: Production migration (runs FIRST if --prod is set)
     if prod_mode:

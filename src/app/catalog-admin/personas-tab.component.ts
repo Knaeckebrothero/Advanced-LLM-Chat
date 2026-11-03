@@ -155,9 +155,10 @@ export class PersonasTabComponent {
     });
   }
 
-  /** What "All tools" currently means on this server. */
+  /** What "All tools" currently means on this server (never the opt-in groups such as the knowledge base). */
   allToolsHint(): string {
-    const available = this.store.tools.filter(t => t.available).map(t => this.translate.instant('catalog.tools.' + t.id));
+    const available = this.store.tools.filter(t => t.available && !t.optIn)
+      .map(t => this.translate.instant('catalog.tools.' + t.id));
     return available.length > 0
       ? this.translate.instant('catalog.admin.personas.allToolsHint', { tools: available.join(', ') })
       : this.translate.instant('catalog.admin.personas.allToolsNone');

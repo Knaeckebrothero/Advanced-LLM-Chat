@@ -87,9 +87,11 @@ auth:
 # The bundled Postgres. Set enabled to false and fill in external for your own server.
 postgresql:
   enabled: true
+  # Postgres 16 with pgvector (Debian). The backend rebuilds the indexes once when it finds data from
+  # the earlier postgres:16-alpine image (another C library sorts text differently)
   image:
-    repository: postgres
-    tag: 16-alpine
+    repository: pgvector/pgvector
+    tag: pg16
     pullPolicy: IfNotPresent
   database: llm_chat
   username: llm_chat

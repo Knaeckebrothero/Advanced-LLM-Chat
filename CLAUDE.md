@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Advanced LLM Chat: an Angular 19.2.2 PWA with a FastAPI backend for chatting with LLMs. Uses microservices architecture with:
 - **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, SCSS styling, ngx-translate for i18n (German/English)
-- **Backend**: FastAPI with PostgreSQL for persistence, an agent loop with tool use (`backend/llm/`), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
+- **Backend**: FastAPI with PostgreSQL for persistence (image `pgvector/pgvector:pg16`), an agent loop with tool use (`backend/llm/`), a knowledge base per user that agents opt into (`kb_*` tools, `docs/knowledge_base.md`), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
 - **LLM Integration**: Thin runtime on the official `openai` and `anthropic` SDKs (no LangChain): OpenAI, any OpenAI-compatible endpoint, and Anthropic, with SSE streaming for agent responses
 
 **Resuming work:** read the "Status" section of `docs/generalization_refactor.md` first (current state, decisions, backlog, next steps), and `docs/model_catalog_api.md` for the runtime and catalog contract.
@@ -50,6 +50,7 @@ python backend/app_init.py --prod            # Production migration (add missing
 
 **Note:** No Python test framework (pytest) is configured. There are test scripts instead:
 - `python -m backend.llm.tests.run_all`: offline tests of the LLM runtime, history and tools (fake OpenAI server, mocked Anthropic API)
+- `python backend/services/tests/knowledge_base_test.py`: the knowledge base tools against a real Postgres, in a `<POSTGRES_DB>_kb_test` database it creates itself
 - `backend/catalog/tests/catalog_api_test.py`: catalog end-to-end test against a backend on its own `*_test` database (see its docstring)
 - `backend/security/tests/oidc_test.py`: login through Keycloak end-to-end, against the bundled Keycloak and a backend in `AUTH_MODE=oidc` on a `*_test` database (see its docstring)
 - `python -m backend.llm.smoke_test --model <id>`: real API calls against one catalog model
@@ -140,11 +141,12 @@ backend/
 │   ├── conversation_history.py  # Conversation history in the OpenAI message format, cut to the model's context window
 │   ├── conversation_summary.py  # Rolling summary of the oldest messages once the history nearly fills the window
 │   ├── conversation_file.py  # Export and import of conversation files (docs/conversation_file.md)
+│   ├── knowledge_base.py # A user's Markdown notes (kb_notes, revisions, links): slugs, search (docs/knowledge_base.md)
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation
 │   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
-│   └── tools/            # Tool implementations (files, web search, read-only knowledge graph)
+│   └── tools/            # Tool implementations (files, web search, read-only knowledge graph, knowledge base)
 ├── security/         # Sessions, login through an OIDC provider (oidc.py), CSRF, logging
 └── utils/            # Certificates, hashing
 ```
