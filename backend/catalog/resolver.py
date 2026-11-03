@@ -476,8 +476,9 @@ def persona_tool_groups(user: Optional[dict], conversation: Optional[dict]) -> O
 
     Returns:
         The persona's tool groups (keys of backend.llm.tools.TOOL_GROUPS; [] for
-        no tools), or None for every enabled tool: without a usable persona, or
-        if the persona has no selection.
+        no tools), or None for every enabled tool except the opt-in groups (the
+        knowledge base): without a usable persona, or if the persona has no
+        selection.
     """
     persona_id = (conversation or {}).get("persona_id")
     if persona_id is None:

@@ -95,15 +95,17 @@ def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
 def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig) -> Optional[ToolRegistry]:
     """
     The tools for an answer: the tools the server enables, limited to the tool
-    groups of the conversation's persona (if it has a selection). The file tool
-    only reads the current user's uploads.
+    groups of the conversation's persona (if it has a selection; the knowledge
+    base only comes with a selection). The file tool only reads the current
+    user's uploads, the knowledge base tools only their notes (never a guest's).
 
     :return: The tools, or None for none (the model doesn't support tools, or
         the persona selected no enabled tool group).
     """
     if not config.supports_tools:
         return None
-    tools = tools_for_groups(persona_tool_groups(current_user, conversation), user_id=current_user['user_id'])
+    tools = tools_for_groups(persona_tool_groups(current_user, conversation), user_id=current_user['user_id'],
+                             guest=bool(current_user.get('is_guest')), conversation=conversation)
     return tools if len(tools) else None
 
 

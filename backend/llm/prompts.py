@@ -2,13 +2,13 @@
 System prompt for the agent.
 
 The prompt is the identity paragraph (or a persona's prompt in its place),
-followed by one section per enabled tool group, so the file access and graph
-instructions stay when a persona is used. A conversation's system messages
+followed by one section per enabled tool group, so the file access, graph and
+knowledge base instructions stay when a persona is used. A conversation's system messages
 come last (with_instructions()).
 """
 from typing import Iterable, Optional, Union
 
-from .tools import ToolRegistry
+from .tools import TOOL_GROUPS, ToolRegistry
 
 # Who the assistant is; a persona prompt replaces this paragraph
 IDENTITY_PROMPT = (
@@ -38,6 +38,16 @@ GRAPH_PROMPT = """## Knowledge Graph:
 You have read access to a Neo4j knowledge graph. Call get_graph_schema first to learn which node labels, relationship types and properties exist. Then use search_graph to find nodes by text, or query_graph to run a read-only Cypher query."""
 
 GRAPH_TOOL_NAMES = {"get_graph_schema", "search_graph", "query_graph"}
+
+# Added when the knowledge base tools are enabled (an agent that selects the group, a signed-in user)
+KB_PROMPT = """## Knowledge Base:
+You keep a knowledge base for this user: Markdown notes that last across all of their conversations, like a notebook.
+- When the user refers to an earlier conversation, or asks what you know about them or a topic, search it first (kb_search, or kb_list for an overview) and read the notes that fit (kb_read).
+- Write a note (kb_write) when you learn something worth keeping beyond this conversation: facts about the user and their projects, decisions, preferences, results of research, or anything the user asks you to remember. One topic per note, with a one-sentence description and a few tags.
+- Before writing, search for a note on the topic and update it (kb_update) instead of writing a second one. Link related notes with [[slug]].
+- Don't store passwords, keys or other secrets. Mention briefly when you save or change a note."""
+
+KB_TOOL_NAMES = set(TOOL_GROUPS["knowledge_base"])
 
 # Heads a conversation's system messages, after the rest of the prompt
 INSTRUCTIONS_HEADING = "## Instructions for this conversation:"
@@ -76,6 +86,8 @@ def build_system_prompt(
         sections.append(FILE_ACCESS_PROMPT)
     if names & GRAPH_TOOL_NAMES:
         sections.append(GRAPH_PROMPT)
+    if names & KB_TOOL_NAMES:
+        sections.append(KB_PROMPT)
 
     return "\n\n".join(sections)
 

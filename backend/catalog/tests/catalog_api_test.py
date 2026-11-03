@@ -41,7 +41,7 @@ import httpx  # noqa: E402
 from backend.catalog import catalog_file  # noqa: E402
 from backend.config import POSTGRES_DB  # noqa: E402
 from backend.database import db  # noqa: E402
-from backend.llm.tools import TOOL_GROUPS  # noqa: E402
+from backend.llm.tools import OPT_IN_GROUPS, TOOL_GROUPS  # noqa: E402
 
 # The key variable of the test providers; the backend must have it set to TEST_KEY
 KEY_ENV = "ZZ_CATALOG_TEST_API_KEY"
@@ -258,10 +258,14 @@ def run_tools(c, admin):
     c.section("Tools")
     r = admin.get("/api/admin/tools")
     groups = r.json()
-    c.check(r.status_code == 200 and [g["id"] for g in groups] == ["files", "web_search", "knowledge_graph"],
-            "GET /api/admin/tools lists the three groups", r.text)
-    c.check(all(set(g) == {"id", "available", "reason"} for g in groups), "tool group fields", r.text)
-    c.check(groups[0] == {"id": "files", "available": True, "reason": None}, "files is always available")
+    c.check(r.status_code == 200 and [g["id"] for g in groups] == ["files", "web_search", "knowledge_graph",
+                                                                   "knowledge_base"],
+            "GET /api/admin/tools lists the four groups", r.text)
+    c.check(all(set(g) == {"id", "available", "reason", "optIn"} for g in groups), "tool group fields", r.text)
+    c.check(groups[0] == {"id": "files", "available": True, "reason": None, "optIn": False},
+            "files is always available")
+    c.check(groups[3] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True},
+            "the knowledge base is always available, and opt-in", r.text)
     c.check(all((g["available"] and g["reason"] is None) or (not g["available"] and g["reason"]) for g in groups),
             "unavailable groups say why", r.text)
     print("        " + ", ".join(f"{g['id']}: {'on' if g['available'] else g['reason']}" for g in groups))
@@ -520,14 +524,17 @@ def run_stream_tools(c, admin, user, available_groups):
     from backend.llm.tests.fake_openai_server import FakeOpenAIServer, chunk, usage_chunk
 
     c.section("Stream-generate tools (fake model server)")
-    everything = sorted(name for group in available_groups for name in TOOL_GROUPS[group])
+    # "Every enabled tool" leaves out the opt-in groups (the knowledge base)
+    everything = sorted(name for group in available_groups if group not in OPT_IN_GROUPS
+                        for name in TOOL_GROUPS[group])
     with FakeOpenAIServer() as server:
         seed(providers=[provider_entry("Fake", base_url=server.base_url, api_key_env=KEY_ENV, privacy_tier="local")])
         provider = providers_by_name(admin)[f"{PREFIX} Fake"]
         model = admin.post("/api/admin/models", json=model_body(provider["id"], "Fake Model", sortOrder=200)).json()
         personas = []
         for name, prompt, tools in [("No tools", "You only chat.", []), ("Files only", "You read files.", ["files"]),
-                                    ("All tools", "You use everything.", None)]:
+                                    ("All tools", "You use everything.", None),
+                                    ("Notebook", "You keep notes.", ["knowledge_base"])]:
             body = {"name": f"{PREFIX} {name}", "systemPrompt": prompt}
             if tools is not None:
                 body["tools"] = tools
@@ -559,7 +566,10 @@ def run_stream_tools(c, admin, user, available_groups):
                 "persona tools ['files'] -> only get_file_content", f"{names} {system[:200]!r}")
         names, _, system, _ = sent[f"{PREFIX} All tools"]
         c.check(sorted(names) == everything and system.startswith("You use everything."),
-                "persona tools null -> every enabled tool", f"{names} vs {everything}")
+                "persona tools null -> every enabled tool except the knowledge base", f"{names} vs {everything}")
+        names, _, system, _ = sent[f"{PREFIX} Notebook"]
+        c.check(names == list(TOOL_GROUPS["knowledge_base"]) and "## Knowledge Base" in system,
+                "persona tools ['knowledge_base'] -> the kb_* tools for a signed-in user", f"{names} {system[:200]!r}")
         c.check(not server.errors, "fake server saw no unexpected requests", str(server.errors))
 
     for persona in personas:

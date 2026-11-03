@@ -388,9 +388,10 @@ async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_ad
             operation_id="adminListToolGroups")
 async def admin_list_tool_groups(admin: dict = Depends(require_admin)):
     """
-    Lists every tool group (files, web_search, knowledge_graph) and whether the
-    server's configuration enables it. A persona that selects an unavailable
-    group simply doesn't get its tools.
+    Lists every tool group (files, web_search, knowledge_graph, knowledge_base)
+    and whether the server's configuration enables it. A persona that selects an
+    unavailable group simply doesn't get its tools; an opt-in group (optIn, the
+    knowledge base) is only given to personas that select it.
 
     :return: The tool groups; reason says why a group is unavailable.
     :rtype: List[ToolGroupStatus]

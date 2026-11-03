@@ -18,6 +18,7 @@ import {
   IPersonaUpdate,
   IProviderOut,
   IToolStatus,
+  OPT_IN_TOOL_GROUPS,
   TOOL_GROUPS
 } from '../data/models/catalog.model';
 import { describeHttpError } from './catalog-admin.utils';
@@ -96,7 +97,7 @@ export class CatalogAdminStore {
     } catch (error) {
       console.warn('Tool groups could not be loaded:', error);
     }
-    return TOOL_GROUPS.map(id => ({ id, available: true, reason: null }));
+    return TOOL_GROUPS.map(id => ({ id, available: true, reason: null, optIn: OPT_IN_TOOL_GROUPS.includes(id) }));
   }
 
   private async reload(lists: Array<'providers' | 'models' | 'personas'>): Promise<void> {

@@ -106,12 +106,17 @@ export class PersonaDialogComponent {
   /** Switching to "pick" starts from what "all" gives today, unless something is picked already. */
   onToolModeChange(mode: ToolMode): void {
     if (mode === 'pick' && this.pickedTools.size === 0) {
-      this.pickedTools = new Set(this.tools.filter(t => t.available).map(t => t.id));
+      this.pickedTools = new Set(this.tools.filter(t => this.inAllTools(t)).map(t => t.id));
     }
   }
 
+  /** What "all tools" gives: the available groups except the opt-in ones (the knowledge base). */
+  private inAllTools(tool: IToolStatus): boolean {
+    return tool.available && !tool.optIn;
+  }
+
   isToolChecked(tool: IToolStatus): boolean {
-    return this.toolMode === 'all' ? tool.available : this.pickedTools.has(tool.id);
+    return this.toolMode === 'all' ? this.inAllTools(tool) : this.pickedTools.has(tool.id);
   }
 
   /** An unavailable tool can't be picked, but one that is picked already can be removed. */

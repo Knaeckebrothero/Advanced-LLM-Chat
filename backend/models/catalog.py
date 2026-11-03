@@ -14,7 +14,7 @@ PrivacyTier = Literal["local", "eu", "trusted", "untrusted"]
 ReasoningMode = Literal["none", "optional", "always"]
 Currency = Literal["USD", "EUR"]
 # Tool groups a persona can use; the keys of backend.llm.tools.TOOL_GROUPS
-ToolGroup = Literal["files", "web_search", "knowledge_graph"]
+ToolGroup = Literal["files", "web_search", "knowledge_graph", "knowledge_base"]
 
 
 # Providers
@@ -155,7 +155,7 @@ class PersonaBase(BaseModel):
     description: Optional[str] = None
     systemPrompt: str  # May use {{variables}} and the built-ins {{date}}, {{user_name}}, {{language}}
     variables: List[PersonaVariable] = []
-    tools: Optional[List[ToolGroup]] = None  # None = every tool the server has enabled, [] = no tools
+    tools: Optional[List[ToolGroup]] = None  # None = every tool the server has enabled except opt-in ones, [] = none
     availableToGuests: bool = False
     enabled: bool = True
     sortOrder: int = 0
@@ -171,7 +171,7 @@ class PersonaUpdate(BaseModel):
     description: Optional[str] = None
     systemPrompt: Optional[str] = None
     variables: Optional[List[PersonaVariable]] = None
-    tools: Optional[List[ToolGroup]] = None  # Send null for every enabled tool
+    tools: Optional[List[ToolGroup]] = None  # Send null for every enabled tool (without the opt-in ones)
     availableToGuests: Optional[bool] = None
     enabled: Optional[bool] = None
     sortOrder: Optional[int] = None
@@ -196,6 +196,7 @@ class ToolGroupStatus(BaseModel):
     id: ToolGroup
     available: bool
     reason: Optional[str] = None  # Why it is unavailable, e.g. "TAVILY_API_KEY is not set"
+    optIn: bool = False  # Only for personas that select it, never part of tools null (the knowledge base)
 
 
 # Import and export

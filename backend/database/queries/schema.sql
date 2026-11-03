@@ -180,6 +180,49 @@ CREATE TABLE IF NOT EXISTS personas (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- name: create_kb_notes_table
+-- A user's knowledge base: Markdown notes the agent reads and writes with the kb_* tools, across all
+-- of the user's conversations (backend/services/knowledge_base.py, docs/knowledge_base.md)
+CREATE TABLE IF NOT EXISTS kb_notes (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    slug TEXT NOT NULL,                      -- stable id made from the first title, unique per user: "project-apollo"
+    title TEXT NOT NULL,
+    description TEXT,                        -- one sentence, shown in lists and search results
+    tags TEXT[] NOT NULL DEFAULT '{}',       -- lowercase
+    content TEXT NOT NULL,                   -- Markdown, links to other notes as [[slug]]
+    status TEXT NOT NULL DEFAULT 'active',   -- 'active' | 'archived' (kb_archive, an update restores it)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, slug)
+);
+
+-- name: create_kb_note_revisions_table
+-- Every version of a note, written in the same transaction as the note: what it was, who wrote it and where
+CREATE TABLE IF NOT EXISTS kb_note_revisions (
+    id BIGSERIAL PRIMARY KEY,
+    note_id BIGINT NOT NULL REFERENCES kb_notes(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,                    -- 'create' | 'update' | 'archive'
+    title TEXT NOT NULL,
+    description TEXT,
+    tags TEXT[] NOT NULL DEFAULT '{}',
+    content TEXT NOT NULL,
+    status TEXT NOT NULL,
+    author TEXT NOT NULL,                    -- 'agent' | 'user'
+    conversation_id TEXT,                    -- where the agent wrote it (no FK: kept when the conversation is deleted)
+    persona_id INTEGER,                      -- personas.id of that conversation's agent at the time (no FK)
+    reason TEXT,                             -- why it was archived
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- name: create_kb_links_table
+-- The notes a note links to ([[slug]] or [text](slug.md)), rebuilt with every write, for the backlinks
+CREATE TABLE IF NOT EXISTS kb_links (
+    note_id BIGINT NOT NULL REFERENCES kb_notes(id) ON DELETE CASCADE,
+    target_slug TEXT NOT NULL,               -- the linked note's slug (it need not exist yet)
+    PRIMARY KEY (note_id, target_slug)
+);
+
 -- name: create_indexes
 CREATE INDEX IF NOT EXISTS idx_conversation_time ON messages("conversationId", time);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations("userId");
@@ -189,6 +232,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_agent_status ON messages(agent_status) W
 CREATE INDEX IF NOT EXISTS idx_cache_file_id ON file_description_cache(file_id);
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_user ON uploaded_files(user_id);
 CREATE INDEX IF NOT EXISTS idx_llm_models_provider ON llm_models(provider_id);
+CREATE INDEX IF NOT EXISTS idx_kb_notes_user_updated ON kb_notes(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_note_revisions_note ON kb_note_revisions(note_id);
+CREATE INDEX IF NOT EXISTS idx_kb_links_target ON kb_links(target_slug);
 
 -- name: create_update_timestamp_function
 CREATE OR REPLACE FUNCTION update_timestamp()
@@ -247,5 +293,12 @@ CREATE TRIGGER update_llm_models_timestamp
 DROP TRIGGER IF EXISTS update_personas_timestamp ON personas;
 CREATE TRIGGER update_personas_timestamp
     BEFORE UPDATE ON personas
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+-- name: create_kb_notes_trigger
+DROP TRIGGER IF EXISTS update_kb_notes_timestamp ON kb_notes;
+CREATE TRIGGER update_kb_notes_timestamp
+    BEFORE UPDATE ON kb_notes
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();

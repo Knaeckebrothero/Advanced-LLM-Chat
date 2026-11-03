@@ -9,7 +9,9 @@ The implementations live in backend/services/tools/; this module only describes
 them to the model. default_tools() returns the tools that are enabled by the
 configuration, tools_for_groups() limits them to a persona's tool groups. Both
 are built per answer for the user it is for: the file tool only reads that
-user's uploads.
+user's uploads, the knowledge base tools only that user's notes. Opt-in groups
+(the knowledge base) are never part of "every enabled tool": an agent has to
+select them.
 """
 import asyncio
 import functools
@@ -29,6 +31,12 @@ TOOL_TITLES = {
     "get_graph_schema": "Inspecting Knowledge Graph",
     "search_graph": "Searching Knowledge Graph",
     "query_graph": "Querying Knowledge Graph",
+    "kb_search": "Searching Knowledge Base",
+    "kb_list": "Listing Knowledge Base",
+    "kb_read": "Reading Note",
+    "kb_write": "Writing Note",
+    "kb_update": "Updating Note",
+    "kb_archive": "Archiving Note",
 }
 
 # Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
@@ -36,7 +44,12 @@ TOOL_GROUPS = {
     "files": ("get_file_content",),
     "web_search": ("web_search",),
     "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
+    "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive"),
 }
+
+# Groups an agent only gets when it selects them: not part of "every enabled tool" (an agent
+# with tools null, or no agent). The knowledge base also needs a signed-in user, never a guest.
+OPT_IN_GROUPS = frozenset({"knowledge_base"})
 
 # JSON schema types the argument check understands
 _JSON_TYPES = {
@@ -328,12 +341,161 @@ def web_search_tool() -> Tool:
     )
 
 
+def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None) -> list[Tool]:
+    """
+    The knowledge base tools: the notes of one user, kept across all of their conversations.
+
+    Args:
+        user_id: The user whose knowledge base it is; not an argument the model sees.
+        conversation: The conversation the agent answers in (id, persona_id), recorded with
+            every change of a note.
+    """
+    from ..services.knowledge_base import (MAX_CONTENT_CHARS, MAX_DESCRIPTION_CHARS, MAX_TAGS,
+                                           MAX_TITLE_CHARS, Writer)
+    from ..services.tools import kb_tools
+
+    conversation = conversation or {}
+    writer = Writer(user_id=user_id, author="agent", conversation_id=conversation.get("id"),
+                    persona_id=conversation.get("persona_id"))
+    note_param = {
+        "type": "string",
+        "description": "The note's slug, e.g. \"project-apollo\" (its exact title works too)",
+    }
+    tags_param = {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": f"A few lowercase keywords, e.g. [\"work\", \"travel\"] (at most {MAX_TAGS})",
+    }
+    description_param = {
+        "type": "string",
+        "description": f"One sentence saying what the note is about, shown in lists and search results "
+                       f"(at most {MAX_DESCRIPTION_CHARS} characters)",
+    }
+    return [
+        Tool(
+            name="kb_search",
+            description=(
+                "Search the user's knowledge base: the notes you kept in earlier conversations with them. Give at "
+                "least one of: query (words; notes containing them rank higher, words in the title most), exact "
+                "(literal texts such as a name, number or phrase, matched as case-insensitive substrings) and tags "
+                "(notes with these tags rank higher). Returns the best notes with slug, title, tags and the "
+                "passage that matched; read one in full with kb_read. Archived notes are not searched."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Words to look for, e.g. \"apollo budget\""},
+                    "exact": {"type": "array", "items": {"type": "string"},
+                              "description": "Literal texts to find, e.g. [\"Müller GmbH\"]; a note matches if it "
+                                             "contains any of them"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags, e.g. [\"work\"]"},
+                    "max_results": {"type": "integer",
+                                    "description": f"Number of notes, 1 to {kb_tools.MAX_SEARCH_RESULTS} (default 10)"},
+                },
+            },
+            func=_in_thread(functools.partial(kb_tools.kb_search, user_id=user_id)),
+        ),
+        Tool(
+            name="kb_list",
+            description=(
+                "List the notes in the user's knowledge base, the most recently updated first, with slug, title, "
+                "description and tags. Without a tag it also shows the tags in use. Use it for an overview; use "
+                "kb_search to find notes on a topic."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tag": {"type": "string", "description": "Only notes with this tag"},
+                    "max_results": {"type": "integer",
+                                    "description": f"Number of notes, 1 to {kb_tools.MAX_LIST_RESULTS} (default 50)"},
+                },
+            },
+            func=_in_thread(functools.partial(kb_tools.kb_list, user_id=user_id)),
+        ),
+        Tool(
+            name="kb_read",
+            description=(
+                "Read a note of the user's knowledge base in full: its Markdown content, tags and dates, the notes "
+                "it links to and the notes that link to it."
+            ),
+            parameters={"type": "object", "properties": {"note": note_param}, "required": ["note"]},
+            func=_in_thread(functools.partial(kb_tools.kb_read, user_id=user_id)),
+        ),
+        Tool(
+            name="kb_write",
+            description=(
+                "Create a new note in the user's knowledge base, which keeps notes across all of their "
+                "conversations. Write down what is worth remembering beyond this conversation: facts about the "
+                "user and their projects, decisions, preferences, results of research, or what the user asks you "
+                "to remember. One topic per note. Search first (kb_search): if a note on the topic exists, change "
+                "it with kb_update instead; a title whose slug exists already is refused. Link other notes with "
+                "[[slug]]. Returns the new note's slug."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string",
+                              "description": f"Short and specific, e.g. \"Project Apollo\" (at most {MAX_TITLE_CHARS} "
+                                             f"characters); the note's slug is made from it and stays the same"},
+                    "content": {"type": "string",
+                                "description": f"The note in Markdown, without the title as a heading (at most "
+                                               f"{MAX_CONTENT_CHARS} characters)"},
+                    "description": description_param,
+                    "tags": tags_param,
+                },
+                "required": ["title", "content"],
+            },
+            func=_in_thread(functools.partial(kb_tools.kb_write, writer=writer)),
+        ),
+        Tool(
+            name="kb_update",
+            description=(
+                "Change a note in the user's knowledge base. Give the note and what to change: content (replaces "
+                "the whole text) or append (adds text at the end), title, description or tags (replaces the list). "
+                "The slug stays the same. Read the note before replacing its content so nothing gets lost. "
+                "Updating an archived note restores it."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "note": note_param,
+                    "content": {"type": "string", "description": "The new content in Markdown, replacing the old one"},
+                    "append": {"type": "string", "description": "Markdown to add at the end of the content"},
+                    "title": {"type": "string", "description": "A new title (the slug stays)"},
+                    "description": description_param,
+                    "tags": {**tags_param, "description": "The complete new list of tags; [] removes them"},
+                },
+                "required": ["note"],
+            },
+            func=_in_thread(functools.partial(kb_tools.kb_update, writer=writer)),
+        ),
+        Tool(
+            name="kb_archive",
+            description=(
+                "Archive a note of the user's knowledge base that is wrong, outdated or no longer wanted, also "
+                "when the user asks you to delete it. Archived notes don't show up in kb_list or kb_search; "
+                "kb_read still shows them and kb_update restores them."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "note": note_param,
+                    "reason": {"type": "string", "description": "Why, e.g. \"The project was cancelled\""},
+                },
+                "required": ["note"],
+            },
+            func=_in_thread(functools.partial(kb_tools.kb_archive, writer=writer)),
+        ),
+    ]
+
+
 def tool_group_unavailable_reason(group: str) -> Optional[str]:
     """
     Why the configuration switches a tool group off.
 
     The graph tools need NEO4J_ENABLED, web search needs TAVILY_API_KEY;
-    file access is always available.
+    file access and the knowledge base are always available (the knowledge
+    base only to signed-in users, which tools_for_groups() checks).
 
     Args:
         group: A key of TOOL_GROUPS.
@@ -351,15 +513,18 @@ def tool_group_unavailable_reason(group: str) -> Optional[str]:
 
 
 def tool_group_status() -> list[dict]:
-    """Every tool group with its availability: [{"id", "available", "reason"}], in TOOL_GROUPS order."""
+    """
+    Every tool group with its availability, in TOOL_GROUPS order:
+    [{"id", "available", "reason", "optIn"}] (optIn: only for agents that select it).
+    """
     status = []
     for group in TOOL_GROUPS:
         reason = tool_group_unavailable_reason(group)
-        status.append({"id": group, "available": reason is None, "reason": reason})
+        status.append({"id": group, "available": reason is None, "reason": reason, "optIn": group in OPT_IN_GROUPS})
     return status
 
 
-def _group_tools(group: str, user_id: Optional[int]) -> list[Tool]:
+def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: Optional[dict]) -> list[Tool]:
     """The tool definitions of a group, for the user the agent answers for."""
     if group == "files":
         return [file_content_tool(user_id)]
@@ -367,50 +532,70 @@ def _group_tools(group: str, user_id: Optional[int]) -> list[Tool]:
         return [web_search_tool()]
     if group == "knowledge_graph":
         return graph_tools()
+    if group == "knowledge_base":
+        if user_id is None or guest:
+            log.debug("No knowledge base without a signed-in user")
+            return []
+        return knowledge_base_tools(user_id, conversation)
     raise ValueError(f"Unknown tool group '{group}'")
 
 
-def default_tools(user_id: Optional[int] = None) -> ToolRegistry:
-    """
-    The tools enabled by the configuration (see tool_group_unavailable_reason()).
-
-    Args:
-        user_id: The user the agent answers for; the file tool only reads this
-            user's uploads (None: none at all).
-    """
+def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = False,
+                   conversation: Optional[dict] = None) -> ToolRegistry:
+    """The tools of these groups that the configuration enables, in TOOL_GROUPS order."""
+    groups = set(groups)
     registry = ToolRegistry()
     for group in TOOL_GROUPS:
+        if group not in groups:
+            continue
         reason = tool_group_unavailable_reason(group)
         if reason:
             log.debug(f"Tool group {group} disabled: {reason}")
             continue
-        for tool in _group_tools(group, user_id):
+        for tool in _group_tools(group, user_id, guest, conversation):
             registry.add(tool)
+    return registry
+
+
+def default_tools(user_id: Optional[int] = None) -> ToolRegistry:
+    """
+    The tools enabled by the configuration (see tool_group_unavailable_reason()),
+    without the opt-in groups (OPT_IN_GROUPS).
+
+    Args:
+        user_id: The user the agent answers for; the file tool only reads this
+            user's uploads (None: none at all).
+    """
+    registry = _enabled_tools((group for group in TOOL_GROUPS if group not in OPT_IN_GROUPS), user_id)
     log.debug(f"Default tools: {', '.join(registry.names())}")
     return registry
 
 
-def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = None) -> ToolRegistry:
+def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = None, *, guest: bool = False,
+                     conversation: Optional[dict] = None) -> ToolRegistry:
     """
     The enabled tools of the given tool groups, e.g. a persona's selection.
 
     Args:
-        groups: Keys of TOOL_GROUPS; None for every enabled tool. Unknown
-            groups are ignored.
+        groups: Keys of TOOL_GROUPS; None for every enabled tool except the
+            opt-in groups (default_tools()). Unknown groups are ignored.
         user_id: The user the agent answers for; the file tool only reads this
-            user's uploads (None: none at all).
+            user's uploads, the knowledge base tools only this user's notes
+            (None: no files and no knowledge base).
+        guest: The user is a guest: no knowledge base (a guest's data is
+            deleted when the session ends).
+        conversation: The conversation the agent answers in (id, persona_id),
+            recorded with the knowledge base changes.
 
     Returns:
-        default_tools() limited to those groups; empty for an empty selection.
+        The tools; empty for an empty selection.
     """
-    registry = default_tools(user_id)
     if groups is None:
-        return registry
+        return default_tools(user_id)
     groups = list(groups)
     unknown = [group for group in groups if group not in TOOL_GROUPS]
     if unknown:
         log.warning(f"Ignoring unknown tool group(s): {', '.join(map(str, unknown))}")
-    allowed = {name for group in groups for name in TOOL_GROUPS.get(group, ())}
-    selected = ToolRegistry(tool for tool in registry if tool.name in allowed)
+    selected = _enabled_tools(groups, user_id, guest, conversation)
     log.debug(f"Tools for groups {groups}: {', '.join(selected.names()) or 'none'}")
     return selected
