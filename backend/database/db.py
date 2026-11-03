@@ -146,6 +146,47 @@ def backfill_uploaded_files(conn: Connection) -> tuple[int, int]:
     return added, len(stored_file_ids() - owned)
 
 
+def prepare_database(engine: Engine) -> None:
+    """
+    Get the database ready for the schema: enable pgvector, and on the first start on the pgvector
+    image rebuild the indexes of a database that was created under Alpine.
+
+    The bundled Postgres moved from postgres:16-alpine (musl) to pgvector/pgvector:pg16 (Debian,
+    glibc). glibc sorts text differently, so the indexes on text columns of a database created under
+    Alpine may be in the wrong order for it. Such a database has no recorded collation version while
+    glibc reports one, and Postgres can't record one for it later (REFRESH COLLATION VERSION refuses).
+    So the vector extension marks the switch: the first start on a server that has pgvector but whose
+    database doesn't have the extension yet rebuilds the indexes if the database has no collation
+    version, then creates the extension. If that fails (e.g. without the rights of the database's
+    owner), it is logged and tried again on the next start.
+
+    Nothing uses the vector extension yet (embeddings for the knowledge base are planned,
+    docs/knowledge_base.md); a server without pgvector is only logged.
+    """
+    with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
+        try:
+            if conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")).first():
+                return
+            if not conn.execute(text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")).first():
+                log.info("This Postgres server has no pgvector (image pgvector/pgvector:pg16 has it); "
+                         "nothing needs it yet")
+                return
+            name, recorded, actual = conn.execute(text(
+                "SELECT datname, datcollversion, pg_database_collation_actual_version(oid) "
+                "FROM pg_database WHERE datname = current_database()"
+            )).one()
+            if recorded is None and actual is not None:
+                log.warning(f"Database {name} has no collation version but the server reports {actual}, as after "
+                            f"the switch from postgres:16-alpine: rebuilding its indexes")
+                conn.execute(text(f"REINDEX DATABASE {conn.dialect.identifier_preparer.quote(name)}"))
+                log.info(f"Rebuilt the indexes of database {name}")
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            log.info(f"Created the vector extension in database {name}")
+        except Exception as e:
+            log.error(f"Could not prepare the database (index rebuild after the switch from postgres:16-alpine, "
+                      f"vector extension); trying again on the next start: {e}")
+
+
 class Database:
     """
     PostgreSQL database manager with connection pooling and CRUD operations.
@@ -373,6 +414,7 @@ class Database:
         to create tables, indexes, and triggers.
         """
         log.info("Initializing database tables...")
+        prepare_database(self.engine)
 
         schema_file = QUERIES_DIR / "schema.sql"
         if not schema_file.exists():

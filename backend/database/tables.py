@@ -21,7 +21,7 @@ from sqlalchemy import (
     Index,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
 # Create metadata instance
 metadata = MetaData()
@@ -222,6 +222,50 @@ personas = Table(
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
+# Knowledge base: a user's Markdown notes, read and written by the agent's kb_* tools
+kb_notes = Table(
+    'kb_notes',
+    metadata,
+    Column('id', BigInteger, primary_key=True, autoincrement=True),
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+    Column('slug', Text, nullable=False),  # Stable id made from the first title, unique per user
+    Column('title', Text, nullable=False),
+    Column('description', Text),  # One sentence for lists and search results
+    Column('tags', ARRAY(Text), nullable=False, server_default='{}'),
+    Column('content', Text, nullable=False),  # Markdown, links as [[slug]]
+    Column('status', Text, nullable=False, server_default='active'),  # 'active' | 'archived'
+    Column('created_at', DateTime, server_default=func.now()),
+    Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
+    UniqueConstraint('user_id', 'slug'),
+)
+
+# Every version of a note, with who wrote it and in which conversation
+kb_note_revisions = Table(
+    'kb_note_revisions',
+    metadata,
+    Column('id', BigInteger, primary_key=True, autoincrement=True),
+    Column('note_id', BigInteger, ForeignKey('kb_notes.id', ondelete='CASCADE'), nullable=False),
+    Column('action', Text, nullable=False),  # 'create' | 'update' | 'archive'
+    Column('title', Text, nullable=False),
+    Column('description', Text),
+    Column('tags', ARRAY(Text), nullable=False, server_default='{}'),
+    Column('content', Text, nullable=False),
+    Column('status', Text, nullable=False),
+    Column('author', Text, nullable=False),  # 'agent' | 'user'
+    Column('conversation_id', Text),  # No FK: kept when the conversation is deleted
+    Column('persona_id', Integer),  # No FK
+    Column('reason', Text),  # Why it was archived
+    Column('created_at', DateTime, server_default=func.now()),
+)
+
+# The slugs a note links to, rebuilt with every write (backlinks)
+kb_links = Table(
+    'kb_links',
+    metadata,
+    Column('note_id', BigInteger, ForeignKey('kb_notes.id', ondelete='CASCADE'), primary_key=True),
+    Column('target_slug', Text, primary_key=True),  # Need not exist (yet)
+)
+
 # Define indexes
 idx_conversation_time = Index('idx_conversation_time', messages.c.conversationId, messages.c.time)
 idx_conversations_user = Index('idx_conversations_user', conversations.c.userId)
@@ -237,3 +281,6 @@ idx_messages_agent_status = Index(
 idx_cache_file_id = Index('idx_cache_file_id', file_description_cache.c.file_id)
 idx_uploaded_files_user = Index('idx_uploaded_files_user', uploaded_files.c.user_id)
 idx_llm_models_provider = Index('idx_llm_models_provider', llm_models.c.provider_id)
+idx_kb_notes_user_updated = Index('idx_kb_notes_user_updated', kb_notes.c.user_id, kb_notes.c.updated_at.desc())
+idx_kb_note_revisions_note = Index('idx_kb_note_revisions_note', kb_note_revisions.c.note_id)
+idx_kb_links_target = Index('idx_kb_links_target', kb_links.c.target_slug)
