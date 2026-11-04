@@ -191,6 +191,7 @@ Uses discriminated union pattern with factory methods:
 - History: the newest messages that fit the model's context window. Past 80% of it, the chat's model folds the oldest exchanges into a rolling summary before answering (`conversation_summaries`, the history starts with it; dropped when a message it covers is edited, deleted or inserted); the chat shows it as a divider. See `docs/model_catalog_api.md`
 - Conversations are exported and imported as conversation files (`docs/conversation_file.md`); `scripts/convert_legacy_conversations.py` converts the exports of the 2023/24 app
 - Order and time come from the server's clock, never the device's: the server stamps a message's time when it stores it, and its ids are that clock in milliseconds. `Message.compare` sorts stored messages by id, then the ones only in the browser (negative ids from `Message.localId()`, e.g. a failed send) by time
+- The sidebar sorts conversations by `lastMessageAt` (`Conversation.lastActivity`, falling back to `createdAt`): the server sets it to a new message's time when it stores one (not for messages inserted in manual editing), and the browser moves a conversation up right away from the stored message's id. `updatedAt` is only the last change of the conversation itself (rename, title, model). The API sends conversation times as UTC with `Z` (`UtcDatetime`)
 
 ## Agent Streaming Protocol
 

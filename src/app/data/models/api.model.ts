@@ -111,6 +111,7 @@ export interface IApiConversationResponse {
   participants: string[];
   createdAt: string;
   updatedAt: string;
+  lastMessageAt?: string | null;
   hashsum: number;
   version: number;
   lastModified?: number;

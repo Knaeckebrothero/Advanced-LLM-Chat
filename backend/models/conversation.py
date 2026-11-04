@@ -5,6 +5,8 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
+from backend.models.common import UtcDatetime
+
 
 class ConversationState(BaseModel):
     """
@@ -59,6 +61,8 @@ class ConversationResponse(BaseModel):
     :type createdAt: datetime
     :ivar updatedAt: The timestamp when the conversation was last updated.
     :type updatedAt: datetime
+    :ivar lastMessageAt: When the newest message was stored (the sidebar's order); None = no message yet.
+    :type lastMessageAt: Optional[datetime]
     :ivar hashsum: A computed hash value representing the conversation data.
     :type hashsum: int
     :ivar version: The version number of the conversation data model.
@@ -77,8 +81,9 @@ class ConversationResponse(BaseModel):
     userId: int
     name: str
     participants: List[str]
-    createdAt: datetime
-    updatedAt: datetime
+    createdAt: UtcDatetime
+    updatedAt: UtcDatetime
+    lastMessageAt: Optional[UtcDatetime] = None
     hashsum: int
     version: int = 1
     lastModified: Optional[int] = None
@@ -111,6 +116,8 @@ class Conversation(BaseModel):
     :ivar updatedAt: Timestamp indicating the last time the conversation was
         updated.
     :type updatedAt: datetime
+    :ivar lastMessageAt: When the newest message was stored (the sidebar's order); None = no message yet.
+    :type lastMessageAt: Optional[datetime]
     :ivar modelId: The catalog model of the conversation; None means the user's default model.
     :type modelId: Optional[int]
     :ivar personaId: The persona of the conversation; None means no persona.
@@ -122,8 +129,9 @@ class Conversation(BaseModel):
     userId: int
     name: str
     participants: Optional[str] = None
-    createdAt: datetime
-    updatedAt: datetime
+    createdAt: UtcDatetime
+    updatedAt: UtcDatetime
+    lastMessageAt: Optional[UtcDatetime] = None
     # Model catalog selection
     modelId: Optional[int] = None
     personaId: Optional[int] = None
@@ -146,6 +154,7 @@ class Conversation(BaseModel):
             participants=row.get('participants'),
             createdAt=row['createdAt'],
             updatedAt=row['updatedAt'],
+            lastMessageAt=row.get('lastMessageAt'),
             modelId=row.get('model_id'),
             personaId=row.get('persona_id'),
             personaValues=row.get('persona_values'),
@@ -216,6 +225,6 @@ class ConversationWithDetails(Conversation):
     :ivar syncHash: A hash value used for synchronization or data integrity checking.
     :type syncHash: Optional[str]
     """
-    lastModified: Optional[datetime] = None
+    lastModified: Optional[UtcDatetime] = None
     messageCount: Optional[int] = None
     syncHash: Optional[str] = None

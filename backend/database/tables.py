@@ -48,6 +48,7 @@ conversations = Table(
     Column('participants', Text),  # JSON-encoded list
     Column('createdAt', DateTime, server_default=func.now()),
     Column('updatedAt', DateTime, server_default=func.now(), onupdate=func.now()),
+    Column('lastMessageAt', DateTime),  # When the newest message was stored (naive UTC), the sidebar's order
     Column('version', Integer, server_default='1'),
     Column('lastModified', BigInteger),
     # Model catalog selection (NULL = the user's default model, no persona)

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     participants TEXT,
     "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "lastMessageAt" TIMESTAMP,   -- when the newest message was stored (the sidebar's order), NULL = none yet
     version INTEGER DEFAULT 1,
     "lastModified" BIGINT,
     -- Model catalog selection (NULL = the user's default model, no persona)
@@ -255,10 +256,12 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- name: create_conversations_trigger
+-- A new message only moves "lastMessageAt": "updatedAt" stays the last change of the conversation itself
 DROP TRIGGER IF EXISTS update_conversations_timestamp ON conversations;
 CREATE TRIGGER update_conversations_timestamp
     BEFORE UPDATE ON conversations
     FOR EACH ROW
+    WHEN (OLD."lastMessageAt" IS NOT DISTINCT FROM NEW."lastMessageAt")
     EXECUTE FUNCTION update_conversation_timestamp();
 
 -- name: create_messages_trigger
@@ -302,3 +305,10 @@ CREATE TRIGGER update_kb_notes_timestamp
     BEFORE UPDATE ON kb_notes
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();
+
+-- name: backfill_conversations_last_message_at
+-- Conversations from before "lastMessageAt" get the time of their newest message (ids are the server's clock in ms)
+UPDATE conversations c
+SET "lastMessageAt" = to_timestamp((SELECT max(m.id) FROM messages m WHERE m."conversationId" = c.id) / 1000.0) AT TIME ZONE 'UTC'
+WHERE c."lastMessageAt" IS NULL
+  AND EXISTS (SELECT 1 FROM messages m WHERE m."conversationId" = c.id);

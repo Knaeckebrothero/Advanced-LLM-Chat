@@ -254,7 +254,7 @@ export class DBService {
     return data ? Conversation.fromPlainObject(data) : undefined;
   }
 
-  // Retrieves all conversations from the local IndexedDB, sorted by most recently updated first.
+  // Retrieves all conversations from the local IndexedDB, the ones with the newest messages first.
   public async getAllConversations(): Promise<Conversation[]> {
     const db = this.db;
     await this.status;
@@ -263,12 +263,7 @@ export class DBService {
     // Convert to Conversation instances
     const conversations = rawConversations.map(data => Conversation.fromPlainObject(data));
 
-    // Sort by updatedAt descending (newest first)
-    conversations.sort((a, b) => {
-      const dateA = new Date(a.updatedAt).getTime();
-      const dateB = new Date(b.updatedAt).getTime();
-      return dateB - dateA;
-    });
+    conversations.sort(Conversation.compareByActivity);
 
     return conversations;
   }
