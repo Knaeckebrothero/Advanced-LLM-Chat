@@ -187,6 +187,13 @@ mat-dialog-actions mat-spinner {
     color: var(--theme-text-secondary);
   }
 
+  // An MCP server's tool prefix next to its name
+  .tool-option-slug {
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 0.75rem;
+    color: var(--theme-text-secondary);
+  }
+
   .tool-reason {
     margin: -6px 0 6px 42px;
     font-size: 0.75rem;

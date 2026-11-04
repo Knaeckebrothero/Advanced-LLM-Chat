@@ -21,14 +21,16 @@ import {
   OPT_IN_TOOL_GROUPS,
   TOOL_GROUPS
 } from '../data/models/catalog.model';
+import { IMcpConfig, IMcpConnectResult, IMcpServerCreate, IMcpServerOut, IMcpServerUpdate, IMcpTestResult } from '../data/models/mcp.model';
 import { describeHttpError } from './catalog-admin.utils';
 
 export type AdminLoadState = 'loading' | 'ready' | 'forbidden' | 'error';
 
 /**
  * State of the Agents page: providers (read-only, configured on the server), models and
- * personas as the admin API returns them, the tool groups, plus the write operations.
- * After every change the lists are reloaded, and so is the public catalog the pickers use.
+ * personas as the admin API returns them, the tool groups and the MCP servers of the agents,
+ * plus the write operations. After every change the lists are reloaded, and so is the public
+ * catalog the pickers use.
  */
 @Injectable()
 export class CatalogAdminStore {
@@ -36,6 +38,9 @@ export class CatalogAdminStore {
   readonly models$ = new BehaviorSubject<IModelOut[]>([]);
   readonly personas$ = new BehaviorSubject<IPersonaOut[]>([]);
   readonly tools$ = new BehaviorSubject<IToolStatus[]>([]);
+  readonly mcpServers$ = new BehaviorSubject<IMcpServerOut[]>([]);
+  readonly mcpConfig$ = new BehaviorSubject<IMcpConfig | null>(null);  // null: not known
+  readonly mcpError$ = new BehaviorSubject<string | null>(null);  // The MCP servers could not be loaded
   readonly state$ = new BehaviorSubject<AdminLoadState>('loading');
   readonly loadError$ = new BehaviorSubject<string | null>(null);
 
@@ -61,6 +66,14 @@ export class CatalogAdminStore {
     return this.tools$.value;
   }
 
+  get mcpServers(): IMcpServerOut[] {
+    return this.mcpServers$.value;
+  }
+
+  get mcpConfig(): IMcpConfig | null {
+    return this.mcpConfig$.value;
+  }
+
   async loadAll(): Promise<void> {
     this.state$.next('loading');
     this.loadError$.next(null);
@@ -69,7 +82,8 @@ export class CatalogAdminStore {
         this.api.getAdminProviders(),
         this.api.getAdminModels(),
         this.api.getAdminPersonas(),
-        this.loadTools()
+        this.loadTools(),
+        this.loadMcp()
       ]);
       this.providers$.next(providers ?? []);
       this.models$.next(models ?? []);
@@ -98,6 +112,23 @@ export class CatalogAdminStore {
       console.warn('Tool groups could not be loaded:', error);
     }
     return TOOL_GROUPS.map(id => ({ id, available: true, reason: null, optIn: OPT_IN_TOOL_GROUPS.includes(id) }));
+  }
+
+  /**
+   * The MCP servers and what the configuration allows. A failure doesn't block the page: the
+   * section says so, and the agents keep the servers they have.
+   */
+  private async loadMcp(): Promise<void> {
+    const [config, servers] = await Promise.allSettled([this.api.getMcpConfig(), this.api.getAdminMcpServers()]);
+    this.mcpConfig$.next(config.status === 'fulfilled' ? config.value : null);
+    if (servers.status === 'fulfilled') {
+      this.mcpServers$.next(servers.value ?? []);
+      this.mcpError$.next(null);
+    } else {
+      console.warn('MCP servers could not be loaded:', servers.reason);
+      this.mcpServers$.next([]);
+      this.mcpError$.next(describeHttpError(servers.reason, this.translate));
+    }
   }
 
   private async reload(lists: Array<'providers' | 'models' | 'personas'>): Promise<void> {
@@ -205,6 +236,51 @@ export class CatalogAdminStore {
     }
   }
 
+  // MCP servers of the agents
+
+  async saveMcpServer(id: number | null, data: IMcpServerCreate | IMcpServerUpdate): Promise<IMcpServerOut> {
+    const saved = id === null
+      ? await this.api.createAdminMcpServer(data as IMcpServerCreate)
+      : await this.api.updateAdminMcpServer(id, data as IMcpServerUpdate);
+    this.replaceMcpServer(saved);
+    await this.loadMcp();
+    return saved;
+  }
+
+  /** Flip a switch in the list, or save the tool selection, without opening the dialog. */
+  async updateMcpServer(server: IMcpServerOut, changes: IMcpServerUpdate): Promise<IMcpServerOut> {
+    const updated = await this.api.updateAdminMcpServer(server.id, changes);
+    this.replaceMcpServer(updated);
+    return updated;
+  }
+
+  /** Deleting a server removes its slug from the agents, so they are reloaded too. */
+  async deleteMcpServer(id: number): Promise<void> {
+    await this.api.deleteAdminMcpServer(id);
+    await Promise.all([this.loadMcp(), this.reload(['personas'])]);
+  }
+
+  testMcpServer(id: number): Promise<IMcpTestResult> {
+    return this.api.testMcpServer(id);
+  }
+
+  /** Starts the admin's own OAuth sign-in to a server (every user signs in with their own account). */
+  connectMcpServer(id: number): Promise<IMcpConnectResult> {
+    return this.api.connectMcpServer(id);
+  }
+
+  async disconnectMcpServer(server: IMcpServerOut): Promise<void> {
+    await this.api.disconnectMcpServer(server.id);
+    this.replaceMcpServer({ ...server, connected: false });
+  }
+
+  private replaceMcpServer(server: IMcpServerOut): void {
+    const known = this.mcpServers.some(s => s.id === server.id);
+    this.mcpServers$.next(known
+      ? this.mcpServers.map(s => (s.id === server.id ? { ...s, ...server } : s))
+      : [...this.mcpServers, server]);
+  }
+
   // Import and export
 
   exportCatalog(): Promise<ICatalogFile> {
@@ -213,8 +289,8 @@ export class CatalogAdminStore {
 
   async importCatalog(file: ICatalogFile): Promise<IImportResult> {
     const result = await this.api.importCatalog(file);
-    // Providers aren't imported, but their model counts change
-    await this.reload(['providers', 'models', 'personas']);
+    // Providers aren't imported, but their model counts change; the file may hold MCP servers
+    await Promise.all([this.reload(['providers', 'models', 'personas']), this.loadMcp()]);
     return result;
   }
 }

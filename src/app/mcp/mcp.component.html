@@ -1,0 +1,275 @@
+<div class="mcp-page">
+  <header class="mcp-header">
+    <h1 class="page-title-in-topbar">{{ 'mcp.title' | translate }}</h1>
+    <p>{{ 'mcp.subtitle' | translate }}</p>
+  </header>
+
+  @switch (state()) {
+    @case ('loading') {
+      <div class="mcp-state">
+        <mat-spinner diameter="36"></mat-spinner>
+      </div>
+    }
+    @case ('forbidden') {
+      <div class="mcp-state">
+        <mat-icon aria-hidden="true">lock</mat-icon>
+        <p>{{ 'mcp.forbidden' | translate }}</p>
+      </div>
+    }
+    @case ('error') {
+      <div class="mcp-state" role="alert">
+        <mat-icon aria-hidden="true">cloud_off</mat-icon>
+        <p>{{ 'mcp.loadFailed' | translate }}</p>
+        <p class="mcp-state-detail">{{ loadError() }}</p>
+        <button mat-stroked-button type="button" (click)="load()">
+          <mat-icon>refresh</mat-icon>
+          {{ 'catalog.common.retry' | translate }}
+        </button>
+      </div>
+    }
+    @default {
+      <!-- What the server's configuration switches off -->
+      @if (mcpOff()) {
+        <p class="config-notice mcp-notice" role="status">
+          <mat-icon aria-hidden="true">block</mat-icon>
+          <span>
+            {{ 'mcp.off' | translate }}
+            @if (config()?.reason) {
+              <span class="config-reason">{{ config()?.reason }}</span>
+            }
+          </span>
+        </p>
+      } @else if (noEncryption()) {
+        <p class="config-notice mcp-notice" role="status">
+          <mat-icon aria-hidden="true">no_encryption</mat-icon>
+          <span>{{ 'mcp.noEncryption' | translate }}</span>
+        </p>
+      }
+
+      <!-- Your servers -->
+      <section class="page-section" aria-labelledby="mcp-own-title">
+        <div class="section-header">
+          <div class="section-heading">
+            <h2 class="section-title" id="mcp-own-title">{{ 'mcp.own.title' | translate }}</h2>
+            <p class="section-intro">{{ 'mcp.own.intro' | translate }}</p>
+          </div>
+          <div class="section-actions">
+            <button mat-flat-button color="primary" type="button" (click)="add()" [disabled]="ownOff()">
+              <mat-icon>add</mat-icon>
+              {{ 'mcp.own.add' | translate }}
+            </button>
+          </div>
+        </div>
+
+        @if (!mcpOff() && ownOff()) {
+          <p class="config-notice" role="status">
+            <mat-icon aria-hidden="true">block</mat-icon>
+            <span>
+              {{ 'mcp.userServersOff' | translate }}
+              @if (config()?.reason) {
+                <span class="config-reason">{{ config()?.reason }}</span>
+              }
+            </span>
+          </p>
+        }
+
+        <div class="item-list">
+          @for (server of own(); track server.id) {
+            <div class="item-card" [class.is-disabled]="!server.enabled">
+              <div class="item-main">
+                <div class="item-title-row">
+                  <span class="item-title">{{ server.name }}</span>
+                  <span class="state-tag">{{ ('mcp.transport.' + server.transport) | translate }}</span>
+                  @if (server.auth !== 'none') {
+                    <span class="state-tag">{{ ('mcp.auth.' + server.auth) | translate }}</span>
+                  }
+                  @if (server.auth === 'oauth') {
+                    <span class="connect-state" [class.connect-state--on]="server.connected">
+                      <mat-icon aria-hidden="true">{{ server.connected ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                      {{ (server.connected ? 'mcp.signedIn' : 'mcp.notSignedIn') | translate }}
+                    </span>
+                  }
+                </div>
+                <div class="item-meta">
+                  <span class="mono" [matTooltip]="'mcp.toolPrefixHint' | translate: { slug: server.slug }">{{ server.slug }}__</span>
+                  @if (server.url) {
+                    <span class="mono">{{ server.url }}</span>
+                  }
+                  <span>{{ toolSelectionKey(server) | translate: { count: server.tools?.length ?? 0 } }}</span>
+                </div>
+                @if (server.auth === 'headers' && server.headerNames.length > 0) {
+                  <!-- The values are secrets: the server never sends them back -->
+                  <div class="header-chips" [attr.aria-label]="'mcp.dialog.headers' | translate">
+                    @for (name of server.headerNames; track name) {
+                      <span class="mono header-chip">{{ name }}: ••••••</span>
+                    }
+                  </div>
+                }
+                @if (server.description) {
+                  <p class="item-description">{{ server.description }}</p>
+                }
+                @if (server.unavailableReason) {
+                  <p class="item-warning">
+                    <mat-icon aria-hidden="true">warning_amber</mat-icon>
+                    <span>{{ 'mcp.unavailable' | translate: { reason: server.unavailableReason } }}</span>
+                  </p>
+                }
+              </div>
+
+              <div class="item-controls">
+                <div class="item-toggles">
+                  <mat-slide-toggle [checked]="server.enabled" [disabled]="ownOff()"
+                                    [aria-label]="('catalog.admin.fields.enabled' | translate) + ': ' + server.name"
+                                    (change)="setEnabled(server, $event)">
+                    {{ 'catalog.admin.fields.enabled' | translate }}
+                  </mat-slide-toggle>
+                </div>
+                @if (server.auth === 'oauth') {
+                  @if (server.connected) {
+                    <button mat-stroked-button type="button" class="sign-in-button" (click)="signOut(server)"
+                            [disabled]="stateOf(server).signingOut">
+                      <mat-icon>logout</mat-icon>
+                      {{ 'mcp.signOut' | translate }}
+                    </button>
+                  } @else {
+                    <button mat-flat-button color="primary" type="button" class="sign-in-button" (click)="signIn(server)"
+                            [disabled]="!canSignIn(server) || stateOf(server).signingIn">
+                      @if (stateOf(server).signingIn) {
+                        <mat-spinner diameter="18"></mat-spinner>
+                      } @else {
+                        <mat-icon>login</mat-icon>
+                      }
+                      {{ 'mcp.signIn' | translate }}
+                    </button>
+                  }
+                }
+                <div class="item-actions">
+                  <button mat-icon-button type="button" (click)="test(server)"
+                          [disabled]="ownOff() || stateOf(server).testing"
+                          [matTooltip]="'mcp.test.action' | translate"
+                          [attr.aria-label]="('mcp.test.action' | translate) + ': ' + server.name">
+                    @if (stateOf(server).testing) {
+                      <mat-spinner diameter="18"></mat-spinner>
+                    } @else {
+                      <mat-icon>play_circle</mat-icon>
+                    }
+                  </button>
+                  <button mat-icon-button type="button" (click)="edit(server)" [disabled]="ownOff()"
+                          [matTooltip]="'catalog.common.edit' | translate"
+                          [attr.aria-label]="('catalog.common.edit' | translate) + ': ' + server.name">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button mat-icon-button type="button" class="danger-action" (click)="remove(server)"
+                          [matTooltip]="'catalog.common.delete' | translate"
+                          [attr.aria-label]="('catalog.common.delete' | translate) + ': ' + server.name">
+                    <mat-icon>delete_outline</mat-icon>
+                  </button>
+                </div>
+              </div>
+
+              @if (stateOf(server).result; as result) {
+                <app-mcp-test-result [result]="result" [server]="server" [editable]="true"
+                                     [saving]="!!stateOf(server).savingTools"
+                                     [signingIn]="!!stateOf(server).signingIn"
+                                     [canSignIn]="canSignIn(server)"
+                                     (signIn)="signIn(server)"
+                                     (saveTools)="saveTools(server, $event)"
+                                     (dismiss)="closeTest(server)"></app-mcp-test-result>
+              }
+            </div>
+          } @empty {
+            <div class="empty-state">
+              <mat-icon aria-hidden="true">extension</mat-icon>
+              <p>{{ 'mcp.own.empty' | translate }}</p>
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- The agents' servers with sign-in: every user signs in with their own account -->
+      <section class="page-section" aria-labelledby="mcp-shared-title">
+        <div class="section-header">
+          <div class="section-heading">
+            <h2 class="section-title" id="mcp-shared-title">{{ 'mcp.shared.title' | translate }}</h2>
+            <p class="section-intro">{{ 'mcp.shared.intro' | translate }}</p>
+          </div>
+        </div>
+
+        <div class="item-list">
+          @for (server of shared(); track server.id) {
+            <div class="item-card">
+              <div class="item-main">
+                <div class="item-title-row">
+                  <span class="item-title">{{ server.name }}</span>
+                  <span class="connect-state" [class.connect-state--on]="server.connected">
+                    <mat-icon aria-hidden="true">{{ server.connected ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                    {{ (server.connected ? 'mcp.signedIn' : 'mcp.notSignedIn') | translate }}
+                  </span>
+                </div>
+                @if (server.url) {
+                  <div class="item-meta">
+                    <span class="mono">{{ server.url }}</span>
+                  </div>
+                }
+                @if (server.description) {
+                  <p class="item-description">{{ server.description }}</p>
+                }
+                @if (server.unavailableReason) {
+                  <p class="item-warning">
+                    <mat-icon aria-hidden="true">warning_amber</mat-icon>
+                    <span>{{ 'mcp.unavailable' | translate: { reason: server.unavailableReason } }}</span>
+                  </p>
+                }
+              </div>
+
+              <div class="item-controls">
+                @if (server.connected) {
+                  <button mat-stroked-button type="button" class="sign-in-button" (click)="signOut(server)"
+                          [disabled]="stateOf(server).signingOut">
+                    <mat-icon>logout</mat-icon>
+                    {{ 'mcp.signOut' | translate }}
+                  </button>
+                } @else {
+                  <button mat-flat-button color="primary" type="button" class="sign-in-button" (click)="signIn(server)"
+                          [disabled]="!canSignIn(server) || stateOf(server).signingIn">
+                    @if (stateOf(server).signingIn) {
+                      <mat-spinner diameter="18"></mat-spinner>
+                    } @else {
+                      <mat-icon>login</mat-icon>
+                    }
+                    {{ 'mcp.signIn' | translate }}
+                  </button>
+                }
+                <div class="item-actions">
+                  <button mat-icon-button type="button" (click)="test(server)"
+                          [disabled]="mcpOff() || stateOf(server).testing"
+                          [matTooltip]="'mcp.test.action' | translate"
+                          [attr.aria-label]="('mcp.test.action' | translate) + ': ' + server.name">
+                    @if (stateOf(server).testing) {
+                      <mat-spinner diameter="18"></mat-spinner>
+                    } @else {
+                      <mat-icon>play_circle</mat-icon>
+                    }
+                  </button>
+                </div>
+              </div>
+
+              @if (stateOf(server).result; as result) {
+                <app-mcp-test-result [result]="result" [server]="server" [editable]="false"
+                                     [signingIn]="!!stateOf(server).signingIn"
+                                     [canSignIn]="canSignIn(server)"
+                                     (signIn)="signIn(server)"
+                                     (dismiss)="closeTest(server)"></app-mcp-test-result>
+              }
+            </div>
+          } @empty {
+            <div class="empty-state">
+              <mat-icon aria-hidden="true">key</mat-icon>
+              <p>{{ 'mcp.shared.empty' | translate }}</p>
+            </div>
+          }
+        </div>
+      </section>
+    }
+  }
+</div>

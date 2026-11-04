@@ -83,6 +83,13 @@ import { CatalogAdminDialogs } from './catalog-admin-dialogs';
               <td>{{ result.personas.created }}</td>
               <td>{{ result.personas.updated }}</td>
             </tr>
+            @if (result.mcpServers; as mcp) {
+              <tr>
+                <th scope="row">{{ 'catalog.admin.mcp.title' | translate }}</th>
+                <td>{{ mcp.created }}</td>
+                <td>{{ mcp.updated }}</td>
+              </tr>
+            }
           </tbody>
         </table>
         @if (result.errors.length > 0) {

@@ -10,15 +10,15 @@ export type PrivacyTier = 'local' | 'eu' | 'trusted' | 'untrusted';
 export type ReasoningMode = 'none' | 'optional' | 'always';
 export type Currency = 'USD' | 'EUR';
 /** Tool groups an agent can use (backend/llm/tools.py). */
-export type ToolGroup = 'files' | 'web_search' | 'knowledge_graph' | 'knowledge_base';
+export type ToolGroup = 'files' | 'web_search' | 'knowledge_graph' | 'knowledge_base' | 'user_mcp';
 
 export const PROVIDER_KINDS: ProviderKind[] = ['openai_compatible', 'anthropic'];
 export const PRIVACY_TIERS: PrivacyTier[] = ['local', 'eu', 'trusted', 'untrusted'];
 export const REASONING_MODES: ReasoningMode[] = ['none', 'optional', 'always'];
 export const CURRENCIES: Currency[] = ['USD', 'EUR'];
-export const TOOL_GROUPS: ToolGroup[] = ['files', 'web_search', 'knowledge_graph', 'knowledge_base'];
+export const TOOL_GROUPS: ToolGroup[] = ['files', 'web_search', 'knowledge_graph', 'knowledge_base', 'user_mcp'];
 /** Groups an agent only gets when it picks them, never with "all tools" (OPT_IN_GROUPS in backend/llm/tools.py). */
-export const OPT_IN_TOOL_GROUPS: ToolGroup[] = ['knowledge_base'];
+export const OPT_IN_TOOL_GROUPS: ToolGroup[] = ['knowledge_base', 'user_mcp'];
 
 /** Persona placeholders the backend fills in itself; they need no input. */
 export const BUILT_IN_PERSONA_VARIABLES = ['date', 'user_name', 'language'];
@@ -157,6 +157,7 @@ export interface IPersonaBase {
   enabled: boolean;
   sortOrder: number;
   ownMemory?: boolean;  // With the knowledge base: its own knowledge base and memory per user (default: the shared one)
+  mcpServers?: string[] | null;  // Slugs of the admin MCP servers it uses (docs/mcp.md); null or [] = none
 }
 
 export type IPersonaCreate = IPersonaBase;
@@ -197,6 +198,7 @@ export interface IImportCounts {
 export interface IImportResult {
   models: IImportCounts;
   personas: IImportCounts;
+  mcpServers?: IImportCounts;  // The admin MCP servers (docs/mcp.md)
   errors: string[];
 }
 
@@ -206,6 +208,7 @@ export interface ICatalogFile {
   providers?: Record<string, unknown>[];
   models?: Record<string, unknown>[];
   personas?: Record<string, unknown>[];
+  mcp_servers?: Record<string, unknown>[];
   [key: string]: unknown;
 }
 

@@ -1,9 +1,27 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { IAgentStep, AgentStepType, AgentStatus } from '../../../data/models/message.model';
+import { AuthService } from '../../../auth/auth.service';
 
 // Id prefix of the step that shows the oldest messages being summarized (backend/api/messages.py)
 const SUMMARY_STEP_PREFIX = 'summary-';
+
+/**
+ * Titles of the steps about an MCP server the answer couldn't use (backend/services/mcp, docs/mcp.md):
+ * the backend sends them in English; a title may go on after them (e.g. with the server's name).
+ */
+const MCP_STEP_TITLES: Array<[string, string]> = [
+  ['MCP server unavailable', 'message.steps.mcpUnavailable'],
+  ['Sign-in needed', 'message.steps.mcpSignIn']
+];
+
+/** The link of such a step (constants: the template compares them between checks). */
+export interface McpStepLink {
+  label: string;
+  icon: string;
+}
+const MCP_SIGN_IN_LINK: McpStepLink = { label: 'message.steps.mcpSignInLink', icon: 'login' };
+const MCP_OPEN_LINK: McpStepLink = { label: 'message.steps.openMcp', icon: 'extension' };
 
 @Component({
   selector: 'app-agent-steps',
@@ -18,7 +36,7 @@ export class AgentStepsComponent {
 
   isExpanded = false;
 
-  constructor(private translate: TranslateService) {}
+  constructor(private translate: TranslateService, private auth: AuthService) {}
 
   /**
    * Get the current (most recent) step
@@ -57,7 +75,7 @@ export class AgentStepsComponent {
   get headerText(): string {
     if (this.isProcessing && this.currentStep) {
       // Show current action while processing
-      return this.currentStep.title;
+      return this.stepTitle(this.currentStep);
     } else if (this.status === 'error') {
       return this.translate.instant('message.steps.error');
     } else {
@@ -126,6 +144,29 @@ export class AgentStepsComponent {
   noteVault(step: IAgentStep): Record<string, number> | null {
     const vault = step.metadata?.['kbVault'];
     return typeof vault === 'number' && vault > 0 ? { vault } : null;
+  }
+
+  /** The step's title; the ones about MCP servers in the user's language. */
+  stepTitle(step: IAgentStep): string {
+    if (step.metadata?.['mcpServer'] == null) return step.title;
+    for (const [english, key] of MCP_STEP_TITLES) {
+      if (step.title.startsWith(english)) return this.translate.instant(key) + step.title.slice(english.length);
+    }
+    return step.title;
+  }
+
+  /** A step about an MCP server the answer couldn't use (its metadata is shown as the link, not as JSON). */
+  isMcpStep(step: IAgentStep): boolean {
+    return step.metadata?.['mcpServer'] != null;
+  }
+
+  /**
+   * A step about an MCP server the answer couldn't use (metadata {mcpServer, authRequired}):
+   * the MCP servers page, to sign in to it or check it. Not for guests, who have no such page.
+   */
+  mcpLink(step: IAgentStep): McpStepLink | null {
+    if (step.type !== 'observation' || step.metadata?.['mcpServer'] == null || this.auth.isGuest) return null;
+    return step.metadata['authRequired'] === true ? MCP_SIGN_IN_LINK : MCP_OPEN_LINK;
   }
 
   /**

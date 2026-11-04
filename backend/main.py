@@ -25,10 +25,11 @@ from backend.config import AUTH_MODE
 from backend.security import oidc
 from backend.security.auth import cleanup_expired_sessions
 from backend.services.memory_review import review_loop
+from backend.services.mcp.pool import pool as mcp_pool
 from backend.utils.certificates import setup_development_certificates
 
 # Import API routers
-from backend.api import auth, docs, conversations, settings, files, messages, catalog, knowledge_base
+from backend.api import auth, docs, conversations, settings, files, messages, catalog, knowledge_base, mcp
 
 # Import middleware
 from backend.middleware.middleware import (
@@ -67,7 +68,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown: close database connections
+    # Shutdown: close the connections to MCP servers (and stop their stdio processes), then the database's
+    await mcp_pool.close_all()
     db.close_all()
 
 
@@ -105,6 +107,7 @@ app.include_router(settings.router)
 app.include_router(files.router)
 app.include_router(catalog.router)
 app.include_router(knowledge_base.router)
+app.include_router(mcp.router)
 
 
 @app.get("/api/health", include_in_schema=False)

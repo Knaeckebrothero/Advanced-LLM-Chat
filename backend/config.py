@@ -186,3 +186,27 @@ FRONTEND_URL = (os.getenv("FRONTEND_URL", "").strip() or (CORS_ORIGINS[0] if _co
 # Agent loop
 # Maximum number of model calls per answer (each tool round counts as one)
 AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "10"))
+
+# Encrypts secrets the users store (MCP header values, OAuth tokens) in Postgres: any long random
+# string, e.g. `openssl rand -hex 32`. Without it those features are unavailable; changing it makes
+# the stored secrets unreadable (users sign in again).
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "").strip()
+
+# MCP servers (docs/mcp.md): tools of Model Context Protocol servers for the agents
+MCP_ENABLED = os.getenv("MCP_ENABLED", "true").lower() == "true"
+# Admins may define stdio servers: commands the backend starts as subprocesses, with its rights
+MCP_STDIO_ENABLED = os.getenv("MCP_STDIO_ENABLED", "false").lower() == "true"
+# Signed-in users may add their own servers (used by agents that select the tool group user_mcp)
+MCP_USER_SERVERS = os.getenv("MCP_USER_SERVERS", "true").lower() == "true"
+# Users' own servers (and the OAuth endpoints they name) may be on private or loopback addresses
+MCP_ALLOW_PRIVATE_URLS = os.getenv("MCP_ALLOW_PRIVATE_URLS", "false").lower() == "true"
+# Where OAuth providers send the browser back after an MCP sign-in; without it API_URL's callback
+# or the request's address
+MCP_OAUTH_REDIRECT_URI = os.getenv("MCP_OAUTH_REDIRECT_URI", "").strip() or (
+    f"{_api_url}/api/mcp/oauth/callback" if _api_url else "")
+# The client name shown on a provider's consent page (dynamic client registration)
+MCP_OAUTH_CLIENT_NAME = os.getenv("MCP_OAUTH_CLIENT_NAME", "").strip() or "LLM Chat"
+MCP_CONNECT_TIMEOUT = float(os.getenv("MCP_CONNECT_TIMEOUT", "20"))  # Connect and list the tools
+MCP_TOOL_TIMEOUT = float(os.getenv("MCP_TOOL_TIMEOUT", "120"))  # One tool call
+MCP_IDLE_TIMEOUT = float(os.getenv("MCP_IDLE_TIMEOUT", "300"))  # An unused connection is closed
+MCP_MAX_RESULT_CHARS = int(os.getenv("MCP_MAX_RESULT_CHARS", "50000"))  # Longer tool results are cut

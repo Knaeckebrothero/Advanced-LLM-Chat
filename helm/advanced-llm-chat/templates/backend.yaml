@@ -76,6 +76,20 @@ stringData:
   {{ $key }}: {{ toString $value | quote }}
   {{- end }}
 {{- end }}
+{{- if or .Values.backend.encryptionKey .Values.backend.generateEncryptionKey }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $fullname }}-encryption
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  key: {{ include "llmchat.secretValue" (dict "ctx" $ "secret" (printf "%s-encryption" $fullname) "key" "key" "value" .Values.backend.encryptionKey) | quote }}
+{{- end }}
 {{- if and (eq $mode "oidc") (not .Values.keycloak.enabled) .Values.auth.oidc.clientSecret }}
 ---
 apiVersion: v1
