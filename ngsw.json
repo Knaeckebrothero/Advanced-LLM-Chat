@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1793743995841,
+  "timestamp": 1793780693262,
   "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
@@ -11,11 +11,11 @@
         "ignoreVary": true
       },
       "urls": [
-        "/Advanced-LLM-Chat/chunk-HNKCF5UZ.js",
-        "/Advanced-LLM-Chat/chunk-XP4XXDO4.js",
+        "/Advanced-LLM-Chat/chunk-3NEWPJST.js",
+        "/Advanced-LLM-Chat/chunk-ZEEDASAW.js",
         "/Advanced-LLM-Chat/favicon.ico",
         "/Advanced-LLM-Chat/index.html",
-        "/Advanced-LLM-Chat/main-JGJXOFE7.js",
+        "/Advanced-LLM-Chat/main-7XSO57NY.js",
         "/Advanced-LLM-Chat/manifest.webmanifest",
         "/Advanced-LLM-Chat/polyfills-B6TNHZQ6.js",
         "/Advanced-LLM-Chat/scripts-QIUD7IKY.js",
@@ -273,11 +273,11 @@
     "/Advanced-LLM-Chat/assets/icons/windows11/Wide310x150Logo.scale-150.png": "c65b560f379a8b49c21e9c41ef37dc4cf49bca83",
     "/Advanced-LLM-Chat/assets/icons/windows11/Wide310x150Logo.scale-200.png": "12c190e84238ed2f75213747754c6903e78355eb",
     "/Advanced-LLM-Chat/assets/icons/windows11/Wide310x150Logo.scale-400.png": "97a26426a102791e080e9f1c80cc4784d59611d8",
-    "/Advanced-LLM-Chat/chunk-HNKCF5UZ.js": "9538ddbc4622ba83a9cbdeeb1e933cf198dd0702",
-    "/Advanced-LLM-Chat/chunk-XP4XXDO4.js": "d42f7c6210f2a2bc14d47f90246dfaa538458206",
+    "/Advanced-LLM-Chat/chunk-3NEWPJST.js": "56e197152010f6eca53cdd6c240dd24cf65df6b8",
+    "/Advanced-LLM-Chat/chunk-ZEEDASAW.js": "52a5ca81144afbb807b6774454a292d6249f7077",
     "/Advanced-LLM-Chat/favicon.ico": "b2451115caf945b256076e349ef6d8f6ad203e45",
-    "/Advanced-LLM-Chat/index.html": "70732b6d060c68ad628e30e75665857fb6696b06",
-    "/Advanced-LLM-Chat/main-JGJXOFE7.js": "ec0df3cb2892e13b9819ae8f10e22c9b51cc243e",
+    "/Advanced-LLM-Chat/index.html": "2813dcada38ebf46aeb3c70e8c3d8ef6355d5e95",
+    "/Advanced-LLM-Chat/main-7XSO57NY.js": "2861140a5b0d01921c0cbe89a6f3161fe1001490",
     "/Advanced-LLM-Chat/manifest.webmanifest": "a64c168efec3c5255bcf9a4a4749880abb8c00cc",
     "/Advanced-LLM-Chat/polyfills-B6TNHZQ6.js": "bf76ac291d7f51c1139b7edcf86b359a30c08c64",
     "/Advanced-LLM-Chat/scripts-QIUD7IKY.js": "caf8d17750159ea123963a43011b201ef412d216",
