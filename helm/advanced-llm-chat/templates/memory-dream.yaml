@@ -1,0 +1,68 @@
+{{- /*
+The nightly consolidation of the agents' memory and knowledge base (backend/services/memory_dream.py,
+docs/knowledge_base.md): once a day it goes over every knowledge base that had conversations since
+its last run. Only in Kubernetes; docker compose doesn't schedule it.
+*/}}
+{{- if .Values.backend.memoryDream.enabled }}
+{{- $fullname := include "llmchat.fullname" . }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $fullname }}-memory-dream
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "memory-dream") | nindent 4 }}
+spec:
+  schedule: {{ .Values.backend.memoryDream.schedule | quote }}
+  {{- with .Values.backend.memoryDream.timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
+  # One run at a time; a run missed by more than an hour (cluster down) waits for the next night
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A failed knowledge base is tried again the next night anyway
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.backend.memoryDream.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" "memory-dream") | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          automountServiceAccountToken: false
+          initContainers:
+            {{- include "llmchat.waitForPostgres" . | nindent 12 }}
+          containers:
+            - name: memory-dream
+              image: {{ include "llmchat.image" (dict "image" .Values.backend.image "ctx" $) }}
+              imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+              command: ["python", "-m", "backend.services.memory_dream"]
+              {{- include "llmchat.backendEnv" . | nindent 14 }}
+              resources:
+                {{- toYaml .Values.backend.memoryDream.resources | nindent 16 }}
+          volumes:
+            # The backend's settings mount its data volume; the job needs none of it (and a
+            # ReadWriteOnce volume may be on another node), so it gets an empty one for its logs
+            - name: data
+              emptyDir: {}
+            {{- if .Values.backend.catalog }}
+            - name: catalog
+              configMap:
+                name: {{ $fullname }}-catalog
+            {{- end }}
+          {{- with .Values.backend.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

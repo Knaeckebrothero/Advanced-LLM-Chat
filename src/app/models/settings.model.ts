@@ -28,4 +28,5 @@ export interface AppSettings {
   backgroundDim?: number;         // 0-80 %: how much the theme background color covers the image
   backgroundBlur?: number;        // 0-20 px
   editingMode?: EditingMode;      // default 'guided'
+  memoryModelId?: number | null;  // Model of the memory review, with tool support (null = the conversation's model)
 }

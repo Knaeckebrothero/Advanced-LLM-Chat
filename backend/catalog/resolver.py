@@ -287,6 +287,37 @@ def resolve_auxiliary_model() -> Optional[ModelConfig]:
     return auxiliary_model_from_env()
 
 
+def resolve_memory_model(user: Optional[dict], conversation: Optional[dict]) -> Optional[ModelConfig]:
+    """
+    The model that reviews a conversation for the memory (backend/services/memory_review.py).
+
+    Order: the user's memory model (user_settings.memory_model_id), else the model that answers
+    in the conversation (resolve_model()). The review needs tools, so a model without tool
+    support is skipped.
+
+    Returns:
+        The ModelConfig, or None if neither is usable and supports tools.
+    """
+    settings = None if is_guest(user) else db.get_user_settings(_user_id(user))
+    memory_model_id = (settings or {}).get("memory_model_id")
+    if memory_model_id is not None:
+        model = db.get_llm_model_by_id(memory_model_id)
+        if model_usable(model, user):
+            config = _config_for_row(model)
+            if config.supports_tools:
+                return config
+            log.info(f"Memory model {memory_model_id} doesn't support tools, using the chat's model")
+        else:
+            log.info(f"Memory model {memory_model_id} is not available for user {_user_id(user)}, "
+                     f"using the chat's model")
+    try:
+        config = resolve_model(user, conversation=conversation)
+    except (ModelNotAllowed, ModelNotAvailable) as e:
+        log.info(f"No model for the memory review of user {_user_id(user)}: {e}")
+        return None
+    return config if config.supports_tools else None
+
+
 def get_model_config(model_id: int) -> ModelConfig:
     """
     The configuration of any catalog model, without permission or enabled checks.
@@ -488,3 +519,17 @@ def persona_tool_groups(user: Optional[dict], conversation: Optional[dict]) -> O
         return None
     tools = persona.get("tools")
     return None if tools is None else list(tools)
+
+
+def persona_vault(user: Optional[dict], conversation: Optional[dict]) -> int:
+    """
+    The knowledge base the conversation's persona uses: its own (its id) if it has own_memory,
+    else the user's shared one (0). Personas the user may not use count as no persona.
+    """
+    persona_id = (conversation or {}).get("persona_id")
+    if persona_id is None:
+        return 0
+    persona = db.get_persona_by_id(persona_id)
+    if not persona_usable(persona, user) or not persona.get("own_memory"):
+        return 0
+    return persona["id"]

@@ -114,12 +114,18 @@ export class AgentStepsComponent {
   }
 
   /**
-   * The note a knowledge base tool's result is about (kb_read, kb_write, kb_update, kb_archive),
-   * to open it on the Knowledge base page
+   * The note a knowledge base tool's result is about (kb_read, kb_write, kb_update, kb_archive,
+   * and "memory" for the memory tools), to open it on the Knowledge base page
    */
   noteSlug(step: IAgentStep): string | null {
     const slug = step.type === 'tool_result' ? step.metadata?.['kbNote'] : null;
     return typeof slug === 'string' && slug ? slug : null;
+  }
+
+  /** The knowledge base of that note: an agent's own one ({vault: id}), else the shared one (no parameter) */
+  noteVault(step: IAgentStep): Record<string, number> | null {
+    const vault = step.metadata?.['kbVault'];
+    return typeof vault === 'number' && vault > 0 ? { vault } : null;
   }
 
   /**

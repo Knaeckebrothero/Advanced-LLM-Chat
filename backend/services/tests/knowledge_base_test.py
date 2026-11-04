@@ -12,6 +12,16 @@ parallel tool calls (the same title twice, two appends); deleting a user deletes
 The Knowledge base page: tool results that link the step to their note; edits with a version
 check, restoring a version or an archived note, deleting for good; the Obsidian export; the API
 (backend/api/knowledge_base.py) through FastAPI's test client, also for guests and other users.
+The memory: memory_add (dates, sections, duplicates), memory_replace and memory_remove (a part of
+the line, ambiguous or missing parts), the size limits, the note kb_write, kb_update and kb_archive
+leave alone and lists and searches leave out, its links. Agents with their own knowledge base
+(vaults): the same slug in two vaults, searches and memories that stay in theirs, list_vaults, the
+export, the API's vault parameter, /vaults and /memory. The memory review
+(backend/services/memory_review.py) against the fake OpenAI server of backend/llm/tests: what it
+sends, what it saves (author 'review'), reading every message once, a failure, and which
+conversations are due. The nightly consolidation (backend/services/memory_dream.py) the same way:
+the period, the days and their journal notes, the transcript and the changes it is given, the
+journal it writes (author 'dream'), memory_dreams, nothing to do, and a failure.
 
 It creates the database <POSTGRES_DB>_kb_test if needed (or --database, whose name must contain
 "test") and deletes its own test users, so it never touches the real database:
@@ -23,11 +33,12 @@ Exit code 0 if every check passed.
 import argparse
 import asyncio
 import io
+import json
 import logging
 import sys
 import traceback
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Make the backend package importable when run as a script
@@ -39,7 +50,8 @@ from sqlalchemy import delete, func, insert, select  # noqa: E402
 
 from backend import config  # noqa: E402
 from backend.database.db import Database  # noqa: E402
-from backend.database.tables import kb_note_revisions, kb_notes, users  # noqa: E402
+from backend.database.tables import (conversations, kb_note_revisions, kb_notes, memory_dreams, messages,  # noqa: E402
+                                     personas, users)
 from backend.llm.tools import TOOL_GROUPS, ToolInputError, tools_for_groups  # noqa: E402
 from backend.services import knowledge_base  # noqa: E402
 from backend.services import knowledge_base_export  # noqa: E402
@@ -47,13 +59,14 @@ from backend.services.knowledge_base import KBConflict, KBNotFound, Writer, link
 
 TEST_EMAILS = ("kb-test-1@example.com", "kb-test-2@example.com")
 CONVERSATION = {"id": "kb-test-conversation", "persona_id": 42}
+TEST_PERSONA_PREFIX = "KB test agent"
 
 db: Database = None  # The test database, set in main()
 user_ids: list[int] = []
 
 
-def tools(user_index: int = 0):
-    return tools_for_groups(["knowledge_base"], user_id=user_ids[user_index], conversation=CONVERSATION)
+def tools(user_index: int = 0, vault: int = 0):
+    return tools_for_groups(["knowledge_base"], user_id=user_ids[user_index], conversation=CONVERSATION, vault=vault)
 
 
 async def refused(registry, name: str, arguments: dict) -> str:
@@ -71,10 +84,20 @@ def note_count(user_index: int = 0) -> int:
                             .where(kb_notes.c.user_id == user_ids[user_index])).scalar_one()
 
 
+def cleanup(conn) -> None:
+    """Delete the test users with their conversations (deleting a user deletes its notes) and the test agents."""
+    test_users = select(users.c.id).where(users.c.email.in_(TEST_EMAILS))
+    test_conversations = select(conversations.c.id).where(conversations.c.userId.in_(test_users))
+    conn.execute(delete(messages).where(messages.c.conversationId.in_(test_conversations)))
+    conn.execute(delete(conversations).where(conversations.c.userId.in_(test_users)))
+    conn.execute(delete(users).where(users.c.email.in_(TEST_EMAILS)))
+    conn.execute(delete(personas).where(personas.c.name.startswith(TEST_PERSONA_PREFIX)))
+
+
 def reset() -> None:
     """Fresh test users (deleting a user deletes its notes, revisions and links)."""
     with db.connection() as conn:
-        conn.execute(delete(users).where(users.c.email.in_(TEST_EMAILS)))
+        cleanup(conn)
         user_ids[:] = [conn.execute(insert(users).values(email=email, name="KB test").returning(users.c.id)).scalar_one()
                        for email in TEST_EMAILS]
 
@@ -442,10 +465,368 @@ async def test_api():
     assert client.get("/api/kb/notes/seeschwalbe").json()["detail"]["code"] == "not_found"
 
 
+def memory_text(user_index: int = 0, vault: int = 0) -> str:
+    memory = knowledge_base.get_memory(user_ids[user_index], vault)
+    return memory["content"] if memory else ""
+
+
+async def test_memory():
+    kb = tools()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    assert knowledge_base.get_memory(user_ids[0]) is None
+    result = await kb.call("memory_add", {"text": "Likes tea"})
+    assert result.startswith("Added the line.") and "1 of 200 lines" in result, result
+    assert result.metadata == {"kbNote": "memory"}
+    assert memory_text() == f"- Likes tea ({today})"
+    # The same line again (also with a bullet and a date of its own) changes nothing
+    assert "already" in await kb.call("memory_add", {"text": "- likes tea (2025-01-01)"})
+    # Sections: made once, lines go under them, without a section at the end
+    await kb.call("memory_add", {"text": "Name: Alex", "section": "About the user"})
+    await kb.call("memory_add", {"text": "Has a cat, Mila", "section": "## about the user"})
+    await kb.call("memory_add", {"text": "Answers in German", "section": "Preferences"})
+    await kb.call("memory_add", {"text": "Works on [[project-apollo]]"})
+    assert memory_text() == (f"- Likes tea ({today})\n- Works on [[project-apollo]] ({today})\n\n"
+                             f"## About the user\n- Name: Alex ({today})\n- Has a cat, Mila ({today})\n\n"
+                             f"## Preferences\n- Answers in German ({today})"), memory_text()
+    # Replace and remove by a part of the line; ambiguous and missing parts are refused
+    await kb.call("memory_replace", {"line": "likes TEA", "text": "Likes green tea, no sugar"})
+    assert f"- Likes green tea, no sugar ({today})" in memory_text() and "- Likes tea" not in memory_text()
+    assert "5 lines of the memory contain" in await refused(kb, "memory_replace", {"line": "(" + today, "text": "x"})
+    assert "No line" in await refused(kb, "memory_remove", {"line": "coffee"})
+    assert "No line" in await refused(kb, "memory_remove", {"line": "Preferences"}), "headings are not lines"
+    result = await kb.call("memory_remove", {"line": "German"})
+    assert "Answers in German" in result and "## Preferences" not in memory_text(), "an empty section goes too"
+    await refused(kb, "memory_add", {"text": " "})
+    assert "note" in await refused(kb, "memory_add", {"text": "x" * (knowledge_base.MEMORY_LINE_CHARS + 1)})
+    # Lists and searches leave the memory out; the other tools leave it alone; kb_read shows it
+    await kb.call("kb_write", {"title": "Project Apollo", "content": "The moon."})
+    assert "memory" not in await kb.call("kb_list", {})
+    assert "memory" not in (await kb.call("kb_search", {"query": "cat"})).lower()
+    assert knowledge_base.count_notes(user_ids[0]) == {"active": 1, "archived": 0}
+    assert "reserved" in await refused(kb, "kb_write", {"title": "Memory", "content": "x"})
+    assert "line by line" in await refused(kb, "kb_update", {"note": "memory", "append": "x"})
+    assert "line by line" in await refused(kb, "kb_archive", {"note": "Memory"})
+    assert "Has a cat, Mila" in await kb.call("kb_read", {"note": "memory"})
+    assert "Linked from: [[memory]] Memory" in await kb.call("kb_read", {"note": "project-apollo"})
+    # The user may edit it on the page (not archive it); every change is a revision
+    page = Writer(user_ids[0], author="user")
+    note, _ = knowledge_base.update_note(page, "memory", content="- Edited by hand", title="Memory")
+    assert note["content"] == "- Edited by hand"
+    try:
+        knowledge_base.archive_note(page, "memory")
+        raise AssertionError("the memory must not be archived")
+    except knowledge_base.KBError as e:
+        assert "delete" in str(e)
+    authors = [r["author"] for r in knowledge_base.list_revisions(user_ids[0], "memory")]
+    assert authors[0] == "user" and set(authors[1:]) == {"agent"}, authors
+
+
+async def test_memory_limits():
+    kb = tools()
+    saved = knowledge_base.MEMORY_MAX_LINES, knowledge_base.MEMORY_MAX_CHARS
+    knowledge_base.MEMORY_MAX_LINES, knowledge_base.MEMORY_MAX_CHARS = 3, 10_000
+    try:
+        await kb.call("memory_add", {"text": "One"})
+        await kb.call("memory_add", {"text": "Two", "section": "S"})
+        result = await kb.call("memory_add", {"text": "Three"})
+        assert "3 of 3 lines" in result and "nearly full" in result, result
+        message = await refused(kb, "memory_add", {"text": "Four"})
+        assert "full" in message and "nothing was changed" in message, message
+        assert "Four" not in memory_text() and knowledge_base.memory_usage(memory_text())[0] == 3
+        # Replacing a line keeps the count; characters count too
+        await kb.call("memory_replace", {"line": "Three", "text": "Three and four"})
+        knowledge_base.MEMORY_MAX_CHARS = len(memory_text()) + 5
+        assert "full" in await refused(kb, "memory_replace", {"line": "One", "text": "One" * 10})
+    finally:
+        knowledge_base.MEMORY_MAX_LINES, knowledge_base.MEMORY_MAX_CHARS = saved
+
+
+async def test_vaults():
+    shared, own = tools(vault=0), tools(vault=7)
+    await shared.call("kb_write", {"title": "Project Apollo", "content": "Shared: the moon."})
+    result = await own.call("kb_write", {"title": "Project Apollo", "content": "Own: therapy goals."})
+    assert result.metadata == {"kbNote": "project-apollo", "kbVault": 7}, "the same slug in another vault"
+    assert "Shared" in await shared.call("kb_read", {"note": "project-apollo"})
+    assert "Own" in await own.call("kb_read", {"note": "project-apollo"})
+    assert "No notes" in await shared.call("kb_search", {"query": "therapy"})
+    assert "therapy" in await own.call("kb_search", {"query": "therapy"})
+    await own.call("memory_add", {"text": "Own memory line"})
+    assert memory_text(vault=0) == "" and "Own memory line" in memory_text(vault=7)
+    assert (await own.call("memory_remove", {"line": "Own memory"})).metadata == {"kbNote": "memory", "kbVault": 7}
+    await own.call("memory_add", {"text": "Again"})
+    vaults = knowledge_base.list_vaults(user_ids[0])
+    assert vaults == [{"vault": 0, "active": 1, "archived": 0, "memory_lines": 0},
+                      {"vault": 7, "active": 1, "archived": 0, "memory_lines": 1}], vaults
+    data, count = knowledge_base_export.export_vault(user_ids[0], vault=7)
+    names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+    assert count == 2 and sorted(names) == ["knowledge-base/", "knowledge-base/memory.md",
+                                            "knowledge-base/project-apollo.md"], names
+    assert "Own:" in zipfile.ZipFile(io.BytesIO(data)).read("knowledge-base/project-apollo.md").decode()
+    assert knowledge_base_export.file_name(None, "Gesprächsbegleiter").startswith("knowledge-base-gespraechsbegleiter-")
+    # Another user's vault 7 is empty
+    assert knowledge_base.list_vaults(user_ids[1]) == []
+
+
+def add_persona(name: str, tools_: list, own_memory: bool = False, enabled: bool = True) -> int:
+    with db.connection() as conn:
+        return conn.execute(insert(personas).values(
+            name=f"{TEST_PERSONA_PREFIX} {name}", system_prompt="You help.", tools=tools_, own_memory=own_memory,
+            enabled=enabled).returning(personas.c.id)).scalar_one()
+
+
+async def test_api_vaults_and_memory():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.api import knowledge_base as kb_api
+    from backend.catalog import resolver
+    from backend.security.auth import get_current_user
+
+    saved = kb_api.db, resolver.db
+    kb_api.db = resolver.db = db
+    try:
+        current = {"user": {"user_id": user_ids[0], "is_guest": False}}
+        app = FastAPI()
+        app.include_router(kb_api.router)
+        app.dependency_overrides[get_current_user] = lambda: current["user"]
+        client = TestClient(app)
+
+        therapist = add_persona("Companion", ["knowledge_base"], own_memory=True)
+        add_persona("Shared", ["knowledge_base"])
+        gone = add_persona("Gone", ["knowledge_base"], own_memory=True, enabled=False)
+        await tools(vault=gone).call("kb_write", {"title": "Left over", "content": "x"})
+        vaults = client.get("/api/kb/vaults").json()
+        by_id = {vault["id"]: vault for vault in vaults}
+        assert vaults[0]["id"] == 0 and vaults[0]["personaId"] is None, vaults
+        assert by_id[therapist]["personaName"] == f"{TEST_PERSONA_PREFIX} Companion" and by_id[therapist]["available"]
+        assert by_id[gone]["available"] is False and by_id[gone]["active"] == 1, "a disabled agent's notes stay"
+        assert len(vaults) == 3, "the agent without own memory has no vault"
+
+        assert client.get("/api/kb/memory").json() == {"note": None, "lines": 0, "chars": 0, "maxLines": 200,
+                                                        "maxChars": 20000}
+        await tools(vault=therapist).call("memory_add", {"text": "Goal: sleep better", "section": "Goals"})
+        memory = client.get("/api/kb/memory", params={"vault": therapist}).json()
+        assert memory["lines"] == 1 and memory["note"]["slug"] == "memory", memory
+        assert memory["note"]["revisions"][0]["author"] == "agent"
+        assert client.get("/api/kb/memory").json()["note"] is None, "the shared memory is still empty"
+        # Notes of a vault; an unknown vault is 404
+        response = client.post("/api/kb/notes", params={"vault": therapist}, json={"title": "Sleep", "content": "x"})
+        assert response.status_code == 201, response.text
+        assert client.get("/api/kb/notes/sleep").status_code == 404
+        assert client.get("/api/kb/notes/sleep", params={"vault": therapist}).status_code == 200
+        assert client.get("/api/kb/notes", params={"vault": 999999}).status_code == 404
+        listing = client.get("/api/kb/notes", params={"vault": therapist}).json()
+        assert [n["slug"] for n in listing["notes"]] == ["sleep"], "the memory is not in the list"
+        # The page edits the memory like a note, but can't archive it or make a second one
+        edit = {"title": "Memory", "content": "## Goals\n- Sleep 8 hours", "tags": [],
+                "baseVersion": memory["note"]["version"]}
+        response = client.put("/api/kb/notes/memory", params={"vault": therapist}, json=edit)
+        assert response.status_code == 200 and response.json()["content"] == edit["content"], response.text
+        assert client.post("/api/kb/notes/memory/archive", params={"vault": therapist}).status_code == 400
+        assert client.post("/api/kb/notes", json={"title": "memory", "content": "x"}).status_code == 400
+        response = client.get("/api/kb/export", params={"vault": therapist})
+        assert 'filename="knowledge-base-kb-test-agent-companion-' in response.headers["content-disposition"]
+        assert client.delete("/api/kb/notes/memory", params={"vault": therapist}).status_code == 204
+        assert client.get("/api/kb/memory", params={"vault": therapist}).json()["note"] is None
+        # Another user has the agent's vault, but empty
+        current["user"] = {"user_id": user_ids[1], "is_guest": False}
+        assert client.get("/api/kb/notes/sleep", params={"vault": therapist}).status_code == 404
+    finally:
+        kb_api.db, resolver.db = saved
+
+
+async def test_memory_review():
+    import time
+    from datetime import timedelta
+    from backend.catalog import resolver
+    from backend.llm.tests.fake_openai_server import FakeOpenAIServer, chunk, tool_call_delta, usage_chunk
+    from backend.llm.tests.test_openai_loop import make_config
+    from backend.services import memory_review
+
+    persona_id = add_persona("Coach", ["knowledge_base"])
+    conversation_id = "kb-test-review"
+    base = int(time.time() * 1000) - 3_600_000
+    with db.connection() as conn:
+        conn.execute(insert(conversations).values(id=conversation_id, userId=user_ids[0], name="Review test",
+                                                  persona_id=persona_id,
+                                                  lastMessageAt=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30)))
+        for offset, role, text in ((0, "user", "Hi, I'm Alex. My cat Mila is sick."),
+                                   (1000, "Assistant", "I'm sorry to hear that, Alex."),
+                                   (2000, "system", "Be kind.")):
+            conn.execute(insert(messages).values(id=base + offset, conversationId=conversation_id, roleName=role,
+                                                 content=text, time=(base + offset) // 1000))
+    saved = memory_review.db, memory_review.resolve_memory_model, resolver.db
+    memory_review.db = resolver.db = db
+    with FakeOpenAIServer() as server:
+        memory_review.resolve_memory_model = lambda user, conversation: make_config(server.base_url, reasoning="never")
+        try:
+            def save(body):
+                system = body["messages"][0]["content"]
+                request = body["messages"][-1]["content"]
+                assert "You keep the memory and the knowledge base" in system and "Coach" in system, system
+                assert "Your memory of this user is still empty." in system and "You help." in system
+                assert "[User]: Hi, I'm Alex. My cat Mila is sick." in request and "Be kind" not in request, request
+                assert "<earlier>" not in request
+                assert {tool["function"]["name"] for tool in body["tools"]} >= {"memory_add", "kb_write"}
+                return [chunk(tool_calls=[tool_call_delta(0, id="c1", name="memory_add",
+                                                          arguments='{"text": "Name: Alex; cat Mila (sick)", '
+                                                                    '"section": "About the user"}')]),
+                        chunk(tool_calls=[tool_call_delta(1, id="c2", name="memory_remove",
+                                                          arguments='{"line": "dog"}')]),
+                        chunk(finish_reason="tool_calls"), usage_chunk(100, 20)]
+
+            def done(body):
+                assert "Added the line" in body["messages"][-2]["content"] or any(
+                    "Added the line" in (m.get("content") or "") for m in body["messages"] if m["role"] == "tool")
+                return [chunk(content="Saved the name and the cat."), chunk(finish_reason="stop"), usage_chunk(150, 8)]
+
+            server.script(save, done)
+            result = await memory_review.review_conversation(conversation_id)
+            assert not server.errors, server.errors
+            assert result.status == "done" and result.reviewed_until == base + 1000, result
+            assert [change["tool"] for change in result.changes] == ["memory_add"], "the refused call is no change"
+            assert result.detail == "Saved the name and the cat." and result.usage.input_tokens == 250
+            assert "Name: Alex; cat Mila (sick)" in memory_text()
+            revision = knowledge_base.list_revisions(user_ids[0], "memory")[0]
+            assert (revision["author"], revision["conversation_id"], revision["persona_id"]) == \
+                ("review", conversation_id, persona_id), revision
+            # Nothing new: no model call
+            assert (await memory_review.review_conversation(conversation_id)).status == "nothing_new"
+            assert len(server.requests) == 2
+            # A new message: only it is reviewed, the ones before are context
+            with db.connection() as conn:
+                conn.execute(insert(messages).values(id=base + 5000, conversationId=conversation_id, roleName="user",
+                                                     content='{"content": "Mila is better now.", "attachments": '
+                                                             '[{"name": "vet.pdf"}]}', time=(base + 5000) // 1000))
+
+            def later(body):
+                request = body["messages"][-1]["content"]
+                conversation = request.split("<conversation>")[1].split("</conversation>")[0]
+                assert conversation.strip() == "[User]: Mila is better now.\n[Attachment: vet.pdf]", conversation
+                assert "<earlier>" in request and "My cat Mila is sick" in request.split("<earlier>")[1]
+                assert "Name: Alex; cat Mila (sick)" in body["messages"][0]["content"], "the memory as it is now"
+                return [chunk(content="Nothing to save"), chunk(finish_reason="stop"), usage_chunk(50, 3)]
+
+            server.script(later)
+            result = await memory_review.review_conversation(conversation_id)
+            assert result.status == "done" and result.changes == [] and result.reviewed_until == base + 5000, result
+            # A failed review keeps its place and waits before the next try
+            with db.connection() as conn:
+                conn.execute(insert(messages).values(id=base + 9000, conversationId=conversation_id, roleName="user",
+                                                     content="One more thing.", time=(base + 9000) // 1000))
+            def fail(body):
+                raise AssertionError("boom")  # The fake server answers 400
+
+            server.script(fail)
+            result = await memory_review.review_conversation(conversation_id)
+            assert result.status == "failed" and "boom" in result.detail, result
+            server.errors.clear()
+            row = db.get_conversation_by_id(conversation_id)
+            assert row["memory_reviewed_until"] == base + 5000 and row["memory_review_failed_at"] is not None, row
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            due = lambda retry_before: [r["id"] for r in db.get_conversations_for_memory_review(  # noqa: E731
+                idle_before=now - timedelta(minutes=15), active_after=now - timedelta(days=7),
+                retry_before=retry_before)]
+            assert conversation_id not in due(now - timedelta(minutes=60)), "it failed just now"
+            assert conversation_id in due(now + timedelta(minutes=1))
+            db.set_memory_review(conversation_id, reviewed_until=base + 9000)
+            assert conversation_id not in due(now + timedelta(minutes=1)), "nothing new"
+            assert db.get_conversation_by_id(conversation_id)["memory_review_failed_at"] is None
+            # A guest's conversation or an agent without the knowledge base is not reviewed
+            other = add_persona("No KB", ["files"])
+            with db.connection() as conn:
+                conn.execute(conversations.update().where(conversations.c.id == conversation_id)
+                             .values(persona_id=other))
+            assert (await memory_review.review_conversation(conversation_id)).status == "not_available"
+        finally:
+            memory_review.db, memory_review.resolve_memory_model, resolver.db = saved
+
+
+async def test_memory_dream():
+    import time
+    from backend.catalog import resolver
+    from backend.llm.tests.fake_openai_server import FakeOpenAIServer, chunk, tool_call_delta, usage_chunk
+    from backend.llm.tests.test_openai_loop import make_config
+    from backend.services import memory_dream, memory_review
+
+    persona_id = add_persona("Dreamer", ["knowledge_base"])
+    await tools().call("kb_write", {"title": "Boat", "content": "The boat, launched."})  # A change in the period
+    now_ms = int(time.time() * 1000) + 1000
+    base = now_ms - 2 * 3_600_000
+    day = memory_dream._local(base).date()
+    title = memory_dream.journal_title(day)
+    slug = knowledge_base.note_slug(title)
+    with db.connection() as conn:
+        conn.execute(insert(conversations).values(id="kb-test-dream", userId=user_ids[0], name="Sailing plans",
+                                                  persona_id=persona_id))
+        for offset, role, text in ((0, "user", "We launched the boat today!"), (1000, "Assistant", "Congratulations!"),
+                                   (2000, "system", "Be kind.")):
+            conn.execute(insert(messages).values(id=base + offset, conversationId="kb-test-dream", roleName=role,
+                                                 content=text, time=(base + offset) // 1000))
+    saved = memory_dream.db, memory_dream.resolve_memory_model, memory_review.db, resolver.db
+    memory_dream.db = memory_review.db = resolver.db = db
+    with FakeOpenAIServer() as server:
+        memory_dream.resolve_memory_model = lambda user, conversation: make_config(server.base_url, reasoning="never")
+        try:
+            def consolidate(body):
+                system, request = body["messages"][0]["content"], body["messages"][-1]["content"]
+                assert "once a day" in system and "Journal." in system and "Patterns." in system, system
+                assert "Your memory of this user is still empty." in system and "Dreamer" in system
+                assert f'"{title}" ([[{slug}]], new)' in request, request
+                assert "### Sailing plans" in request and "We launched the boat today!" in request
+                assert "Be kind" not in request, "system messages are not part of the transcript"
+                assert '[[boat]] "Boat"' in request and "create by the assistant" in request, request
+                return [chunk(tool_calls=[tool_call_delta(0, id="d1", name="kb_write", arguments=json.dumps(
+                            {"title": title, "content": f"## {day:%A}, {day.isoformat()}\n- Launched the boat → [[boat]]",
+                             "tags": ["journal"]}))]),
+                        chunk(tool_calls=[tool_call_delta(1, id="d2", name="memory_add", arguments=json.dumps(
+                            {"text": f"Journal, week by week → [[{slug}]]", "section": "Where things are"}))]),
+                        chunk(finish_reason="tool_calls"), usage_chunk(300, 60)]
+
+            server.script(consolidate, lambda body: [chunk(content="Wrote the journal and a pointer."),
+                                                     chunk(finish_reason="stop"), usage_chunk(400, 10)])
+            results = await memory_dream.dream_due(now_ms=now_ms, user_id=user_ids[0])
+            assert not server.errors, server.errors
+            assert len(results) == 1, results
+            result = results[0]
+            assert (result.status, result.vault, result.conversations, result.days) == \
+                ("done", 0, 1, [day.isoformat()]), result
+            assert [change["tool"] for change in result.changes] == ["kb_write", "memory_add"], result.changes
+            assert "Launched the boat" in knowledge_base.get_note(user_ids[0], slug)["content"]
+            assert knowledge_base.list_revisions(user_ids[0], slug)[0]["author"] == "dream"
+            assert f"[[{slug}]]" in memory_text()
+            assert db.get_memory_dreams()[(user_ids[0], 0)]["dreamed_until"] == now_ms
+            # Nothing new since: no run, no model call
+            assert await memory_dream.dream_due(now_ms=now_ms + 60_000, user_id=user_ids[0]) == []
+            assert len(server.requests) == 2
+            # A new message: the next run covers only it, and knows the journal exists
+            with db.connection() as conn:
+                conn.execute(insert(messages).values(id=now_ms + 1000, conversationId="kb-test-dream", roleName="user",
+                                                     content="The mast is up too.", time=(now_ms + 1000) // 1000))
+
+            def later(body):
+                request = body["messages"][-1]["content"]
+                assert "The mast is up too." in request and "We launched" not in request, request
+                assert f"[[{slug}]]" in request.split("Earlier journal notes")[1], "the journal is listed"
+                raise AssertionError("boom")  # The fake server answers 400: the run fails
+
+            server.script(later)
+            results = await memory_dream.dream_due(now_ms=now_ms + 120_000, user_id=user_ids[0])
+            assert [r.status for r in results] == ["failed"], results
+            assert server.errors and "boom" in server.errors[0]
+            state = db.get_memory_dreams()[(user_ids[0], 0)]
+            assert state["dreamed_until"] == now_ms and state["failed_at"] is not None, state
+            server.errors.clear()
+            # The command line
+            assert memory_dream.main.__doc__
+        finally:
+            memory_dream.db, memory_dream.resolve_memory_model, memory_review.db, resolver.db = saved
+
+
 TESTS = [test_slugs_and_links, test_write_and_read_back, test_same_slug_is_refused, test_links_and_backlinks,
          test_update, test_search, test_list, test_archive_and_restore, test_users_are_separate, test_revisions,
          test_parallel_tool_calls, test_deleting_a_user_deletes_the_notes, test_tool_results_link_to_their_note,
-         test_page_edits_and_versions, test_obsidian_export, test_api]
+         test_page_edits_and_versions, test_obsidian_export, test_api, test_memory, test_memory_limits, test_vaults,
+         test_api_vaults_and_memory, test_memory_review, test_memory_dream]
 
 
 async def run() -> int:
@@ -460,7 +841,7 @@ async def run() -> int:
             print(f"FAIL  {test.__name__}")
             traceback.print_exc()
     with db.connection() as conn:
-        conn.execute(delete(users).where(users.c.email.in_(TEST_EMAILS)))
+        cleanup(conn)
     print(f"\n{len(TESTS) - failures}/{len(TESTS)} passed")
     return 1 if failures else 0
 
@@ -478,10 +859,12 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING)
     for name in ("backend", "crud", "httpx"):
         logging.getLogger(name).setLevel(logging.WARNING)
-    from backend.database.db_init import create_database_if_not_exists
+    from backend.database.db_init import create_database_if_not_exists, migrate_schema
     create_database_if_not_exists(config.POSTGRES_HOST, config.POSTGRES_PORT, config.POSTGRES_USER,
                                   config.POSTGRES_PASSWORD, args.database, logging.getLogger("kb-test"))
     db = Database(database=args.database)
+    # As app_init --prod does: add the columns a test database from an older version lacks, then the schema
+    migrate_schema(db.engine, logging.getLogger("kb-test"))
     db.init_tables()
     knowledge_base.db = db  # The store's database; the tools call the store
     assert TOOL_GROUPS["knowledge_base"]

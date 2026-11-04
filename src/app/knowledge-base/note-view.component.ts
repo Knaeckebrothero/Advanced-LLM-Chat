@@ -5,7 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
-import { IKBNote } from '../data/models/knowledge-base.model';
+import { IKBNote, KB_MEMORY_SLUG } from '../data/models/knowledge-base.model';
 import { NoteContentComponent } from './note-content.component';
 import { actionLabel, authorLabel, formatDate, formatDateTime } from './kb-labels';
 import { NOTE_ROUTE } from './kb-markdown';
@@ -35,6 +35,8 @@ export class NoteViewComponent {
 
   /** The newest version: who changed the note last, when and where. */
   readonly latest = computed(() => this.note().revisions[0] ?? null);
+  /** The agent's memory, which can't be archived (links stay in the knowledge base shown) */
+  readonly isMemory = computed(() => this.note().slug === KB_MEMORY_SLUG);
 
   constructor(private translate: TranslateService) {}
 

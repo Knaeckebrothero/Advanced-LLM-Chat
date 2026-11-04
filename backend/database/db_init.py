@@ -66,6 +66,7 @@ EXPECTED_TABLES = [
     "kb_notes",
     "kb_note_revisions",
     "kb_links",
+    "memory_dreams",
 ]
 
 
@@ -239,6 +240,7 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
     """
     # Drop order respects foreign key dependencies
     drop_order = [
+        "memory_dreams",
         "kb_links",
         "kb_note_revisions",
         "kb_notes",

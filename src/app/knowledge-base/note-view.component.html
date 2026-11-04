@@ -18,7 +18,9 @@
       <mat-icon>more_vert</mat-icon>
     </button>
     <mat-menu #moreMenu="matMenu" xPosition="before">
-      @if (note().status === 'active') {
+      @if (isMemory()) {
+        <!-- The memory is never archived: deleting it empties it -->
+      } @else if (note().status === 'active') {
         <button mat-menu-item type="button" (click)="archive.emit()">
           <mat-icon>inventory_2</mat-icon>
           <span>{{ 'knowledgeBase.note.archive' | translate }}</span>
@@ -31,7 +33,7 @@
       }
       <button mat-menu-item type="button" class="danger-item" (click)="delete.emit()">
         <mat-icon>delete_forever</mat-icon>
-        <span>{{ 'knowledgeBase.note.delete' | translate }}</span>
+        <span>{{ (isMemory() ? 'knowledgeBase.memory.delete' : 'knowledgeBase.note.delete') | translate }}</span>
       </button>
     </mat-menu>
   </div>
@@ -41,6 +43,13 @@
       <mat-icon aria-hidden="true">inventory_2</mat-icon>
       <span class="pane-banner-text">{{ 'knowledgeBase.note.archivedBanner' | translate }}</span>
       <button mat-button type="button" (click)="restore.emit()">{{ 'knowledgeBase.note.restore' | translate }}</button>
+    </div>
+  }
+
+  @if (isMemory()) {
+    <div class="pane-banner" role="note">
+      <mat-icon aria-hidden="true">psychology</mat-icon>
+      <span class="pane-banner-text">{{ 'knowledgeBase.memory.banner' | translate }}</span>
     </div>
   }
 
@@ -101,7 +110,8 @@
                     <span class="link-state">{{ 'knowledgeBase.note.missing' | translate }}</span>
                   </button>
                 } @else {
-                  <a class="link-item" [class.link-item--archived]="link.status === 'archived'" [routerLink]="[noteRoute, link.slug]">
+                  <a class="link-item" [class.link-item--archived]="link.status === 'archived'" [routerLink]="[noteRoute, link.slug]"
+                     queryParamsHandling="preserve">
                     <span class="link-title">{{ link.title }}</span>
                     @if (link.status === 'archived') {
                       <span class="link-state">{{ 'knowledgeBase.note.archivedLink' | translate }}</span>
@@ -122,7 +132,7 @@
           <ul class="link-list">
             @for (link of note().backlinks; track link.slug) {
               <li>
-                <a class="link-item" [routerLink]="[noteRoute, link.slug]">
+                <a class="link-item" [routerLink]="[noteRoute, link.slug]" queryParamsHandling="preserve">
                   <span class="link-title">{{ link.title }}</span>
                 </a>
               </li>

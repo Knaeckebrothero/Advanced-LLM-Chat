@@ -1,6 +1,7 @@
 import { Component, DestroyRef, OnInit, computed, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { combineLatest } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
@@ -9,10 +10,11 @@ import { MAT_FORM_FIELD_DEFAULT_OPTIONS, MatFormFieldDefaultOptions, MatFormFiel
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
-import { IKBNote, IKBNoteSummary, IKBSearchHit, NoteStatus } from '../data/models/knowledge-base.model';
+import { IKBNote, IKBNoteSummary, IKBSearchHit, IKBVault, KB_MEMORY_SLUG, NoteStatus } from '../data/models/knowledge-base.model';
 import { ChatStateService } from '../services/chat-state.service';
 import { ConfirmDialogData } from '../catalog-admin/confirm-dialog.component';
 import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
@@ -22,7 +24,7 @@ import { NoteEditorComponent } from './note-editor.component';
 import { NoteHistoryComponent } from './note-history.component';
 import { formatDate } from './kb-labels';
 import { confirmDialog } from './kb-confirm';
-import { NOTE_ROUTE, plainText } from './kb-markdown';
+import { NOTE_ROUTE, plainText, slugify } from './kb-markdown';
 
 type PaneMode = 'view' | 'edit' | 'history';
 
@@ -30,6 +32,10 @@ type PaneMode = 'view' | 'edit' | 'history';
  * The Knowledge base page (route /knowledge-base, loaded on demand), for signed-in users: the
  * notes their agents keep, to read, search, correct, archive, delete and export for Obsidian.
  * On wide screens the list and the open note sit side by side; on phones they take turns.
+ *
+ * The query parameter vault picks the knowledge base: none for the shared one, an agent's id for
+ * its own (the picker shows when there is more than one). Every navigation on the page keeps it.
+ * The memory of the knowledge base is pinned above the list.
  */
 @Component({
   selector: 'app-knowledge-base',
@@ -43,6 +49,7 @@ type PaneMode = 'view' | 'edit' | 'history';
     MatIconModule,
     MatInputModule,
     MatProgressSpinnerModule,
+    MatSelectModule,
     MatSnackBarModule,
     MatTooltipModule,
     TranslateModule,
@@ -85,13 +92,44 @@ export class KnowledgeBaseComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.store.loadList();
-    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
-      this.creating.set(null);
-      this.mode.set('view');
-      this.editorDirty = false;
-      this.store.open(params.get('slug'));
-    });
+    this.store.loadVaults();
+    let listLoaded = false;
+    combineLatest([this.route.paramMap, this.route.queryParamMap]).pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([params, query]) => {
+        const vault = Number(query.get('vault')) || 0;
+        if (vault !== this.store.vault()) {
+          this.store.setVault(vault);
+        } else if (!listLoaded) {
+          this.store.loadList();
+        }
+        listLoaded = true;
+        this.creating.set(null);
+        this.mode.set('view');
+        this.editorDirty = false;
+        this.store.open(params.get('slug'));
+      });
+  }
+
+  /** Go to a note (or the list) of the knowledge base shown. */
+  private go(slug?: string): void {
+    this.router.navigate(slug ? [NOTE_ROUTE, slug] : [NOTE_ROUTE], { queryParamsHandling: 'preserve' });
+  }
+
+  // The knowledge bases and the memory
+
+  vaultName(vault: IKBVault): string {
+    if (vault.id === 0) return this.translate.instant('knowledgeBase.vault.shared');
+    return vault.personaName ?? this.translate.instant('knowledgeBase.vault.deletedAgent', { id: vault.id });
+  }
+
+  async setVault(vault: number): Promise<void> {
+    if (vault === this.store.vault() || !(await this.leaveEditor())) return;
+    this.searchText = '';
+    this.router.navigate([NOTE_ROUTE], { queryParams: { vault: vault || null } });
+  }
+
+  openMemory(): void {
+    this.select(KB_MEMORY_SLUG);
   }
 
   // The list
@@ -120,7 +158,7 @@ export class KnowledgeBaseComponent implements OnInit {
   showTag(tag: string): void {
     this.searchText = '';
     if (this.store.tag() !== tag) this.store.setTag(tag);
-    if (window.matchMedia('(max-width: 768px)').matches) this.router.navigate([NOTE_ROUTE]);
+    if (window.matchMedia('(max-width: 768px)').matches) this.go();
   }
 
   snippet(item: IKBNoteSummary | IKBSearchHit): string | null {
@@ -135,7 +173,7 @@ export class KnowledgeBaseComponent implements OnInit {
     if (!(await this.leaveEditor())) return;
     this.creating.set(null);
     this.mode.set('view');
-    this.router.navigate([NOTE_ROUTE, slug]);
+    this.go(slug);
   }
 
   async newNote(title = ''): Promise<void> {
@@ -144,7 +182,7 @@ export class KnowledgeBaseComponent implements OnInit {
   }
 
   backToList(): void {
-    this.router.navigate([NOTE_ROUTE]);
+    this.go();
   }
 
   // The note pane
@@ -157,7 +195,7 @@ export class KnowledgeBaseComponent implements OnInit {
     this.creating.set(null);
     if (note) {
       this.snackBar.open(this.translate.instant('knowledgeBase.note.createdDone'), undefined, { duration: 3000 });
-      this.router.navigate([NOTE_ROUTE, note.slug]);
+      this.go(note.slug);
     }
   }
 
@@ -199,7 +237,13 @@ export class KnowledgeBaseComponent implements OnInit {
   }
 
   async delete(note: IKBNote): Promise<void> {
-    const data: ConfirmDialogData = {
+    const memory = this.store.isMemory(note.slug);
+    const data: ConfirmDialogData = memory ? {
+      title: this.translate.instant('knowledgeBase.memory.deleteTitle'),
+      message: this.translate.instant('knowledgeBase.memory.deleteMessage'),
+      confirmLabel: this.translate.instant('knowledgeBase.memory.deleteConfirm'),
+      danger: true
+    } : {
       title: this.translate.instant('knowledgeBase.note.deleteTitle'),
       message: this.translate.instant('knowledgeBase.note.deleteMessage', { title: note.title }),
       confirmLabel: this.translate.instant('knowledgeBase.note.deleteConfirm'),
@@ -208,8 +252,9 @@ export class KnowledgeBaseComponent implements OnInit {
     if (!(await confirmDialog(this.dialog, data))) return;
     try {
       await this.store.delete(note.slug);
-      this.snackBar.open(this.translate.instant('knowledgeBase.note.deletedDone'), undefined, { duration: 3000 });
-      this.router.navigate([NOTE_ROUTE]);
+      this.snackBar.open(this.translate.instant(memory ? 'knowledgeBase.memory.deletedDone' : 'knowledgeBase.note.deletedDone'),
+        undefined, { duration: 3000 });
+      this.go();
     } catch (error) {
       this.showError(error);
     }
@@ -230,7 +275,8 @@ export class KnowledgeBaseComponent implements OnInit {
       link.href = url;
       const today = new Date();
       const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      link.download = `knowledge-base-${day}.zip`;
+      const agent = this.store.vault() ? `-${slugify(this.store.currentVault()?.personaName ?? '') || 'agent'}` : '';
+      link.download = `knowledge-base${agent}-${day}.zip`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {

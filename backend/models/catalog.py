@@ -159,6 +159,7 @@ class PersonaBase(BaseModel):
     availableToGuests: bool = False
     enabled: bool = True
     sortOrder: int = 0
+    ownMemory: bool = False  # With the knowledge base: its own knowledge base and memory per user, not the shared one
 
 
 class PersonaCreate(PersonaBase):
@@ -175,6 +176,7 @@ class PersonaUpdate(BaseModel):
     availableToGuests: Optional[bool] = None
     enabled: Optional[bool] = None
     sortOrder: Optional[int] = None
+    ownMemory: Optional[bool] = None
 
 
 class PersonaOut(PersonaBase):

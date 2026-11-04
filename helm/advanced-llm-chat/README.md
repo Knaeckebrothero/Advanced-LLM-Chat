@@ -15,6 +15,7 @@ All settings are in [`values.yaml`](values.yaml). The backend's own settings are
 - **Postgres** (`postgresql.enabled`, default on) as a StatefulSet with a volume, and a generated password that survives upgrades. With `postgresql.enabled: false` it uses `postgresql.external`.
 - **Keycloak** (`keycloak.enabled`, default off) with the realm `llm-chat` (`files/llm-chat-realm.json`, shared with docker compose), its database `keycloak` in the same Postgres, and the backend set to log in through it.
 - **A volume** for uploaded files, the TTS cache and logs (`backend.persistence`).
+- **The nightly consolidation** of the agents' memory (`backend.memoryDream`, default on): a CronJob that goes over every knowledge base with conversations since its last run, writes a journal per week, tidies the memory up and keeps the patterns it sees (`docs/knowledge_base.md`). `backend.memoryDream.timeZone` (e.g. `Europe/Berlin`) is the schedule's time zone and the memory's (`MEMORY_TIME_ZONE`). Docker compose has no such job.
 - **An ingress** (`ingress.enabled`) for the hosts in `urls` and `keycloak.url`. If the frontend and backend share one address, `/api` goes to the backend. Without the ingress, route the addresses to the services yourself (e.g. with a tunnel).
 
 TLS ends at the ingress or tunnel; the pods speak plain HTTP. The backend trusts `X-Forwarded-For` from any peer (`backend.forwardedAllowIps`), since only the ingress or tunnel reaches it; guests are rate-limited by that address.

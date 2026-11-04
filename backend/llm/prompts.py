@@ -3,12 +3,19 @@ System prompt for the agent.
 
 The prompt is the identity paragraph (or a persona's prompt in its place),
 followed by one section per enabled tool group, so the file access, graph and
-knowledge base instructions stay when a persona is used. A conversation's system messages
-come last (with_instructions()).
+knowledge base instructions stay when a persona is used. With the knowledge
+base, the agent's memory follows (with_memory()). A conversation's system
+messages come last (with_instructions()).
 """
+import logging
+from datetime import date, datetime, timezone, tzinfo
 from typing import Iterable, Optional, Union
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from ..config import MEMORY_TIME_ZONE
 from .tools import TOOL_GROUPS, ToolRegistry
+
+log = logging.getLogger(__name__)
 
 # Who the assistant is; a persona prompt replaces this paragraph
 IDENTITY_PROMPT = (
@@ -39,13 +46,42 @@ You have read access to a Neo4j knowledge graph. Call get_graph_schema first to 
 
 GRAPH_TOOL_NAMES = {"get_graph_schema", "search_graph", "query_graph"}
 
-# Added when the knowledge base tools are enabled (an agent that selects the group, a signed-in user)
-KB_PROMPT = """## Knowledge Base:
-You keep a knowledge base for this user: Markdown notes that last across all of their conversations, like a notebook.
-- When the user refers to an earlier conversation, or asks what you know about them or a topic, search it first (kb_search, or kb_list for an overview) and read the notes that fit (kb_read).
-- Write a note (kb_write) when you learn something worth keeping beyond this conversation: facts about the user and their projects, decisions, preferences, results of research, or anything the user asks you to remember. One topic per note, with a one-sentence description and a few tags. Write down only what the user said or what you found out, never details you assumed or added.
-- Before writing, search for a note on the topic and update it (kb_update) instead of writing a second one. Link related notes with [[slug]].
-- Don't store passwords, keys or other secrets. Mention briefly when you save or change a note."""
+# Added when the knowledge base tools are enabled (an agent that selects the group, a signed-in user).
+# The parts on what to save and how are also the instructions of the memory review
+# (backend/services/memory_review.py).
+KB_SAVE_RULES = """When to save something (right away, in the same answer):
+- The user tells you something about themselves, their work, the people in their life, their plans, projects, feelings or health that could matter in later conversations. Personal and sensitive topics included: the user wants everything kept.
+- The user corrects you or says how they want you to answer or work: keep it as a preference.
+- A decision is made, a goal is set, or something is agreed on, started or finished.
+- The user asks you to remember something. When they ask you to forget something, remove the line (memory_remove) or archive the note (kb_archive).
+- You worked something out that took effort, such as research, a plan or a result: write a note.
+When in doubt, save it: a line too many costs little, a forgotten detail can't be brought back."""
+
+KB_HOW_RULES = """How to save it:
+- A fact that fits on one line goes into the memory (memory_add). Details, lists, numbers and anything longer go into a note (kb_write), plus a short line in the memory that points to it, e.g. "Trip to Lisbon in May: dates, budget, hotel → [[lisbon-trip]]". Before writing a note, search for one on the topic (kb_search) and change it (kb_update) instead of writing a second one. Link related notes with [[slug]].
+- Keep the memory short and current: one fact per line, under headings such as "About the user", "Preferences", "Ongoing" and "Where things are". When something changes, replace its line (memory_replace) rather than adding another one, and remove what is no longer true (memory_remove).
+- Write down only what the user said or what you found out, never details you assumed or added. Leave out only what matters for nothing beyond the current conversation."""
+
+KB_PROMPT = f"""## Knowledge Base and Memory:
+You keep two things for this user that last across all of your conversations with them:
+- Your memory: short lines, shown below under "Your memory", that are part of every conversation. It holds what you should always have in mind about the user, and where the details are.
+- The knowledge base: Markdown notes with the details, like a notebook. You see a note only when you search for it (kb_search, kb_list) or read it (kb_read).
+
+{KB_SAVE_RULES}
+
+{KB_HOW_RULES}
+
+When to look something up:
+- Start from your memory: it tells you what you know and which note has the details. Read that note (kb_read) when you need them.
+- When the user refers to an earlier conversation or asks about something you may have written down, search the knowledge base before you say you don't know.
+- Lines and notes carry their dates and can be outdated; if something seems to have changed, ask.
+
+Mention briefly when you save or change something. Never say you saved something unless the tool confirmed it."""
+
+# Heads the agent's memory (with_memory())
+MEMORY_HEADING = "## Your memory:"
+MEMORY_INTRO = "Your notes about this user from earlier conversations, which they can read and change. Follow the preferences in them."
+MEMORY_EMPTY = "Your memory of this user is still empty."
 
 KB_TOOL_NAMES = set(TOOL_GROUPS["knowledge_base"])
 
@@ -90,6 +126,34 @@ def build_system_prompt(
         sections.append(KB_PROMPT)
 
     return "\n\n".join(sections)
+
+
+def memory_time_zone() -> tzinfo:
+    """The time zone of the memory's dates (MEMORY_TIME_ZONE; UTC for an unknown name)."""
+    try:
+        return ZoneInfo(MEMORY_TIME_ZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        log.warning(f"Unknown MEMORY_TIME_ZONE {MEMORY_TIME_ZONE!r}, using UTC")
+        return timezone.utc
+
+
+def memory_today() -> date:
+    """Today in the memory's time zone: the date of a new memory line and of "today" in the prompt."""
+    return datetime.now(memory_time_zone()).date()
+
+
+def with_memory(system_prompt: str, memory: Optional[str], today: Optional[date] = None) -> str:
+    """
+    The system prompt followed by the agent's memory of the user (the memory note of its knowledge
+    base), for an agent with the knowledge base tools. Comes before the conversation's instructions.
+
+    It starts with today's date (memory_today() unless given), so the model dates what it saves and
+    can tell how old a line is, also when the persona's prompt has no {{date}}.
+    """
+    day = today or memory_today()
+    text = (memory or "").strip()
+    body = f"{MEMORY_INTRO}\n<memory>\n{text}\n</memory>" if text else MEMORY_EMPTY
+    return f"{system_prompt}\n\n{MEMORY_HEADING}\nToday is {day:%A}, {day.isoformat()}. {body}"
 
 
 def with_instructions(system_prompt: str, instructions: Iterable[str]) -> str:

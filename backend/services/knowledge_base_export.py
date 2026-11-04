@@ -52,9 +52,10 @@ def local_time(value: Optional[datetime], zone: Optional[tzinfo]) -> Optional[da
     return value.replace(tzinfo=timezone.utc).astimezone(zone).replace(tzinfo=None)
 
 
-def file_name(zone: Optional[tzinfo] = None) -> str:
-    """The name of the zip: knowledge-base-<today>.zip."""
-    return f"{VAULT_FOLDER}-{datetime.now(zone or timezone.utc).date().isoformat()}.zip"
+def file_name(zone: Optional[tzinfo] = None, agent: Optional[str] = None) -> str:
+    """The name of the zip: knowledge-base-<today>.zip, knowledge-base-<agent>-<today>.zip for an agent's own."""
+    name = f"{VAULT_FOLDER}-{kb.slugify(agent) or 'agent'}" if agent is not None else VAULT_FOLDER
+    return f"{name}-{datetime.now(zone or timezone.utc).date().isoformat()}.zip"
 
 
 def obsidian_tag(tag: str) -> Optional[str]:
@@ -126,14 +127,15 @@ def note_path(note: dict) -> str:
     return f"{folder}/{note['slug']}.md"
 
 
-def export_vault(user_id: int, zone: Optional[tzinfo] = None) -> tuple[bytes, int]:
+def export_vault(user_id: int, zone: Optional[tzinfo] = None, vault: int = 0) -> tuple[bytes, int]:
     """
-    The user's knowledge base as a zip, with times in the zone (UTC without one).
+    A knowledge base of the user (with its memory as memory.md) as a zip, with times in the zone
+    (UTC without one).
 
     Returns:
         (the zip, the number of notes in it)
     """
-    notes = kb.all_notes(user_id)
+    notes = kb.all_notes(user_id, vault)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         # The vault folder itself, so even an empty knowledge base unpacks to a folder Obsidian can open
