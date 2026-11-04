@@ -5,6 +5,7 @@
   --sidebar-state: 0;
   --animation-duration: 0.3s;
   --animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
+  --topbar-height: 48px;
 }
 
 .app-container {
@@ -37,21 +38,61 @@
 }
 
 // ============================================
-// SIDEBAR TOGGLE BUTTON
+// TOP BAR (while the sidebar is hidden)
 // ============================================
+// On phones it is always there, on wider screens while the sidebar is collapsed: the button to open the
+// sidebar and the page's title (the conversation's name in the chat). The pages sit below it.
+.app-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: var(--topbar-height);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px 0 4px;
+  background-color: var(--theme-surface);
+  border-bottom: 1px solid var(--theme-border);
+  transition: transform var(--animation-duration) var(--animation-easing),
+    opacity var(--animation-duration) var(--animation-easing),
+    visibility 0s linear 0s;
+}
+
+.app-topbar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--theme-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// A background image (settings) shows through the bar, blurred
+:host-context(body.has-background-image) .app-topbar {
+  background-color: color-mix(in srgb, var(--theme-surface) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
 .sidebar-toggle-btn {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 40px;
   height: 40px;
+  padding: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: 50%;
   cursor: pointer;
-  transition: all 0.2s ease;
-  background-color: var(--theme-surface);
+  background: transparent;
   color: var(--theme-text);
-  box-shadow: var(--theme-shadow-sm);
+  transition: background-color 0.2s ease;
 
   mat-icon {
     font-size: 22px;
@@ -59,32 +100,16 @@
     height: 22px;
   }
 
-  &:hover {
-    background-color: var(--theme-hover);
-    transform: scale(1.05);
-  }
-
-  &:active {
-    transform: scale(0.98);
-  }
-
-  // Open button (when sidebar is closed)
-  &--open {
-    position: fixed;
-    top: 16px;
-    left: 16px;
-    z-index: 998;
-  }
-
-  // Close button (inside sidebar)
-  &--close {
-    margin-left: auto;
-    background: transparent;
-    box-shadow: none;
-
+  // Only for a mouse: on touch screens a hover stays after the tap
+  @media (hover: hover) {
     &:hover {
-      background-color: var(--theme-hover);
+      background-color: var(--theme-row-hover);
     }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: -2px;
   }
 }
 
@@ -98,8 +123,11 @@
   top: 0;
   height: 100dvh;
   transform: translateX(calc((var(--sidebar-state) - 1) * 100%));
+  // Hidden once it has slid out, so the keyboard doesn't tab into it
+  visibility: hidden;
   transition: transform var(--animation-duration) var(--animation-easing),
-    box-shadow var(--animation-duration) var(--animation-easing);
+    box-shadow var(--animation-duration) var(--animation-easing),
+    visibility 0s linear var(--animation-duration);
   will-change: transform;
   z-index: 1000;
   display: flex;
@@ -112,7 +140,8 @@
 
   &.open {
     --sidebar-state: 1;
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+    visibility: visible;
+    transition-delay: 0s;
   }
 }
 
@@ -125,8 +154,16 @@
   height: 100dvh;
   position: relative;
   isolation: isolate;
+  // Room for the top bar; none on the login page and, on wide screens, none while the sidebar is open
+  padding-top: var(--topbar-height);
   background-color: var(--theme-background);
-  transition: margin-left var(--animation-duration) var(--animation-easing);
+  transition: margin-left var(--animation-duration) var(--animation-easing),
+    padding-top var(--animation-duration) var(--animation-easing),
+    background-color 0.3s ease;
+
+  &.no-sidebar {
+    padding-top: 0;
+  }
 
   // Background image: the user's choice from the settings (BackgroundService), else the theme's
   &::before {
@@ -177,18 +214,16 @@
   .content-wrapper {
     &.sidebar-open {
       margin-left: var(--sidebar-width);
-    }
-  }
+      padding-top: 0;
 
-  .sidebar-toggle-btn--open {
-    // Slightly smaller and more subtle on desktop
-    width: 36px;
-    height: 36px;
-
-    mat-icon {
-      font-size: 20px;
-      width: 20px;
-      height: 20px;
+      .app-topbar {
+        transform: translateY(-100%);
+        opacity: 0;
+        visibility: hidden;
+        transition: transform var(--animation-duration) var(--animation-easing),
+          opacity var(--animation-duration) var(--animation-easing),
+          visibility 0s linear var(--animation-duration);
+      }
     }
   }
 }
@@ -199,8 +234,12 @@
     --sidebar-width: min(85vw, 320px);
   }
 
-  .sidebar-element.open {
-    box-shadow: 4px 0 32px rgba(0, 0, 0, 0.25);
+  .sidebar-element {
+    border-right: none;
+
+    &.open {
+      box-shadow: 4px 0 32px rgba(0, 0, 0, 0.25);
+    }
   }
 }
 

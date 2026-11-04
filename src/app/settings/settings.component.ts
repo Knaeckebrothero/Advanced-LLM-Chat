@@ -40,9 +40,10 @@ export class SettingsComponent {
     { value: Theme.Auto, icon: 'brightness_auto', label: 'Auto' },
   ];
 
+  // Each language by its own name, so it can be found in a language one doesn't read
   languageOptions = [
-    { value: Language.English, label: 'EN' },
-    { value: Language.German, label: 'DE' },
+    { value: Language.English, label: 'English' },
+    { value: Language.German, label: 'Deutsch' },
   ];
 
   backgroundOptions: { value: BackgroundChoice; label: string }[] = [

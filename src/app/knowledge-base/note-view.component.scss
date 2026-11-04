@@ -27,12 +27,19 @@
 }
 
 .note-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 6px;
   margin: 0;
   font-size: 0.8rem;
+  line-height: 1.5;
   color: var(--theme-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.meta-separator {
+  margin-right: 0.15em;
+}
+
+.meta-created {
+  white-space: nowrap;
 }
 
 .meta-link {
@@ -129,6 +136,10 @@
   }
 }
 
-::ng-deep .mat-mdc-menu-item.danger-item:hover .mat-icon {
-  color: var(--theme-tier-untrusted);
+// The menu renders in an overlay, outside of this component. Deleting can't be undone: it says so in red.
+::ng-deep .mat-mdc-menu-item.danger-item {
+  &,
+  .mat-icon {
+    color: var(--theme-tier-untrusted);
+  }
 }

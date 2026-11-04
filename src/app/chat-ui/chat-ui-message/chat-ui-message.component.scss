@@ -7,16 +7,18 @@
 .message-row {
   display: flex;
   gap: 16px;
-  padding: 24px 0;
+  // The actions below each message (shown on hover) already keep the messages apart
+  padding: 8px 0;
   width: 100%;
   max-width: 768px;
   margin: 0 auto;
   transition: background-color 0.2s ease;
 
-  &:hover {
+  // Hover, or keyboard focus on one of the actions, shows them
+  &:hover,
+  &:has(.message-actions :focus-visible) {
     .message-actions {
       opacity: 1;
-      visibility: visible;
     }
   }
 
@@ -62,7 +64,6 @@
   // System message styling
   &--system {
     opacity: 0.8;
-    padding: 16px 0;
 
     .message-avatar {
       background: var(--theme-border);
@@ -91,6 +92,14 @@
     max-width: min(85%, 640px);
   }
 
+  // The card is the bubble here, no second one inside it
+  .message-row--user .message-body:not(.message-body--editing) {
+    max-width: none;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+
   // Phones: slimmer cards, and your own messages keep the tint of their bubble
   @media (max-width: 768px) {
     .message-content-wrapper {
@@ -107,16 +116,35 @@
   // Desktop: the actions (shown on hover) sit just below the card instead of
   // leaving an empty strip inside it. On touch screens they are always shown and stay inside.
   @media (hover: hover) and (min-width: 769px) {
+    // Room between the cards for the actions below them
+    .message-row {
+      padding: 18px 0;
+    }
+
     .message-content-wrapper {
       position: relative;
     }
 
+    // On a small frosted backing of their own, so they stay readable on the image
     .message-actions {
       position: absolute;
       top: 100%;
       left: 0;
-      right: 0;
       margin-top: 2px;
+      padding: 0 10px 0 2px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+
+      .message-timestamp {
+        margin-left: 6px;
+      }
+    }
+
+    .message-row--user .message-actions {
+      left: auto;
+      right: 0;
     }
   }
 }
@@ -305,6 +333,17 @@
       &:hover {
         text-decoration: underline;
       }
+
+      &:focus-visible {
+        outline: 2px solid var(--theme-primary);
+        outline-offset: 2px;
+        border-radius: 2px;
+      }
+    }
+
+    // Links to knowledge base notes, as on the Knowledge base page
+    a.note-link {
+      font-weight: 500;
     }
 
     // Inline code
@@ -853,23 +892,29 @@
 // ============================================
 .message-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  margin-top: 12px;
+  // Hidden until hover, but still reachable with the keyboard (see .message-row)
   opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.2s ease, visibility 0.2s ease;
+  transition: opacity 0.2s ease;
 
   &--visible {
     opacity: 1;
-    visibility: visible;
   }
 
   .action-btn {
+    // The icon centred in the 32px button (Material's padding is for 48px buttons)
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 32px;
     height: 32px;
+    padding: 0;
     border-radius: 8px;
     transition: all 0.15s ease;
+    --mdc-icon-button-state-layer-size: 32px;
+    --mat-icon-button-state-layer-size: 32px;
 
     mat-icon {
       font-size: 18px;
@@ -1203,6 +1248,20 @@ em {
 }
 
 // ============================================
+// YOUR OWN MESSAGES ON WIDER SCREENS
+// ============================================
+// A bubble like on phones (there the whole message is the bubble, see RESPONSIVE);
+// here the name and the actions stay outside, so hovering doesn't leave a gap inside it
+@media (min-width: 769px) {
+  .message-row--user .message-body:not(.message-body--editing) {
+    max-width: 85%;
+    padding: 8px 14px;
+    border-radius: 16px 16px 4px 16px;
+    background: color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface));
+  }
+}
+
+// ============================================
 // RESPONSIVE
 // ============================================
 @media (max-width: 768px) {
@@ -1263,7 +1322,6 @@ em {
   // Actions and time on one line
   .message-actions {
     opacity: 1;
-    visibility: visible;
     gap: 0;
     margin-top: 2px;
 

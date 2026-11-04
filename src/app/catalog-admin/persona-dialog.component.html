@@ -1,6 +1,4 @@
-<h2 mat-dialog-title>
-  {{ (isCopy ? 'catalog.admin.personas.copyTitle' : isNew ? 'catalog.admin.personas.addTitle' : 'catalog.admin.personas.editTitle') | translate }}
-</h2>
+<h2 mat-dialog-title>{{ (isCopy ? 'catalog.admin.personas.copyTitle' : isNew ? 'catalog.admin.personas.addTitle' : 'catalog.admin.personas.editTitle') | translate }}</h2>
 
 <form [formGroup]="form" (ngSubmit)="save()">
   <mat-dialog-content class="catalog-dialog-content">
@@ -20,7 +18,9 @@
 
     <mat-form-field appearance="outline" class="full-width">
       <mat-label>{{ 'catalog.admin.fields.systemPrompt' | translate }}</mat-label>
-      <textarea matInput formControlName="systemPrompt" rows="8" required
+      <!-- Grows with the prompt (up to a limit), so a long one scrolls with the dialog, not in a small box -->
+      <textarea matInput formControlName="systemPrompt" required
+                cdkTextareaAutosize cdkAutosizeMinRows="8" cdkAutosizeMaxRows="22"
                 [placeholder]="'catalog.admin.personas.promptPlaceholder' | translate"></textarea>
       <mat-hint>{{ 'catalog.admin.personas.promptHint' | translate: { builtIns: builtIns } }}</mat-hint>
       @if (form.controls['systemPrompt'].hasError('required')) {

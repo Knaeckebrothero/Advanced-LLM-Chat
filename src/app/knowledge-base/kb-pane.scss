@@ -3,6 +3,19 @@
 :host {
   display: block;
   min-width: 0;
+  // Button toggles (Notes/Archive, Write/Preview) in the theme's colours instead of Material's greys
+  // (whose selected state is the darker one in dark mode)
+  --mat-standard-button-toggle-height: 38px;
+  --mat-standard-button-toggle-background-color: transparent;
+  --mat-standard-button-toggle-text-color: var(--theme-text-secondary);
+  --mat-standard-button-toggle-state-layer-color: var(--theme-primary);
+  --mat-standard-button-toggle-selected-state-background-color: var(--theme-active);
+  --mat-standard-button-toggle-selected-state-text-color: var(--theme-text-accent);
+  --mat-standard-button-toggle-divider-color: var(--theme-border);
+}
+
+.mat-button-toggle-checked {
+  font-weight: 500;
 }
 
 .pane {
@@ -70,6 +83,11 @@
     min-width: 0;
   }
 
+  // When the buttons wrap under the text (phones), they stay at the end of the line
+  .pane-banner-text + button {
+    margin-left: auto;
+  }
+
   &.pane-banner--warning {
     background: var(--theme-tier-trusted-bg);
     color: var(--theme-text);
@@ -111,6 +129,13 @@
     border-color: transparent;
     background: var(--theme-active);
     color: var(--theme-text-accent);
+  }
+}
+
+// Easier to hit with a finger
+@media (pointer: coarse) {
+  .tag-chip {
+    padding: 4px 12px;
   }
 }
 

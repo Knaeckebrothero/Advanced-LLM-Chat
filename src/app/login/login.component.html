@@ -1,63 +1,90 @@
-<div class="login-container">
+<main class="login-container">
   <mat-card class="login-card" *ngIf="authConfig$ | async as config">
-    <mat-card-header>
-      <mat-card-title>{{ 'Login' | translate }}</mat-card-title>
-      <mat-card-subtitle *ngIf="config.mode === 'mock'">{{ 'Please enter your email to continue' | translate }}</mat-card-subtitle>
-      <mat-card-subtitle *ngIf="config.mode === 'oidc'">{{ 'Log in with your account to keep your chats' | translate }}</mat-card-subtitle>
-    </mat-card-header>
-
-    <mat-card-content>
-      <div class="error-message" *ngIf="error">
-        <mat-icon color="warn">error</mat-icon>
-        <span>{{ error | translate }}</span>
+    <header class="login-header">
+      <div class="brand-mark" aria-hidden="true">
+        <mat-icon>forum</mat-icon>
       </div>
+      <p class="app-name">{{ appName }}</p>
 
-      <form *ngIf="config.mode === 'mock'">
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>{{ 'Email' | translate }}</mat-label>
-          <input matInput
-                 type="email"
-                 [(ngModel)]="email"
-                 name="email"
-                 [placeholder]="'Email' | translate"
-                 (keyup.enter)="login()"
-                 [disabled]="loading"
-                 required
-          >
-          <mat-error *ngIf="!email">
-            {{ 'Email is required' | translate }}
-          </mat-error>
-        </mat-form-field>
+      <ng-container *ngIf="!serverUnreachable(config); else unreachableHeader">
+        <h1 class="login-title">{{ (config.mode === 'none' ? 'login.welcome' : 'login.title') | translate }}</h1>
+        <p class="login-subtitle" *ngIf="config.mode === 'mock'">{{ 'Please enter your email to continue' | translate }}</p>
+        <p class="login-subtitle" *ngIf="config.mode === 'oidc'">{{ 'Log in with your account to keep your chats' | translate }}</p>
+        <p class="login-subtitle" *ngIf="config.mode === 'none'">
+          {{ 'Logging in is turned off on this server. You can keep chatting as a guest.' | translate }}
+        </p>
+      </ng-container>
+      <ng-template #unreachableHeader>
+        <h1 class="login-title">{{ 'login.title' | translate }}</h1>
+        <p class="login-subtitle">{{ 'login.unreachable' | translate }}</p>
+      </ng-template>
+    </header>
 
-        <button
-          mat-raised-button
-          color="secondary"
-          (click)="login()"
-          [disabled]="loading || !email"
-          class="full-width login-button"
+    <div class="error-message" *ngIf="error" role="alert">
+      <mat-icon aria-hidden="true">error_outline</mat-icon>
+      <span>{{ error | translate }}</span>
+    </div>
+
+    <p class="signed-in-note" *ngIf="signedInEmail as signedIn">
+      <mat-icon aria-hidden="true">account_circle</mat-icon>
+      <span>
+        {{ 'login.signedInAs' | translate }}
+        <strong class="signed-in-email">{{ signedIn }}</strong>
+      </span>
+    </p>
+
+    <!-- Development login: any email, no password -->
+    <form *ngIf="config.mode === 'mock'" class="login-form" (ngSubmit)="login()">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="full-width">
+        <mat-label>{{ 'Email' | translate }}</mat-label>
+        <input matInput
+               type="email"
+               name="email"
+               autocomplete="email"
+               placeholder="name@example.com"
+               [(ngModel)]="email"
+               [disabled]="loading"
+               required
         >
-          <span *ngIf="!loading">{{ 'Login' | translate }}</span>
-          <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
-        </button>
-      </form>
+        <mat-error>{{ 'Email is required' | translate }}</mat-error>
+      </mat-form-field>
 
-      <button
-        *ngIf="config.mode === 'oidc'"
-        mat-raised-button
-        color="secondary"
-        (click)="loginWithProvider()"
-        [disabled]="loading"
-        class="full-width login-button"
-      >
-        <span *ngIf="!loading">{{ 'Log in with' | translate }} {{ config.providerName }}</span>
-        <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
+      <button mat-flat-button type="submit" class="primary-action" [disabled]="loading || !email">
+        <mat-spinner *ngIf="loading" diameter="20" [attr.aria-label]="'login.loggingIn' | translate"></mat-spinner>
+        <span *ngIf="!loading">{{ 'login.button' | translate }}</span>
       </button>
+    </form>
 
-      <p class="login-off" *ngIf="config.mode === 'none'">
-        {{ 'Logging in is turned off on this server. You can keep chatting as a guest.' | translate }}
-      </p>
+    <!-- Login through the OIDC provider (e.g. Keycloak) -->
+    <button
+      *ngIf="config.mode === 'oidc'"
+      mat-flat-button
+      type="button"
+      class="primary-action"
+      (click)="loginWithProvider()"
+      [disabled]="loading"
+    >
+      <mat-icon *ngIf="!loading" aria-hidden="true">login</mat-icon>
+      <mat-spinner *ngIf="loading" diameter="20" [attr.aria-label]="'login.loggingIn' | translate"></mat-spinner>
+      <span *ngIf="!loading">{{ 'Log in with' | translate }} {{ config.providerName || 'OpenID Connect' }}</span>
+    </button>
 
-      <a mat-button routerLink="/" class="full-width guest-link">{{ 'Continue as guest' | translate }}</a>
-    </mat-card-content>
+    <!-- Logging in isn't possible here (no login on this server, or the server isn't reachable) -->
+    <ng-container *ngIf="config.mode === 'none'; else withLogin">
+      <a mat-flat-button routerLink="/" class="primary-action">
+        {{ (signedInEmail ? 'login.backToChat' : 'Continue as guest') | translate }}
+      </a>
+      <button *ngIf="serverUnreachable(config)" mat-button type="button" class="secondary-action" (click)="retry()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        {{ 'login.retry' | translate }}
+      </button>
+    </ng-container>
+
+    <ng-template #withLogin>
+      <div class="divider" aria-hidden="true"><span>{{ 'login.or' | translate }}</span></div>
+      <a mat-stroked-button routerLink="/" class="secondary-action">
+        {{ (signedInEmail ? 'login.backToChat' : 'Continue as guest') | translate }}
+      </a>
+    </ng-template>
   </mat-card>
-</div>
+</main>

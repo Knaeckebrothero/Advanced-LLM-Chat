@@ -2,7 +2,7 @@ import { Component, ViewChild, ViewChildren, ElementRef, QueryList, AfterViewChe
 import { Message, AgentContent } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
 import { Subscription, Observable, combineLatest } from 'rxjs';
-import { map, filter } from 'rxjs/operators';
+import { map, filter, distinctUntilChanged } from 'rxjs/operators';
 import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
 import { RecordingResult } from '../data/objects/recording';
 import { ChatStateService } from '../services/chat-state.service';
@@ -88,6 +88,23 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   // A summary being written at the user's request (from the conversation's menu)
   isSummarizing$ = this.chatState.isSummarizing$;
 
+  // A new conversation without messages yet shows a short greeting
+  showEmptyState$: Observable<boolean> = combineLatest([
+    this.chatState.activeConversation$,
+    this.messages$,
+    this.streamingMessage$
+  ]).pipe(
+    map(([conversation, messages, streaming]) =>
+      (!conversation || conversation.id === '0') && messages.length === 0 && !streaming),
+    distinctUntilChanged()
+  );
+
+  // Scrolled up far enough: a button jumps back to the newest message
+  showScrollToBottom = false;
+  private jumpingToBottom = false;
+  private jumpTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly SCROLL_BUTTON_THRESHOLD = 400;
+
   // Mobile state from UIStateService
   isMobile$ = this.uiState.isMobile$;
 
@@ -157,6 +174,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
         // Reset scroll state when conversation changes
         this.shouldScrollToBottom = true;
         this.userIsAtBottom = true;
+        this.showScrollToBottom = false;
       })
     );
 
@@ -256,6 +274,13 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     // Update last scroll position for next comparison
     this.lastScrollTop = currentScrollTop;
 
+    // The button back to the newest message (not while it scrolls there)
+    const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (this.jumpingToBottom && distanceToBottom < 2) {
+      this.jumpingToBottom = false;
+    }
+    this.showScrollToBottom = !this.jumpingToBottom && distanceToBottom > this.SCROLL_BUTTON_THRESHOLD;
+
     // Reset programmatic scroll flag
     this.isProgrammaticScroll = false;
 
@@ -341,6 +366,27 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     if (this.scrollDebounceTimer) {
       clearTimeout(this.scrollDebounceTimer);
     }
+    if (this.jumpTimer) {
+      clearTimeout(this.jumpTimer);
+    }
+  }
+
+  // Scroll smoothly to the newest message and follow new content again
+  jumpToBottom(): void {
+    const container = this.messageContainer?.nativeElement as HTMLElement | undefined;
+    if (!container) return;
+    this.userIsAtBottom = true;
+    this.shouldScrollToBottom = true;
+    this.userScrolledDuringStreaming = false;
+    this.showScrollToBottom = false;
+    this.jumpingToBottom = true;
+    if (this.jumpTimer) clearTimeout(this.jumpTimer);
+    this.jumpTimer = setTimeout(() => {
+      this.jumpingToBottom = false;
+      this.jumpTimer = null;
+    }, 1000);
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    container.scrollTo({ top: container.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
 
   // Method to scroll to the bottom of the chat window.

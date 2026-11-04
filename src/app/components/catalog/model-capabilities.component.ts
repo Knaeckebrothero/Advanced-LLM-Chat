@@ -14,14 +14,20 @@ import { ReasoningMode } from '../../data/models/catalog.model';
     @if (supportsTools) {
       <mat-icon [matTooltip]="'catalog.capability.tools' | translate"
                 [attr.aria-label]="'catalog.capability.tools' | translate" role="img">build</mat-icon>
+    } @else if (slots) {
+      <span class="slot" aria-hidden="true"></span>
     }
     @if (supportsVision) {
       <mat-icon [matTooltip]="'catalog.capability.vision' | translate"
                 [attr.aria-label]="'catalog.capability.vision' | translate" role="img">image</mat-icon>
+    } @else if (slots) {
+      <span class="slot" aria-hidden="true"></span>
     }
     @if (reasoning && reasoning !== 'none') {
       <mat-icon [matTooltip]="(reasoning === 'always' ? 'catalog.capability.thinking' : 'catalog.capability.thinkingOptional') | translate"
                 [attr.aria-label]="'catalog.capability.thinking' | translate" role="img">psychology</mat-icon>
+    } @else if (slots) {
+      <span class="slot" aria-hidden="true"></span>
     }
   `,
   styles: [`
@@ -38,10 +44,17 @@ import { ReasoningMode } from '../../data/models/catalog.model';
       width: 15px;
       height: 15px;
     }
+
+    .slot {
+      width: 15px;
+      height: 15px;
+    }
   `]
 })
 export class ModelCapabilitiesComponent {
   @Input() supportsTools = false;
   @Input() supportsVision = false;
   @Input() reasoning: ReasoningMode | null | undefined = 'none';
+  /** Keep an empty slot for each missing capability, so the icons line up in a list. */
+  @Input() slots = false;
 }

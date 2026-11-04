@@ -1,4 +1,4 @@
-import { Component, Inject } from '@angular/core';
+import { Component, ElementRef, Inject } from '@angular/core';
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -20,7 +20,7 @@ import {
   ToolGroup
 } from '../data/models/catalog.model';
 import { CatalogAdminStore } from './catalog-admin.store';
-import { describeHttpError, findPlaceholders, numberOrNull, textOrNull, toolIcon } from './catalog-admin.utils';
+import { describeHttpError, DIALOG_ERROR, findPlaceholders, INVALID_FIELD, numberOrNull, revealInDialog, textOrNull, toolIcon } from './catalog-admin.utils';
 
 export interface PersonaDialogData {
   persona: IPersonaOut | null;  // null = add a new agent
@@ -68,6 +68,7 @@ export class PersonaDialogComponent {
   constructor(
     @Inject(MAT_DIALOG_DATA) data: PersonaDialogData,
     private dialogRef: MatDialogRef<PersonaDialogComponent, IPersonaOut>,
+    private host: ElementRef<HTMLElement>,
     private store: CatalogAdminStore,
     private translate: TranslateService,
     private fb: FormBuilder
@@ -165,8 +166,10 @@ export class PersonaDialogComponent {
   }
 
   async save(): Promise<void> {
-    if (this.form.invalid || this.saving) {
+    if (this.saving) return;
+    if (this.form.invalid) {
       this.form.markAllAsTouched();
+      revealInDialog(this.host.nativeElement, INVALID_FIELD);
       return;
     }
     const v = this.form.getRawValue();
@@ -193,6 +196,7 @@ export class PersonaDialogComponent {
       this.dialogRef.close(saved);
     } catch (error) {
       this.error = describeHttpError(error, this.translate);
+      revealInDialog(this.host.nativeElement, DIALOG_ERROR);
     } finally {
       this.saving = false;
     }

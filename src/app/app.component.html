@@ -1,20 +1,28 @@
-<div class="app-container">
+<div class="app-container" *ngIf="{ sidebarOpen: (uiState.sidebarOpen$ | async) ?? false } as shell">
   <!-- Backdrop overlay for mobile (when sidebar is open) -->
-  <div *ngIf="showMenuIcon" class="sidebar-backdrop" [class.visible]="uiState.sidebarOpen$ | async"
+  <div *ngIf="showMenuIcon" class="sidebar-backdrop" [class.visible]="shell.sidebarOpen"
     (click)="uiState.toggleSidebar()">
   </div>
 
-  <!-- Sidebar toggle button - visible when sidebar is closed -->
-  <button *ngIf="showMenuIcon && !(uiState.sidebarOpen$ | async)" class="sidebar-toggle-btn sidebar-toggle-btn--open"
-    (click)="uiState.toggleSidebar()" aria-label="Open sidebar">
-    <mat-icon>menu</mat-icon>
-  </button>
-
-  <app-sidebar *ngIf="showMenuIcon" class="sidebar-element" [class.open]="uiState.sidebarOpen$ | async">
+  <app-sidebar *ngIf="showMenuIcon" class="sidebar-element" [class.open]="shell.sidebarOpen">
   </app-sidebar>
 
-  <div class="content-wrapper" [class.sidebar-open]="(uiState.sidebarOpen$ | async) && showMenuIcon"
+  <div class="content-wrapper" [class.sidebar-open]="shell.sidebarOpen && showMenuIcon"
     [class.no-sidebar]="!showMenuIcon">
+    <!-- Top bar while the sidebar is hidden: always on phones, on wider screens when it is collapsed -->
+    <header *ngIf="showMenuIcon" class="app-topbar">
+      <button class="sidebar-toggle-btn" (click)="uiState.toggleSidebar()"
+        [attr.aria-label]="'sidebar.open' | translate" [title]="'sidebar.open' | translate"
+        [attr.aria-expanded]="shell.sidebarOpen">
+        <mat-icon>menu</mat-icon>
+      </button>
+      <span class="app-topbar-title" *ngIf="isChatPage; else pageTitle">
+        {{ (conversationTitle$ | async) || ('New Chat' | translate) }}
+      </span>
+      <ng-template #pageTitle>
+        <span class="app-topbar-title">{{ pageTitleKey ? (pageTitleKey | translate) : 'LLM Chat' }}</span>
+      </ng-template>
+    </header>
     <router-outlet></router-outlet>
   </div>
 </div>

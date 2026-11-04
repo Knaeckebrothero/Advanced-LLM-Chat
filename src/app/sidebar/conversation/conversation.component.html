@@ -1,6 +1,7 @@
-<div class="conversation-container">
-  <button class="conversation-button" 
-          [class.active]="highlighted" 
+<div class="conversation-container" [class.active]="highlighted" [class.menu-open]="trigger.menuOpen">
+  <button class="conversation-button"
+          [class.active]="highlighted"
+          [attr.aria-current]="highlighted ? 'page' : null"
           (click)="onSelect()"
           (mousedown)="onPressStart($event)"
           (mouseup)="onPressEnd()"
@@ -22,6 +23,9 @@
   <button mat-icon-button
           class="options-button"
           [matMenuTriggerFor]="menu"
+          #trigger="matMenuTrigger"
+          [attr.aria-label]="'conversationMenu.options' | translate"
+          [title]="'conversationMenu.options' | translate"
           (click)="onMenuClick($event)">
     <mat-icon>more_vert</mat-icon>
   </button>

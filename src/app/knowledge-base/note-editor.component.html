@@ -1,5 +1,5 @@
 <form class="pane" (ngSubmit)="save()" (keydown)="onKeydown($event)">
-  <div class="pane-toolbar">
+  <div class="pane-toolbar editor-toolbar">
     <h2 class="pane-heading">
       {{ (isNew ? 'knowledgeBase.editor.newTitle' : 'knowledgeBase.editor.editTitle') | translate }}
     </h2>
@@ -7,11 +7,11 @@
     <button mat-button type="button" (click)="cancel()" [disabled]="saving">
       {{ 'knowledgeBase.editor.cancel' | translate }}
     </button>
-    <button mat-flat-button type="submit" [disabled]="!valid || saving">
+    <button mat-flat-button color="primary" type="submit" [disabled]="!valid || saving">
       @if (saving) {
         <mat-spinner diameter="16" class="button-spinner"></mat-spinner>
       } @else {
-        <mat-icon>check</mat-icon>
+        <mat-icon class="save-icon">check</mat-icon>
       }
       {{ (isNew ? 'knowledgeBase.editor.create' : 'knowledgeBase.editor.save') | translate }}
     </button>
@@ -25,7 +25,7 @@
         <span class="banner-detail">{{ 'knowledgeBase.editor.conflictHelp' | translate }}</span>
       </span>
       <button mat-button type="button" (click)="discard()">{{ 'knowledgeBase.editor.discard' | translate }}</button>
-      <button mat-flat-button type="button" (click)="saveAnyway()">{{ 'knowledgeBase.editor.saveAnyway' | translate }}</button>
+      <button mat-flat-button color="primary" type="button" (click)="saveAnyway()">{{ 'knowledgeBase.editor.saveAnyway' | translate }}</button>
     </div>
   }
   @if (existing; as other) {

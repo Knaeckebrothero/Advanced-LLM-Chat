@@ -23,15 +23,24 @@ export interface ConfirmDialogData {
     <mat-dialog-actions align="end">
       <button mat-button type="button" [mat-dialog-close]="false">{{ 'catalog.common.cancel' | translate }}</button>
       <button mat-flat-button type="button" cdkFocusInitial
+              [color]="data.danger ? undefined : 'primary'"
               [class.danger-button]="data.danger"
               [mat-dialog-close]="true">{{ data.confirmLabel }}</button>
     </mat-dialog-actions>
   `,
   styles: [`
+    // A readable line length: without it the dialog grows as wide as the message
     .confirm-message {
+      max-width: 440px;
       margin: 0;
       color: var(--theme-text);
       line-height: 1.5;
+    }
+
+    // The buttons line up with the text (Material's default inset is smaller)
+    .mat-mdc-dialog-actions {
+      gap: 8px;
+      padding: 8px 24px 16px;
     }
 
     .danger-button.mat-mdc-unelevated-button:not(:disabled) {

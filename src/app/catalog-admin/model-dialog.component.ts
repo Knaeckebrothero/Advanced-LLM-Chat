@@ -1,4 +1,4 @@
-import { Component, Inject } from '@angular/core';
+import { Component, ElementRef, Inject } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -19,10 +19,13 @@ import {
 import { CatalogAdminStore } from './catalog-admin.store';
 import {
   describeHttpError,
+  DIALOG_ERROR,
   formatJson,
+  INVALID_FIELD,
   jsonObjectValidator,
   numberOrNull,
   parseJsonObject,
+  revealInDialog,
   textOrNull
 } from './catalog-admin.utils';
 
@@ -65,6 +68,7 @@ export class ModelDialogComponent {
   constructor(
     @Inject(MAT_DIALOG_DATA) data: ModelDialogData,
     private dialogRef: MatDialogRef<ModelDialogComponent, IModelOut>,
+    private host: ElementRef<HTMLElement>,
     private store: CatalogAdminStore,
     private translate: TranslateService,
     fb: FormBuilder
@@ -89,7 +93,8 @@ export class ModelDialogComponent {
       inputPricePerMtok: [m?.inputPricePerMtok ?? null, [Validators.min(0)]],
       outputPricePerMtok: [m?.outputPricePerMtok ?? null, [Validators.min(0)]],
       extraBody: [formatJson(m?.extraBody), jsonObjectValidator()],
-      privacyTier: [m?.privacyTier ?? null],
+      // '' is "like the provider" (sent as null): mat-select shows no option for a null value
+      privacyTier: [m?.privacyTier ?? ''],
       isAuxiliary: [m?.isAuxiliary ?? false],
       availableToGuests: [m?.availableToGuests ?? false],
       enabled: [m?.enabled ?? true],
@@ -107,8 +112,10 @@ export class ModelDialogComponent {
   }
 
   async save(): Promise<void> {
-    if (this.form.invalid || this.saving) {
+    if (this.saving) return;
+    if (this.form.invalid) {
       this.form.markAllAsTouched();
+      revealInDialog(this.host.nativeElement, INVALID_FIELD);
       return;
     }
     const v = this.form.getRawValue();
@@ -145,6 +152,7 @@ export class ModelDialogComponent {
       this.dialogRef.close(saved);
     } catch (error) {
       this.error = describeHttpError(error, this.translate);
+      revealInDialog(this.host.nativeElement, DIALOG_ERROR);
     } finally {
       this.saving = false;
     }

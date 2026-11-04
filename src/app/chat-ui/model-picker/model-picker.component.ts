@@ -65,9 +65,8 @@ interface PickerView {
               <span class="model-option">
                 <span class="model-option-main">
                   <span class="model-option-name">{{ 'catalog.picker.noPersona' | translate }}</span>
-                  @if (!view.persona) {
-                    <mat-icon class="model-option-check" aria-hidden="true">check</mat-icon>
-                  }
+                  <mat-icon class="model-option-check" [class.model-option-check--off]="!!view.persona"
+                            aria-hidden="true">check</mat-icon>
                 </span>
               </span>
             </button>
@@ -82,9 +81,8 @@ interface PickerView {
                     @if (hasInputs(persona)) {
                       <mat-icon class="persona-option-edit" aria-hidden="true">tune</mat-icon>
                     }
-                    @if (persona.id === view.persona?.id) {
-                      <mat-icon class="model-option-check" aria-hidden="true">check</mat-icon>
-                    }
+                    <mat-icon class="model-option-check" [class.model-option-check--off]="persona.id !== view.persona?.id"
+                              aria-hidden="true">check</mat-icon>
                   </span>
                   @if (persona.description) {
                     <span class="model-option-description">{{ persona.description }}</span>

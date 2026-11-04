@@ -35,6 +35,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { AppSettings } from '../models/settings.model';
 import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
+import { TranslateService } from '@ngx-translate/core';
 
 /** Model and persona for a new conversation, kept until it is created with the first message. */
 const EMPTY_DRAFT: IConversationSelection = { modelId: null, personaId: null, personaValues: null };
@@ -193,7 +194,8 @@ export class ChatStateService implements OnDestroy {
     private streamingService: StreamingService,
     private http: HttpClient,
     private dbService: DBService,
-    private catalogService: CatalogService
+    private catalogService: CatalogService,
+    private translate: TranslateService
   ) {
     this.initializeService();
     this.listenToAuthChanges();
@@ -794,16 +796,8 @@ export class ChatStateService implements OnDestroy {
       if (error.status === 429) {
         console.error('Guest limit reached:', error);
         const detail = error.error?.detail;
-        let resetTimeMessage = 'Please try again later.';
-        if (detail && detail.includes('after')) {
-          const resetTimeISO = detail.split('after ')[1];
-          if (resetTimeISO) {
-            const resetDate = new Date(resetTimeISO);
-            const formattedTime = resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            resetTimeMessage = `You have reached your request limit. You can generate more answers after ${formattedTime}.`;
-          }
-        }
-        this.authService.setGuestLimitReached(true, resetTimeMessage);
+        const resetTimeISO = detail && detail.includes('after') ? detail.split('after ')[1] : undefined;
+        this.authService.setGuestLimitReached(true, this.guestLimitMessage(resetTimeISO));
       } else {
         console.error('Error generating message:', error);
         const errorMessage = Message.createText(
@@ -1241,20 +1235,18 @@ export class ChatStateService implements OnDestroy {
    * Handle rate limit errors
    */
   private handleRateLimitError(error: string): void {
-    let resetTimeMessage = 'Please try again later.';
-    if (error.includes('after')) {
-      const resetTimeMatch = error.match(/after\s+(\S+)/);
-      if (resetTimeMatch) {
-        try {
-          const resetDate = new Date(resetTimeMatch[1]);
-          const formattedTime = resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          resetTimeMessage = `You have reached your request limit. You can generate more answers after ${formattedTime}.`;
-        } catch (e) {
-          console.error('Error parsing reset time:', e);
-        }
-      }
+    const resetTimeMatch = error.includes('after') ? error.match(/after\s+(\S+)/) : null;
+    this.authService.setGuestLimitReached(true, this.guestLimitMessage(resetTimeMatch?.[1]));
+  }
+
+  /** The guest limit's message, in the app's language, with the time it resets (an ISO time) when known. */
+  private guestLimitMessage(resetTimeISO?: string): string {
+    const resetDate = resetTimeISO ? new Date(resetTimeISO) : null;
+    if (!resetDate || isNaN(resetDate.getTime())) {
+      return this.translate.instant('message.guestLimitTryLater');
     }
-    this.authService.setGuestLimitReached(true, resetTimeMessage);
+    const time = resetDate.toLocaleTimeString(this.translate.currentLang || [], { hour: '2-digit', minute: '2-digit' });
+    return this.translate.instant('message.guestLimitUntil', { time });
   }
 
   /**

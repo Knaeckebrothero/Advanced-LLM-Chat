@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Title } from '@angular/platform-browser';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Observable } from 'rxjs';
 import { AuthConfig, AuthService } from '../auth/auth.service';
 
@@ -10,6 +11,9 @@ const LOGIN_ERRORS: Record<string, string> = {
   forbidden: 'Your account may not use this app.',
   email_in_use: 'An account with this email already exists. An admin can link it by marking the email as verified.',
 };
+
+// The user AuthService makes up when the backend can't be reached at the start
+const OFFLINE_GUEST_EMAIL = 'guest@offline';
 
 
 @Component({
@@ -26,11 +30,17 @@ export class LoginComponent implements OnInit {
   // How users log in on this server: the OIDC provider, the mock login (email only) or not at all
   authConfig$: Observable<AuthConfig>;
 
+  // The app's name as the page title has it (index.html), so a deployment names it in one place
+  readonly appName: string;
+
   constructor(
     private authService: AuthService,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private router: Router,
+    title: Title
   ) {
     this.authConfig$ = this.authService.authConfig$;
+    this.appName = title.getTitle();
   }
 
   ngOnInit() {
@@ -38,11 +48,35 @@ export class LoginComponent implements OnInit {
     const error = this.route.snapshot.queryParams['error'];
     if (error) {
       this.error = LOGIN_ERRORS[error] ?? LOGIN_ERRORS['auth_failed'];
+      // Shown once: the address is /login again, so a reload doesn't repeat an old error
+      this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
     }
+  }
+
+  /** The email of a signed-in user (not a guest) who opens this page, e.g. to switch accounts. */
+  get signedInEmail(): string | null {
+    const user = this.authService.getCurrentUser();
+    return user && !this.authService.isGuest ? user.email : null;
+  }
+
+  /**
+   * Without the backend, the login options are unknown (the default is "no login") and the app
+   * runs with an offline guest: say so instead of "logging in is turned off".
+   */
+  serverUnreachable(config: AuthConfig): boolean {
+    return config.mode === 'none' && this.authService.getCurrentUser()?.email === OFFLINE_GUEST_EMAIL;
+  }
+
+  /** The login options and the session are loaded when the app starts: start it again. */
+  retry(): void {
+    window.location.reload();
   }
 
   /** The mock login with an email. */
   async login() {
+    if (this.loading) {
+      return;
+    }
     if (!this.email) {
       this.error = 'Please enter an email';
       return;

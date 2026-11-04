@@ -1,3 +1,56 @@
+// The toolbar with Cancel and Save stays in view while a long note scrolls (and above the
+// keyboard on phones). It reaches across the side padding of the note pane.
+.editor-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -8px calc(-1 * var(--kb-pane-padding-x, 0px)) 0;
+  padding: 8px var(--kb-pane-padding-x, 0px);
+  background: var(--theme-surface);
+  container-type: scroll-state;
+}
+
+// Once it sticks, a line sets it off from the text under it (where the browser can tell)
+@supports (container-type: scroll-state) {
+  .editor-toolbar::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 1px;
+    background: var(--theme-border);
+    opacity: 0;
+  }
+
+  @container scroll-state(stuck: top) {
+    .editor-toolbar::after {
+      opacity: 1;
+    }
+  }
+}
+
+// Narrow phones: heading, Cancel and Save stay on one line (the heading may take two lines)
+@media (max-width: 480px) {
+  .editor-toolbar {
+    flex-wrap: nowrap;
+
+    .pane-heading {
+      flex: 1 1 0;
+      min-width: 0;
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+
+    .toolbar-spacer,
+    .save-icon {
+      display: none;
+    }
+
+    button {
+      flex: none;
+    }
+  }
+}
+
 .editor-fields {
   display: flex;
   flex-direction: column;

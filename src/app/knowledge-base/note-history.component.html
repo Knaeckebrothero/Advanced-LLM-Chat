@@ -12,7 +12,7 @@
     <ol class="revision-list">
       @for (rev of note().revisions; track rev.id) {
         <li>
-          <button type="button" class="revision" [class.is-selected]="rev.id === selectedId()" (click)="select(rev)"
+          <button type="button" class="revision" [class.is-selected]="rev.id === selectedId()" (click)="pick(rev)"
                   [attr.aria-pressed]="rev.id === selectedId()">
             <mat-icon class="revision-icon" aria-hidden="true">{{ icon(rev.action) }}</mat-icon>
             <span class="revision-main">
@@ -32,7 +32,7 @@
       }
     </ol>
 
-    <div class="revision-preview" aria-live="polite">
+    <div class="revision-preview" #preview aria-live="polite">
       @if (loading() && !revision()) {
         <div class="preview-state"><mat-spinner diameter="28"></mat-spinner></div>
       } @else if (error()) {
@@ -45,15 +45,19 @@
         <div class="preview-header">
           <div class="preview-heading">
             <h3 class="preview-title">{{ rev.title }}</h3>
+            <!-- The "·" sticks to the word before it, so a line never starts with it -->
             <p class="preview-meta">
-              {{ label(rev) }} · {{ date(rev.createdAt) }}
+              <span>{{ label(rev) }}&nbsp;·</span>
+              &ngsp;
+              <span>{{ date(rev.createdAt) }}</span>
               @if (rev.conversationId) {
-                ·
+                <span aria-hidden="true">&nbsp;·</span>
+                &ngsp;
                 @if (rev.conversationName) {
-                  {{ 'knowledgeBase.note.in' | translate }}
-                  <a class="meta-link" href="#" (click)="$event.preventDefault(); conversation.emit(rev.conversationId)">{{ rev.conversationName }}</a>
+                  <span>{{ 'knowledgeBase.note.in' | translate }} <a class="meta-link" href="#"
+                    (click)="$event.preventDefault(); conversation.emit(rev.conversationId)">{{ rev.conversationName }}</a></span>
                 } @else {
-                  {{ 'knowledgeBase.note.inDeletedChat' | translate }}
+                  <span>{{ 'knowledgeBase.note.inDeletedChat' | translate }}</span>
                 }
               }
             </p>
@@ -71,7 +75,7 @@
         @if (rev.tags.length) {
           <div class="preview-tags">
             @for (tag of rev.tags; track tag) {
-              <span class="state-tag">#{{ tag }}</span>
+              <span class="tag-chip tag-chip--static">#{{ tag }}</span>
             }
           </div>
         }
