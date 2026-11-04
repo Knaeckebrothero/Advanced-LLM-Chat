@@ -471,6 +471,16 @@ class StreamGenerateRequest(BaseModel):
     modelId: Optional[int] = None
 
 
+class SummarizeRequest(BaseModel):
+    """
+    Asks for a summary of a conversation now (POST /api/message/summarize), not
+    only once its history nearly fills the model's context window.
+
+    :ivar conversationId: UUID of the conversation.
+    """
+    conversationId: str  # UUID
+
+
 class MessageStartEvent(BaseModel):
     """
     Metadata sent at the start of a streaming response.

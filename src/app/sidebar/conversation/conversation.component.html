@@ -29,15 +29,20 @@
   <mat-menu #menu="matMenu">
     <button mat-menu-item (click)="onRename()">
       <mat-icon>edit</mat-icon>
-      <span>Rename</span>
+      <span>{{ 'conversationMenu.rename' | translate }}</span>
     </button>
     <button mat-menu-item (click)="exportConversation()">
       <mat-icon>download</mat-icon>
-      <span>Export</span>
+      <span>{{ 'conversationMenu.export' | translate }}</span>
+    </button>
+    <button mat-menu-item [disabled]="summarizing" (click)="summarizeConversation()"
+            [title]="'conversationMenu.summarizeHint' | translate">
+      <mat-icon>summarize</mat-icon>
+      <span>{{ (summarizing ? 'conversationMenu.summarizing' : 'conversationMenu.summarize') | translate }}</span>
     </button>
     <button mat-menu-item (click)="deleteConversation()">
       <mat-icon>delete</mat-icon>
-      <span>Delete</span>
+      <span>{{ 'conversationMenu.delete' | translate }}</span>
     </button>
   </mat-menu>
 </div>

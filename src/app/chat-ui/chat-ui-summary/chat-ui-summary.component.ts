@@ -6,6 +6,8 @@ let nextId = 0;
 /**
  * Divider after the newest message a conversation's summary covers: from there on the model
  * gets the summary instead of the messages above. Opens to show the summary.
+ *
+ * With pending, it marks a summary being written at the user's request (after the newest message).
  */
 @Component({
   selector: 'app-chat-ui-summary',
@@ -14,7 +16,8 @@ let nextId = 0;
   standalone: false
 })
 export class ChatUiSummaryComponent {
-  @Input({ required: true }) summary!: IConversationSummary;
+  @Input() summary: IConversationSummary | null = null;
+  @Input() pending = false;
 
   expanded = false;
   readonly panelId = `conversation-summary-${++nextId}`;

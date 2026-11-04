@@ -8,7 +8,9 @@ A port of the rolling-fold summarizer of Superhuman Remote Worker
 - messages_to_summarize(): once the history passes SUMMARY_TRIGGER of the
   token budget, the oldest messages are folded into the summary, so that about
   SUMMARY_KEEP of the budget stays word for word. The headroom means a summary
-  is written every so many answers, not before each one.
+  is written every so many answers, not before each one. The user can also ask
+  for a summary of all messages so far (POST /api/message/summarize); then it
+  is asked for at most REQUESTED_SUMMARY_SHARE of what it covers.
 - summarize(): the messages to fold are packed into chunks sized for the
   model's own context window and folded in turn:
   summary_i = summarize(summary_{i-1} + chunk_i). The stored summary seeds the
@@ -42,6 +44,10 @@ SUMMARY_KEEP = 0.5         # Share of the budget the newest messages keep word f
 SUMMARY_SHARE = 0.1        # Length asked of the summary, as a share of the budget ...
 MIN_SUMMARY_TOKENS = 500   # ... at least
 MAX_SUMMARY_TOKENS = 4000  # ... at most
+# On request (POST /api/message/summarize) the messages may be few: asked for more, a model fills
+# the length, so the summary is asked for at most this share of what it covers ...
+REQUESTED_SUMMARY_SHARE = 1 / 3
+MIN_REQUESTED_SUMMARY_TOKENS = 250  # ... at least
 MAX_SUMMARY_RATIO = 2      # A summary longer than this times the asked length is rejected
 
 SAFETY_MARGIN = 0.85       # Share of the window a summary call plans to use (the token estimate is rough)
@@ -122,9 +128,16 @@ class SummaryRejected(Exception):
         self.reason = reason
 
 
-def summary_target_tokens(token_budget: int) -> int:
-    """How long the summary may be, for a history of token_budget tokens."""
-    return max(MIN_SUMMARY_TOKENS, min(MAX_SUMMARY_TOKENS, int(token_budget * SUMMARY_SHARE)))
+def summary_target_tokens(token_budget: int, covered_tokens: Optional[int] = None) -> int:
+    """
+    How long the summary may be, for a history of token_budget tokens.
+
+    With covered_tokens (a summary on request), also at most REQUESTED_SUMMARY_SHARE of what it covers.
+    """
+    target = max(MIN_SUMMARY_TOKENS, min(MAX_SUMMARY_TOKENS, int(token_budget * SUMMARY_SHARE)))
+    if covered_tokens is not None:
+        target = min(target, max(MIN_REQUESTED_SUMMARY_TOKENS, int(covered_tokens * REQUESTED_SUMMARY_SHARE)))
+    return target
 
 
 def messages_to_summarize(entries: List[HistoryEntry], summary: Optional[dict], token_budget: int) -> int:
@@ -269,8 +282,11 @@ def _repetition(text: str) -> Optional[str]:
     return None
 
 
-def validate_summary(text: str, target_tokens: int) -> str:
-    """The summary in a fold pass's reply, or SummaryRejected."""
+def validate_summary(text: str, target_tokens: int, max_tokens: Optional[int] = None) -> str:
+    """
+    The summary in a fold pass's reply, or SummaryRejected; too long past max_tokens
+    (by default MAX_SUMMARY_RATIO times the asked length).
+    """
     text = re.sub(r"(?is)<think>.*?</think>\s*", "", text or "").strip()
     fenced = re.match(r"(?s)^```[a-zA-Z]*\n(.*)\n```$", text)
     if fenced:
@@ -282,7 +298,7 @@ def validate_summary(text: str, target_tokens: int) -> str:
     loop = _repetition(text)
     if loop:
         raise SummaryRejected("repetition", loop)
-    if estimate_tokens(text) > MAX_SUMMARY_RATIO * target_tokens:
+    if estimate_tokens(text) > (max_tokens or MAX_SUMMARY_RATIO * target_tokens):
         raise SummaryRejected("too_long", f"about {estimate_tokens(text)} tokens, asked for {target_tokens}")
     return text
 
@@ -292,6 +308,7 @@ async def _fold_pass(
     transcript: str,
     prior_summary: Optional[str],
     target_tokens: int,
+    max_tokens: int,
     usage: Usage
 ) -> str:
     """One fold pass with its retries; the usage of every attempt is added to usage."""
@@ -301,7 +318,7 @@ async def _fold_pass(
         try:
             text, call_usage = await complete(config, request, system_prompt=SUMMARY_PROMPT, require_complete=True)
             usage.add(call_usage)
-            return validate_summary(text, target_tokens)
+            return validate_summary(text, target_tokens, max_tokens)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -321,7 +338,8 @@ async def summarize(
     config: ModelConfig,
     entries: List[HistoryEntry],
     prior_summary: Optional[str],
-    token_budget: int
+    token_budget: int,
+    on_request: bool = False
 ) -> Tuple[str, Usage]:
     """
     Fold entries (the oldest messages after the prior summary) into a new summary.
@@ -331,6 +349,8 @@ async def summarize(
         entries: The messages to fold, oldest first.
         prior_summary: The stored summary they follow, if any.
         token_budget: The history budget of that model, which sets the summary's length.
+        on_request: The user asked for it (rather than the history nearly filling the
+            window): the length also scales with what it covers (summary_target_tokens()).
 
     Returns:
         The new summary and the usage of all its model calls.
@@ -341,10 +361,19 @@ async def summarize(
     """
     if not entries:
         raise SummaryFailed("nothing_to_summarize")
-    target = summary_target_tokens(token_budget)
-    chunks = plan_chunks(transcript_parts(entries), chunk_budget(config, target))
     original_tokens = sum(estimate_tokens(message["content"]) for _, message in entries)
     original_tokens += estimate_tokens(prior_summary or "")
+    if original_tokens < MIN_SUMMARY_TOKENS:
+        # A summary with its sections would hardly be shorter; no need to ask the model (only
+        # happens on request: before an answer, the history is summarized once it nearly fills the window)
+        raise SummaryFailed("too_short", f"about {original_tokens} tokens")
+    # The length asked for. On request it also scales with what the summary covers, but only one
+    # past the limit for the budget is rejected: asked for little, models often write more, and
+    # being shorter than the messages is what counts (not_smaller below)
+    budget_target = summary_target_tokens(token_budget)
+    target = summary_target_tokens(token_budget, original_tokens) if on_request else budget_target
+    max_tokens = MAX_SUMMARY_RATIO * budget_target
+    chunks = plan_chunks(transcript_parts(entries), chunk_budget(config, budget_target))
     logger.info(f"Summarizing {len(entries)} messages (about {original_tokens} tokens) with {config.model_id} "
                 f"in {len(chunks)} pass(es){', merging the prior summary' if prior_summary else ''}")
 
@@ -353,7 +382,7 @@ async def summarize(
     try:
         for index, chunk in enumerate(chunks, start=1):
             logger.debug(f"Summary pass {index}/{len(chunks)}: about {estimate_tokens(chunk)} tokens")
-            summary = await _fold_pass(config, chunk, summary, target, usage)
+            summary = await _fold_pass(config, chunk, summary, target, max_tokens, usage)
         if estimate_tokens(summary) >= original_tokens:
             raise SummaryFailed("not_smaller", f"about {estimate_tokens(summary)} tokens for {original_tokens}")
     except SummaryFailed as e:
