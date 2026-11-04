@@ -10,14 +10,21 @@ messages are folded in chunks sized for the model's window, each pass merging
 the summary of the previous one (and the stored summary); a reply without the
 sections or cut off at the output limit is retried, and after the last attempt
 the summary fails with the usage of every attempt; and the history starts with
-the stored summary instead of the messages it covers.
+the stored summary instead of the messages it covers. Through the message
+endpoints (on a fake database): stream-generate summarizes before it answers
+once the history passes the trigger, and POST /api/message/summarize
+summarizes every message on request (409, 422 and 502 included).
 """
 import asyncio
+import json
 import sys
 import traceback
+from contextlib import contextmanager
 from dataclasses import replace
 
-from backend.llm.tests.fake_openai_server import FakeOpenAIServer, completion
+import httpx
+
+from backend.llm.tests.fake_openai_server import FakeOpenAIServer, chunk, completion, usage_chunk
 from backend.llm.tests.test_history import LONG_ROWS, FakeDB, assistant, user
 from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
 from backend.services import conversation_summary
@@ -155,13 +162,50 @@ async def test_failure_keeps_usage(server):
 
 
 async def test_summary_must_be_smaller(server):
-    server.script(lambda body: completion(GOOD_SUMMARY))
+    # Too short to ask the model at all (only happens on request, POST /api/message/summarize)
     entries = await entries_of([user(1000, 1, "Hi there"), assistant(1500, 1, "Hello!")])
     try:
         await summarize(make_config(server.base_url), entries, None, 9000)
         raise AssertionError("expected SummaryFailed")
     except SummaryFailed as e:
+        assert e.reason == "too_short", e.reason
+    assert not server.requests, len(server.requests)
+
+    # Long enough to try, but the summary comes out longer than the messages
+    facts = "\n".join(f"- Fact number {i} came up." for i in range(80))
+    server.script(lambda body: completion(GOOD_SUMMARY + "\n" + facts))
+    entries = await entries_of([user(1000, 1, "Tell me more. " * 120), assistant(1500, 1, "Here is more.")])
+    try:
+        await summarize(make_config(server.base_url), entries, None, 9000)
+        raise AssertionError("expected SummaryFailed")
+    except SummaryFailed as e:
         assert e.reason == "not_smaller", e.reason
+    assert len(server.requests) == 1, len(server.requests)
+
+
+async def test_on_request_scales_the_length(server):
+    # Before an answer, the length follows the budget; on request, also what the summary covers
+    assert summary_target_tokens(90000) == 4000
+    assert summary_target_tokens(90000, covered_tokens=3000) == 1000
+    assert summary_target_tokens(90000, covered_tokens=600) == 250
+    assert summary_target_tokens(2000, covered_tokens=60000) == 500
+
+    server.script(lambda body: completion(GOOD_SUMMARY))
+    entries = await entries_of([user(1000, 1, "Tell me more. " * 120), assistant(1500, 1, "Here is more. " * 120)])
+    covered = sum(estimate_tokens(message["content"]) for _, message in entries)
+    summary, _ = await summarize(make_config(server.base_url, context_window=128000), entries, None, 90000,
+                                 on_request=True)
+    assert summary == GOOD_SUMMARY
+    request = server.requests[0]["messages"][-1]["content"]
+    assert f"under about {int(covered / 3)} tokens" in request, request[-120:]
+
+    # Longer than twice the asked length is fine on request, as long as it is shorter than the messages
+    longer = GOOD_SUMMARY + "\n" + "\n".join(f"- Fact number {i} came up." for i in range(90))
+    assert 2 * int(covered / 3) < estimate_tokens(longer) < covered
+    server.script(lambda body: completion(longer))
+    summary, _ = await summarize(make_config(server.base_url, context_window=128000), entries, None, 90000,
+                                 on_request=True)
+    assert summary == longer
 
 
 async def test_oversized_message_is_split(server):
@@ -196,9 +240,158 @@ async def test_history_starts_with_summary(server):
     assert len(messages) == 11 and messages[0]["content"].startswith("Question 00"), messages[0]
 
 
+class EndpointDB(FakeDB):
+    """What the message endpoints use: conversations, the stored summary and the answers they save."""
+
+    def __init__(self, rows, summary=None):
+        super().__init__(rows)
+        self.summary = summary
+        self.answers = []
+
+    def get_conversation_by_id(self, conversation_id, user_id=None):
+        return {"id": conversation_id, "persona_id": None}
+
+    def get_conversation_summary(self, conversation_id):
+        return self.summary
+
+    def save_conversation_summary(self, conversation_id, covers_until, message_count, content, model_name=None):
+        self.summary = {"conversation_id": conversation_id, "covers_until": covers_until,
+                        "message_count": message_count, "content": content, "model_name": model_name,
+                        "created_at": 1}
+        return self.summary
+
+    def create_agent_message(self, **message):
+        self.answers.append(message)
+
+
+@contextmanager
+def message_api(fake_db, config):
+    """
+    An httpx client for the message endpoints (backend/api/messages.py) on fake_db, answered by config
+    as a signed-in user; no rate limit.
+    """
+    from fastapi import FastAPI
+    from backend.api import messages
+    from backend.security.auth import get_current_user, rate_limit_guest
+
+    app = FastAPI()
+    app.include_router(messages.router)
+    app.dependency_overrides[get_current_user] = lambda: {"user_id": 1, "email": "a@example.com", "is_guest": False}
+    app.dependency_overrides[rate_limit_guest] = lambda: None
+    saved = messages.db, messages._resolve_model, messages.verify_conversation_ownership
+    messages.db = fake_db
+    messages._resolve_model = lambda user, conversation_id, model_id=None: config
+    messages.verify_conversation_ownership = lambda conversation_id, user_id: True
+    try:
+        yield httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    finally:
+        messages.db, messages._resolve_model, messages.verify_conversation_ownership = saved
+
+
+def summary_or_answer(body):
+    """A summary for a summary call (not streamed), a short answer for the agent (streamed)."""
+    if body.get("stream"):
+        return [chunk(content="The answer."), chunk(finish_reason="stop"), usage_chunk(100, 3)]
+    return completion(GOOD_SUMMARY, prompt_tokens=50, completion_tokens=40)
+
+
+def sse_events(text):
+    """The (event, data) pairs of an SSE body."""
+    events = []
+    for block in text.replace("\r\n", "\n").split("\n\n"):
+        lines = block.strip().splitlines()
+        event = next((line[6:].strip() for line in lines if line.startswith("event:")), None)
+        data = "\n".join(line[5:].lstrip() for line in lines if line.startswith("data:"))
+        if event:
+            events.append((event, data))
+    return events
+
+
+async def test_stream_generate_summarizes_past_the_trigger(server):
+    # 60 messages of about 100 tokens and a question; a window whose budget they pass 80% of
+    rows = LONG_ROWS + [user(9000_000, 9000, "And now?")]
+    fake_db = EndpointDB(rows)
+    config = make_config(server.base_url, context_window=10000, supports_tools=False)
+    server.script(*[summary_or_answer] * 5)
+    with message_api(fake_db, config) as client:
+        response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    names = [name for name, _ in events]
+    assert names[0] == "message_start" and names[-1] == "done", names
+    assert "error" not in names, events
+
+    # The step shows the summary being written, then done; the summary event carries it
+    steps = [json.loads(data) for name, data in events if name == "step"]
+    assert [step["title"].split(" ")[0] for step in steps] == ["Summarizing", "Summarized"], steps
+    summary = json.loads(next(data for name, data in events if name == "summary"))
+    stored = fake_db.summary
+    assert summary["coversUntil"] == stored["covers_until"] and summary["content"] == GOOD_SUMMARY, summary
+    folded = [row for row in rows if row["id"] <= stored["covers_until"]]
+    assert stored["message_count"] == len(folded) and 0 < len(folded) < len(rows), stored
+    assert folded[-1]["roleName"] == "Assistant", "whole exchanges are folded"
+
+    # The answer starts from the summary, then the messages after it
+    answer_request = next(request for request in server.requests if request.get("stream"))
+    history = [m for m in answer_request["messages"] if m["role"] != "system"]
+    assert history[0]["content"].startswith(SUMMARY_LEAD_IN), history[0]
+    assert len(history) == 1 + len(rows) - len(folded), len(history)
+    # The saved answer counts the summary's model calls too
+    summary_calls = sum(1 for request in server.requests if not request.get("stream"))
+    done = json.loads(events[-1][1])
+    assert done["usage"]["inputTokens"] == 100 + 50 * summary_calls, done["usage"]
+    assert fake_db.answers[0]["content"] == "The answer." and fake_db.answers[0]["status"] == "complete"
+
+
+async def test_summarize_on_request(server):
+    # 10 messages of about 100 tokens: far below the trigger, summarized only on request
+    rows = LONG_ROWS[:10]
+    fake_db = EndpointDB(rows)
+    config = make_config(server.base_url, context_window=128000, supports_tools=False)
+    with message_api(fake_db, config) as client:
+        server.script(summary_or_answer)
+        response = await client.post("/api/message/summarize", json={"conversationId": "c"})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["coversUntil"] == rows[-1]["id"] and body["messageCount"] == 10, body
+        assert body["content"] == GOOD_SUMMARY and body["modelName"] == "Fake", body
+        covered = sum(estimate_tokens(message["content"]) for _, message in await entries_of(rows))
+        assert f"under about {int(covered / 3)} tokens" in server.requests[0]["messages"][-1]["content"]
+
+        # Nothing after the summary
+        response = await client.post("/api/message/summarize", json={"conversationId": "c"})
+        assert response.status_code == 409, response.text
+        assert len(server.requests) == 1
+
+        # New messages are merged into the stored summary (questions 05 to 07)
+        fake_db.rows = LONG_ROWS[:16]
+        server.script(summary_or_answer)
+        response = await client.post("/api/message/summarize", json={"conversationId": "c"})
+        assert response.status_code == 200, response.text
+        assert response.json()["messageCount"] == 16 and response.json()["coversUntil"] == LONG_ROWS[15]["id"]
+        request = server.requests[1]["messages"][-1]["content"]
+        assert "<prior-summary>" in request and "Question 05" in request and "Question 04" not in request
+
+        # A model that fails every attempt: 502, the summary stays
+        fake_db.rows = LONG_ROWS[:22]
+        server.script(*[lambda body: completion("I can't help with that.")] * 3)
+        response = await client.post("/api/message/summarize", json={"conversationId": "c"})
+        assert response.status_code == 502 and "no_sections" in response.json()["detail"], response.text
+        assert fake_db.summary["message_count"] == 16
+
+    # Too short: 422 without a model call
+    server.reset()
+    with message_api(EndpointDB([user(1000, 1, "Hi"), assistant(1500, 1, "Hello!")]), config) as client:
+        response = await client.post("/api/message/summarize", json={"conversationId": "c"})
+    assert response.status_code == 422, response.text
+    assert not server.requests
+
+
 TESTS = [test_summarizes_only_past_the_trigger, test_latest_question_is_never_summarized,
          test_fold_in_chunks_merges_prior_summary, test_bad_reply_is_retried, test_failure_keeps_usage,
-         test_summary_must_be_smaller, test_oversized_message_is_split, test_history_starts_with_summary]
+         test_summary_must_be_smaller, test_on_request_scales_the_length, test_oversized_message_is_split,
+         test_history_starts_with_summary, test_stream_generate_summarizes_past_the_trigger,
+         test_summarize_on_request]
 
 
 async def main() -> int:

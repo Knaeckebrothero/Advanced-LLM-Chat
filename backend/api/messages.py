@@ -4,7 +4,7 @@ Message API endpoints.
 import json
 import logging
 import time
-from typing import Dict, AsyncGenerator, Optional
+from typing import Dict, AsyncGenerator, List, Optional, Tuple
 from fastapi import APIRouter, Response, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 from backend.models.common import ErrorResponse
@@ -19,6 +19,7 @@ from backend.models.message import (
     RateMessageRequest,
     RegenerateMessageRequest,
     StreamGenerateRequest,
+    SummarizeRequest,
     MessageStartEvent,
     ConversationSummary,
     AgentStep
@@ -38,7 +39,7 @@ from backend.catalog.resolver import (
     resolve_model,
 )
 from backend.services.llm import generate_reply
-from backend.services.conversation_history import ConversationHistoryBuilder, history_token_budget
+from backend.services.conversation_history import ConversationHistoryBuilder, HistoryEntry, history_token_budget
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
 from backend.models.attachments import AttachmentType
 from backend.services.tts_handler import (
@@ -123,6 +124,56 @@ def _step_to_dict(step) -> dict:
     if step_dict.get('callId') is None:
         step_dict.pop('callId', None)
     return step_dict
+
+
+def _answer_context(
+    current_user: dict,
+    conversation_id: str,
+    config: ModelConfig
+) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int]:
+    """
+    What an answer in this conversation is built from: the tools, the history builder,
+    the system prompt and the token budget of the history.
+
+    The persona decides the prompt and which tools the model gets; the prompt only
+    describes the tools it really has. The conversation's system messages are
+    instructions to the model and come last.
+    """
+    conversation = db.get_conversation_by_id(conversation_id)
+    tools = _agent_tools(current_user, conversation, config)
+    history_builder = ConversationHistoryBuilder(db)
+    system_prompt = with_instructions(
+        build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
+        history_builder.system_instructions(conversation_id))
+    return tools, history_builder, system_prompt, history_token_budget(config, system_prompt, tools)
+
+
+async def _fold_into_summary(
+    conversation_id: str,
+    config: ModelConfig,
+    entries: List[HistoryEntry],
+    fold_count: int,
+    summary: Optional[dict],
+    token_budget: int,
+    on_request: bool = False
+) -> Tuple[dict, Usage]:
+    """
+    Fold the oldest fold_count entries (the history after the stored summary) into the
+    conversation's summary and store it; on_request as for summarize().
+
+    :return: The stored summary row and the usage of its model calls.
+    :raises SummaryFailed: No summary could be written; nothing is stored.
+    """
+    content, usage = await summarize(
+        config, entries[:fold_count], summary['content'] if summary else None, token_budget, on_request)
+    stored = db.save_conversation_summary(
+        conversation_id,
+        covers_until=entries[fold_count - 1][0],
+        message_count=(summary['message_count'] if summary else 0) + fold_count,
+        content=content,
+        model_name=config.display_name
+    )
+    return stored, usage
 
 
 def _summary_step(step_id: str, started_ms: int, count: int, state: str, detail: str = "") -> dict:
@@ -1090,19 +1141,11 @@ async def stream_generate(
             return
 
         try:
-            # The persona decides the prompt and which tools the model gets; the
-            # prompt only describes the tools it really has. The conversation's
-            # system messages are instructions to the model and come last.
-            conversation = db.get_conversation_by_id(request_body.conversationId)
-            tools = _agent_tools(current_user, conversation, config)
-            history_builder = ConversationHistoryBuilder(db)
-            system_prompt = with_instructions(
-                build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
-                history_builder.system_instructions(request_body.conversationId))
+            tools, history_builder, system_prompt, token_budget = _answer_context(
+                current_user, request_body.conversationId, config)
 
             # Build conversation history with placeholders for previous attachments: the
             # summary of the oldest messages, then as many messages as fit the model's context window
-            token_budget = history_token_budget(config, system_prompt, tools)
             summary = db.get_conversation_summary(request_body.conversationId)
             entries, available_attachments = await history_builder.build_entries(
                 request_body.conversationId,
@@ -1119,15 +1162,8 @@ async def stream_generate(
                 yield step_event(_summary_step(step_id, started_ms, fold_count, "running"))
                 summary_usage = Usage()
                 try:
-                    content, summary_usage = await summarize(
-                        config, entries[:fold_count], summary['content'] if summary else None, token_budget)
-                    summary = db.save_conversation_summary(
-                        request_body.conversationId,
-                        covers_until=entries[fold_count - 1][0],
-                        message_count=(summary['message_count'] if summary else 0) + fold_count,
-                        content=content,
-                        model_name=config.display_name
-                    )
+                    summary, summary_usage = await _fold_into_summary(
+                        request_body.conversationId, config, entries, fold_count, summary, token_budget)
                     entries = entries[fold_count:]
                     covered = summary['message_count']
                     detail = (f"It covers all {covered} messages up to here." if covered > fold_count else "")
@@ -1249,6 +1285,70 @@ async def stream_generate(
             }
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/summarize",
+             response_model=ConversationSummary,
+             responses={
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                 status.HTTP_409_CONFLICT: {"model": ErrorResponse,
+                                            "description": "No messages after the summary"},
+                 status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorResponse,
+                                                        "description": "Too short to summarize"},
+                 status.HTTP_502_BAD_GATEWAY: {"model": ErrorResponse,
+                                               "description": "The model could not write a summary"},
+                 status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse, "description": "No model configured"}
+             },
+             dependencies=[Depends(rate_limit_guest)])
+async def summarize_conversation(
+    request_body: SummarizeRequest,
+    current_user: dict = Depends(get_current_user)
+) -> ConversationSummary:
+    """
+    Fold all messages of a conversation so far into its summary, at the user's request.
+
+    stream-generate writes the summary on its own once the history nearly fills the
+    model's context window; this writes it now and for every message: the next answer
+    gets the summary and only the messages after it. The conversation's model writes
+    it, merging the summary the conversation already has.
+
+    :return: The new summary.
+    :raises HTTPException: 403 without access to the conversation or its model, 409 if
+        no message comes after the summary, 422 if the messages are too short to
+        summarize, 502 if the model could not write a summary (nothing is stored),
+        503 without a model.
+    """
+    conversation_id = request_body.conversationId
+    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+
+    config = _resolve_model_or_503(current_user, conversation_id)
+    _, history_builder, _, token_budget = _answer_context(current_user, conversation_id, config)
+    summary = db.get_conversation_summary(conversation_id)
+    # Placeholders for all attachments: the summary keeps their file names and ids
+    entries, _ = await history_builder.build_entries(
+        conversation_id, include_latest_attachments=False, supports_vision=config.supports_vision, summary=summary)
+    if not entries:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="There are no messages after the summary to summarize.")
+
+    try:
+        stored, usage = await _fold_into_summary(
+            conversation_id, config, entries, len(entries), summary, token_budget, on_request=True)
+    except SummaryFailed as e:
+        crud_logger.warning(f"Summary of {conversation_id} on request failed ({e.reason}): {e}; "
+                            f"tokens in/out: {e.usage.input_tokens}/{e.usage.output_tokens}")
+        if e.reason in ("too_short", "not_smaller"):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                detail="The conversation is too short to summarize: a summary would be "
+                                       "no shorter than its messages.")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"{config.display_name} could not write a summary ({e.reason}).")
+
+    crud_logger.info(f"Conversation {conversation_id} summarized on request by user {current_user['user_id']}: "
+                     f"{len(entries)} messages with {config.display_name}, "
+                     f"tokens in/out: {usage.input_tokens}/{usage.output_tokens}")
+    return ConversationSummary.from_row(stored)
 
 
 @router.post("/tts/{conversation_id}/{message_id}",

@@ -1,12 +1,19 @@
 <div class="summary-divider">
-  <button type="button" class="summary-toggle" (click)="toggle()"
-          [attr.aria-expanded]="expanded" [attr.aria-controls]="panelId">
-    <mat-icon aria-hidden="true">summarize</mat-icon>
-    <span>{{ (summary.messageCount === 1 ? 'summary.titleOne' : 'summary.title') | translate: { count: summary.messageCount } }}</span>
-    <mat-icon class="chevron" aria-hidden="true">{{ expanded ? 'expand_less' : 'expand_more' }}</mat-icon>
-  </button>
+  <!-- Being written at the user's request -->
+  <div *ngIf="pending; else written" class="summary-toggle summary-pending" role="status">
+    <mat-spinner diameter="16" aria-hidden="true"></mat-spinner>
+    <span>{{ 'summary.pending' | translate }}</span>
+  </div>
+  <ng-template #written>
+    <button *ngIf="summary" type="button" class="summary-toggle" (click)="toggle()"
+            [attr.aria-expanded]="expanded" [attr.aria-controls]="panelId">
+      <mat-icon aria-hidden="true">summarize</mat-icon>
+      <span>{{ (summary.messageCount === 1 ? 'summary.titleOne' : 'summary.title') | translate: { count: summary.messageCount } }}</span>
+      <mat-icon class="chevron" aria-hidden="true">{{ expanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+    </button>
+  </ng-template>
 </div>
-<div class="summary-panel" *ngIf="expanded" [id]="panelId">
+<div class="summary-panel" *ngIf="summary && expanded && !pending" [id]="panelId">
   <p class="summary-hint">
     {{ 'summary.hint' | translate }}
     <ng-container *ngIf="summary.modelName">{{ 'summary.writtenBy' | translate: { model: summary.modelName } }}</ng-container>

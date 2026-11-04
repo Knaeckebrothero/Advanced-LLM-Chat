@@ -14,6 +14,8 @@
                              [summary]="view.divider.summary"></app-chat-ui-summary>
       </ng-container>
     </ng-container>
+    <!-- A summary being written at the user's request: it will cover the messages above -->
+    <app-chat-ui-summary *ngIf="isSummarizing$ | async" [pending]="true"></app-chat-ui-summary>
     <!-- Streaming message (displayed separately from persisted messages) -->
     <app-chat-ui-message *ngIf="streamingMessage$ | async as streamingMessage"
                          [message]="streamingMessage"

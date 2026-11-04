@@ -320,10 +320,24 @@
     "guidedHint": "You edit your own messages, and an edited message is answered again.",
     "manualHint": "You edit any message, the answers too, and insert messages anywhere. Nothing is generated."
   },
+  "conversationMenu": {
+    "rename": "Rename",
+    "export": "Export",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing…",
+    "summarizeHint": "From the next answer on, the model gets a summary instead of the messages so far",
+    "delete": "Delete",
+    "summarized": "{{count}} messages summarized",
+    "summarizedOne": "1 message summarized",
+    "nothingToSummarize": "Nothing new to summarize: the summary already covers every message.",
+    "tooShortToSummarize": "The conversation is still too short to summarize.",
+    "summaryFailed": "The conversation could not be summarized: {{error}}"
+  },
   "summary": {
     "title": "{{count}} earlier messages summarized",
     "titleOne": "1 earlier message summarized",
-    "hint": "From here on the model gets this summary instead of the messages above, which no longer fit its context window.",
+    "pending": "Summarizing the conversation…",
+    "hint": "From here on the model gets this summary instead of the messages above, so they no longer take up its context window.",
     "writtenBy": "Written by {{model}}."
   },
   "knowledgeBase": {
