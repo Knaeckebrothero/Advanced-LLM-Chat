@@ -44,6 +44,11 @@
       <mat-icon>summarize</mat-icon>
       <span>{{ (summarizing ? 'conversationMenu.summarizing' : 'conversationMenu.summarize') | translate }}</span>
     </button>
+    <button mat-menu-item *ngIf="hasMemory" [disabled]="reviewingMemory" (click)="reviewMemory()"
+            [title]="'conversationMenu.memoryHint' | translate">
+      <mat-icon>psychology</mat-icon>
+      <span>{{ (reviewingMemory ? 'conversationMenu.memorySaving' : 'conversationMenu.memory') | translate }}</span>
+    </button>
     <button mat-menu-item (click)="deleteConversation()">
       <mat-icon>delete</mat-icon>
       <span>{{ 'conversationMenu.delete' | translate }}</span>

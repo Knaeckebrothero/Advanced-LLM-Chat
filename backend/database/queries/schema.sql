@@ -25,7 +25,10 @@ CREATE TABLE IF NOT EXISTS conversations (
     -- Model catalog selection (NULL = the user's default model, no persona)
     model_id INTEGER,            -- llm_models.id (no FK: models can be deleted, conversations stay)
     persona_id INTEGER,          -- personas.id
-    persona_values JSONB         -- values for the persona's variables: {"style": "pirate"}
+    persona_values JSONB,        -- values for the persona's variables: {"style": "pirate"}
+    -- Memory review (backend/services/memory_review.py)
+    memory_reviewed_until BIGINT,        -- the newest message id the review has read, NULL = none yet
+    memory_review_failed_at TIMESTAMP    -- the last review that failed (retried an hour later), NULL after a success
 );
 
 -- name: create_messages_table
@@ -96,6 +99,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     background_dim INTEGER DEFAULT 25,       -- 0-80, % of the theme background color over the image
     background_blur INTEGER DEFAULT 0,       -- 0-20 px
     editing_mode TEXT DEFAULT 'guided',      -- 'guided' (an edited message is answered again) | 'manual' (edit and insert any message)
+    memory_model_id INTEGER,                 -- llm_models.id that reviews conversations for the memory, NULL = the chat's model
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -177,17 +181,20 @@ CREATE TABLE IF NOT EXISTS personas (
     available_to_guests BOOLEAN DEFAULT FALSE,
     enabled BOOLEAN DEFAULT TRUE,
     sort_order INTEGER DEFAULT 0,
+    own_memory BOOLEAN DEFAULT FALSE,        -- its own knowledge base and memory per user instead of the user's shared one
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- name: create_kb_notes_table
 -- A user's knowledge base: Markdown notes the agent reads and writes with the kb_* tools, across all
--- of the user's conversations (backend/services/knowledge_base.py, docs/knowledge_base.md)
+-- of the user's conversations (backend/services/knowledge_base.py, docs/knowledge_base.md). The note
+-- "memory" of a knowledge base is the agent's memory, which is part of every answer.
 CREATE TABLE IF NOT EXISTS kb_notes (
     id BIGSERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    slug TEXT NOT NULL,                      -- stable id made from the first title, unique per user: "project-apollo"
+    vault INTEGER NOT NULL DEFAULT 0,        -- 0: the user's shared knowledge base, else the personas.id of an agent with its own (no FK)
+    slug TEXT NOT NULL,                      -- stable id made from the first title, unique per knowledge base: "project-apollo"
     title TEXT NOT NULL,
     description TEXT,                        -- one sentence, shown in lists and search results
     tags TEXT[] NOT NULL DEFAULT '{}',       -- lowercase
@@ -195,8 +202,22 @@ CREATE TABLE IF NOT EXISTS kb_notes (
     status TEXT NOT NULL DEFAULT 'active',   -- 'active' | 'archived' (kb_archive, an update restores it)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (user_id, slug)
+    UNIQUE (user_id, vault, slug)
 );
+
+-- name: kb_notes_unique_per_vault
+-- Knowledge bases from before agents could have their own one: add the vault, make slugs unique per vault
+ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS vault INTEGER NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS kb_notes_user_id_vault_slug_key ON kb_notes(user_id, vault, slug);
+ALTER TABLE kb_notes DROP CONSTRAINT IF EXISTS kb_notes_user_id_slug_key;
+
+-- name: add_memory_columns
+-- Databases from before the memory get its columns (the CREATE TABLEs above have them), also without
+-- app_init --prod, as the conversations trigger below uses them
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS memory_reviewed_until BIGINT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS memory_review_failed_at TIMESTAMP;
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS own_memory BOOLEAN DEFAULT FALSE;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS memory_model_id INTEGER;
 
 -- name: create_kb_note_revisions_table
 -- Every version of a note, written in the same transaction as the note: what it was, who wrote it and where
@@ -209,11 +230,22 @@ CREATE TABLE IF NOT EXISTS kb_note_revisions (
     tags TEXT[] NOT NULL DEFAULT '{}',
     content TEXT NOT NULL,
     status TEXT NOT NULL,
-    author TEXT NOT NULL,                    -- 'agent' | 'user' (the Knowledge base page)
+    author TEXT NOT NULL,                    -- 'agent' | 'review' (memory review) | 'dream' (nightly consolidation) | 'user' (the page)
     conversation_id TEXT,                    -- where the agent wrote it (no FK: kept when the conversation is deleted)
     persona_id INTEGER,                      -- personas.id of that conversation's agent at the time (no FK)
     reason TEXT,                             -- why it was archived, or which version was restored
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- name: create_memory_dreams_table
+-- The nightly consolidation of a knowledge base (backend/services/memory_dream.py): how far it got
+CREATE TABLE IF NOT EXISTS memory_dreams (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vault INTEGER NOT NULL,                  -- as kb_notes.vault: 0 the shared knowledge base, else an agent's id
+    dreamed_until BIGINT,                    -- the end of the last period it consolidated (ms, like message ids)
+    failed_at TIMESTAMP,                     -- the last run that failed, NULL after a success
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, vault)
 );
 
 -- name: create_kb_links_table
@@ -256,12 +288,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- name: create_conversations_trigger
--- A new message only moves "lastMessageAt": "updatedAt" stays the last change of the conversation itself
+-- A new message only moves "lastMessageAt", and a memory review only its own columns: "updatedAt"
+-- stays the last change of the conversation itself
 DROP TRIGGER IF EXISTS update_conversations_timestamp ON conversations;
 CREATE TRIGGER update_conversations_timestamp
     BEFORE UPDATE ON conversations
     FOR EACH ROW
-    WHEN (OLD."lastMessageAt" IS NOT DISTINCT FROM NEW."lastMessageAt")
+    WHEN (OLD."lastMessageAt" IS NOT DISTINCT FROM NEW."lastMessageAt"
+          AND OLD.memory_reviewed_until IS NOT DISTINCT FROM NEW.memory_reviewed_until
+          AND OLD.memory_review_failed_at IS NOT DISTINCT FROM NEW.memory_review_failed_at)
     EXECUTE FUNCTION update_conversation_timestamp();
 
 -- name: create_messages_trigger

@@ -30,6 +30,21 @@
   } @else {
     <div class="kb-body" [class.has-selection]="hasSelection()">
       <aside class="kb-list-pane" [attr.aria-label]="'knowledgeBase.listLabel' | translate">
+        @if (store.vaults().length > 1) {
+          <mat-form-field class="kb-vault">
+            <mat-label>{{ 'knowledgeBase.vault.label' | translate }}</mat-label>
+            <mat-select [value]="store.vault()" (selectionChange)="setVault($event.value)">
+              @for (vault of store.vaults(); track vault.id) {
+                <mat-option [value]="vault.id">
+                  {{ vaultName(vault) }}
+                  @if (vault.id !== 0 && !vault.available) {
+                    <span class="vault-state">· {{ 'knowledgeBase.vault.unavailable' | translate }}</span>
+                  }
+                </mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        }
         <mat-form-field class="kb-search">
           <mat-icon matPrefix>search</mat-icon>
           <input matInput type="search" [placeholder]="'knowledgeBase.search' | translate" [(ngModel)]="searchText"
@@ -81,6 +96,26 @@
             </div>
           }
           @default {
+            @if (store.status() === 'active' && !store.searching() && !store.tag()) {
+              @if (store.memory(); as memory) {
+                <button type="button" class="note-item memory-item"
+                        [class.is-selected]="store.isMemory(store.slug()) && !creating()"
+                        [attr.aria-current]="store.isMemory(store.slug()) ? 'page' : null"
+                        [disabled]="!memory.note" (click)="openMemory()">
+                  <span class="note-item-title">
+                    <mat-icon aria-hidden="true">psychology</mat-icon>
+                    {{ 'knowledgeBase.memory.title' | translate }}
+                  </span>
+                  <span class="note-item-text">
+                    @if (memory.note) {
+                      {{ 'knowledgeBase.memory.lines' | translate: { lines: memory.lines, max: memory.maxLines } }}
+                    } @else {
+                      {{ 'knowledgeBase.memory.empty' | translate }}
+                    }
+                  </span>
+                </button>
+              }
+            }
             @if (store.searching()) {
               @if (store.items().length) {
                 <p class="list-summary" aria-live="polite">{{ 'knowledgeBase.found' | translate: { count: store.items().length } }}</p>

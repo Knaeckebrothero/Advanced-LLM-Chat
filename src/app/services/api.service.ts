@@ -26,12 +26,15 @@ import {
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
 import { IConversationSummary } from '../data/models/conversation.model';
 import {
+  IKBMemory,
   IKBNote,
   IKBNoteList,
   IKBNoteUpdate,
   IKBNoteWrite,
+  IKBReviewResult,
   IKBRevision,
   IKBSearchHit,
+  IKBVault,
   NoteStatus
 } from '../data/models/knowledge-base.model';
 
@@ -758,75 +761,94 @@ export class ApiService {
     return `${this.baseUrl}/api/kb/notes/${encodeURIComponent(slug)}`;
   }
 
+  /** The request options of a knowledge base: vault 0 (the shared one) is the default and isn't sent. */
+  private kbOptions(vault: number, params: Record<string, string> = {}) {
+    return { ...this.getHttpOptions(), params: vault ? { ...params, vault: String(vault) } : params };
+  }
+
+  /** The user's knowledge bases: the shared one first, then the agents' own ones. */
+  async getKBVaults(): Promise<IKBVault[]> {
+    return await lastValueFrom(this.http.get<IKBVault[]>(`${this.baseUrl}/api/kb/vaults`, this.getHttpOptions()));
+  }
+
+  /** The memory of a knowledge base and how full it is. */
+  async getKBMemory(vault = 0): Promise<IKBMemory> {
+    return await lastValueFrom(this.http.get<IKBMemory>(`${this.baseUrl}/api/kb/memory`, this.kbOptions(vault)));
+  }
+
+  /** Review a conversation for its agent's memory now (as happens once it has been quiet for a while). */
+  async reviewConversationMemory(conversationId: string): Promise<IKBReviewResult> {
+    return await lastValueFrom(
+      this.http.post<IKBReviewResult>(`${this.baseUrl}/api/kb/review`, { conversationId }, this.getHttpOptions())
+    );
+  }
+
   /** The notes with a status, most recently updated first, with the tags in use and the counts. */
-  async getKBNotes(status: NoteStatus, tag: string | null = null): Promise<IKBNoteList> {
+  async getKBNotes(status: NoteStatus, tag: string | null = null, vault = 0): Promise<IKBNoteList> {
     const params: Record<string, string> = { status };
     if (tag) params['tag'] = tag;
     return await lastValueFrom(
-      this.http.get<IKBNoteList>(`${this.baseUrl}/api/kb/notes`, { ...this.getHttpOptions(), params })
+      this.http.get<IKBNoteList>(`${this.baseUrl}/api/kb/notes`, this.kbOptions(vault, params))
     );
   }
 
-  async searchKBNotes(query: string, status: NoteStatus): Promise<IKBSearchHit[]> {
+  async searchKBNotes(query: string, status: NoteStatus, vault = 0): Promise<IKBSearchHit[]> {
     return await lastValueFrom(
-      this.http.get<IKBSearchHit[]>(`${this.baseUrl}/api/kb/search`, {
-        ...this.getHttpOptions(),
-        params: { q: query, status }
-      })
+      this.http.get<IKBSearchHit[]>(`${this.baseUrl}/api/kb/search`, this.kbOptions(vault, { q: query, status }))
     );
   }
 
-  async getKBNote(slug: string): Promise<IKBNote> {
-    return await lastValueFrom(this.http.get<IKBNote>(this.kbNoteUrl(slug), this.getHttpOptions()));
+  async getKBNote(slug: string, vault = 0): Promise<IKBNote> {
+    return await lastValueFrom(this.http.get<IKBNote>(this.kbNoteUrl(slug), this.kbOptions(vault)));
   }
 
-  async createKBNote(note: IKBNoteWrite): Promise<IKBNote> {
+  async createKBNote(note: IKBNoteWrite, vault = 0): Promise<IKBNote> {
     return await lastValueFrom(
-      this.http.post<IKBNote>(`${this.baseUrl}/api/kb/notes`, note, this.getHttpOptions())
+      this.http.post<IKBNote>(`${this.baseUrl}/api/kb/notes`, note, this.kbOptions(vault))
     );
   }
 
   /** Replaces all fields; 409 with code "conflict" if the note changed since baseVersion. */
-  async updateKBNote(slug: string, note: IKBNoteUpdate): Promise<IKBNote> {
-    return await lastValueFrom(this.http.put<IKBNote>(this.kbNoteUrl(slug), note, this.getHttpOptions()));
+  async updateKBNote(slug: string, note: IKBNoteUpdate, vault = 0): Promise<IKBNote> {
+    return await lastValueFrom(this.http.put<IKBNote>(this.kbNoteUrl(slug), note, this.kbOptions(vault)));
   }
 
-  async archiveKBNote(slug: string): Promise<IKBNote> {
+  async archiveKBNote(slug: string, vault = 0): Promise<IKBNote> {
     return await lastValueFrom(
-      this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/archive`, {}, this.getHttpOptions())
+      this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/archive`, {}, this.kbOptions(vault))
     );
   }
 
-  async restoreKBNote(slug: string): Promise<IKBNote> {
+  async restoreKBNote(slug: string, vault = 0): Promise<IKBNote> {
     return await lastValueFrom(
-      this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/restore`, {}, this.getHttpOptions())
+      this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/restore`, {}, this.kbOptions(vault))
     );
   }
 
   /** Deletes a note for good, with all its versions. */
-  async deleteKBNote(slug: string): Promise<void> {
-    await lastValueFrom(this.http.delete<void>(this.kbNoteUrl(slug), this.getHttpOptions()));
+  async deleteKBNote(slug: string, vault = 0): Promise<void> {
+    await lastValueFrom(this.http.delete<void>(this.kbNoteUrl(slug), this.kbOptions(vault)));
   }
 
-  async getKBRevision(slug: string, revisionId: number): Promise<IKBRevision> {
+  async getKBRevision(slug: string, revisionId: number, vault = 0): Promise<IKBRevision> {
     return await lastValueFrom(
-      this.http.get<IKBRevision>(`${this.kbNoteUrl(slug)}/revisions/${revisionId}`, this.getHttpOptions())
+      this.http.get<IKBRevision>(`${this.kbNoteUrl(slug)}/revisions/${revisionId}`, this.kbOptions(vault))
     );
   }
 
   /** Makes an earlier version the current one (as a new version). */
-  async restoreKBRevision(slug: string, revisionId: number, baseVersion: number): Promise<IKBNote> {
+  async restoreKBRevision(slug: string, revisionId: number, baseVersion: number, vault = 0): Promise<IKBNote> {
     return await lastValueFrom(
       this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/revisions/${revisionId}/restore`, { baseVersion },
-        this.getHttpOptions())
+        this.kbOptions(vault))
     );
   }
 
   /** All notes as a zip that opens as an Obsidian vault, with the times in the time zone (e.g. Europe/Berlin). */
-  async exportKnowledgeBase(timeZone: string | null): Promise<Blob> {
+  async exportKnowledgeBase(timeZone: string | null, vault = 0): Promise<Blob> {
     const params: Record<string, string> = timeZone ? { tz: timeZone } : {};
     return await lastValueFrom(
-      this.http.get(`${this.baseUrl}/api/kb/export`, { ...this.getHttpOptions(), params, responseType: 'blob' })
+      this.http.get(`${this.baseUrl}/api/kb/export`, { ...this.kbOptions(vault, params), responseType: 'blob' })
     );
   }
 

@@ -92,8 +92,14 @@ export class PersonaDialogComponent {
       toolMode: [(Array.isArray(p?.tools) ? 'pick' : 'all') as ToolMode],
       availableToGuests: [p?.availableToGuests ?? false],
       enabled: [p?.enabled ?? true],
-      sortOrder: [p?.sortOrder ?? 0]
+      sortOrder: [p?.sortOrder ?? 0],
+      ownMemory: [p?.ownMemory ?? false]
     });
+  }
+
+  /** The agent has the knowledge base (picked), so it can have its own memory instead of the shared one. */
+  get hasKnowledgeBase(): boolean {
+    return this.toolMode === 'pick' && this.pickedTools.has('knowledge_base');
   }
 
   get isNew(): boolean {
@@ -186,7 +192,8 @@ export class PersonaDialogComponent {
       tools: v.toolMode === 'pick' ? this.tools.map(t => t.id).filter(id => this.pickedTools.has(id)) : null,
       availableToGuests: !!v.availableToGuests,
       enabled: !!v.enabled,
-      sortOrder: numberOrNull(v.sortOrder) ?? 0
+      sortOrder: numberOrNull(v.sortOrder) ?? 0,
+      ownMemory: !!v.ownMemory
     };
 
     this.saving = true;

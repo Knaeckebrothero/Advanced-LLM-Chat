@@ -117,6 +117,42 @@
   }
 }
 
+// The picker between the shared knowledge base and the agents' own ones (room for its floating label)
+.kb-vault {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.vault-state {
+  color: var(--theme-text-secondary);
+  font-size: 0.85em;
+}
+
+// The memory, pinned above the notes (after .note-item below in the cascade, hence both classes)
+.note-item.memory-item {
+  margin-bottom: 6px;
+  border-color: var(--theme-border);
+  border-style: dashed;
+
+  .note-item-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    mat-icon {
+      width: 18px;
+      height: 18px;
+      font-size: 18px;
+      color: var(--theme-primary);
+    }
+  }
+
+  &:disabled {
+    cursor: default;
+    background: transparent;
+  }
+}
+
 .kb-status {
   display: flex;
   width: 100%;

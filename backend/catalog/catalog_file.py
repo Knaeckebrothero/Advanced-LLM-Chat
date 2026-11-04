@@ -76,7 +76,7 @@ MODEL_EXPORT_COLUMNS = [
 ]
 PERSONA_EXPORT_COLUMNS = [
     "name", "description", "system_prompt", "variables", "tools", "available_to_guests",
-    "enabled", "sort_order",
+    "enabled", "sort_order", "own_memory",
 ]
 NUMERIC_COLUMNS = {"temperature", "top_p", "input_price_per_mtok", "output_price_per_mtok"}
 

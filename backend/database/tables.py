@@ -55,6 +55,9 @@ conversations = Table(
     Column('model_id', Integer),  # llm_models.id (no FK: deleting a model keeps conversations)
     Column('persona_id', Integer),  # personas.id
     Column('persona_values', JSONB),  # Values for the persona's variables
+    # Memory review (backend/services/memory_review.py)
+    Column('memory_reviewed_until', BigInteger),  # The newest message id the review has read
+    Column('memory_review_failed_at', DateTime),  # The last failed review (naive UTC), NULL after a success
 )
 
 # Messages table
@@ -132,6 +135,7 @@ user_settings = Table(
     Column('background_dim', Integer, server_default='25'),  # 0-80 %
     Column('background_blur', Integer, server_default='0'),  # 0-20 px
     Column('editing_mode', Text, server_default='guided'),  # 'guided' | 'manual'
+    Column('memory_model_id', Integer),  # llm_models.id that reviews conversations for the memory, NULL = the chat's
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
@@ -219,17 +223,21 @@ personas = Table(
     Column('available_to_guests', Boolean, server_default='false'),
     Column('enabled', Boolean, server_default='true'),
     Column('sort_order', Integer, server_default='0'),
+    Column('own_memory', Boolean, server_default='false'),  # Its own knowledge base and memory per user
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
-# Knowledge base: a user's Markdown notes, read and written by the agent's kb_* tools
+# Knowledge base: a user's Markdown notes, read and written by the agent's kb_* tools. The note
+# "memory" of a knowledge base is the agent's memory, part of every answer.
 kb_notes = Table(
     'kb_notes',
     metadata,
     Column('id', BigInteger, primary_key=True, autoincrement=True),
     Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
-    Column('slug', Text, nullable=False),  # Stable id made from the first title, unique per user
+    # 0: the user's shared knowledge base, else the personas.id of an agent with its own (no FK)
+    Column('vault', Integer, nullable=False, server_default='0'),
+    Column('slug', Text, nullable=False),  # Stable id made from the first title, unique per knowledge base
     Column('title', Text, nullable=False),
     Column('description', Text),  # One sentence for lists and search results
     Column('tags', ARRAY(Text), nullable=False, server_default='{}'),
@@ -237,7 +245,7 @@ kb_notes = Table(
     Column('status', Text, nullable=False, server_default='active'),  # 'active' | 'archived'
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
-    UniqueConstraint('user_id', 'slug'),
+    UniqueConstraint('user_id', 'vault', 'slug'),
 )
 
 # Every version of a note, with who wrote it and in which conversation
@@ -252,7 +260,7 @@ kb_note_revisions = Table(
     Column('tags', ARRAY(Text), nullable=False, server_default='{}'),
     Column('content', Text, nullable=False),
     Column('status', Text, nullable=False),
-    Column('author', Text, nullable=False),  # 'agent' | 'user' (the Knowledge base page)
+    Column('author', Text, nullable=False),  # 'agent' | 'review' | 'dream' (memory review, consolidation) | 'user' (the page)
     Column('conversation_id', Text),  # No FK: kept when the conversation is deleted
     Column('persona_id', Integer),  # No FK
     Column('reason', Text),  # Why it was archived, or which version was restored
@@ -265,6 +273,17 @@ kb_links = Table(
     metadata,
     Column('note_id', BigInteger, ForeignKey('kb_notes.id', ondelete='CASCADE'), primary_key=True),
     Column('target_slug', Text, primary_key=True),  # Need not exist (yet)
+)
+
+# The nightly consolidation of a knowledge base (backend/services/memory_dream.py): how far it got
+memory_dreams = Table(
+    'memory_dreams',
+    metadata,
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('vault', Integer, primary_key=True),  # As kb_notes.vault
+    Column('dreamed_until', BigInteger),  # The end of the last period it consolidated (ms, like message ids)
+    Column('failed_at', DateTime),  # The last run that failed (naive UTC), NULL after a success
+    Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
 # Define indexes

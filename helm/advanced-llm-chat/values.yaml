@@ -61,6 +61,18 @@ backend:
   # Guests are rate-limited by IP address; the ingress or tunnel in front must be trusted to
   # pass the client's address in X-Forwarded-For (uvicorn's FORWARDED_ALLOW_IPS)
   forwardedAllowIps: "*"
+  # The nightly consolidation of the agents' memory (docs/knowledge_base.md): a CronJob that goes
+  # over every knowledge base with conversations since its last run, writes a journal per week,
+  # tidies the memory up and keeps the patterns it sees. Only here: docker compose doesn't schedule it.
+  memoryDream:
+    enabled: true
+    schedule: "30 3 * * *"
+    # The schedule's time zone, also the memory's (MEMORY_TIME_ZONE: dates of memory lines and the
+    # journal's days), e.g. Europe/Berlin; empty = the cluster's (usually UTC) and UTC for the memory
+    timeZone: ""
+    # A run may take this long (seconds): it calls the memory model once per knowledge base
+    activeDeadlineSeconds: 3600
+    resources: {}
   resources: {}
   podAnnotations: {}
   nodeSelector: {}

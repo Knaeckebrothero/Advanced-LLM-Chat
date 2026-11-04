@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Advanced LLM Chat: an Angular 19.2.2 PWA with a FastAPI backend for chatting with LLMs. Uses microservices architecture with:
 - **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, SCSS styling, ngx-translate for i18n (German/English)
-- **Backend**: FastAPI with PostgreSQL for persistence (image `pgvector/pgvector:pg16`), an agent loop with tool use (`backend/llm/`), a knowledge base per user that agents opt into (`kb_*` tools, `docs/knowledge_base.md`; the Knowledge base page `/knowledge-base` to read, edit and export it for Obsidian), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
+- **Backend**: FastAPI with PostgreSQL for persistence (image `pgvector/pgvector:pg16`), an agent loop with tool use (`backend/llm/`), a knowledge base per user that agents opt into (`kb_*` tools, `docs/knowledge_base.md`; the Knowledge base page `/knowledge-base` to read, edit and export it for Obsidian) with the agent's memory (its note `memory`, part of every answer, `memory_*` tools; a background memory review after quiet conversations; a nightly consolidation into a weekly journal, a Kubernetes CronJob; agents with `own_memory` get their own knowledge base), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
 - **LLM Integration**: Thin runtime on the official `openai` and `anthropic` SDKs (no LangChain): OpenAI, any OpenAI-compatible endpoint, and Anthropic, with SSE streaming for agent responses
 
 **Resuming work:** read the "Status" section of `docs/generalization_refactor.md` first (current state, decisions, backlog, next steps), and `docs/model_catalog_api.md` for the runtime and catalog contract.
@@ -50,7 +50,7 @@ python backend/app_init.py --prod            # Production migration (add missing
 
 **Note:** No Python test framework (pytest) is configured. There are test scripts instead:
 - `python -m backend.llm.tests.run_all`: offline tests of the LLM runtime, history and tools (fake OpenAI server, mocked Anthropic API)
-- `python backend/services/tests/knowledge_base_test.py`: the knowledge base tools, the Obsidian export and the `/api/kb` endpoints against a real Postgres, in a `<POSTGRES_DB>_kb_test` database it creates itself
+- `python backend/services/tests/knowledge_base_test.py`: the knowledge base and memory tools, agents' own knowledge bases, the memory review (fake model server), the Obsidian export and the `/api/kb` endpoints against a real Postgres, in a `<POSTGRES_DB>_kb_test` database it creates itself
 - `backend/catalog/tests/catalog_api_test.py`: catalog end-to-end test against a backend on its own `*_test` database (see its docstring)
 - `backend/security/tests/oidc_test.py`: login through Keycloak end-to-end, against the bundled Keycloak and a backend in `AUTH_MODE=oidc` on a `*_test` database (see its docstring)
 - `python -m backend.llm.smoke_test --model <id>`: real API calls against one catalog model
@@ -85,7 +85,7 @@ API_URL=https://192.168.1.50:8443 docker-compose up -d
 Settings for compose go in `docker/.env` (template: `docker/.env.example`); `docker/docker-compose.keycloak.yml` adds the optional Keycloak.
 
 ### Kubernetes and releases
-The Helm chart is `helm/advanced-llm-chat` (see its README): frontend, backend (runs `app_init --prod` in an init container), Postgres, optional Keycloak and ingress. Check it with `helm lint helm/advanced-llm-chat` and `helm template`. The Keycloak realm file lives in the chart (`files/llm-chat-realm.json`) and docker compose mounts it from there.
+The Helm chart is `helm/advanced-llm-chat` (see its README): frontend, backend (runs `app_init --prod` in an init container), Postgres, optional Keycloak and ingress, and the CronJob of the nightly memory consolidation (`backend.memoryDream`, not in docker compose). Check it with `helm lint helm/advanced-llm-chat` and `helm template`. The Keycloak realm file lives in the chart (`files/llm-chat-realm.json`) and docker compose mounts it from there.
 
 `.github/workflows/docker-build.yml`: every push to `develop` builds the images (`develop-latest`, `sha-…`); every merge into `main` is a release `<major>.<minor>.<run number>` (major and minor from `Chart.yaml`): images tagged with the version and `latest`, the chart pushed to `oci://ghcr.io/knaeckebrothero/charts/advanced-llm-chat`, and a GitHub release with the chart and the compose bundle (`.github/scripts/compose-bundle.sh`).
 
@@ -141,7 +141,9 @@ backend/
 │   ├── conversation_history.py  # Conversation history in the OpenAI message format, cut to the model's context window
 │   ├── conversation_summary.py  # Rolling summary of the oldest messages once the history nearly fills the window
 │   ├── conversation_file.py  # Export and import of conversation files (docs/conversation_file.md)
-│   ├── knowledge_base.py # A user's Markdown notes (kb_notes, revisions, links): slugs, search, versions (docs/knowledge_base.md)
+│   ├── knowledge_base.py # A user's Markdown notes (kb_notes, revisions, links) per vault: slugs, search, versions, the memory (docs/knowledge_base.md)
+│   ├── memory_review.py  # Reviews quiet conversations of knowledge base agents and saves what matters to the memory
+│   ├── memory_dream.py   # Nightly consolidation: weekly journal, tidied memory, patterns (CronJob; python -m)
 │   ├── knowledge_base_export.py # The notes as a zip that opens as an Obsidian vault
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)

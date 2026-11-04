@@ -28,16 +28,19 @@ from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
 from backend.llm import (
-    ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups, with_instructions
+    ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups, with_instructions, with_memory
 )
+from backend.llm.tools import MEMORY_TOOL_NAMES
 from backend.catalog.resolver import (
     ModelNotAllowed,
     ModelNotAvailable,
     persona_prompt_for_conversation,
     persona_tool_groups,
+    persona_vault,
     resolve_auxiliary_model,
     resolve_model,
 )
+from backend.services import knowledge_base as kb
 from backend.services.llm import generate_reply
 from backend.services.conversation_history import ConversationHistoryBuilder, HistoryEntry, history_token_budget
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
@@ -98,7 +101,8 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
     The tools for an answer: the tools the server enables, limited to the tool
     groups of the conversation's persona (if it has a selection; the knowledge
     base only comes with a selection). The file tool only reads the current
-    user's uploads, the knowledge base tools only their notes (never a guest's).
+    user's uploads, the knowledge base tools only their notes (never a guest's):
+    the shared knowledge base, or the persona's own one (persona_vault()).
 
     :return: The tools, or None for none (the model doesn't support tools, or
         the persona selected no enabled tool group).
@@ -106,8 +110,18 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
     if not config.supports_tools:
         return None
     tools = tools_for_groups(persona_tool_groups(current_user, conversation), user_id=current_user['user_id'],
-                             guest=bool(current_user.get('is_guest')), conversation=conversation)
+                             guest=bool(current_user.get('is_guest')), conversation=conversation,
+                             vault=persona_vault(current_user, conversation))
     return tools if len(tools) else None
+
+
+def _memory_prompt(system_prompt: str, current_user: dict, conversation: Optional[dict],
+                   tools: Optional[ToolRegistry]) -> str:
+    """The system prompt with the agent's memory, if it has the memory tools (the knowledge base)."""
+    if tools is None or not set(tools.names()) & set(MEMORY_TOOL_NAMES):
+        return system_prompt
+    memory = kb.get_memory(current_user['user_id'], persona_vault(current_user, conversation))
+    return with_memory(system_prompt, memory['content'] if memory else None)
 
 
 def _resolve_model_or_503(current_user: dict, conversation_id: str) -> ModelConfig:
@@ -136,14 +150,16 @@ def _answer_context(
     the system prompt and the token budget of the history.
 
     The persona decides the prompt and which tools the model gets; the prompt only
-    describes the tools it really has. The conversation's system messages are
-    instructions to the model and come last.
+    describes the tools it really has. With the knowledge base, the agent's memory
+    follows (read for every answer, so a change shows in the next one). The
+    conversation's system messages are instructions to the model and come last.
     """
     conversation = db.get_conversation_by_id(conversation_id)
     tools = _agent_tools(current_user, conversation, config)
     history_builder = ConversationHistoryBuilder(db)
     system_prompt = with_instructions(
-        build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
+        _memory_prompt(build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
+                       current_user, conversation, tools),
         history_builder.system_instructions(conversation_id))
     return tools, history_builder, system_prompt, history_token_budget(config, system_prompt, tools)
 

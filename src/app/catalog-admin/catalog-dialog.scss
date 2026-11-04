@@ -196,6 +196,18 @@ mat-dialog-actions mat-spinner {
   }
 }
 
+// With the knowledge base: its own memory or the shared one
+.own-memory {
+  margin: 0 0 12px;
+
+  .tool-reason {
+    margin: 4px 0 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--theme-text-secondary);
+  }
+}
+
 .sort-order-field {
   width: min(220px, 100%);
 }

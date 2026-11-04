@@ -35,6 +35,9 @@
 {{- if .Values.backend.catalog }}
 {{- $_ := set $settings "MODEL_CATALOG_FILE" "/app/catalog-custom/models.json" }}
 {{- end }}
+{{- with .Values.backend.memoryDream.timeZone }}
+{{- $_ := set $settings "MEMORY_TIME_ZONE" . }}
+{{- end }}
 {{- /* backend.env wins over the computed settings */}}
 {{- $settings = mustMergeOverwrite $settings (default dict .Values.backend.env) }}
 apiVersion: v1

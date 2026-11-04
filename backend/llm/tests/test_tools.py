@@ -5,12 +5,14 @@ Offline test of the tool groups that personas select (no API keys or database ne
 
 Covers: tools_for_groups() with no selection, an empty one and single groups,
 unavailable groups (NEO4J_ENABLED off, TAVILY_API_KEY unset) and their
-reasons, the opt-in knowledge base (only when selected, only for signed-in
-users), the system prompt sections for the selected tools, the tools
+reasons, the opt-in knowledge base with the memory tools (only when selected,
+only for signed-in users), the system prompt sections for the selected tools,
+the memory in the prompt (with_memory, a fake memory store), the tools
 stream-generate sends for a conversation's persona (_agent_tools, with a fake
-database), and that the file tool only reads the uploads of the user it is
-built for (fake file owners, temporary FILES_DIR). The knowledge base tools
-themselves need Postgres: backend/services/tests/knowledge_base_test.py.
+database; the shared knowledge base, or the persona's own with own_memory), and
+that the file tool only reads the uploads of the user it is built for (fake
+file owners, temporary FILES_DIR). The knowledge base tools themselves need
+Postgres: backend/services/tests/knowledge_base_test.py.
 """
 import asyncio
 import os
@@ -24,7 +26,8 @@ from typing import get_args
 from backend.api import messages
 from backend.catalog import resolver
 from backend.llm import tools as tools_module
-from backend.llm.prompts import FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, WEB_SEARCH_PROMPT, build_system_prompt
+from backend.llm.prompts import (FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, MEMORY_EMPTY, MEMORY_HEADING,
+                                 WEB_SEARCH_PROMPT, build_system_prompt, with_instructions, with_memory)
 from backend.llm.tools import OPT_IN_GROUPS, TOOL_GROUPS, default_tools, tool_group_status, tools_for_groups
 from backend.llm.types import ModelConfig
 from backend.models.catalog import ToolGroup
@@ -33,7 +36,8 @@ from backend.services import file_utils
 from backend.services.tools import web_search_tools
 
 GRAPH_TOOLS = ["get_graph_schema", "search_graph", "query_graph"]
-KB_TOOLS = ["kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive"]
+KB_TOOLS = ["kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
+            "memory_add", "memory_replace", "memory_remove"]
 
 
 @contextmanager
@@ -113,6 +117,31 @@ async def test_prompt_only_describes_selected_tools():
         assert build_system_prompt("You translate.", None) == "You translate."
 
 
+async def test_memory_follows_the_tool_sections():
+    # The memory comes after the knowledge base section, the conversation's instructions last
+    prompt = with_instructions(with_memory(build_system_prompt("You keep notes.", KB_TOOLS),
+                                           "## About the user\n- Likes tea (2026-11-04)"), ["Be brief."])
+    assert prompt.index(KB_PROMPT) < prompt.index(MEMORY_HEADING) < prompt.index("Be brief.")
+    assert "<memory>\n## About the user\n- Likes tea (2026-11-04)\n</memory>" in prompt
+    from datetime import date
+    assert with_memory("x", None, date(2026, 11, 4)).endswith(
+        f"{MEMORY_HEADING}\nToday is Wednesday, 2026-11-04. {MEMORY_EMPTY}")
+    assert with_memory("x", "  \n ").endswith(MEMORY_EMPTY)
+    # stream-generate adds the memory of the vault the tools write to, only with the memory tools
+    saved = messages.kb.get_memory, messages.persona_vault
+    asked = []
+    messages.kb.get_memory = lambda user_id, vault: asked.append((user_id, vault)) or {"content": f"- vault {vault}"}
+    messages.persona_vault = lambda user, conversation: 8
+    try:
+        user = {"user_id": 1, "email": "a@example.com", "is_guest": False}
+        with_kb = messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["knowledge_base"], user_id=1))
+        assert with_kb.endswith("<memory>\n- vault 8\n</memory>") and asked == [(1, 8)], (with_kb, asked)
+        assert messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["files"], user_id=1)) == "p"
+        assert messages._memory_prompt("p", user, None, None) == "p" and len(asked) == 1
+    finally:
+        messages.kb.get_memory, messages.persona_vault = saved
+
+
 class FakeDB:
     """The persona lookup of the resolver."""
 
@@ -136,7 +165,9 @@ async def test_stream_generate_tools_follow_the_persona():
     saved_db = resolver.db
     resolver.db = FakeDB([persona(1, []), persona(2, ["files"]), persona(3, None),
                           persona(4, [], enabled=False), persona(6, ["files", "knowledge_base"]),
-                          persona(7, ["knowledge_base"], available_to_guests=True)])
+                          persona(7, ["knowledge_base"], available_to_guests=True),
+                          persona(8, ["knowledge_base"], own_memory=True),
+                          persona(9, ["knowledge_base"], own_memory=True, enabled=False)])
     try:
         with configured(neo4j=True, tavily=True):
             def names(user, persona_id, config=config):
@@ -155,10 +186,21 @@ async def test_stream_generate_tools_follow_the_persona():
             assert names(user, 6) == sorted(["get_file_content", *KB_TOOLS])
             assert names(user, 7) == sorted(KB_TOOLS)
             assert names(guest, 7) is None, "a guest gets no knowledge base, and here no tools at all"
-            # Its writes record the conversation and its agent
+            # Its writes record the conversation and its agent; it is the shared knowledge base (vault 0)
             tools = messages._agent_tools(user, {"id": "conv-1", "persona_id": 6}, config)
             writer = tools.get("kb_write").func.__wrapped__.keywords["writer"]
-            assert (writer.user_id, writer.conversation_id, writer.persona_id) == (1, "conv-1", 6), writer
+            assert (writer.user_id, writer.conversation_id, writer.persona_id, writer.vault) == (1, "conv-1", 6, 0)
+            assert tools.get("memory_add").func.__wrapped__.keywords["writer"] == writer
+            assert tools.get("kb_search").func.__wrapped__.keywords == {"user_id": 1, "vault": 0}
+            # An agent with its own memory reads and writes its own knowledge base (vault: its id)
+            tools = messages._agent_tools(user, {"id": "conv-2", "persona_id": 8}, config)
+            assert tools.get("kb_write").func.__wrapped__.keywords["writer"].vault == 8
+            assert tools.get("memory_remove").func.__wrapped__.keywords["writer"].vault == 8
+            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 8}
+            assert resolver.persona_vault(user, {"persona_id": 8}) == 8
+            assert resolver.persona_vault(user, {"persona_id": 6}) == 0
+            assert resolver.persona_vault(user, {"persona_id": 9}) == 0, "a disabled persona counts as none"
+            assert resolver.persona_vault(user, None) == 0
         with configured(neo4j=False, tavily=False):
             # Only unavailable groups selected: no tools, not an empty tool list
             resolver.db = FakeDB([persona(5, ["web_search"])])
@@ -216,7 +258,8 @@ async def test_file_tool_reads_only_own_files():
 
 TESTS = [test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
          test_knowledge_base_is_opt_in, test_unavailable_groups_stay_off, test_prompt_only_describes_selected_tools,
-         test_stream_generate_tools_follow_the_persona, test_file_tool_reads_only_own_files]
+         test_memory_follows_the_tool_sections, test_stream_generate_tools_follow_the_persona,
+         test_file_tool_reads_only_own_files]
 
 
 async def main() -> int:

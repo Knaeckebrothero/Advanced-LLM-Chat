@@ -37,6 +37,11 @@ class AppSettings(BaseModel):
     :ivar editingMode: 'guided' or 'manual' (see EditingMode). Left out in an
         update, the stored value is kept.
     :type editingMode: EditingMode
+    :ivar memoryModelId: The catalog model that reviews conversations for the
+        memory (backend/services/memory_review.py); it needs tool support. None
+        means the conversation's model. Left out in an update, the stored value
+        is kept.
+    :type memoryModelId: Optional[int]
     """
     theme: str
     language: str
@@ -45,6 +50,7 @@ class AppSettings(BaseModel):
     backgroundDim: int = Field(25, ge=0, le=80)
     backgroundBlur: int = Field(0, ge=0, le=20)
     editingMode: EditingMode = "guided"
+    memoryModelId: Optional[int] = None
 
 
 class AppSettingsResponse(AppSettings):

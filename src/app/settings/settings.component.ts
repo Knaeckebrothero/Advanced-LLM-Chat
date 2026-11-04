@@ -65,6 +65,8 @@ export class SettingsComponent {
   imageError: string | null = null;
   // Conversation import; guests can't, their conversations are not kept
   readonly canImport: boolean;
+  // Only signed-in users have a memory (the knowledge base)
+  readonly hasMemory: boolean;
   importing = false;
   importedCount = 0;
   importErrors: string[] = [];
@@ -79,6 +81,7 @@ export class SettingsComponent {
     authService: AuthService
   ) {
     this.canImport = !authService.isGuest;
+    this.hasMemory = !authService.isGuest;
     this.customImageUrl$ = this.backgroundService.customImageUrl$;
     this.settings$ = this.settingsState.settings$;
     this.models$ = this.catalogService.models$;
@@ -103,6 +106,22 @@ export class SettingsComponent {
 
   updateEditingMode(editingMode: EditingMode) {
     this.settingsState.updateSettings({ editingMode });
+  }
+
+  /** The model of the memory review; null = the conversation's model. */
+  updateMemoryModel(memoryModelId: number | null): void {
+    this.settingsState.updateSettings({ memoryModelId });
+  }
+
+  /** The models that can review conversations for the memory: it needs tools. */
+  toolModels(models: IPublicModel[]): IPublicModel[] {
+    return models.filter(m => m.supportsTools);
+  }
+
+  /** A memory model that is gone from the catalog (or lost its tools) counts as the conversation's model. */
+  selectedMemoryModel(settings: AppSettings, models: IPublicModel[]): number | null {
+    const id = settings.memoryModelId ?? null;
+    return models.some(m => m.id === id && m.supportsTools) ? id : null;
   }
 
   /** A default model that is gone from the catalog counts as automatic. */

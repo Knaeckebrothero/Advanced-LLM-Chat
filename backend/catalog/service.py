@@ -112,6 +112,7 @@ PERSONA_FIELDS = {
     "availableToGuests": "available_to_guests",
     "enabled": "enabled",
     "sortOrder": "sort_order",
+    "ownMemory": "own_memory",
 }
 # tools: NULL = every enabled tool, so null in an update selects all tools again
 PERSONA_NULLABLE = {"description", "variables", "tools"}
@@ -335,6 +336,7 @@ def persona_out(row: dict) -> PersonaOut:
         availableToGuests=bool(row.get("available_to_guests")),
         enabled=row.get("enabled") is not False,
         sortOrder=row.get("sort_order") or 0,
+        ownMemory=bool(row.get("own_memory")),
     )
 
 
