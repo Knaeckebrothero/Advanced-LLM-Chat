@@ -11,6 +11,8 @@ export interface IConversation {
   participants: string[];
   createdAt: Date;
   updatedAt: Date;
+  // When the newest message was stored (the server's clock), the sidebar's order; undefined = none yet
+  lastMessageAt?: Date;
   version: number;
   lastModified: number;
   hashsum?: number;

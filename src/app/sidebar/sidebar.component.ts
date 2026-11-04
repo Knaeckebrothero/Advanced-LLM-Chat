@@ -134,7 +134,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
     now.setHours(0, 0, 0, 0);
 
     for (const conv of conversations) {
-      const updated = new Date(conv.updatedAt);
+      const updated = new Date(conv.lastActivity);
       updated.setHours(0, 0, 0, 0);
 
       const diffTime = now.getTime() - updated.getTime();
@@ -156,9 +156,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
     }
 
     for (const key in groups) {
-      groups[key].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
+      groups[key].sort(Conversation.compareByActivity);
     }
 
     return groups;

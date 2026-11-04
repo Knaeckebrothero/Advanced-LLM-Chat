@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional, Generator
 
-from sqlalchemy import create_engine, inspect, text, select, insert, update, delete, null
+from sqlalchemy import create_engine, inspect, text, select, insert, update, delete, null, func, or_
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.pool import QueuePool
@@ -101,6 +101,21 @@ def _message_attachments(content: str) -> list[dict]:
         return []
     attachments = parsed.get('attachments') if isinstance(parsed, dict) else None
     return [att for att in attachments if isinstance(att, dict)] if isinstance(attachments, list) else []
+
+
+def _note_new_message(conn: Connection, conversation_id: str, message_id: int) -> None:
+    """
+    A new message was stored: its conversation's lastMessageAt (the sidebar's order) becomes
+    the message's time, unless it is already later. Message ids are the server's clock in
+    milliseconds. updatedAt stays: the trigger skips updates that move lastMessageAt.
+    """
+    stored_at = datetime.fromtimestamp(message_id / 1000, timezone.utc).replace(tzinfo=None)
+    last = conversations.c.lastMessageAt
+    conn.execute(
+        update(conversations)
+        .where(conversations.c.id == conversation_id, or_(last.is_(None), last < stored_at))
+        .values(lastMessageAt=stored_at, updatedAt=conversations.c.updatedAt)  # No onupdate now()
+    )
 
 
 def backfill_uploaded_files(conn: Connection) -> tuple[int, int]:
@@ -662,7 +677,7 @@ class Database:
             stmt = (
                 select(conversations)
                 .where(conversations.c.userId == user_id)
-                .order_by(conversations.c.updatedAt.desc())
+                .order_by(func.coalesce(conversations.c.lastMessageAt, conversations.c.createdAt).desc())
             )
             results = conn.execute(stmt).fetchall()
             conv_list = [self._row_to_dict(row) for row in results]
@@ -770,6 +785,10 @@ class Database:
                         break
                     message_id += 1
                 previous_id = message_id
+
+            if previous_id:
+                _note_new_message(conn, conversation_id, previous_id)
+                result = conn.execute(select(conversations).where(conversations.c.id == conversation_id)).fetchone()
 
             log.info(f"Imported conversation {conversation_id} with {len(message_rows)} messages")
             return self._row_to_dict(result)
@@ -974,7 +993,6 @@ class Database:
         Returns:
             Number of messages.
         """
-        from sqlalchemy import func
         log.debug(f"Getting message count for conversation: {conversation_id}")
         with self.connection() as conn:
             stmt = select(func.count(messages.c.id)).where(
@@ -1092,6 +1110,7 @@ class Database:
                 lastModified=last_modified,
             ).returning(messages)
             result = conn.execute(stmt).fetchone()
+            _note_new_message(conn, conversation_id, message_id)
             log.debug(f"Created message: {message_id} in conversation {conversation_id}")
             return self._row_to_dict(result)
 
@@ -1179,7 +1198,6 @@ class Database:
             The created message dictionary, or None if no id is free there
             (the neighbours are a millisecond apart).
         """
-        from sqlalchemy import func
         from sqlalchemy.dialects.postgresql import insert as pg_insert
         import time as time_module
 
@@ -1412,6 +1430,7 @@ class Database:
                 usage=_jsonb(usage)
             ).returning(messages)
             result = conn.execute(stmt).fetchone()
+            _note_new_message(conn, conversation_id, message_id)
             log.debug(f"Created agent message: {message_id} in conversation {conversation_id}")
             return self._row_to_dict(result)
 

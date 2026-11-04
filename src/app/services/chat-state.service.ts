@@ -134,11 +134,7 @@ export class ChatStateService implements OnDestroy {
 
   // All conversations
   public conversations$ = this.conversationRepository.getAll().pipe(
-    map(conversations => conversations.sort((a, b) => {
-      const dateA = a.updatedAt || a.createdAt || new Date(0);
-      const dateB = b.updatedAt || b.createdAt || new Date(0);
-      return dateB.getTime() - dateA.getTime();
-    })),
+    map(conversations => [...conversations].sort(Conversation.compareByActivity)),
     shareReplay(1)
   );
 
@@ -330,6 +326,7 @@ export class ChatStateService implements OnDestroy {
 
     // Save user message to repository
     await this.messageRepository.save(userMessage);
+    await this.conversationRepository.recordMessage(conversationId, userMessage.id);
 
     // Start streaming the AI response
     await this._streamResponse(conversationId);
@@ -403,6 +400,7 @@ export class ChatStateService implements OnDestroy {
 
     // Save user message to repository
     await this.messageRepository.save(userMessage);
+    await this.conversationRepository.recordMessage(conversationId, userMessage.id);
 
     // Start streaming the AI response (backend will extract file attachments)
     await this._streamResponse(conversationId);
@@ -487,6 +485,7 @@ export class ChatStateService implements OnDestroy {
     messageToSync.syncStatus = 'pending';
     try {
       await this.messageRepository.update(messageToSync);
+      await this.conversationRepository.recordMessage(conversationId, messageToSync.id);
     } catch (error) {
       console.error('Failed to sync voice message with backend:', error);
       // Continue anyway - message is saved locally
@@ -593,8 +592,9 @@ export class ChatStateService implements OnDestroy {
     message.content.status = 'error';
     message.content.error = error.message || 'An error occurred during streaming';
 
-    // Save the error message to the repository
+    // Save the error message to the repository (the server stored it too if it had started it)
     await this.messageRepository.save(message);
+    await this.conversationRepository.recordMessage(message.conversationId, message.id);
 
     // Clean up streaming state
     this.isStreaming$.next(false);
@@ -613,12 +613,8 @@ export class ChatStateService implements OnDestroy {
       // but we need to save it locally to IndexedDB
       await this.messageRepository.save(message);
 
-      // Update conversation timestamp
-      const conversation = await firstValueFrom(this.activeConversation$);
-      if (conversation && conversation.id !== '0') {
-        conversation.updatedAt = new Date();
-        await this.conversationRepository.save(conversation);
-      }
+      // The conversation moves up in the sidebar
+      await this.conversationRepository.recordMessage(message.conversationId, message.id);
 
       this.notificationService.showSuccess('Response generated');
     }
@@ -655,12 +651,8 @@ export class ChatStateService implements OnDestroy {
         // Save to IndexedDB
         await this.messageRepository.save(streamingMessage);
 
-        // Update conversation timestamp
-        const conversation = await firstValueFrom(this.activeConversation$);
-        if (conversation && conversation.id !== '0') {
-          conversation.updatedAt = new Date();
-          await this.conversationRepository.save(conversation);
-        }
+        // The conversation moves up in the sidebar
+        await this.conversationRepository.recordMessage(streamingMessage.conversationId, streamingMessage.id);
       }
     }
 
