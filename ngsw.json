@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1793780693262,
+  "timestamp": 1793786304172,
   "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
@@ -11,15 +11,19 @@
         "ignoreVary": true
       },
       "urls": [
-        "/Advanced-LLM-Chat/chunk-3NEWPJST.js",
-        "/Advanced-LLM-Chat/chunk-ZEEDASAW.js",
+        "/Advanced-LLM-Chat/chunk-3OSNNLJS.js",
+        "/Advanced-LLM-Chat/chunk-47TTCASG.js",
+        "/Advanced-LLM-Chat/chunk-J32OTB3J.js",
+        "/Advanced-LLM-Chat/chunk-PQT27PEE.js",
+        "/Advanced-LLM-Chat/chunk-UL3245J2.js",
+        "/Advanced-LLM-Chat/chunk-YVAF5BGS.js",
         "/Advanced-LLM-Chat/favicon.ico",
         "/Advanced-LLM-Chat/index.html",
-        "/Advanced-LLM-Chat/main-7XSO57NY.js",
+        "/Advanced-LLM-Chat/main-6LYNP4YH.js",
         "/Advanced-LLM-Chat/manifest.webmanifest",
         "/Advanced-LLM-Chat/polyfills-B6TNHZQ6.js",
         "/Advanced-LLM-Chat/scripts-QIUD7IKY.js",
-        "/Advanced-LLM-Chat/styles-IJ27RQF7.css"
+        "/Advanced-LLM-Chat/styles-TQ7SCRKU.css"
       ],
       "patterns": []
     },
@@ -158,8 +162,8 @@
     "/Advanced-LLM-Chat/assets/backgrounds/aurora.svg": "4317d4f97611de867fd00101f4319e8bf3bb5816",
     "/Advanced-LLM-Chat/assets/backgrounds/ridges.svg": "6e6cf2856cb537d54d8e4c6d3d849fbe9c665d01",
     "/Advanced-LLM-Chat/assets/env.template.js": "f9935f6e30672e3d9cff426e7f9eb356fd63aed1",
-    "/Advanced-LLM-Chat/assets/i18n/de.json": "e96f43e83baf2bbf360387d6ba3ea532e1679ac3",
-    "/Advanced-LLM-Chat/assets/i18n/en.json": "b22c889366695d2cdabc81eb096cce0e75428b1c",
+    "/Advanced-LLM-Chat/assets/i18n/de.json": "58be943934a300eec4ddcba40b85e6f728db07a9",
+    "/Advanced-LLM-Chat/assets/i18n/en.json": "b9e10fd471266a5b6c9e0d61197250c4cab2898c",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-144-144.png": "313ccfeb19f50c2fe91c67b86f736473978e4c69",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-192-192.png": "08ed5b826739b5829a60c015e200ec6e31377cc1",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-48-48.png": "4e83611b2b50073931a9ef6719cffbdc4a911e1d",
@@ -273,15 +277,19 @@
     "/Advanced-LLM-Chat/assets/icons/windows11/Wide310x150Logo.scale-150.png": "c65b560f379a8b49c21e9c41ef37dc4cf49bca83",
     "/Advanced-LLM-Chat/assets/icons/windows11/Wide310x150Logo.scale-200.png": "12c190e84238ed2f75213747754c6903e78355eb",
     "/Advanced-LLM-Chat/assets/icons/windows11/Wide310x150Logo.scale-400.png": "97a26426a102791e080e9f1c80cc4784d59611d8",
-    "/Advanced-LLM-Chat/chunk-3NEWPJST.js": "56e197152010f6eca53cdd6c240dd24cf65df6b8",
-    "/Advanced-LLM-Chat/chunk-ZEEDASAW.js": "52a5ca81144afbb807b6774454a292d6249f7077",
+    "/Advanced-LLM-Chat/chunk-3OSNNLJS.js": "1d13467f9deac23cc89d99e9629333495f815e64",
+    "/Advanced-LLM-Chat/chunk-47TTCASG.js": "378b4b888f1b9771515954dd361770feac13d723",
+    "/Advanced-LLM-Chat/chunk-J32OTB3J.js": "22ed36ec330e1278f5078ed713757319992c9190",
+    "/Advanced-LLM-Chat/chunk-PQT27PEE.js": "0e523dc838fd14429a6f9544398ccbdb6440065c",
+    "/Advanced-LLM-Chat/chunk-UL3245J2.js": "03337c0231741864b2e6f160a3cbb383ccc3261e",
+    "/Advanced-LLM-Chat/chunk-YVAF5BGS.js": "11521e7d2dafdac1e867d7b4ac3e6d8f8c5f6c3e",
     "/Advanced-LLM-Chat/favicon.ico": "b2451115caf945b256076e349ef6d8f6ad203e45",
-    "/Advanced-LLM-Chat/index.html": "2813dcada38ebf46aeb3c70e8c3d8ef6355d5e95",
-    "/Advanced-LLM-Chat/main-7XSO57NY.js": "2861140a5b0d01921c0cbe89a6f3161fe1001490",
+    "/Advanced-LLM-Chat/index.html": "90a36ce7563dd3cc1c291584bece65791fed8a79",
+    "/Advanced-LLM-Chat/main-6LYNP4YH.js": "2e6fd1e4ce984f402d236a9f5d6b728a53c3e589",
     "/Advanced-LLM-Chat/manifest.webmanifest": "a64c168efec3c5255bcf9a4a4749880abb8c00cc",
     "/Advanced-LLM-Chat/polyfills-B6TNHZQ6.js": "bf76ac291d7f51c1139b7edcf86b359a30c08c64",
     "/Advanced-LLM-Chat/scripts-QIUD7IKY.js": "caf8d17750159ea123963a43011b201ef412d216",
-    "/Advanced-LLM-Chat/styles-IJ27RQF7.css": "372b87ff0c000ca17dd41cb69a984c2bdd782612"
+    "/Advanced-LLM-Chat/styles-TQ7SCRKU.css": "f1cb3f59360dac458fd7bb53575eb47781ed0915"
   },
   "navigationUrls": [
     {
