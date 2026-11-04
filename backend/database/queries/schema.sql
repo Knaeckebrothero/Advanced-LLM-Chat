@@ -203,16 +203,16 @@ CREATE TABLE IF NOT EXISTS kb_notes (
 CREATE TABLE IF NOT EXISTS kb_note_revisions (
     id BIGSERIAL PRIMARY KEY,
     note_id BIGINT NOT NULL REFERENCES kb_notes(id) ON DELETE CASCADE,
-    action TEXT NOT NULL,                    -- 'create' | 'update' | 'archive'
+    action TEXT NOT NULL,                    -- 'create' | 'update' | 'archive' | 'restore'
     title TEXT NOT NULL,
     description TEXT,
     tags TEXT[] NOT NULL DEFAULT '{}',
     content TEXT NOT NULL,
     status TEXT NOT NULL,
-    author TEXT NOT NULL,                    -- 'agent' | 'user'
+    author TEXT NOT NULL,                    -- 'agent' | 'user' (the Knowledge base page)
     conversation_id TEXT,                    -- where the agent wrote it (no FK: kept when the conversation is deleted)
     persona_id INTEGER,                      -- personas.id of that conversation's agent at the time (no FK)
-    reason TEXT,                             -- why it was archived
+    reason TEXT,                             -- why it was archived, or which version was restored
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

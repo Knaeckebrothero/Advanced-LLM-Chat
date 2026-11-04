@@ -27,7 +27,7 @@ from ..models.message import AgentStep
 from . import anthropic_chat, openai_chat
 from .client import get_client
 from .common import STOP_MAX_TOKENS, STOP_REFUSAL, TOOL_ERROR_KEY, ModelTurn, ToolCall
-from .tools import ToolInputError, ToolRegistry, format_tool_output
+from .tools import ToolInputError, ToolRegistry, ToolText, format_tool_output
 from .types import KIND_ANTHROPIC, ModelConfig, Usage
 
 log = logging.getLogger(__name__)
@@ -99,6 +99,15 @@ def _json_safe(value: Any) -> Any:
     return json.loads(json.dumps(value, ensure_ascii=False, default=str))
 
 
+def _step_metadata(output: Any) -> Optional[dict]:
+    """The metadata of a result step: a dict output itself, or what a ToolText carries."""
+    if isinstance(output, dict):
+        return _json_safe(output)
+    if isinstance(output, ToolText) and output.metadata:
+        return _json_safe(output.metadata)
+    return None
+
+
 async def _run_tool(registry: ToolRegistry, call: ToolCall, arguments: Any, error: Optional[str]) -> tuple[Any, bool, int]:
     """Run one tool call; errors become the result so the model can react. Returns (output, is_error, ms)."""
     started = time.monotonic()
@@ -160,7 +169,7 @@ async def _run_tools(
                 content=content,
                 timestamp=_now_ms(),
                 duration=duration,
-                metadata=_json_safe(output) if isinstance(output, dict) else None,
+                metadata=_step_metadata(output),
                 callId=call.id,
             ))
     finally:

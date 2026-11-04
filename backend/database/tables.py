@@ -246,16 +246,16 @@ kb_note_revisions = Table(
     metadata,
     Column('id', BigInteger, primary_key=True, autoincrement=True),
     Column('note_id', BigInteger, ForeignKey('kb_notes.id', ondelete='CASCADE'), nullable=False),
-    Column('action', Text, nullable=False),  # 'create' | 'update' | 'archive'
+    Column('action', Text, nullable=False),  # 'create' | 'update' | 'archive' | 'restore'
     Column('title', Text, nullable=False),
     Column('description', Text),
     Column('tags', ARRAY(Text), nullable=False, server_default='{}'),
     Column('content', Text, nullable=False),
     Column('status', Text, nullable=False),
-    Column('author', Text, nullable=False),  # 'agent' | 'user'
+    Column('author', Text, nullable=False),  # 'agent' | 'user' (the Knowledge base page)
     Column('conversation_id', Text),  # No FK: kept when the conversation is deleted
     Column('persona_id', Integer),  # No FK
-    Column('reason', Text),  # Why it was archived
+    Column('reason', Text),  # Why it was archived, or which version was restored
     Column('created_at', DateTime, server_default=func.now()),
 )
 

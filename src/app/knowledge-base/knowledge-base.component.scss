@@ -1,0 +1,333 @@
+:host {
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  // The theme only emits Material color tokens: the hints under the fields get their size here
+  --mat-form-field-subscript-text-size: 0.75rem;
+  --mat-form-field-subscript-text-line-height: 1.1rem;
+  --mat-form-field-subscript-text-weight: 400;
+  --mat-form-field-subscript-text-tracking: normal;
+}
+
+:host ::ng-deep .mat-mdc-form-field-hint {
+  color: var(--theme-text-secondary);
+}
+
+.kb-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+  color: var(--theme-text);
+}
+
+.kb-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 24px;
+
+  .kb-heading {
+    flex: 1 1 360px;
+    min-width: 0;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 600;
+  }
+
+  p {
+    margin: 4px 0 0;
+    max-width: 680px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.kb-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.button-spinner {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
+// The list and the open note side by side
+.kb-body {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.kb-list-pane {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100dvh - 32px);
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2px 4px 8px 2px;
+}
+
+.kb-search {
+  width: 100%;
+
+  mat-icon[matPrefix] {
+    margin: 0 4px 0 12px;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.kb-status {
+  display: flex;
+  width: 100%;
+
+  mat-button-toggle {
+    flex: 1 1 0;
+  }
+
+  .toggle-count {
+    margin-left: 6px;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.kb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  .tag-count {
+    margin-left: 2px;
+    font-size: 0.7rem;
+    opacity: 0.7;
+  }
+}
+
+.list-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 8px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--theme-text-secondary);
+
+  p {
+    margin: 0;
+  }
+}
+
+.list-summary {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+}
+
+.list-empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--theme-border);
+  border-radius: 14px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--theme-text-secondary);
+}
+
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--theme-text);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--theme-hover);
+  }
+
+  &.is-selected {
+    border-color: var(--theme-border);
+    background: var(--theme-surface);
+    box-shadow: var(--theme-shadow-sm);
+  }
+}
+
+.note-item-title {
+  font-size: 0.925rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.note-item-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--theme-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.note-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 0.72rem;
+  color: var(--theme-text-secondary);
+}
+
+.note-item-tag {
+  opacity: 0.85;
+}
+
+// The open note: a sheet next to the list
+.kb-note-pane {
+  min-width: 0;
+  min-height: 320px;
+  padding: 20px 24px 28px;
+  border: 1px solid var(--theme-border);
+  border-radius: 18px;
+  background: var(--theme-surface);
+  box-shadow: var(--theme-shadow-sm);
+}
+
+.kb-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 64px 16px;
+  text-align: center;
+  color: var(--theme-text-secondary);
+
+  mat-icon {
+    font-size: 40px;
+    width: 40px;
+    height: 40px;
+  }
+
+  p {
+    margin: 0;
+    max-width: 420px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  // The icons of the buttons keep their normal size
+  .state-actions mat-icon,
+  button mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+// With a background image (settings), the page sits on a frosted sheet so its text stays readable
+:host-context(body.has-background-image) .kb-page {
+  margin: 24px auto;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+  background: color-mix(in srgb, var(--theme-background) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@media (max-width: 1100px) {
+  .kb-body {
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .kb-note-pane {
+    padding: 16px 18px 24px;
+  }
+}
+
+// Phones: the list and the note take turns; the sidebar toggle sits fixed at the top left
+@media (max-width: 768px) {
+  .kb-page {
+    padding: 64px 16px 32px;
+  }
+
+  .kb-body {
+    display: block;
+  }
+
+  .kb-list-pane {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .kb-note-pane {
+    display: none;
+    padding: 12px 14px 20px;
+    border-radius: 14px;
+  }
+
+  .kb-body.has-selection {
+    .kb-list-pane {
+      display: none;
+    }
+
+    .kb-note-pane {
+      display: block;
+    }
+  }
+
+  // With a note open, the page header gives way to the note
+  .kb-page:has(.kb-body.has-selection) .kb-header {
+    display: none;
+  }
+
+  :host-context(body.has-background-image) .kb-page {
+    margin: 0;
+    min-height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+}

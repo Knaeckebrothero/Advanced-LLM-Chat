@@ -5,7 +5,6 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import {FilePreview, FilePreviewUtil} from '../../data/objects/file-preview';
@@ -71,7 +70,6 @@ import {TranslateModule, TranslatePipe} from "@ngx-translate/core";
     MatButtonModule,
     MatMenuModule,
     MatTooltipModule,
-    MatChipsModule,
     MatProgressBarModule,
     MatDialogModule,
     TranslateModule

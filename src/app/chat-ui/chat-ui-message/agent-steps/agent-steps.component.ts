@@ -87,6 +87,15 @@ export class AgentStepsComponent {
   }
 
   /**
+   * The note a knowledge base tool's result is about (kb_read, kb_write, kb_update, kb_archive),
+   * to open it on the Knowledge base page
+   */
+  noteSlug(step: IAgentStep): string | null {
+    const slug = step.type === 'tool_result' ? step.metadata?.['kbNote'] : null;
+    return typeof slug === 'string' && slug ? slug : null;
+  }
+
+  /**
    * TrackBy function for agent steps
    */
   trackStep(index: number, step: IAgentStep): string {

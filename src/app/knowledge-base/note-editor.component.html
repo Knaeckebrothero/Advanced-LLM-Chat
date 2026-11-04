@@ -1,0 +1,119 @@
+<form class="pane" (ngSubmit)="save()" (keydown)="onKeydown($event)">
+  <div class="pane-toolbar">
+    <h2 class="pane-heading">
+      {{ (isNew ? 'knowledgeBase.editor.newTitle' : 'knowledgeBase.editor.editTitle') | translate }}
+    </h2>
+    <span class="toolbar-spacer"></span>
+    <button mat-button type="button" (click)="cancel()" [disabled]="saving">
+      {{ 'knowledgeBase.editor.cancel' | translate }}
+    </button>
+    <button mat-flat-button type="submit" [disabled]="!valid || saving">
+      @if (saving) {
+        <mat-spinner diameter="16" class="button-spinner"></mat-spinner>
+      } @else {
+        <mat-icon>check</mat-icon>
+      }
+      {{ (isNew ? 'knowledgeBase.editor.create' : 'knowledgeBase.editor.save') | translate }}
+    </button>
+  </div>
+
+  @if (conflictVersion !== null) {
+    <div class="pane-banner pane-banner--warning" role="alert">
+      <mat-icon aria-hidden="true">sync_problem</mat-icon>
+      <span class="pane-banner-text">
+        {{ 'knowledgeBase.editor.conflict' | translate }}
+        <span class="banner-detail">{{ 'knowledgeBase.editor.conflictHelp' | translate }}</span>
+      </span>
+      <button mat-button type="button" (click)="discard()">{{ 'knowledgeBase.editor.discard' | translate }}</button>
+      <button mat-flat-button type="button" (click)="saveAnyway()">{{ 'knowledgeBase.editor.saveAnyway' | translate }}</button>
+    </div>
+  }
+  @if (existing; as other) {
+    <div class="pane-banner pane-banner--warning" role="alert">
+      <mat-icon aria-hidden="true">content_copy</mat-icon>
+      <span class="pane-banner-text">
+        {{ (other.status === 'archived' ? 'knowledgeBase.editor.existsArchived' : 'knowledgeBase.editor.exists') | translate }}
+      </span>
+      <button mat-button type="button" (click)="openNote.emit(other.slug)">{{ 'knowledgeBase.editor.openExisting' | translate }}</button>
+    </div>
+  }
+  @if (error) {
+    <div class="pane-banner pane-banner--error" role="alert">
+      <mat-icon aria-hidden="true">error_outline</mat-icon>
+      <span class="pane-banner-text">{{ 'knowledgeBase.editor.failed' | translate: { error } }}</span>
+    </div>
+  }
+
+  <div class="editor-fields">
+    <mat-form-field class="field-title">
+      <mat-label>{{ 'knowledgeBase.editor.title' | translate }}</mat-label>
+      <input matInput name="title" required [maxlength]="maxTitle" [(ngModel)]="title" (ngModelChange)="changed()"
+             autocomplete="off" cdkFocusInitial>
+      <mat-hint>
+        @if (isNew) {
+          {{ 'knowledgeBase.editor.slugHint' | translate: { slug: newSlug } }}
+        } @else {
+          {{ 'knowledgeBase.editor.slug' | translate: { slug: note()!.slug } }}
+        }
+      </mat-hint>
+    </mat-form-field>
+
+    <mat-form-field>
+      <mat-label>{{ 'knowledgeBase.editor.description' | translate }}</mat-label>
+      <input matInput name="description" [maxlength]="maxDescription" [(ngModel)]="description"
+             (ngModelChange)="changed()" autocomplete="off">
+      <mat-hint>{{ 'knowledgeBase.editor.descriptionHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    <mat-form-field>
+      <mat-label>{{ 'knowledgeBase.editor.tags' | translate }}</mat-label>
+      <mat-chip-grid #chipGrid [attr.aria-label]="'knowledgeBase.editor.tags' | translate">
+        @for (tag of tags; track tag) {
+          <mat-chip-row (removed)="removeTag(tag)">
+            #{{ tag }}
+            <button matChipRemove type="button" [attr.aria-label]="'knowledgeBase.editor.removeTag' | translate: { tag }">
+              <mat-icon>cancel</mat-icon>
+            </button>
+          </mat-chip-row>
+        }
+        <input [matChipInputFor]="chipGrid" [matChipInputSeparatorKeyCodes]="separators"
+               [matChipInputAddOnBlur]="true" (matChipInputTokenEnd)="addTag($event)">
+      </mat-chip-grid>
+      @if (tagError) {
+        <mat-hint class="hint-error">{{ tagError }}</mat-hint>
+      } @else {
+        <mat-hint>{{ 'knowledgeBase.editor.tagsHint' | translate }}</mat-hint>
+      }
+    </mat-form-field>
+  </div>
+
+  <div class="content-field">
+    <div class="content-bar">
+      <mat-button-toggle-group name="view" [(ngModel)]="view" hideSingleSelectionIndicator
+                               [attr.aria-label]="'knowledgeBase.editor.content' | translate">
+        <mat-button-toggle value="write">{{ 'knowledgeBase.editor.write' | translate }}</mat-button-toggle>
+        <mat-button-toggle value="preview">{{ 'knowledgeBase.editor.preview' | translate }}</mat-button-toggle>
+      </mat-button-toggle-group>
+      <span class="content-count" [class.is-over]="content.length > maxContent">
+        {{ content.length.toLocaleString() }} / {{ maxContent.toLocaleString() }}
+      </span>
+    </div>
+
+    @if (view === 'write') {
+      <mat-form-field class="content-input">
+        <mat-label>{{ 'knowledgeBase.editor.content' | translate }}</mat-label>
+        <textarea matInput name="content" required [(ngModel)]="content" (ngModelChange)="changed()"
+                  cdkTextareaAutosize cdkAutosizeMinRows="12" spellcheck="true"></textarea>
+        <mat-hint>{{ 'knowledgeBase.editor.contentHint' | translate }}</mat-hint>
+      </mat-form-field>
+    } @else {
+      <div class="content-preview">
+        @if (content.trim()) {
+          <app-note-content [content]="content" [interactive]="false"></app-note-content>
+        } @else {
+          <p class="preview-empty">{{ 'knowledgeBase.editor.previewEmpty' | translate }}</p>
+        }
+      </div>
+    }
+  </div>
+</form>

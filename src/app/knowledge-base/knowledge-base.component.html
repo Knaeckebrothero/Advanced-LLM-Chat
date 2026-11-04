@@ -1,0 +1,194 @@
+<div class="kb-page">
+  <header class="kb-header">
+    <div class="kb-heading">
+      <h1>{{ 'knowledgeBase.title' | translate }}</h1>
+      <p>{{ 'knowledgeBase.subtitle' | translate }}</p>
+    </div>
+    <div class="kb-header-actions">
+      <button mat-stroked-button type="button" (click)="exportVault()" [disabled]="exporting()"
+              [matTooltip]="'knowledgeBase.exportHint' | translate">
+        @if (exporting()) {
+          <mat-spinner diameter="16" class="button-spinner"></mat-spinner>
+        } @else {
+          <mat-icon>download</mat-icon>
+        }
+        {{ 'knowledgeBase.export' | translate }}
+      </button>
+      <button mat-flat-button type="button" (click)="newNote()">
+        <mat-icon>add</mat-icon>
+        {{ 'knowledgeBase.newNote' | translate }}
+      </button>
+    </div>
+  </header>
+
+  @if (store.listState() === 'forbidden') {
+    <div class="kb-state">
+      <mat-icon aria-hidden="true">lock</mat-icon>
+      <p>{{ 'knowledgeBase.forbidden' | translate }}</p>
+    </div>
+  } @else {
+    <div class="kb-body" [class.has-selection]="hasSelection()">
+      <aside class="kb-list-pane" [attr.aria-label]="'knowledgeBase.listLabel' | translate">
+        <mat-form-field class="kb-search">
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput type="search" [placeholder]="'knowledgeBase.search' | translate" [(ngModel)]="searchText"
+                 (input)="onSearchInput()" (keydown.escape)="clearSearch()" autocomplete="off"
+                 [attr.aria-label]="'knowledgeBase.search' | translate">
+          @if (searchText) {
+            <button matSuffix mat-icon-button type="button" (click)="clearSearch()"
+                    [attr.aria-label]="'knowledgeBase.clearSearch' | translate">
+              <mat-icon>close</mat-icon>
+            </button>
+          }
+        </mat-form-field>
+
+        <mat-button-toggle-group class="kb-status" [value]="store.status()" (change)="setStatus($event.value)"
+                                 hideSingleSelectionIndicator [attr.aria-label]="'knowledgeBase.statusLabel' | translate">
+          <mat-button-toggle value="active">
+            {{ 'knowledgeBase.active' | translate }}
+            <span class="toggle-count">{{ store.counts().active }}</span>
+          </mat-button-toggle>
+          <mat-button-toggle value="archived">
+            {{ 'knowledgeBase.archived' | translate }}
+            <span class="toggle-count">{{ store.counts().archived }}</span>
+          </mat-button-toggle>
+        </mat-button-toggle-group>
+
+        @if (!store.searching() && store.tags().length > 1) {
+          <div class="kb-tags" role="group" [attr.aria-label]="'knowledgeBase.tagsLabel' | translate">
+            @for (tag of store.tags(); track tag.tag) {
+              <button type="button" class="tag-chip" [class.is-selected]="store.tag() === tag.tag"
+                      [attr.aria-pressed]="store.tag() === tag.tag" (click)="pickTag(tag.tag)">
+                #{{ tag.tag }} <span class="tag-count">{{ tag.count }}</span>
+              </button>
+            }
+          </div>
+        }
+
+        @switch (store.listState()) {
+          @case ('loading') {
+            <div class="list-state"><mat-spinner diameter="28"></mat-spinner></div>
+          }
+          @case ('error') {
+            <div class="list-state" role="alert">
+              <mat-icon aria-hidden="true">cloud_off</mat-icon>
+              <p>{{ 'knowledgeBase.loadFailed' | translate }}</p>
+              <button mat-stroked-button type="button" (click)="store.loadList()">
+                <mat-icon>refresh</mat-icon>
+                {{ 'catalog.common.retry' | translate }}
+              </button>
+            </div>
+          }
+          @default {
+            @if (store.searching()) {
+              <p class="list-summary" aria-live="polite">{{ 'knowledgeBase.found' | translate: { count: store.items().length } }}</p>
+            } @else if (store.total() > store.notes().length) {
+              <p class="list-summary">{{ 'knowledgeBase.shown' | translate: { shown: store.notes().length, total: store.total() } }}</p>
+            }
+            @if (store.items().length === 0) {
+              <p class="list-empty">
+                @if (store.searching()) {
+                  {{ 'knowledgeBase.noHits' | translate }}
+                } @else if (store.tag()) {
+                  {{ 'knowledgeBase.emptyTag' | translate }}
+                } @else if (store.status() === 'archived') {
+                  {{ 'knowledgeBase.emptyArchive' | translate }}
+                } @else {
+                  {{ 'knowledgeBase.empty' | translate }}
+                }
+              </p>
+            } @else {
+              <ul class="note-list">
+                @for (item of store.items(); track item.slug) {
+                  <li>
+                    <button type="button" class="note-item" [class.is-selected]="item.slug === store.slug() && !creating()"
+                            [attr.aria-current]="item.slug === store.slug() ? 'page' : null" (click)="select(item.slug)">
+                      <span class="note-item-title">{{ item.title }}</span>
+                      @if (snippet(item); as text) {
+                        <span class="note-item-text">{{ text }}</span>
+                      } @else if (item.description) {
+                        <span class="note-item-text">{{ item.description }}</span>
+                      }
+                      <span class="note-item-meta">
+                        <span>{{ date(item.updatedAt) }}</span>
+                        @for (tag of item.tags.slice(0, 3); track tag) {
+                          <span class="note-item-tag">#{{ tag }}</span>
+                        }
+                        @if (item.tags.length > 3) {
+                          <span class="note-item-tag">+{{ item.tags.length - 3 }}</span>
+                        }
+                      </span>
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          }
+        }
+      </aside>
+
+      <section class="kb-note-pane">
+        @if (creating(); as draft) {
+          <app-note-editor [initialTitle]="draft.title" (done)="onCreated($event)" (dirtyChange)="onDirtyChange($event)"
+                           (openNote)="openExisting($event)"></app-note-editor>
+        } @else {
+          @switch (store.noteState()) {
+            @case ('loading') {
+              <div class="kb-state"><mat-spinner diameter="32"></mat-spinner></div>
+            }
+            @case ('not_found') {
+              <div class="kb-state">
+                <mat-icon aria-hidden="true">search_off</mat-icon>
+                <p>{{ 'knowledgeBase.notFound' | translate: { slug: store.slug() } }}</p>
+                <div class="state-actions">
+                  <button mat-button type="button" (click)="backToList()">{{ 'knowledgeBase.back' | translate }}</button>
+                  <button mat-stroked-button type="button" (click)="newNote(store.slug() ?? '')">
+                    <mat-icon>add</mat-icon>
+                    {{ 'knowledgeBase.writeIt' | translate }}
+                  </button>
+                </div>
+              </div>
+            }
+            @case ('error') {
+              <div class="kb-state" role="alert">
+                <mat-icon aria-hidden="true">cloud_off</mat-icon>
+                <p>{{ 'knowledgeBase.noteFailed' | translate }}</p>
+                <button mat-stroked-button type="button" (click)="store.open(store.slug())">
+                  <mat-icon>refresh</mat-icon>
+                  {{ 'catalog.common.retry' | translate }}
+                </button>
+              </div>
+            }
+            @case ('ready') {
+              @if (store.note(); as note) {
+                @switch (mode()) {
+                  @case ('edit') {
+                    <app-note-editor [note]="note" (done)="onEdited($event)" (discarded)="onDiscarded()"
+                                     (dirtyChange)="onDirtyChange($event)" (openNote)="openExisting($event)"></app-note-editor>
+                  }
+                  @case ('history') {
+                    <app-note-history [note]="note" (back)="mode.set('view')"
+                                      (conversation)="openConversation($event)"></app-note-history>
+                  }
+                  @default {
+                    <app-note-view [note]="note" (back)="backToList()" (edit)="mode.set('edit')"
+                                   (history)="mode.set('history')" (archive)="archive(note)" (restore)="restore(note)"
+                                   (delete)="delete(note)" (tagPicked)="showTag($event)"
+                                   (missingLink)="newNote($event.text)"
+                                   (conversation)="openConversation($event)"></app-note-view>
+                  }
+                }
+              }
+            }
+            @default {
+              <div class="kb-state kb-placeholder">
+                <mat-icon aria-hidden="true">menu_book</mat-icon>
+                <p>{{ 'knowledgeBase.pickNote' | translate }}</p>
+              </div>
+            }
+          }
+        }
+      </section>
+    </div>
+  }
+</div>

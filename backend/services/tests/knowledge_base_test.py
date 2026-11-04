@@ -9,6 +9,9 @@ to change, content and append together); search by words (German prefixes, title
 text (LIKE wildcards are literal) and tags; archive and restore; two users who can't see each
 other's notes and a model that can't choose the user; revisions with the conversation and agent;
 parallel tool calls (the same title twice, two appends); deleting a user deletes their notes.
+The Knowledge base page: tool results that link the step to their note; edits with a version
+check, restoring a version or an archived note, deleting for good; the Obsidian export; the API
+(backend/api/knowledge_base.py) through FastAPI's test client, also for guests and other users.
 
 It creates the database <POSTGRES_DB>_kb_test if needed (or --database, whose name must contain
 "test") and deletes its own test users, so it never touches the real database:
@@ -19,9 +22,12 @@ Exit code 0 if every check passed.
 """
 import argparse
 import asyncio
+import io
 import logging
 import sys
 import traceback
+import zipfile
+from datetime import datetime
 from pathlib import Path
 
 # Make the backend package importable when run as a script
@@ -36,7 +42,8 @@ from backend.database.db import Database  # noqa: E402
 from backend.database.tables import kb_note_revisions, kb_notes, users  # noqa: E402
 from backend.llm.tools import TOOL_GROUPS, ToolInputError, tools_for_groups  # noqa: E402
 from backend.services import knowledge_base  # noqa: E402
-from backend.services.knowledge_base import link_targets, note_slug, slugify  # noqa: E402
+from backend.services import knowledge_base_export  # noqa: E402
+from backend.services.knowledge_base import KBConflict, KBNotFound, Writer, link_targets, note_slug, slugify  # noqa: E402
 
 TEST_EMAILS = ("kb-test-1@example.com", "kb-test-2@example.com")
 CONVERSATION = {"id": "kb-test-conversation", "persona_id": 42}
@@ -86,6 +93,8 @@ async def test_slugs_and_links():
                "[x](other-note.md) [y](https://example.org/a.md) [z](#heading) [w](folder/Some%20Note.md#part) "
                "[v](mailto:a@b.c)")
     assert link_targets(content) == ["project-apollo", "budget", "plan", "other-note", "some-note"], link_targets(content)
+    # [[...]] in code is text, also in a code block that isn't closed
+    assert link_targets("A `[[x]]` b\n```\n[[y]]\n```\n[[z]] ~~~\n[[w]]") == ["z"]
 
 
 async def test_write_and_read_back():
@@ -260,9 +269,183 @@ async def test_deleting_a_user_deletes_the_notes():
     assert note_count(0) == 0
 
 
+async def test_tool_results_link_to_their_note():
+    from backend.llm.agent_loop import _step_metadata
+    from backend.llm.tools import format_tool_output
+    kb = tools()
+    result = await kb.call("kb_write", {"title": "Project Apollo", "content": "Goal: the moon."})
+    assert result.metadata == {"kbNote": "project-apollo"} and _step_metadata(result) == {"kbNote": "project-apollo"}
+    assert type(format_tool_output(result)) is str, "the model gets a plain string"
+    for name, arguments in (("kb_read", {"note": "Project Apollo"}), ("kb_update", {"note": "project-apollo", "append": "x"}),
+                            ("kb_archive", {"note": "project-apollo"})):
+        assert (await kb.call(name, arguments)).metadata == {"kbNote": "project-apollo"}, name
+    assert _step_metadata(await kb.call("kb_list", {})) is None
+
+
+async def test_page_edits_and_versions():
+    kb = tools()
+    page = Writer(user_ids[0], author="user")
+    await kb.call("kb_write", {"title": "Boat", "content": "Length 6 m.", "tags": ["boat"]})
+    version = knowledge_base.get_note(user_ids[0], "boat")["version"]
+    # The agent appends while the user edits: the user's save is refused, then saved on the new version
+    await kb.call("kb_update", {"note": "boat", "append": "Made of oak."})
+    try:
+        knowledge_base.update_note(page, "boat", content="Length 7 m.", title="Boat", base_version=version)
+        raise AssertionError("an edit on an old version must be refused")
+    except KBConflict as e:
+        assert e.version > version
+        version = e.version
+    note, changes = knowledge_base.update_note(page, "boat", content="Length 7 m.", title="Boat", description="",
+                                               tags=["boat", "project"], base_version=version)
+    assert changes and note["version"] > version and note["content"] == "Length 7 m."
+    revisions = knowledge_base.list_revisions(user_ids[0], "boat")
+    assert [r["action"] for r in revisions] == ["update", "update", "create"], revisions
+    assert [r["author"] for r in revisions] == ["user", "agent", "agent"]
+    assert revisions[1]["persona_id"] == CONVERSATION["persona_id"] and revisions[0]["conversation_id"] is None
+    assert revisions[1]["conversation_name"] is None, "the test conversation doesn't exist"
+    # Restoring the first version adds a new one with a reason; the history keeps everything
+    first = knowledge_base.get_revision(user_ids[0], "boat", revisions[-1]["id"])
+    assert first["content"] == "Length 6 m." and first["tags"] == ["boat"]
+    note, changes = knowledge_base.restore_revision(page, "boat", first["id"], base_version=note["version"])
+    assert note["content"] == "Length 6 m." and note["tags"] == ["boat"] and changes
+    latest = knowledge_base.list_revisions(user_ids[0], "boat")[0]
+    assert latest["reason"].startswith("Restored the version of ") and latest["author"] == "user", latest
+    try:
+        knowledge_base.get_revision(user_ids[1], "boat", first["id"])
+        raise AssertionError("another user's note must not be found")
+    except KBNotFound:
+        pass
+    # Archive and restore unchanged; deleting for good removes the note and its versions
+    knowledge_base.archive_note(page, "boat")
+    assert knowledge_base.list_notes(user_ids[0], status="archived")["total"] == 1
+    assert knowledge_base.count_notes(user_ids[0]) == {"active": 0, "archived": 1}
+    note, restored = knowledge_base.restore_note(page, "boat")
+    assert restored and note["status"] == "active" and note["content"] == "Length 6 m."
+    assert knowledge_base.list_revisions(user_ids[0], "boat")[0]["action"] == "restore"
+    assert knowledge_base.restore_note(page, "boat")[1] is False
+    assert knowledge_base.delete_note(user_ids[0], "boat") == "boat"
+    with db.connection() as conn:
+        assert conn.execute(select(func.count()).select_from(kb_note_revisions)).scalar_one() == 0
+    assert note_count() == 0
+
+
+async def test_obsidian_export():
+    kb = tools()
+    page = Writer(user_ids[0], author="user")
+    await kb.call("kb_write", {"title": "Project Apollo", "description": 'The "moon" plan: yes',
+                               "content": "# Project Apollo\nSee [[Budget Plan]], [[budget-plan#costs|costs]], "
+                                          "[[budget-plan]], [old](Old%20Idea.md#top), [web](https://x.org/a.md) and ![i](pic.png).\n"
+                                          "```\n[[Budget Plan]]\n```",
+                               "tags": ["space", "2026", "a.b c"]})
+    await kb.call("kb_write", {"title": "Old idea", "content": "Outdated."})
+    await kb.call("kb_archive", {"note": "old-idea"})
+    data, count = knowledge_base_export.export_vault(user_ids[0])
+    assert count == 2
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    assert sorted(archive.namelist()) == ["knowledge-base/", "knowledge-base/archive/old-idea.md",
+                                          "knowledge-base/project-apollo.md"], archive.namelist()
+    apollo = archive.read("knowledge-base/project-apollo.md").decode("utf-8")
+    header, body = apollo.split("\n---\n", 1)
+    assert header.startswith("---\ntitle: \"Project Apollo\"\naliases:\n  - \"Project Apollo\"\n"), header
+    assert 'description: "The \\"moon\\" plan: yes"' in header, header
+    assert 'tags:\n  - "space"\n  - "tag-2026"\n  - "a-b-c"' in header, header
+    assert "\ncreated: 20" in header and "\nupdated: 20" in header, header
+    assert body.startswith("\n# Project Apollo\n\nSee "), body
+    assert body.count("# Project Apollo") == 1, body
+    assert ("[[budget-plan|Budget Plan]], [[budget-plan#costs|costs]], [[budget-plan]], [old](old-idea.md#top), "
+            "[web](https://x.org/a.md) and ![i](pic.png).\n```\n[[Budget Plan]]\n```") in body, body
+    assert knowledge_base_export.obsidian_tag("1984") == "tag-1984" and knowledge_base_export.obsidian_tag("#!") is None
+    assert knowledge_base_export.obsidian_tag("projekt/größe") == "projekt/größe"
+    # Times in the user's time zone (Obsidian reads them as local time), UTC for an unknown zone
+    berlin = knowledge_base_export.time_zone("Europe/Berlin")
+    assert knowledge_base_export.time_zone("Mars/Olympus") is None and knowledge_base_export.time_zone("../etc") is None
+    note = {"slug": "t", "title": "T", "content": "x", "status": "active", "tags": [],
+            "created_at": datetime(2026, 1, 15, 12, 0, 5, 123), "updated_at": datetime(2026, 7, 1, 23, 30)}
+    assert "created: 2026-01-15T13:00:05\nupdated: 2026-07-02T01:30:00" in knowledge_base_export.note_markdown(note, berlin)
+    assert "created: 2026-01-15T12:00:05\n" in knowledge_base_export.note_markdown(note)
+    # Another user's export has none of these notes, and an empty knowledge base is an empty vault
+    data, count = knowledge_base_export.export_vault(user_ids[1])
+    assert count == 0 and zipfile.ZipFile(io.BytesIO(data)).namelist() == ["knowledge-base/"]
+    knowledge_base.delete_note(page.user_id, "old-idea")
+
+
+async def test_api():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.api import knowledge_base as kb_api
+    from backend.security.auth import get_current_user
+
+    current = {"user": {"user_id": user_ids[0], "is_guest": False}}
+    app = FastAPI()
+    app.include_router(kb_api.router)
+    app.dependency_overrides[get_current_user] = lambda: current["user"]
+    client = TestClient(app)
+
+    assert client.get("/api/kb/notes").json() == {"notes": [], "total": 0, "tags": [],
+                                                  "counts": {"active": 0, "archived": 0}}
+    response = client.post("/api/kb/notes", json={"title": "Seeschwalbe", "content": "A boat. See [[sail]].",
+                                                  "description": "The boat", "tags": ["Boat"]})
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert note["slug"] == "seeschwalbe" and note["tags"] == ["boat"] and note["version"] > 0
+    assert note["links"] == [{"slug": "sail", "title": None, "status": None}]
+    assert note["revisions"][0]["author"] == "user" and note["revisions"][0]["action"] == "create"
+    response = client.post("/api/kb/notes", json={"title": "seeschwalbe!", "content": "x"})
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "exists", response.text
+    assert response.json()["detail"]["slug"] == "seeschwalbe"
+    assert client.post("/api/kb/notes", json={"title": " ", "content": "x"}).json()["detail"]["code"] == "invalid"
+
+    # An edit on an old version: 409 conflict with the version now, then saved on it
+    await tools().call("kb_update", {"note": "seeschwalbe", "append": "Agent was here."})
+    edit = {"title": "Seeschwalbe", "content": "A boat, 6 m.", "description": None, "tags": ["boat"],
+            "baseVersion": note["version"]}
+    response = client.put("/api/kb/notes/seeschwalbe", json=edit)
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "conflict", response.text
+    edit["baseVersion"] = response.json()["detail"]["version"]
+    note = client.put("/api/kb/notes/seeschwalbe", json=edit).json()
+    assert note["content"] == "A boat, 6 m." and note["description"] is None and note["links"] == []
+    assert [r["author"] for r in note["revisions"]] == ["user", "agent", "user"]
+
+    hits = client.get("/api/kb/search", params={"q": "boa"}).json()
+    assert [hit["slug"] for hit in hits] == ["seeschwalbe"] and hits[0]["matched"], hits
+    assert client.get("/api/kb/search", params={"q": "?!"}).json() == []
+
+    first = note["revisions"][-1]
+    revision = client.get(f"/api/kb/notes/seeschwalbe/revisions/{first['id']}").json()
+    assert revision["content"] == "A boat. See [[sail]]." and revision["description"] == "The boat"
+    note = client.post(f"/api/kb/notes/seeschwalbe/revisions/{first['id']}/restore",
+                       json={"baseVersion": note["version"]}).json()
+    assert note["content"] == "A boat. See [[sail]]." and note["description"] == "The boat"
+    assert note["revisions"][0]["reason"].startswith("Restored the version of ")
+
+    note = client.post("/api/kb/notes/seeschwalbe/archive", json={"reason": "Sold"}).json()
+    assert note["status"] == "archived" and note["revisions"][0]["reason"] == "Sold"
+    listing = client.get("/api/kb/notes", params={"status": "archived"}).json()
+    assert [n["slug"] for n in listing["notes"]] == ["seeschwalbe"] and listing["counts"] == {"active": 0, "archived": 1}
+    assert client.get("/api/kb/search", params={"q": "boat"}).json() == []
+    assert len(client.get("/api/kb/search", params={"q": "boat", "status": "archived"}).json()) == 1
+    assert client.post("/api/kb/notes/seeschwalbe/restore").json()["status"] == "active"
+
+    response = client.get("/api/kb/export", params={"tz": "Europe/Berlin"})
+    assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
+    assert 'filename="knowledge-base-' in response.headers["content-disposition"]
+    assert "knowledge-base/seeschwalbe.md" in zipfile.ZipFile(io.BytesIO(response.content)).namelist()
+
+    # Another user and a guest don't reach the note
+    current["user"] = {"user_id": user_ids[1], "is_guest": False}
+    assert client.get("/api/kb/notes/seeschwalbe").status_code == 404
+    assert client.delete("/api/kb/notes/seeschwalbe").status_code == 404
+    current["user"] = {"user_id": user_ids[1], "is_guest": True}
+    assert client.get("/api/kb/notes").status_code == 403
+    current["user"] = {"user_id": user_ids[0], "is_guest": False}
+    assert client.delete("/api/kb/notes/seeschwalbe").status_code == 204
+    assert client.get("/api/kb/notes/seeschwalbe").json()["detail"]["code"] == "not_found"
+
+
 TESTS = [test_slugs_and_links, test_write_and_read_back, test_same_slug_is_refused, test_links_and_backlinks,
          test_update, test_search, test_list, test_archive_and_restore, test_users_are_separate, test_revisions,
-         test_parallel_tool_calls, test_deleting_a_user_deletes_the_notes]
+         test_parallel_tool_calls, test_deleting_a_user_deletes_the_notes, test_tool_results_link_to_their_note,
+         test_page_edits_and_versions, test_obsidian_export, test_api]
 
 
 async def run() -> int:
@@ -293,7 +476,8 @@ def main() -> int:
         return 2
 
     logging.basicConfig(level=logging.WARNING)
-    logging.getLogger("backend").setLevel(logging.WARNING)
+    for name in ("backend", "crud", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     from backend.database.db_init import create_database_if_not_exists
     create_database_if_not_exists(config.POSTGRES_HOST, config.POSTGRES_PORT, config.POSTGRES_USER,
                                   config.POSTGRES_PASSWORD, args.database, logging.getLogger("kb-test"))
