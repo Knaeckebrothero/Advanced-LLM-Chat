@@ -176,6 +176,16 @@ body.theme-initialized {
   }
 }
 
+// Snackbar actions (Undo, Close) in the snackbar's text color: the theme's primary is too dark on
+// its dark background
+.mat-mdc-snack-bar-container {
+  --mat-snack-bar-button-color: var(--mdc-snackbar-supporting-text-color, currentColor);
+
+  .mat-mdc-snack-bar-action {
+    font-weight: 600;
+  }
+}
+
 // Slide toggles in the theme's primary color (the M2 color mixin only emits their warn variant)
 .mat-mdc-slide-toggle {
   --mdc-switch-selected-handle-color: var(--theme-primary);

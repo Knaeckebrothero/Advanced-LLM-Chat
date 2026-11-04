@@ -1,0 +1,147 @@
+// A note's Markdown: reads like a document (more room than a chat message)
+
+:host {
+  display: block;
+  min-width: 0;
+}
+
+:host ::ng-deep .note-markdown {
+  display: block;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--theme-text);
+  overflow-wrap: anywhere;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 1.3em 0 0.4em;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  h1 { font-size: 1.35em; }
+  h2 { font-size: 1.2em; }
+  h3 { font-size: 1.05em; }
+  h4, h5, h6 { font-size: 1em; }
+
+  p {
+    margin: 0 0 0.75em;
+  }
+
+  ul, ol {
+    margin: 0 0 0.75em;
+    padding-left: 1.5em;
+  }
+
+  li {
+    margin: 0.15em 0;
+  }
+
+  li > ul, li > ol {
+    margin: 0.15em 0 0;
+  }
+
+  blockquote {
+    margin: 0 0 0.75em;
+    padding: 0.2em 0 0.2em 1em;
+    border-left: 3px solid var(--theme-border);
+    color: var(--theme-text-secondary);
+  }
+
+  code {
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    border: 1px solid var(--theme-border);
+    background: var(--theme-code-bg);
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 0.86em;
+  }
+
+  pre {
+    margin: 0 0 0.75em;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--theme-border);
+    background: var(--theme-code-bg);
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      border: none;
+      background: none;
+      font-size: 0.84em;
+    }
+  }
+
+  table {
+    display: block;
+    max-width: 100%;
+    margin: 0 0 0.75em;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+
+  th, td {
+    padding: 6px 10px;
+    border: 1px solid var(--theme-border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: var(--theme-hover);
+    font-weight: 600;
+  }
+
+  hr {
+    margin: 1.2em 0;
+    border: none;
+    border-top: 1px solid var(--theme-border);
+  }
+
+  img {
+    max-width: 100%;
+  }
+
+  a {
+    color: var(--theme-link, var(--theme-primary));
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-underline-offset: 2px;
+
+    &:hover {
+      text-decoration-color: currentColor;
+    }
+  }
+
+  // Links to other notes: like Obsidian's internal links, no underline until hovered
+  a.note-link {
+    color: var(--theme-primary);
+    text-decoration: none;
+    font-weight: 500;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  a.note-link--missing {
+    color: var(--theme-text-secondary);
+    font-weight: 400;
+    text-decoration: underline dashed;
+    text-decoration-color: color-mix(in srgb, currentColor 60%, transparent);
+  }
+
+  a.note-link--archived {
+    opacity: 0.7;
+    text-decoration: line-through;
+  }
+}

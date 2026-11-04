@@ -1,0 +1,134 @@
+.note-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--theme-text);
+  overflow-wrap: anywhere;
+}
+
+.note-description {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--theme-text-secondary);
+}
+
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.note-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--theme-text-secondary);
+}
+
+.meta-link {
+  color: var(--theme-primary);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.note-body {
+  padding-top: 16px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.note-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px 24px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.link-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--theme-text-secondary);
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  text-decoration: none;
+  color: var(--theme-primary);
+  cursor: pointer;
+  transition: background-color 0.15s;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--theme-hover);
+  }
+
+  .link-title {
+    overflow-wrap: anywhere;
+  }
+
+  .link-state {
+    font-size: 0.75rem;
+    color: var(--theme-text-secondary);
+  }
+
+  &.link-item--missing {
+    border-style: dashed;
+    border-color: var(--theme-border);
+    color: var(--theme-text-secondary);
+  }
+
+  &.link-item--archived .link-title {
+    opacity: 0.7;
+    text-decoration: line-through;
+  }
+}
+
+::ng-deep .mat-mdc-menu-item.danger-item:hover .mat-icon {
+  color: var(--theme-tier-untrusted);
+}

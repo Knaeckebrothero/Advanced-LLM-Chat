@@ -25,6 +25,15 @@ import {
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
 import { IConversationSummary } from '../data/models/conversation.model';
+import {
+  IKBNote,
+  IKBNoteList,
+  IKBNoteUpdate,
+  IKBNoteWrite,
+  IKBRevision,
+  IKBSearchHit,
+  NoteStatus
+} from '../data/models/knowledge-base.model';
 
 /**
  * Response from file upload endpoint
@@ -730,6 +739,84 @@ export class ApiService {
   async importCatalog(file: ICatalogFile): Promise<IImportResult> {
     return await lastValueFrom(
       this.http.post<IImportResult>(`${this.baseUrl}/api/admin/catalog/import`, file, this.getHttpOptions())
+    );
+  }
+
+  // Knowledge base (signed-in users; backend/api/knowledge_base.py)
+
+  private kbNoteUrl(slug: string): string {
+    return `${this.baseUrl}/api/kb/notes/${encodeURIComponent(slug)}`;
+  }
+
+  /** The notes with a status, most recently updated first, with the tags in use and the counts. */
+  async getKBNotes(status: NoteStatus, tag: string | null = null): Promise<IKBNoteList> {
+    const params: Record<string, string> = { status };
+    if (tag) params['tag'] = tag;
+    return await lastValueFrom(
+      this.http.get<IKBNoteList>(`${this.baseUrl}/api/kb/notes`, { ...this.getHttpOptions(), params })
+    );
+  }
+
+  async searchKBNotes(query: string, status: NoteStatus): Promise<IKBSearchHit[]> {
+    return await lastValueFrom(
+      this.http.get<IKBSearchHit[]>(`${this.baseUrl}/api/kb/search`, {
+        ...this.getHttpOptions(),
+        params: { q: query, status }
+      })
+    );
+  }
+
+  async getKBNote(slug: string): Promise<IKBNote> {
+    return await lastValueFrom(this.http.get<IKBNote>(this.kbNoteUrl(slug), this.getHttpOptions()));
+  }
+
+  async createKBNote(note: IKBNoteWrite): Promise<IKBNote> {
+    return await lastValueFrom(
+      this.http.post<IKBNote>(`${this.baseUrl}/api/kb/notes`, note, this.getHttpOptions())
+    );
+  }
+
+  /** Replaces all fields; 409 with code "conflict" if the note changed since baseVersion. */
+  async updateKBNote(slug: string, note: IKBNoteUpdate): Promise<IKBNote> {
+    return await lastValueFrom(this.http.put<IKBNote>(this.kbNoteUrl(slug), note, this.getHttpOptions()));
+  }
+
+  async archiveKBNote(slug: string): Promise<IKBNote> {
+    return await lastValueFrom(
+      this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/archive`, {}, this.getHttpOptions())
+    );
+  }
+
+  async restoreKBNote(slug: string): Promise<IKBNote> {
+    return await lastValueFrom(
+      this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/restore`, {}, this.getHttpOptions())
+    );
+  }
+
+  /** Deletes a note for good, with all its versions. */
+  async deleteKBNote(slug: string): Promise<void> {
+    await lastValueFrom(this.http.delete<void>(this.kbNoteUrl(slug), this.getHttpOptions()));
+  }
+
+  async getKBRevision(slug: string, revisionId: number): Promise<IKBRevision> {
+    return await lastValueFrom(
+      this.http.get<IKBRevision>(`${this.kbNoteUrl(slug)}/revisions/${revisionId}`, this.getHttpOptions())
+    );
+  }
+
+  /** Makes an earlier version the current one (as a new version). */
+  async restoreKBRevision(slug: string, revisionId: number, baseVersion: number): Promise<IKBNote> {
+    return await lastValueFrom(
+      this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/revisions/${revisionId}/restore`, { baseVersion },
+        this.getHttpOptions())
+    );
+  }
+
+  /** All notes as a zip that opens as an Obsidian vault, with the times in the time zone (e.g. Europe/Berlin). */
+  async exportKnowledgeBase(timeZone: string | null): Promise<Blob> {
+    const params: Record<string, string> = timeZone ? { tz: timeZone } : {};
+    return await lastValueFrom(
+      this.http.get(`${this.baseUrl}/api/kb/export`, { ...this.getHttpOptions(), params, responseType: 'blob' })
     );
   }
 

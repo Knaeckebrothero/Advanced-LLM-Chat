@@ -1,0 +1,82 @@
+<section class="pane">
+  <div class="pane-toolbar">
+    <button mat-button type="button" (click)="back.emit()">
+      <mat-icon>arrow_back</mat-icon>
+      {{ 'knowledgeBase.history.back' | translate }}
+    </button>
+  </div>
+
+  <h2 class="pane-heading">{{ 'knowledgeBase.history.title' | translate: { title: note().title } }}</h2>
+
+  <div class="history-body">
+    <ol class="revision-list">
+      @for (rev of note().revisions; track rev.id) {
+        <li>
+          <button type="button" class="revision" [class.is-selected]="rev.id === selectedId()" (click)="select(rev)"
+                  [attr.aria-pressed]="rev.id === selectedId()">
+            <mat-icon class="revision-icon" aria-hidden="true">{{ icon(rev.action) }}</mat-icon>
+            <span class="revision-main">
+              <span class="revision-title">
+                {{ label(rev) }}
+                @if (isCurrent(rev)) {
+                  <span class="state-tag state-tag--accent">{{ 'knowledgeBase.history.current' | translate }}</span>
+                }
+              </span>
+              <span class="revision-meta">{{ date(rev.createdAt) }}</span>
+              @if (rev.reason) {
+                <span class="revision-reason">{{ rev.reason }}</span>
+              }
+            </span>
+          </button>
+        </li>
+      }
+    </ol>
+
+    <div class="revision-preview" aria-live="polite">
+      @if (loading() && !revision()) {
+        <div class="preview-state"><mat-spinner diameter="28"></mat-spinner></div>
+      } @else if (error()) {
+        <div class="pane-banner pane-banner--error" role="alert">
+          <mat-icon aria-hidden="true">error_outline</mat-icon>
+          <span class="pane-banner-text">{{ error() }}</span>
+        </div>
+      } @else if (revision()) {
+        @let rev = revision()!;
+        <div class="preview-header">
+          <div class="preview-heading">
+            <h3 class="preview-title">{{ rev.title }}</h3>
+            <p class="preview-meta">
+              {{ label(rev) }} · {{ date(rev.createdAt) }}
+              @if (rev.conversationId) {
+                ·
+                @if (rev.conversationName) {
+                  {{ 'knowledgeBase.note.in' | translate }}
+                  <a class="meta-link" href="#" (click)="$event.preventDefault(); conversation.emit(rev.conversationId)">{{ rev.conversationName }}</a>
+                } @else {
+                  {{ 'knowledgeBase.note.inDeletedChat' | translate }}
+                }
+              }
+            </p>
+          </div>
+          @if (!isCurrent(rev)) {
+            <button mat-stroked-button type="button" (click)="restoreSelected()" [disabled]="restoring()">
+              <mat-icon>restore</mat-icon>
+              {{ 'knowledgeBase.history.restoreVersion' | translate }}
+            </button>
+          }
+        </div>
+        @if (rev.description) {
+          <p class="preview-description">{{ rev.description }}</p>
+        }
+        @if (rev.tags.length) {
+          <div class="preview-tags">
+            @for (tag of rev.tags; track tag) {
+              <span class="state-tag">#{{ tag }}</span>
+            }
+          </div>
+        }
+        <app-note-content class="preview-content" [content]="rev.content" [interactive]="false"></app-note-content>
+      }
+    </div>
+  </div>
+</section>

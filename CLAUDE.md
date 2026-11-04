@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Advanced LLM Chat: an Angular 19.2.2 PWA with a FastAPI backend for chatting with LLMs. Uses microservices architecture with:
 - **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, SCSS styling, ngx-translate for i18n (German/English)
-- **Backend**: FastAPI with PostgreSQL for persistence (image `pgvector/pgvector:pg16`), an agent loop with tool use (`backend/llm/`), a knowledge base per user that agents opt into (`kb_*` tools, `docs/knowledge_base.md`), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
+- **Backend**: FastAPI with PostgreSQL for persistence (image `pgvector/pgvector:pg16`), an agent loop with tool use (`backend/llm/`), a knowledge base per user that agents opt into (`kb_*` tools, `docs/knowledge_base.md`; the Knowledge base page `/knowledge-base` to read, edit and export it for Obsidian), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
 - **LLM Integration**: Thin runtime on the official `openai` and `anthropic` SDKs (no LangChain): OpenAI, any OpenAI-compatible endpoint, and Anthropic, with SSE streaming for agent responses
 
 **Resuming work:** read the "Status" section of `docs/generalization_refactor.md` first (current state, decisions, backlog, next steps), and `docs/model_catalog_api.md` for the runtime and catalog contract.
@@ -50,7 +50,7 @@ python backend/app_init.py --prod            # Production migration (add missing
 
 **Note:** No Python test framework (pytest) is configured. There are test scripts instead:
 - `python -m backend.llm.tests.run_all`: offline tests of the LLM runtime, history and tools (fake OpenAI server, mocked Anthropic API)
-- `python backend/services/tests/knowledge_base_test.py`: the knowledge base tools against a real Postgres, in a `<POSTGRES_DB>_kb_test` database it creates itself
+- `python backend/services/tests/knowledge_base_test.py`: the knowledge base tools, the Obsidian export and the `/api/kb` endpoints against a real Postgres, in a `<POSTGRES_DB>_kb_test` database it creates itself
 - `backend/catalog/tests/catalog_api_test.py`: catalog end-to-end test against a backend on its own `*_test` database (see its docstring)
 - `backend/security/tests/oidc_test.py`: login through Keycloak end-to-end, against the bundled Keycloak and a backend in `AUTH_MODE=oidc` on a `*_test` database (see its docstring)
 - `python -m backend.llm.smoke_test --model <id>`: real API calls against one catalog model
@@ -118,7 +118,7 @@ backend/
 ├── main.py           # FastAPI app entry point
 ├── config.py         # Configuration constants
 ├── app_init.py       # Database and filesystem initialization
-├── api/              # Route handlers (auth, conversations, messages, settings, files, catalog)
+├── api/              # Route handlers (auth, conversations, messages, settings, files, catalog, knowledge_base)
 ├── catalog/          # Model catalog: resolver (model/persona per request), service, catalog file seed/import/export, fetch-models
 ├── database/
 │   ├── db.py         # PostgreSQL database manager (SQLAlchemy)
@@ -141,7 +141,8 @@ backend/
 │   ├── conversation_history.py  # Conversation history in the OpenAI message format, cut to the model's context window
 │   ├── conversation_summary.py  # Rolling summary of the oldest messages once the history nearly fills the window
 │   ├── conversation_file.py  # Export and import of conversation files (docs/conversation_file.md)
-│   ├── knowledge_base.py # A user's Markdown notes (kb_notes, revisions, links): slugs, search (docs/knowledge_base.md)
+│   ├── knowledge_base.py # A user's Markdown notes (kb_notes, revisions, links): slugs, search, versions (docs/knowledge_base.md)
+│   ├── knowledge_base_export.py # The notes as a zip that opens as an Obsidian vault
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation
@@ -197,7 +198,7 @@ Uses discriminated union pattern with factory methods:
 
 The `/api/message/stream-generate` SSE endpoint emits:
 - **message_start**: Message metadata (messageId, conversationId, roleName, time, type, modelId, modelName)
-- **step**: Agent reasoning step (thought, tool_call, tool_result, observation); a step with an existing id replaces it, tool steps carry a `callId`
+- **step**: Agent reasoning step (thought, tool_call, tool_result, observation); a step with an existing id replaces it, tool steps carry a `callId`; a knowledge base result carries `metadata.kbNote` (the note's slug, which the chat links to)
 - **step_delta**: `{"id", "delta"}`, text appended to a step (the model's live "Thinking")
 - **token**: Individual text tokens for final response
 - **summary**: A new summary of the conversation's oldest messages (conversationId, coversUntil, messageCount, content, modelName, createdAt), written before the answer; a step (id `summary-…`) shows it being written

@@ -43,7 +43,7 @@ GRAPH_TOOL_NAMES = {"get_graph_schema", "search_graph", "query_graph"}
 KB_PROMPT = """## Knowledge Base:
 You keep a knowledge base for this user: Markdown notes that last across all of their conversations, like a notebook.
 - When the user refers to an earlier conversation, or asks what you know about them or a topic, search it first (kb_search, or kb_list for an overview) and read the notes that fit (kb_read).
-- Write a note (kb_write) when you learn something worth keeping beyond this conversation: facts about the user and their projects, decisions, preferences, results of research, or anything the user asks you to remember. One topic per note, with a one-sentence description and a few tags.
+- Write a note (kb_write) when you learn something worth keeping beyond this conversation: facts about the user and their projects, decisions, preferences, results of research, or anything the user asks you to remember. One topic per note, with a one-sentence description and a few tags. Write down only what the user said or what you found out, never details you assumed or added.
 - Before writing, search for a note on the topic and update it (kb_update) instead of writing a second one. Link related notes with [[slug]].
 - Don't store passwords, keys or other secrets. Mention briefly when you save or change a note."""
 

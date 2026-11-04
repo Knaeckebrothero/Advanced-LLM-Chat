@@ -42,8 +42,14 @@
           </div>
           <span class="step-title">{{ step.title }}</span>
         </mat-panel-title>
-        <mat-panel-description *ngIf="step.duration">
-          <span class="step-duration">{{ step.duration }}ms</span>
+        <mat-panel-description *ngIf="step.duration || noteSlug(step)">
+          <!-- A knowledge base tool's result: open its note (without toggling the step) -->
+          <a *ngIf="noteSlug(step) as slug" class="step-note-link" [routerLink]="['/knowledge-base', slug]"
+             (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()"
+             [matTooltip]="'knowledgeBase.openNote' | translate" [attr.aria-label]="'knowledgeBase.openNote' | translate">
+            <mat-icon>menu_book</mat-icon>
+          </a>
+          <span class="step-duration" *ngIf="step.duration">{{ step.duration }}ms</span>
         </mat-panel-description>
       </mat-expansion-panel-header>
 
@@ -53,9 +59,15 @@
           class="step-code">{{ step.content }}</pre>
         <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'"
           class="step-text">{{ step.content }}</p>
-        <div class="step-metadata" *ngIf="step.metadata">
-          <pre class="metadata-json">{{ step.metadata | json }}</pre>
-        </div>
+        <a *ngIf="noteSlug(step) as slug; else metadataJson" class="step-note-button" [routerLink]="['/knowledge-base', slug]">
+          <mat-icon>menu_book</mat-icon>
+          {{ 'knowledgeBase.openNote' | translate }}
+        </a>
+        <ng-template #metadataJson>
+          <div class="step-metadata" *ngIf="step.metadata">
+            <pre class="metadata-json">{{ step.metadata | json }}</pre>
+          </div>
+        </ng-template>
       </div>
     </mat-expansion-panel>
   </mat-accordion>
