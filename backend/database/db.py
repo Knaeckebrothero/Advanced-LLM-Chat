@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Iterable, Optional, Generator
 
 from sqlalchemy import create_engine, inspect, text, select, insert, update, delete, null, func, or_
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.pool import QueuePool
 
@@ -58,6 +58,7 @@ from backend.database.tables import (
     llm_providers,
     llm_models,
     personas,
+    memory_dreams,
 )
 
 log = logging.getLogger(__name__)
@@ -983,6 +984,112 @@ class Database:
             results = conn.execute(select(messages).where(condition).order_by(messages.c.id)).fetchall()
             return [self._row_to_dict(row) for row in results]
 
+    # ==================== Memory review ====================
+
+    def get_messages_for_review(self, conversation_id: str, after_id: int, context: int = 4) -> tuple[list[dict], list[dict]]:
+        """
+        A conversation's messages for the memory review, oldest first, without system messages.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            after_id: The newest message id the last review read (0: none).
+            context: How many of the messages up to after_id to return as context.
+
+        Returns:
+            (the last `context` messages up to after_id, the messages after it)
+        """
+        with self.connection() as conn:
+            base = select(messages).where(messages.c.conversationId == conversation_id,
+                                          messages.c.roleName != 'system')
+            new = conn.execute(base.where(messages.c.id > after_id).order_by(messages.c.id)).fetchall()
+            earlier = conn.execute(base.where(messages.c.id <= after_id)
+                                   .order_by(messages.c.id.desc()).limit(context)).fetchall() if context else []
+        return [self._row_to_dict(row) for row in reversed(earlier)], [self._row_to_dict(row) for row in new]
+
+    def get_conversations_for_memory_review(self, idle_before: datetime, active_after: datetime,
+                                            retry_before: datetime, limit: int = 20) -> list[dict]:
+        """
+        Conversations the memory review should read: of a signed-in user, with an enabled persona
+        that selects the knowledge base, a message newer than the last review, no new message since
+        idle_before but one after active_after, and no failed review after retry_before. Quiet
+        for longest first. The caller still checks that the user may use the persona.
+
+        Returns:
+            Rows with id, userId, persona_id, memory_reviewed_until and last_message_id.
+        """
+        with self.connection() as conn:
+            rows = conn.execute(text('''
+                SELECT c.id, c."userId", c.persona_id, c.memory_reviewed_until, max(m.id) AS last_message_id
+                FROM conversations c
+                JOIN users u ON u.id = c."userId" AND NOT coalesce(u.is_guest, false)
+                JOIN personas p ON p.id = c.persona_id AND coalesce(p.enabled, true)
+                                   AND p.tools @> '["knowledge_base"]'::jsonb
+                JOIN messages m ON m."conversationId" = c.id AND m."roleName" <> 'system'
+                WHERE c."lastMessageAt" < :idle_before AND c."lastMessageAt" > :active_after
+                  AND (c.memory_review_failed_at IS NULL OR c.memory_review_failed_at < :retry_before)
+                GROUP BY c.id
+                HAVING max(m.id) > coalesce(c.memory_reviewed_until, 0)
+                ORDER BY max(c."lastMessageAt")
+                LIMIT :limit
+            '''), {"idle_before": idle_before, "active_after": active_after, "retry_before": retry_before,
+                   "limit": limit}).fetchall()
+        return [dict(row._mapping) for row in rows]
+
+    def get_memory_dream_activity(self, after_id: int, until_id: int) -> list[dict]:
+        """
+        The conversations with new messages for the nightly consolidation: of signed-in users, with
+        an enabled persona that selects the knowledge base, with a message (not a system message)
+        in (after_id, until_id]. Each row: user_id, vault (the persona's id with own_memory, else 0),
+        conversation_id, name, persona_id, first_message_id and last_message_id in that range.
+        """
+        with self.connection() as conn:
+            rows = conn.execute(text('''
+                SELECT c."userId" AS user_id,
+                       CASE WHEN coalesce(p.own_memory, false) THEN p.id ELSE 0 END AS vault,
+                       c.id AS conversation_id, c.name, c.persona_id,
+                       min(m.id) AS first_message_id, max(m.id) AS last_message_id
+                FROM conversations c
+                JOIN users u ON u.id = c."userId" AND NOT coalesce(u.is_guest, false)
+                JOIN personas p ON p.id = c.persona_id AND coalesce(p.enabled, true)
+                                   AND p.tools @> '["knowledge_base"]'::jsonb
+                JOIN messages m ON m."conversationId" = c.id AND m."roleName" <> 'system'
+                                   AND m.id > :after_id AND m.id <= :until_id
+                GROUP BY c."userId", p.own_memory, p.id, c.id
+                ORDER BY min(m.id)
+            '''), {"after_id": after_id, "until_id": until_id}).fetchall()
+        return [dict(row._mapping) for row in rows]
+
+    def get_memory_dreams(self) -> dict[tuple[int, int], dict]:
+        """How far the nightly consolidation got, by (user_id, vault)."""
+        with self.connection() as conn:
+            rows = conn.execute(select(memory_dreams)).fetchall()
+        return {(row.user_id, row.vault): self._row_to_dict(row) for row in rows}
+
+    def set_memory_dream(self, user_id: int, vault: int, dreamed_until: Optional[int] = None,
+                         failed: bool = False) -> None:
+        """Record a run of the nightly consolidation: how far it got (None keeps it) and whether it failed."""
+        values = {"failed_at": datetime.now(timezone.utc).replace(tzinfo=None) if failed else None}
+        if dreamed_until is not None:
+            values["dreamed_until"] = dreamed_until
+        statement = pg_insert(memory_dreams).values(user_id=user_id, vault=vault, **values)
+        with self.connection() as conn:
+            conn.execute(statement.on_conflict_do_update(
+                index_elements=[memory_dreams.c.user_id, memory_dreams.c.vault],
+                set_={**values, "updated_at": func.now()}))
+
+    def set_memory_review(self, conversation_id: str, reviewed_until: Optional[int] = None,
+                          failed: bool = False) -> None:
+        """
+        Record a memory review: the newest message id it read (None keeps the stored one), and
+        whether it failed (the time, so the next try waits) or not (clears a failure).
+        """
+        values = {"memory_review_failed_at": datetime.now(timezone.utc).replace(tzinfo=None) if failed else None,
+                  "updatedAt": conversations.c.updatedAt}  # No onupdate now(); the trigger skips these columns
+        if reviewed_until is not None:
+            values["memory_reviewed_until"] = reviewed_until
+        with self.connection() as conn:
+            conn.execute(update(conversations).where(conversations.c.id == conversation_id).values(**values))
+
     def get_message_count(self, conversation_id: str) -> int:
         """
         Get the number of messages in a conversation.
@@ -1836,7 +1943,8 @@ class Database:
         background=UNSET,
         background_dim=UNSET,
         background_blur=UNSET,
-        editing_mode=UNSET
+        editing_mode=UNSET,
+        memory_model_id=UNSET
     ) -> dict:
         """
         Create or update user settings.
@@ -1851,6 +1959,8 @@ class Database:
             background_dim: Dimming of the background image in percent; UNSET keeps it.
             background_blur: Blur of the background image in pixels; UNSET keeps it.
             editing_mode: 'guided' or 'manual'; UNSET keeps it.
+            memory_model_id: Catalog model of the memory review; None clears it (the
+                conversation's model), UNSET keeps it.
 
         Returns:
             The user settings dictionary.
@@ -1864,6 +1974,7 @@ class Database:
             ("background_dim", background_dim),
             ("background_blur", background_blur),
             ("editing_mode", editing_mode),
+            ("memory_model_id", memory_model_id),
         ):
             if value is not UNSET:
                 values[column] = value

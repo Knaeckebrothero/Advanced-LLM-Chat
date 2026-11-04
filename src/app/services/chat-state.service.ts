@@ -30,6 +30,7 @@ import {
 } from '../data/models/catalog.model';
 import { IConversationFile } from '../data/models/api.model';
 import { IConversationSummary } from '../data/models/conversation.model';
+import { IKBReviewResult } from '../data/models/knowledge-base.model';
 import { environment } from '../environments/environment';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { DBService } from '../data/db.service';
@@ -293,6 +294,14 @@ export class ChatStateService implements OnDestroy {
     this.summaryRequests.set(conversationId, request);
     this.summarizingIds$.next(new Set(this.summaryRequests.keys()));
     return request;
+  }
+
+  /**
+   * Review a conversation for its agent's memory now, as the server does once it has been quiet
+   * for a while: the memory model saves what matters from the messages since the last review.
+   */
+  reviewMemory(conversationId: string): Promise<IKBReviewResult> {
+    return this.apiService.reviewConversationMemory(conversationId);
   }
 
   private async writeSummary(conversationId: string): Promise<IConversationSummary> {

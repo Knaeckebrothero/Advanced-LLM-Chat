@@ -11,7 +11,10 @@ import { MatButtonModule } from '@angular/material/button';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
+import { Router } from '@angular/router';
 import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
+import { CatalogService } from '../../services/catalog.service';
+import { AuthService } from '../../auth/auth.service';
 
 
 @Component({
@@ -35,10 +38,16 @@ export class ConversationComponent implements OnInit, OnDestroy {
   private longPressTimer: any;
   private longPressTriggered = false;
 
+  /** The memory review of this conversation runs (reviewMemory()). */
+  reviewingMemory = false;
+
   constructor(
     private chatState: ChatStateService,
     private snackBar: MatSnackBar,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private catalog: CatalogService,
+    private auth: AuthService,
+    private router: Router
   ) {}
 
   onSelect(): void {
@@ -181,6 +190,37 @@ export class ConversationComponent implements OnInit, OnDestroy {
       params = { error: describeHttpError(error, this.translate) };
     }
     this.snackBar.open(this.translate.instant(key, params), undefined, { duration: 5000 });
+  }
+
+  /** The conversation's agent has the knowledge base, so it has a memory (only for signed-in users). */
+  get hasMemory(): boolean {
+    return !this.auth.isGuest && !!this.catalog.getPersona(this.conversation.personaId)?.tools?.includes('knowledge_base');
+  }
+
+  /** Save what matters from this conversation to its agent's memory now, instead of after it has been quiet. */
+  async reviewMemory(): Promise<void> {
+    if (this.reviewingMemory) return;
+    this.reviewingMemory = true;
+    try {
+      const result = await this.chatState.reviewMemory(this.conversation.id);
+      if (result.status === 'done' && result.changes.length) {
+        const vault = result.changes[0].vault;
+        this.snackBar.open(this.translate.instant('conversationMenu.memorySaved', { count: result.changes.length }),
+          this.translate.instant('conversationMenu.memoryShow'), { duration: 6000 })
+          .onAction().subscribe(() => this.router.navigate(['/knowledge-base', 'memory'],
+            { queryParams: vault ? { vault } : {} }));
+        return;
+      }
+      const key = result.status === 'done' ? 'conversationMenu.memoryNothingToSave'
+        : result.status === 'nothing_new' ? 'conversationMenu.memoryNothingNew'
+        : 'conversationMenu.memoryFailed';
+      this.snackBar.open(this.translate.instant(key, { error: result.detail }), undefined, { duration: 6000 });
+    } catch (error) {
+      this.snackBar.open(this.translate.instant('conversationMenu.memoryFailed', { error: describeHttpError(error, this.translate) }),
+        undefined, { duration: 6000 });
+    } finally {
+      this.reviewingMemory = false;
+    }
   }
 
   ngOnDestroy(): void {

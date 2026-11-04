@@ -109,6 +109,13 @@
     @if (toolMode === 'pick' && pickedTools.size === 0) {
       <p class="empty-hint">{{ 'catalog.admin.personas.noToolsHint' | translate }}</p>
     }
+    @if (hasKnowledgeBase) {
+      <!-- Off: the user's shared knowledge base and memory; on: one of its own per user -->
+      <div class="own-memory">
+        <mat-slide-toggle formControlName="ownMemory">{{ 'catalog.admin.personas.ownMemory' | translate }}</mat-slide-toggle>
+        <p class="tool-reason">{{ 'catalog.admin.personas.ownMemoryHint' | translate }}</p>
+      </div>
+    }
 
     <!-- Visibility -->
     <h3 class="form-section">{{ 'catalog.admin.personas.visibilitySection' | translate }}</h3>

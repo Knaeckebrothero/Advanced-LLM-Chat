@@ -82,6 +82,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
             theme=settings['theme'],
             language=settings['language'],
             defaultModelId=settings.get('default_model_id'),
+            memoryModelId=settings.get('memory_model_id'),
             **_optional_settings(settings),
             lastUpdated=last_updated_ts
         )
@@ -134,6 +135,19 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
             logger.warning(f"Rejected default model {default_model_id} for user_id {user_id}: {e}")
             raise HTTPException(status_code=e.status_code, detail=str(e))
 
+    # Memory model: as the default model, and it must support tools
+    memory_model_id = UNSET
+    if "memoryModelId" in new_settings.model_fields_set:
+        memory_model_id = new_settings.memoryModelId
+        try:
+            check_model_choice(current_user, memory_model_id)
+        except CatalogError as e:
+            logger.warning(f"Rejected memory model {memory_model_id} for user_id {user_id}: {e}")
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        model = db.get_llm_model_by_id(memory_model_id) if memory_model_id is not None else None
+        if model is not None and model.get("supports_tools") is False:
+            raise HTTPException(status_code=400, detail="The memory model must support tools")
+
     # Optional settings: left out = keep the stored values
     optional = {
         column: getattr(new_settings, field)
@@ -147,6 +161,7 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         theme=new_settings.theme,
         language=new_settings.language,
         default_model_id=default_model_id,
+        memory_model_id=memory_model_id,
         **optional
     )
 
@@ -170,6 +185,7 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         theme=settings['theme'],
         language=settings['language'],
         defaultModelId=settings.get('default_model_id'),
+        memoryModelId=settings.get('memory_model_id'),
         **_optional_settings(settings),
         lastUpdated=last_updated_ts
     )

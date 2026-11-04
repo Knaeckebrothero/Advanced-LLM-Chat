@@ -9,8 +9,9 @@ The implementations live in backend/services/tools/; this module only describes
 them to the model. default_tools() returns the tools that are enabled by the
 configuration, tools_for_groups() limits them to a persona's tool groups. Both
 are built per answer for the user it is for: the file tool only reads that
-user's uploads, the knowledge base tools only that user's notes. Opt-in groups
-(the knowledge base) are never part of "every enabled tool": an agent has to
+user's uploads, the knowledge base tools only that user's notes (the shared
+knowledge base, or the agent's own one). Opt-in groups (the knowledge base,
+with the memory) are never part of "every enabled tool": an agent has to
 select them.
 """
 import asyncio
@@ -37,6 +38,9 @@ TOOL_TITLES = {
     "kb_write": "Writing Note",
     "kb_update": "Updating Note",
     "kb_archive": "Archiving Note",
+    "memory_add": "Saving to Memory",
+    "memory_replace": "Updating Memory",
+    "memory_remove": "Removing from Memory",
 }
 
 # Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
@@ -44,8 +48,12 @@ TOOL_GROUPS = {
     "files": ("get_file_content",),
     "web_search": ("web_search",),
     "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
-    "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive"),
+    "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
+                       "memory_add", "memory_replace", "memory_remove"),
 }
+
+# The memory tools, part of the knowledge base group
+MEMORY_TOOL_NAMES = ("memory_add", "memory_replace", "memory_remove")
 
 # Groups an agent only gets when it selects them: not part of "every enabled tool" (an agent
 # with tools null, or no agent). The knowledge base also needs a signed-in user, never a guest.
@@ -355,22 +363,39 @@ def web_search_tool() -> Tool:
     )
 
 
-def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None) -> list[Tool]:
+def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vault: int = 0,
+                         author: str = "agent") -> list[Tool]:
     """
-    The knowledge base tools: the notes of one user, kept across all of their conversations.
+    The knowledge base tools: the notes of one user, kept across all of their conversations, and
+    the memory, which is part of every answer.
 
     Args:
         user_id: The user whose knowledge base it is; not an argument the model sees.
         conversation: The conversation the agent answers in (id, persona_id), recorded with
             every change of a note.
+        vault: 0 for the user's shared knowledge base, else the personas.id of the agent whose
+            own knowledge base it is (backend.catalog.resolver.persona_vault()).
+        author: Recorded with the changes: 'agent', or 'review' for the memory review.
     """
     from ..services.knowledge_base import (MAX_CONTENT_CHARS, MAX_DESCRIPTION_CHARS, MAX_TAGS,
-                                           MAX_TITLE_CHARS, Writer)
+                                           MAX_TITLE_CHARS, MEMORY_LINE_CHARS, MEMORY_SECTION_CHARS, Writer)
     from ..services.tools import kb_tools
 
     conversation = conversation or {}
-    writer = Writer(user_id=user_id, author="agent", conversation_id=conversation.get("id"),
-                    persona_id=conversation.get("persona_id"))
+    writer = Writer(user_id=user_id, author=author, conversation_id=conversation.get("id"),
+                    persona_id=conversation.get("persona_id"), vault=vault)
+    reader = {"user_id": user_id, "vault": vault}
+    line_param = {
+        "type": "string",
+        "description": "A part of the line to change, copied from the memory in the system prompt (a few words "
+                       "are enough, but they must match only one line)",
+    }
+    text_param = {
+        "type": "string",
+        "description": f"The line: one fact, short (at most {MEMORY_LINE_CHARS} characters), e.g. \"Prefers "
+                       f"short answers\" or \"Planning a trip to Lisbon in May → [[lisbon-trip]]\". The date "
+                       f"is added",
+    }
     note_param = {
         "type": "string",
         "description": "The note's slug, e.g. \"project-apollo\" (its exact title works too)",
@@ -407,7 +432,7 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None) -> l
                                     "description": f"Number of notes, 1 to {kb_tools.MAX_SEARCH_RESULTS} (default 10)"},
                 },
             },
-            func=_in_thread(functools.partial(kb_tools.kb_search, user_id=user_id)),
+            func=_in_thread(functools.partial(kb_tools.kb_search, **reader)),
         ),
         Tool(
             name="kb_list",
@@ -424,7 +449,7 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None) -> l
                                     "description": f"Number of notes, 1 to {kb_tools.MAX_LIST_RESULTS} (default 50)"},
                 },
             },
-            func=_in_thread(functools.partial(kb_tools.kb_list, user_id=user_id)),
+            func=_in_thread(functools.partial(kb_tools.kb_list, **reader)),
         ),
         Tool(
             name="kb_read",
@@ -433,7 +458,7 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None) -> l
                 "it links to and the notes that link to it."
             ),
             parameters={"type": "object", "properties": {"note": note_param}, "required": ["note"]},
-            func=_in_thread(functools.partial(kb_tools.kb_read, user_id=user_id)),
+            func=_in_thread(functools.partial(kb_tools.kb_read, **reader)),
         ),
         Tool(
             name="kb_write",
@@ -500,6 +525,51 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None) -> l
             },
             func=_in_thread(functools.partial(kb_tools.kb_archive, writer=writer)),
         ),
+        Tool(
+            name="memory_add",
+            description=(
+                "Add a line to your memory of this user. The memory is part of every conversation with them (you "
+                "see it in the system prompt), so keep in it what you should always have in mind: who the user "
+                "is, their preferences and corrections, ongoing goals, plans and decisions, and where the details "
+                "are: a short line that points to a note with [[slug]]. One fact per line; today's date is added "
+                "to it. A line the memory has already is not added twice."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "text": text_param,
+                    "section": {"type": "string",
+                                "description": f"A heading to put the line under, made if missing (at most "
+                                               f"{MEMORY_SECTION_CHARS} characters), e.g. \"About the user\", "
+                                               f"\"Preferences\", \"Ongoing\" or \"Where things are\". Without "
+                                               f"it the line goes before the first heading"},
+                },
+                "required": ["text"],
+            },
+            func=_in_thread(functools.partial(kb_tools.memory_add, writer=writer)),
+        ),
+        Tool(
+            name="memory_replace",
+            description=(
+                "Replace a line of your memory: when a fact changed, to correct it, or to merge several lines "
+                "into one. The new line gets today's date."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"line": line_param, "text": text_param},
+                "required": ["line", "text"],
+            },
+            func=_in_thread(functools.partial(kb_tools.memory_replace, writer=writer)),
+        ),
+        Tool(
+            name="memory_remove",
+            description=(
+                "Remove a line of your memory that is wrong or no longer true, also when the user asks you to "
+                "forget it."
+            ),
+            parameters={"type": "object", "properties": {"line": line_param}, "required": ["line"]},
+            func=_in_thread(functools.partial(kb_tools.memory_remove, writer=writer)),
+        ),
     ]
 
 
@@ -538,7 +608,8 @@ def tool_group_status() -> list[dict]:
     return status
 
 
-def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: Optional[dict]) -> list[Tool]:
+def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: Optional[dict],
+                 vault: int = 0) -> list[Tool]:
     """The tool definitions of a group, for the user the agent answers for."""
     if group == "files":
         return [file_content_tool(user_id)]
@@ -550,12 +621,12 @@ def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: 
         if user_id is None or guest:
             log.debug("No knowledge base without a signed-in user")
             return []
-        return knowledge_base_tools(user_id, conversation)
+        return knowledge_base_tools(user_id, conversation, vault)
     raise ValueError(f"Unknown tool group '{group}'")
 
 
 def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = False,
-                   conversation: Optional[dict] = None) -> ToolRegistry:
+                   conversation: Optional[dict] = None, vault: int = 0) -> ToolRegistry:
     """The tools of these groups that the configuration enables, in TOOL_GROUPS order."""
     groups = set(groups)
     registry = ToolRegistry()
@@ -566,7 +637,7 @@ def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = 
         if reason:
             log.debug(f"Tool group {group} disabled: {reason}")
             continue
-        for tool in _group_tools(group, user_id, guest, conversation):
+        for tool in _group_tools(group, user_id, guest, conversation, vault):
             registry.add(tool)
     return registry
 
@@ -586,7 +657,7 @@ def default_tools(user_id: Optional[int] = None) -> ToolRegistry:
 
 
 def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = None, *, guest: bool = False,
-                     conversation: Optional[dict] = None) -> ToolRegistry:
+                     conversation: Optional[dict] = None, vault: int = 0) -> ToolRegistry:
     """
     The enabled tools of the given tool groups, e.g. a persona's selection.
 
@@ -600,6 +671,8 @@ def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = N
             deleted when the session ends).
         conversation: The conversation the agent answers in (id, persona_id),
             recorded with the knowledge base changes.
+        vault: The knowledge base: 0 for the user's shared one, else the
+            agent's own (backend.catalog.resolver.persona_vault()).
 
     Returns:
         The tools; empty for an empty selection.
@@ -610,6 +683,6 @@ def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = N
     unknown = [group for group in groups if group not in TOOL_GROUPS]
     if unknown:
         log.warning(f"Ignoring unknown tool group(s): {', '.join(map(str, unknown))}")
-    selected = _enabled_tools(groups, user_id, guest, conversation)
+    selected = _enabled_tools(groups, user_id, guest, conversation, vault)
     log.debug(f"Tools for groups {groups}: {', '.join(selected.names()) or 'none'}")
     return selected

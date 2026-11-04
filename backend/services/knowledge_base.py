@@ -2,6 +2,16 @@
 The knowledge base: each user's Markdown notes, which the agent keeps across all of the user's
 conversations with the kb_* tools (backend/services/tools/kb_tools.py). See docs/knowledge_base.md.
 
+A user has one shared knowledge base (vault 0), which every agent with the knowledge base uses, and
+one of its own for each agent with own_memory (vault: the agent's personas.id). Every function works
+on one of them; slugs, links and searches never cross vaults.
+
+The note "memory" of a vault is the agent's memory: short lines, each with the date it was written,
+that go into the system prompt of every answer (the details are in the notes they point to). The
+agent changes it line by line with memory_add(), memory_replace() and memory_remove(), which keep
+it below MEMORY_MAX_LINES and MEMORY_MAX_CHARS; kb_write, kb_update and kb_archive don't touch it,
+and lists and searches leave it out.
+
 Postgres holds the only copy (kb_notes), so a note is readable right after it is written. A note's
 slug is its stable id: it is made from the first title and stays when the title changes, and a
 title whose slug exists already is refused rather than stored as a second note. Links to other
@@ -22,6 +32,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Iterable, Optional
 from urllib.parse import unquote
 
@@ -43,6 +54,19 @@ MAX_TAG_CHARS = 50
 MAX_SLUG_CHARS = 80
 # Notes longer than this get a hint to split them (agent notes are usually a few KB)
 LONG_NOTE_CHARS = 15_000
+
+# The memory: the note with this slug in each vault, part of every answer's system prompt
+MEMORY_SLUG = "memory"
+MEMORY_TITLE = "Memory"
+MEMORY_DESCRIPTION = "What the agent keeps in mind in every conversation, with pointers to the notes"
+MEMORY_MAX_LINES = 200         # Lines of text (headings don't count)
+MEMORY_MAX_CHARS = 20_000      # About 5,000 tokens of every answer's prompt
+MEMORY_LINE_CHARS = 500
+MEMORY_NEAR_SHARE = 0.9        # From here on, every change reminds the agent to tidy the memory up
+MEMORY_SECTION_CHARS = 60
+# The date memory_add() and memory_replace() put at the end of a line: "- Likes tea (2026-11-04)"
+_MEMORY_DATE_RE = re.compile(r"\s*\(\d{4}-\d{2}-\d{2}\)\s*$")
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
 
 # Query words: letters and digits (no underscores, which the full-text parser splits on)
 _WORD_RE = re.compile(r"[^\W_]+")
@@ -91,12 +115,13 @@ class KBConflict(KBError):
 
 @dataclass(frozen=True)
 class Writer:
-    """Who changes notes, for the revisions: the user whose knowledge base it is, and where."""
+    """Who changes notes, for the revisions: the user and vault whose knowledge base it is, and where."""
 
     user_id: int
-    author: str = "agent"                   # 'agent' | 'user' (the Knowledge base page)
+    author: str = "agent"                   # 'agent' | 'review' (memory review) | 'dream' (consolidation) | 'user' (the page)
     conversation_id: Optional[str] = None
     persona_id: Optional[int] = None
+    vault: int = 0                          # 0: the user's shared knowledge base, else an agent's own
 
 
 # =========================================================================
@@ -216,8 +241,8 @@ def _clean_content(content: Optional[str], title: str) -> str:
 # Reading
 # =========================================================================
 
-def _find_note(conn: Connection, user_id: int, ref: str, lock: bool = False) -> Optional[dict]:
-    """A note by its slug, by the slug its title would get, or by its exact title (case-insensitive)."""
+def _find_note(conn: Connection, user_id: int, ref: str, lock: bool = False, vault: int = 0) -> Optional[dict]:
+    """A note of a vault by its slug, by the slug its title would get, or by its exact title (case-insensitive)."""
     ref = (ref or "").strip()
     if ref.startswith("[[") and ref.endswith("]]"):
         ref = ref[2:-2].split("|", 1)[0].strip()
@@ -226,7 +251,7 @@ def _find_note(conn: Connection, user_id: int, ref: str, lock: bool = False) -> 
     slug = slugify(ref)
     query = (
         select(*_NOTE_COLUMNS)
-        .where(kb_notes.c.user_id == user_id)
+        .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault)
         .where((kb_notes.c.slug.in_([ref, slug])) | (func.lower(kb_notes.c.title) == ref.lower()))
         .order_by((kb_notes.c.slug == ref).desc(), (kb_notes.c.slug == slug).desc(), kb_notes.c.id)
         .limit(1)
@@ -253,7 +278,7 @@ def _version(conn: Connection, note_id: int) -> int:
                         .where(kb_note_revisions.c.note_id == note_id)).scalar_one() or 0
 
 
-def get_note(user_id: int, ref: str) -> dict:
+def get_note(user_id: int, ref: str, vault: int = 0) -> dict:
     """
     A note with its version and links: "links" (the notes it links to: slug, title or None if there
     is no such note, status) and "backlinks" (the active notes that link to it: slug, title).
@@ -262,7 +287,7 @@ def get_note(user_id: int, ref: str) -> dict:
         KBError: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref)
+        note = _find_note(conn, user_id, ref, vault=vault)
         if note is None:
             raise _not_found(ref)
         note["version"] = _version(conn, note["id"])
@@ -271,7 +296,7 @@ def get_note(user_id: int, ref: str) -> dict:
         if targets:
             rows = conn.execute(
                 select(kb_notes.c.slug, kb_notes.c.title, kb_notes.c.status)
-                .where(kb_notes.c.user_id == user_id, kb_notes.c.slug.in_(targets))
+                .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault, kb_notes.c.slug.in_(targets))
             )
             existing = {row.slug: row for row in rows}
         note["links"] = [
@@ -284,7 +309,7 @@ def get_note(user_id: int, ref: str) -> dict:
             dict(row._mapping) for row in conn.execute(
                 select(kb_notes.c.slug, kb_notes.c.title)
                 .select_from(kb_links.join(kb_notes, kb_links.c.note_id == kb_notes.c.id))
-                .where(kb_notes.c.user_id == user_id, kb_notes.c.status == "active",
+                .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault, kb_notes.c.status == "active",
                        kb_links.c.target_slug == note["slug"], kb_notes.c.id != note["id"])
                 .order_by(kb_notes.c.title)
             )
@@ -292,16 +317,19 @@ def get_note(user_id: int, ref: str) -> dict:
     return note
 
 
-def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status: str = "active") -> dict:
+def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status: str = "active",
+               vault: int = 0) -> dict:
     """
-    The notes with a status (the active ones by default), most recently updated first.
+    The notes of a vault with a status (the active ones by default), most recently updated first,
+    without the memory.
 
     Returns:
         {"notes": [...] (without content), "total": the number of matching notes,
          "tags": [(tag, count)], the 20 most used tags (only without a tag filter)}
     """
     tag_filter = normalize_tags([tag])[0] if tag and tag.strip().lstrip("#").strip() else None
-    conditions = [kb_notes.c.user_id == user_id, kb_notes.c.status == _check_status(status)]
+    conditions = [kb_notes.c.user_id == user_id, kb_notes.c.vault == vault,
+                  kb_notes.c.status == _check_status(status), kb_notes.c.slug != MEMORY_SLUG]
     if tag_filter:
         conditions.append(kb_notes.c.tags.any(tag_filter))
     with db.connection() as conn:
@@ -319,27 +347,72 @@ def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status:
         if not tag_filter:
             tags = [tuple(row) for row in conn.execute(text(
                 "SELECT tag, count(*) AS n FROM kb_notes, unnest(tags) AS tag "
-                "WHERE user_id = :user_id AND status = :status GROUP BY tag ORDER BY n DESC, tag LIMIT 20"
-            ), {"user_id": user_id, "status": status})]
+                "WHERE user_id = :user_id AND vault = :vault AND status = :status AND slug <> :memory "
+                "GROUP BY tag ORDER BY n DESC, tag LIMIT 20"
+            ), {"user_id": user_id, "vault": vault, "status": status, "memory": MEMORY_SLUG})]
     return {"notes": notes, "total": total, "tags": tags}
 
 
-def count_notes(user_id: int) -> dict:
-    """The number of the user's notes per status: {"active": n, "archived": n}."""
+def count_notes(user_id: int, vault: int = 0) -> dict:
+    """The number of notes of a vault per status, without the memory: {"active": n, "archived": n}."""
     with db.connection() as conn:
-        rows = conn.execute(select(kb_notes.c.status, func.count()).where(kb_notes.c.user_id == user_id)
+        rows = conn.execute(select(kb_notes.c.status, func.count())
+                            .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault,
+                                   kb_notes.c.slug != MEMORY_SLUG)
                             .group_by(kb_notes.c.status)).all()
     counts = dict.fromkeys(STATUSES, 0)
     counts.update({row[0]: row[1] for row in rows})
     return counts
 
 
-def all_notes(user_id: int) -> list[dict]:
-    """All of the user's notes with their content, active and archived, by slug (for the export)."""
+def all_notes(user_id: int, vault: int = 0) -> list[dict]:
+    """All notes of a vault with their content, active and archived and the memory, by slug (for the export)."""
     with db.connection() as conn:
         return [dict(row._mapping) for row in conn.execute(
-            select(*_NOTE_COLUMNS).where(kb_notes.c.user_id == user_id).order_by(kb_notes.c.slug)
+            select(*_NOTE_COLUMNS).where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault)
+            .order_by(kb_notes.c.slug)
         )]
+
+
+def changes_since(user_id: int, vault: int, since: datetime, until: Optional[datetime] = None) -> list[dict]:
+    """
+    The changes of a vault's notes between since and until (naive UTC), oldest first: one row per
+    note and author (who: 'agent', 'review', 'dream', 'user'), with its actions, the agent's name
+    and the time of the last one. For the nightly consolidation.
+    """
+    conditions = ["n.user_id = :user_id", "n.vault = :vault", "r.created_at > :since"]
+    params: dict = {"user_id": user_id, "vault": vault, "since": since}
+    if until is not None:
+        conditions.append("r.created_at <= :until")
+        params["until"] = until
+    with db.connection() as conn:
+        rows = conn.execute(text(f"""
+            SELECT n.slug, n.title, n.description, n.status, r.author, p.name AS persona_name,
+                   array_agg(DISTINCT r.action) AS actions, max(r.created_at) AS changed_at
+            FROM kb_note_revisions r
+            JOIN kb_notes n ON n.id = r.note_id
+            LEFT JOIN personas p ON p.id = r.persona_id
+            WHERE {' AND '.join(conditions)}
+            GROUP BY n.slug, n.title, n.description, n.status, r.author, p.name
+            ORDER BY max(r.created_at)
+        """), params).all()
+    return [dict(row._mapping) for row in rows]
+
+
+def list_vaults(user_id: int) -> list[dict]:
+    """
+    The user's vaults that have notes: [{"vault", "active", "archived", "memory_lines"}], by vault.
+    """
+    with db.connection() as conn:
+        rows = conn.execute(text(
+            "SELECT vault, "
+            "count(*) FILTER (WHERE slug <> :memory AND status = 'active') AS active, "
+            "count(*) FILTER (WHERE slug <> :memory AND status = 'archived') AS archived, "
+            "max(content) FILTER (WHERE slug = :memory) AS memory "
+            "FROM kb_notes WHERE user_id = :user_id GROUP BY vault ORDER BY vault"
+        ), {"user_id": user_id, "memory": MEMORY_SLUG}).all()
+    return [{"vault": row.vault, "active": row.active, "archived": row.archived,
+             "memory_lines": memory_usage(row.memory or "")[0]} for row in rows]
 
 
 _REVISION_SUMMARY_COLUMNS = (
@@ -364,7 +437,7 @@ def _revisions_query(user_id: int, note_id: int, *columns):
     )
 
 
-def list_revisions(user_id: int, ref: str) -> list[dict]:
+def list_revisions(user_id: int, ref: str, vault: int = 0) -> list[dict]:
     """
     A note's versions, newest first, without their content: action, author, the conversation and
     agent they were written in (conversation_name None if it was deleted), reason.
@@ -373,7 +446,7 @@ def list_revisions(user_id: int, ref: str) -> list[dict]:
         KBNotFound: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref)
+        note = _find_note(conn, user_id, ref, vault=vault)
         if note is None:
             raise _not_found(ref)
         return [dict(row._mapping) for row in conn.execute(
@@ -381,7 +454,7 @@ def list_revisions(user_id: int, ref: str) -> list[dict]:
         )]
 
 
-def get_revision(user_id: int, ref: str, revision_id: int) -> dict:
+def get_revision(user_id: int, ref: str, revision_id: int, vault: int = 0) -> dict:
     """
     One version of a note, with its description, tags and content.
 
@@ -389,7 +462,7 @@ def get_revision(user_id: int, ref: str, revision_id: int) -> dict:
         KBNotFound: There is no such note, or the version isn't one of it.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref)
+        note = _find_note(conn, user_id, ref, vault=vault)
         if note is None:
             raise _not_found(ref)
         row = conn.execute(
@@ -410,9 +483,11 @@ _EXACT_FIELDS = ("slug", "title", "coalesce(description, '')", "array_to_string(
 
 
 def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iterable[str]] = None,
-                 tags: Optional[Iterable[str]] = None, limit: int = 10, status: str = "active") -> list[dict]:
+                 tags: Optional[Iterable[str]] = None, limit: int = 10, status: str = "active",
+                 vault: int = 0) -> list[dict]:
     """
-    Search the notes with a status (the active ones by default) by words, exact text and tags.
+    Search the notes of a vault with a status (the active ones by default) by words, exact text and
+    tags. The memory is left out: it is part of every answer anyway.
 
     A note is found if it contains any query word, any exact text or any of the tags. The score is
     the full-text rank of the words, plus 1 per exact text it contains and 0.3 per tag it has; ties
@@ -436,7 +511,8 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
     if not (words or exact or tags):
         raise KBError("Give at least one of query (words), exact (a literal text) or tags")
 
-    params: dict = {"user_id": user_id, "limit": limit, "status": _check_status(status)}
+    params: dict = {"user_id": user_id, "vault": vault, "limit": limit, "status": _check_status(status),
+                    "memory": MEMORY_SLUG}
     matches, scores, columns = [], [], []
     if words:
         params["tsquery"] = _tsquery(words)
@@ -462,7 +538,8 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
         SELECT * FROM (
             SELECT slug, title, description, tags, status, content, updated_at, {', '.join(columns)}
             FROM kb_notes
-            WHERE user_id = :user_id AND status = :status AND ({' OR '.join(matches)})
+            WHERE user_id = :user_id AND vault = :vault AND status = :status AND slug <> :memory
+              AND ({' OR '.join(matches)})
         ) AS hits
         ORDER BY {' + '.join(scores)} DESC, updated_at DESC NULLS LAST
         LIMIT :limit
@@ -510,20 +587,25 @@ def _set_links(conn: Connection, note_id: int, content: str) -> None:
 def create_note(writer: Writer, title: str, content: str, description: Optional[str] = None,
                 tags: Optional[Iterable[str]] = None) -> dict:
     """
-    Create a note; its slug is made from the title.
+    Create a note in the writer's vault; its slug is made from the title.
 
     Raises:
-        KBError: Invalid fields, or a note with that slug exists already (also an archived one).
+        KBError: Invalid fields, a note with that slug exists already (also an archived one), or
+            the title would give the memory's slug.
     """
     title = _clean_title(title)
     values = {
-        "user_id": writer.user_id, "slug": note_slug(title), "title": title,
+        "user_id": writer.user_id, "vault": writer.vault, "slug": note_slug(title), "title": title,
         "description": _clean_description(description), "tags": normalize_tags(tags),
         "content": _clean_content(content, title),
     }
+    if values["slug"] == MEMORY_SLUG:
+        raise KBError(f"The title \"{title}\" is reserved for the memory; choose a different title"
+                      + (", or change the memory with memory_add, memory_replace and memory_remove"
+                         if writer.author != "user" else ""))
     try:
         with db.connection() as conn:
-            existing = _find_note(conn, writer.user_id, values["slug"])
+            existing = _find_note(conn, writer.user_id, values["slug"], vault=writer.vault)
             if existing is not None and existing["slug"] == values["slug"]:
                 raise _exists(existing)
             note = dict(conn.execute(insert(kb_notes).values(**values).returning(*_NOTE_COLUMNS)).one()._mapping)
@@ -532,12 +614,21 @@ def create_note(writer: Writer, title: str, content: str, description: Optional[
     except IntegrityError:
         # The same slug, written at the same moment by a parallel tool call
         with db.connection() as conn:
-            existing = _find_note(conn, writer.user_id, values["slug"])
+            existing = _find_note(conn, writer.user_id, values["slug"], vault=writer.vault)
         if existing is None:
             raise
         raise _exists(existing)
-    log.info(f"Knowledge base of user {writer.user_id}: created note {note['slug']}")
+    log.info(f"Knowledge base {_vault_name(writer)}: created note {note['slug']}")
     return note
+
+
+def _vault_name(writer: Writer) -> str:
+    """The vault for log lines: "user 3", "user 3, agent 7"."""
+    return f"of user {writer.user_id}" + (f", agent {writer.vault}" if writer.vault else "")
+
+
+def _memory_by_line() -> KBError:
+    return KBError("The memory is changed line by line: use memory_add, memory_replace or memory_remove")
 
 
 def _exists(note: dict) -> KBExists:
@@ -552,7 +643,8 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
                 tags: Optional[Iterable[str]] = None, base_version: Optional[int] = None,
                 reason: Optional[str] = None) -> tuple[dict, list[str]]:
     """
-    Change a note; its slug stays. Updating an archived note restores it.
+    Change a note; its slug stays. Updating an archived note restores it. Only the user (the page)
+    changes the memory this way; the agent changes it line by line (memory_add() and the like).
 
     Args:
         content: Replaces the whole content.
@@ -567,7 +659,7 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
 
     Raises:
         KBError: No such note (KBNotFound), the note changed since base_version (KBConflict),
-            nothing to change, content and append together, invalid fields.
+            nothing to change, content and append together, invalid fields, the memory and not the user.
     """
     if content is not None and append is not None:
         raise KBError("Give either content (replaces the whole text) or append (adds to the end), not both")
@@ -575,9 +667,11 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
         raise KBError("Nothing to change: give content, append, title, description or tags")
 
     with db.connection() as conn:
-        note = _find_note(conn, writer.user_id, ref, lock=True)
+        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault)
         if note is None:
             raise _not_found(ref)
+        if note["slug"] == MEMORY_SLUG and writer.author != "user":
+            raise _memory_by_line()
         note["version"] = _version(conn, note["id"])
         if base_version is not None and base_version != note["version"]:
             raise KBConflict(f"Note '{note['slug']}' changed since version {base_version}; it is at version "
@@ -622,7 +716,7 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
         _add_revision(conn, note, "update", writer, reason=reason)
         if content_changed:
             _set_links(conn, note["id"], note["content"])
-    log.info(f"Knowledge base of user {writer.user_id}: updated note {note['slug']} ({', '.join(changes)})")
+    log.info(f"Knowledge base {_vault_name(writer)}: updated note {note['slug']} ({', '.join(changes)})")
     return note, changes
 
 
@@ -634,12 +728,15 @@ def archive_note(writer: Writer, ref: str, reason: Optional[str] = None) -> tupl
         (the note, False if it was archived already)
 
     Raises:
-        KBError: There is no such note.
+        KBError: There is no such note, or it is the memory (which is never archived).
     """
     with db.connection() as conn:
-        note = _find_note(conn, writer.user_id, ref, lock=True)
+        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault)
         if note is None:
             raise _not_found(ref)
+        if note["slug"] == MEMORY_SLUG:
+            raise (KBError("The memory can't be archived; delete it instead") if writer.author == "user"
+                   else _memory_by_line())
         if note["status"] == "archived":
             note["version"] = _version(conn, note["id"])
             return note, False
@@ -647,7 +744,7 @@ def archive_note(writer: Writer, ref: str, reason: Optional[str] = None) -> tupl
             update(kb_notes).where(kb_notes.c.id == note["id"]).values(status="archived").returning(*_NOTE_COLUMNS)
         ).one()._mapping)
         _add_revision(conn, note, "archive", writer, reason=" ".join((reason or "").split()) or None)
-    log.info(f"Knowledge base of user {writer.user_id}: archived note {note['slug']}")
+    log.info(f"Knowledge base {_vault_name(writer)}: archived note {note['slug']}")
     return note, True
 
 
@@ -663,7 +760,7 @@ def restore_note(writer: Writer, ref: str) -> tuple[dict, bool]:
         KBNotFound: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, writer.user_id, ref, lock=True)
+        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault)
         if note is None:
             raise _not_found(ref)
         if note["status"] == "active":
@@ -673,7 +770,7 @@ def restore_note(writer: Writer, ref: str) -> tuple[dict, bool]:
             update(kb_notes).where(kb_notes.c.id == note["id"]).values(status="active").returning(*_NOTE_COLUMNS)
         ).one()._mapping)
         _add_revision(conn, note, "restore", writer)
-    log.info(f"Knowledge base of user {writer.user_id}: restored note {note['slug']}")
+    log.info(f"Knowledge base {_vault_name(writer)}: restored note {note['slug']}")
     return note, True
 
 
@@ -685,14 +782,14 @@ def restore_revision(writer: Writer, ref: str, revision_id: int,
     Raises:
         KBNotFound: There is no such note or version. KBConflict: the note changed since base_version.
     """
-    revision = get_revision(writer.user_id, ref, revision_id)
+    revision = get_revision(writer.user_id, ref, revision_id, vault=writer.vault)
     when = revision["created_at"].strftime("%Y-%m-%d %H:%M") if revision["created_at"] else f"#{revision_id}"
     return update_note(writer, ref, content=revision["content"], title=revision["title"],
                        description=revision["description"] or "", tags=revision["tags"],
                        base_version=base_version, reason=f"Restored the version of {when}")
 
 
-def delete_note(user_id: int, ref: str) -> str:
+def delete_note(user_id: int, ref: str, vault: int = 0) -> str:
     """
     Delete a note for good, with all its versions (only from the page: the agent can only archive).
     Links to it from other notes stay and point to a note that doesn't exist (any more).
@@ -704,9 +801,230 @@ def delete_note(user_id: int, ref: str) -> str:
         KBNotFound: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref, lock=True)
+        note = _find_note(conn, user_id, ref, lock=True, vault=vault)
         if note is None:
             raise _not_found(ref)
         conn.execute(delete(kb_notes).where(kb_notes.c.id == note["id"]))
-    log.info(f"Knowledge base of user {user_id}: deleted note {note['slug']} for good")
+    log.info(f"Knowledge base {user_id}/{vault}: deleted note {note['slug']} for good")
     return note["slug"]
+
+
+# =========================================================================
+# The memory
+# =========================================================================
+
+def _today() -> str:
+    from backend.llm.prompts import memory_today
+    return memory_today().isoformat()
+
+
+def _heading(line: str) -> Optional[str]:
+    """The text of a Markdown heading line, else None."""
+    match = _HEADING_RE.match(line.strip())
+    return match.group(1) if match else None
+
+
+def memory_usage(content: str) -> tuple[int, int]:
+    """(lines of text without headings and blank lines, characters) of a memory."""
+    lines = [line for line in content.splitlines() if line.strip() and _heading(line) is None]
+    return len(lines), len(content)
+
+
+def _memory_text(text: Optional[str]) -> str:
+    """One line of the memory as the agent gives it: on one line, without a bullet or date of its own."""
+    text = " ".join((text or "").split())
+    text = re.sub(r"^[-*+]\s+", "", text)
+    text = _MEMORY_DATE_RE.sub("", text).strip()
+    if not text:
+        raise KBError("The text must not be empty")
+    if len(text) > MEMORY_LINE_CHARS:
+        raise KBError(f"A line of the memory has at most {MEMORY_LINE_CHARS} characters ({len(text)} given): keep "
+                      f"it short and put the details into a note (kb_write) that the line points to with [[slug]]")
+    return text
+
+
+def _memory_line(text: str) -> str:
+    return f"- {text} ({_today()})"
+
+
+def _line_key(line: str) -> str:
+    """A memory line without bullet and date, lowercased, to find duplicates."""
+    return _MEMORY_DATE_RE.sub("", re.sub(r"^\s*[-*+]\s+", "", line)).strip().lower()
+
+
+def _find_line(lines: list[str], part: str) -> int:
+    """The index of the one line of text that contains part (case-insensitive)."""
+    part = " ".join((part or "").split())
+    if not part:
+        raise KBError("Give a part of the line, e.g. a few words of it")
+    needle = part.lower()
+    found = [i for i, line in enumerate(lines)
+             if line.strip() and _heading(line) is None and needle in " ".join(line.split()).lower()]
+    if not found:
+        raise KBError(f"No line of the memory contains \"{part}\"; copy a part of the line from the memory in the "
+                      f"system prompt")
+    if len(found) > 1:
+        raise KBError(f"{len(found)} lines of the memory contain \"{part}\"; give a longer part, so that it "
+                      f"matches only one")
+    return found[0]
+
+
+def _tidy(lines: list[str]) -> str:
+    """The lines as content: no headings without text under them, no runs of blank lines."""
+    kept: list[str] = []
+    for i, line in enumerate(lines):
+        if _heading(line) is not None:
+            following = next((other for other in lines[i + 1:] if other.strip()), None)
+            if following is None or _heading(following) is not None:
+                continue
+            if kept and kept[-1].strip():
+                kept.append("")
+        elif not line.strip() and (not kept or not kept[-1].strip()):
+            continue
+        kept.append(line.rstrip())
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return "\n".join(kept)
+
+
+def _check_memory_size(content: str) -> None:
+    lines, chars = memory_usage(content)
+    if lines > MEMORY_MAX_LINES or chars > MEMORY_MAX_CHARS:
+        raise KBError(f"The memory is full ({lines} of {MEMORY_MAX_LINES} lines, {chars} of {MEMORY_MAX_CHARS} "
+                      f"characters), so nothing was changed. Make room first: merge lines on the same topic "
+                      f"(memory_replace), move details into notes and keep a short line that points to them "
+                      f"with [[slug]], and remove lines that are outdated (memory_remove)")
+
+
+def memory_status(content: str) -> str:
+    """How full the memory is, with a reminder to tidy it up when it is nearly full."""
+    lines, chars = memory_usage(content)
+    status = f"The memory has {lines} of {MEMORY_MAX_LINES} lines and {chars} of {MEMORY_MAX_CHARS} characters."
+    if lines >= MEMORY_NEAR_SHARE * MEMORY_MAX_LINES or chars >= MEMORY_NEAR_SHARE * MEMORY_MAX_CHARS:
+        status += (" It is nearly full: merge lines on the same topic, move details into notes that a short line "
+                   "points to, and remove what is outdated.")
+    return status
+
+
+def get_memory(user_id: int, vault: int = 0) -> Optional[dict]:
+    """The memory note of a vault (with its version), or None if it has none yet."""
+    with db.connection() as conn:
+        note = _find_note(conn, user_id, MEMORY_SLUG, vault=vault)
+        if note is not None:
+            note["version"] = _version(conn, note["id"])
+    return note
+
+
+def _change_memory(writer: Writer, change) -> tuple[dict, bool]:
+    """
+    Apply change(lines) -> new lines (or None for no change) to the memory, as one revision.
+
+    Returns:
+        (the memory note, whether it changed)
+    """
+    with db.connection() as conn:
+        note = _find_note(conn, writer.user_id, MEMORY_SLUG, lock=True, vault=writer.vault)
+        lines = note["content"].splitlines() if note else []
+        new_lines = change(lines)
+        if new_lines is None:
+            if note is not None:
+                note["version"] = _version(conn, note["id"])
+            return note or {"slug": MEMORY_SLUG, "title": MEMORY_TITLE, "content": ""}, False
+        content = _tidy(new_lines)
+        _check_memory_size(content)
+        if note is None:
+            try:
+                with conn.begin_nested():
+                    note = dict(conn.execute(insert(kb_notes).values(
+                        user_id=writer.user_id, vault=writer.vault, slug=MEMORY_SLUG, title=MEMORY_TITLE,
+                        description=MEMORY_DESCRIPTION, tags=[], content=content,
+                    ).returning(*_NOTE_COLUMNS)).one()._mapping)
+            except IntegrityError:
+                # Written at the same moment by a parallel tool call: change that one
+                note = None
+            if note is None:
+                return _change_memory(writer, change)
+            _add_revision(conn, note, "create", writer)
+        else:
+            note = dict(conn.execute(
+                update(kb_notes).where(kb_notes.c.id == note["id"])
+                .values(content=content, status="active").returning(*_NOTE_COLUMNS)
+            ).one()._mapping)
+            _add_revision(conn, note, "update", writer)
+        _set_links(conn, note["id"], note["content"])
+    log.info(f"Knowledge base {_vault_name(writer)}: changed the memory")
+    return note, True
+
+
+def memory_add(writer: Writer, text: str, section: Optional[str] = None) -> tuple[dict, bool]:
+    """
+    Add a line to the memory, with today's date at its end: under the heading section (made at the
+    end if missing), else before the first heading.
+
+    Returns:
+        (the memory, False if it has the same line already)
+
+    Raises:
+        KBError: Empty or too long text or section, or the memory would get too long.
+    """
+    text = _memory_text(text)
+    heading = " ".join((section or "").split()).lstrip("#").strip()
+    if len(heading) > MEMORY_SECTION_CHARS:
+        raise KBError(f"A section name has at most {MEMORY_SECTION_CHARS} characters")
+
+    def change(lines: list[str]) -> Optional[list[str]]:
+        if any(_line_key(line) == text.lower() for line in lines if _heading(line) is None):
+            return None
+        line = _memory_line(text)
+        if heading:
+            start = next((i for i, other in enumerate(lines) if (_heading(other) or "").lower() == heading.lower()),
+                         None)
+            if start is None:
+                return lines + ["", f"## {heading}", line]
+        else:
+            start = -1
+        # At the end of the section (or of the lines before the first heading)
+        end = next((i for i in range(start + 1, len(lines)) if _heading(lines[i]) is not None), len(lines))
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        return lines[:end] + [line] + lines[end:]
+
+    return _change_memory(writer, change)
+
+
+def memory_replace(writer: Writer, line: str, text: str) -> dict:
+    """
+    Replace the one line of the memory that contains line (a part of it) with text, dated today.
+
+    Raises:
+        KBError: No line or several lines contain it, empty or too long text, the memory would get too long.
+    """
+    text = _memory_text(text)
+
+    def change(lines: list[str]) -> list[str]:
+        index = _find_line(lines, line)
+        return lines[:index] + [_memory_line(text)] + lines[index + 1:]
+
+    return _change_memory(writer, change)[0]
+
+
+def memory_remove(writer: Writer, line: str) -> tuple[dict, str]:
+    """
+    Remove the one line of the memory that contains line (a part of it); a heading left without
+    lines goes too.
+
+    Returns:
+        (the memory, the removed line)
+
+    Raises:
+        KBError: No line or several lines contain it.
+    """
+    removed: list[str] = []
+
+    def change(lines: list[str]) -> list[str]:
+        index = _find_line(lines, line)
+        removed.append(lines[index].strip())
+        return lines[:index] + lines[index + 1:]
+
+    note, _ = _change_memory(writer, change)
+    return note, removed[0]

@@ -75,7 +75,7 @@ export class NoteContentComponent {
     if (anchor.classList.contains('note-link--missing')) {
       this.missingLink.emit({ slug, text: (anchor.textContent ?? '').trim() || slug });
     } else {
-      this.router.navigate([NOTE_ROUTE, slug]);
+      this.router.navigate([NOTE_ROUTE, slug], { queryParamsHandling: 'preserve' });  // In the same knowledge base
     }
   }
 }

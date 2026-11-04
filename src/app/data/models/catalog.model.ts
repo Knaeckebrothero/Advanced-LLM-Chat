@@ -156,6 +156,7 @@ export interface IPersonaBase {
   availableToGuests: boolean;
   enabled: boolean;
   sortOrder: number;
+  ownMemory?: boolean;  // With the knowledge base: its own knowledge base and memory per user (default: the shared one)
 }
 
 export type IPersonaCreate = IPersonaBase;

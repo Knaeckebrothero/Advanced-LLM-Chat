@@ -109,6 +109,21 @@
           </app-model-select>
           <p class="setting-hint">{{ 'catalog.settings.defaultModelHint' | translate }}</p>
         </div>
+
+        <!-- The model that reviews conversations for the agents' memory (signed-in users, models with tools) -->
+        <div class="setting-option" *ngIf="hasMemory && toolModels(models).length > 0">
+          <label id="memory-model-label">{{ 'catalog.settings.memoryModel' | translate }}</label>
+          <app-model-select
+            class="default-model-select"
+            variant="field"
+            [models]="toolModels(models)"
+            [selectedId]="selectedMemoryModel(settings, models)"
+            [automaticLabel]="'catalog.settings.memoryModelChat' | translate"
+            [automaticHint]="'catalog.settings.memoryModelChatHint' | translate"
+            (selectedChange)="updateMemoryModel($event)">
+          </app-model-select>
+          <p class="setting-hint">{{ 'catalog.settings.memoryModelHint' | translate }}</p>
+        </div>
       </ng-container>
 
       <!-- Editing: guided (an edited message is answered again) or manual (edit and insert any message) -->

@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService } from '../services/api.service';
 import {
   IKBErrorDetail,
+  IKBMemory,
   IKBNote,
   IKBNoteSummary,
   IKBNoteUpdate,
@@ -10,6 +11,8 @@ import {
   IKBRevision,
   IKBSearchHit,
   IKBTagCount,
+  IKBVault,
+  KB_MEMORY_SLUG,
   NoteStatus
 } from '../data/models/knowledge-base.model';
 
@@ -26,11 +29,18 @@ export function kbErrorDetail(error: unknown): IKBErrorDetail | null {
 }
 
 /**
- * State of the Knowledge base page: the list (by status and tag, or the hits of a search), the
- * open note, and the writes. The page needs the server: the notes are only stored there.
+ * State of the Knowledge base page: the knowledge base shown (the shared one, or an agent's own),
+ * its memory, the list (by status and tag, or the hits of a search), the open note, and the
+ * writes. The page needs the server: the notes are only stored there.
  */
 @Injectable()
 export class KnowledgeBaseStore {
+  // The knowledge base shown (0: the shared one) and the user's knowledge bases
+  readonly vault = signal(0);
+  readonly vaults = signal<IKBVault[]>([]);
+  readonly currentVault = computed(() => this.vaults().find(item => item.id === this.vault()) ?? null);
+  readonly memory = signal<IKBMemory | null>(null);
+
   // The list
   readonly status = signal<NoteStatus>('active');
   readonly tag = signal<string | null>(null);
@@ -53,27 +63,62 @@ export class KnowledgeBaseStore {
 
   private listRequest = 0;
   private noteRequest = 0;
+  private memoryRequest = 0;
 
   constructor(private api: ApiService) {}
+
+  // Knowledge bases and the memory
+
+  async loadVaults(): Promise<void> {
+    try {
+      this.vaults.set(await this.api.getKBVaults());
+    } catch {
+      // The page still works on the shared knowledge base
+    }
+  }
+
+  /** Show another knowledge base: its list from the start, and its memory. */
+  setVault(vault: number): void {
+    if (vault === this.vault()) return;
+    this.vault.set(vault);
+    this.tag.set(null);
+    this.query.set('');
+    this.hits.set(null);
+    this.memory.set(null);
+    this.listState.set('loading');
+    this.loadList();
+  }
+
+  async loadMemory(): Promise<void> {
+    const request = ++this.memoryRequest;
+    try {
+      const memory = await this.api.getKBMemory(this.vault());
+      if (request === this.memoryRequest) this.memory.set(memory);
+    } catch {
+      if (request === this.memoryRequest) this.memory.set(null);
+    }
+  }
 
   // List
 
   async loadList(): Promise<void> {
     const request = ++this.listRequest;
     const query = this.query().trim();
+    const vault = this.vault();
     if (this.listState() !== 'ready') this.listState.set('loading');
+    this.loadMemory();
     try {
       if (query) {
         // A search also brings the counts and tags up to date
         const [hits, list] = await Promise.all([
-          this.api.searchKBNotes(query, this.status()),
-          this.api.getKBNotes(this.status(), this.tag())
+          this.api.searchKBNotes(query, this.status(), vault),
+          this.api.getKBNotes(this.status(), this.tag(), vault)
         ]);
         if (request !== this.listRequest) return;
         this.applyList(list);
         this.hits.set(hits);
       } else {
-        const list = await this.api.getKBNotes(this.status(), this.tag());
+        const list = await this.api.getKBNotes(this.status(), this.tag(), vault);
         if (request !== this.listRequest) return;
         this.applyList(list);
         this.hits.set(null);
@@ -129,7 +174,7 @@ export class KnowledgeBaseStore {
       this.noteState.set('loading');
     }
     try {
-      const note = await this.api.getKBNote(slug);
+      const note = await this.api.getKBNote(slug, this.vault());
       if (request !== this.noteRequest) return;
       this.note.set(note);
       this.noteState.set('ready');
@@ -153,23 +198,23 @@ export class KnowledgeBaseStore {
   // Writes (errors go to the caller, which shows them)
 
   async create(note: IKBNoteWrite): Promise<IKBNote> {
-    return this.shown(await this.api.createKBNote(note));
+    return this.shown(await this.api.createKBNote(note, this.vault()));
   }
 
   async save(slug: string, note: IKBNoteUpdate): Promise<IKBNote> {
-    return this.shown(await this.api.updateKBNote(slug, note));
+    return this.shown(await this.api.updateKBNote(slug, note, this.vault()));
   }
 
   async archive(slug: string): Promise<IKBNote> {
-    return this.shown(await this.api.archiveKBNote(slug));
+    return this.shown(await this.api.archiveKBNote(slug, this.vault()));
   }
 
   async restore(slug: string): Promise<IKBNote> {
-    return this.shown(await this.api.restoreKBNote(slug));
+    return this.shown(await this.api.restoreKBNote(slug, this.vault()));
   }
 
   async delete(slug: string): Promise<void> {
-    await this.api.deleteKBNote(slug);
+    await this.api.deleteKBNote(slug, this.vault());
     if (this.slug() === slug) {
       this.note.set(null);
       this.noteState.set('none');
@@ -178,11 +223,16 @@ export class KnowledgeBaseStore {
   }
 
   getRevision(slug: string, revisionId: number): Promise<IKBRevision> {
-    return this.api.getKBRevision(slug, revisionId);
+    return this.api.getKBRevision(slug, revisionId, this.vault());
   }
 
   async restoreRevision(slug: string, revisionId: number, baseVersion: number): Promise<IKBNote> {
-    return this.shown(await this.api.restoreKBRevision(slug, revisionId, baseVersion));
+    return this.shown(await this.api.restoreKBRevision(slug, revisionId, baseVersion, this.vault()));
+  }
+
+  /** Is this the memory (and not an ordinary note)? */
+  isMemory(slug: string | null | undefined): boolean {
+    return slug === KB_MEMORY_SLUG;
   }
 
   /** The zip for Obsidian, with the times in the browser's time zone (Obsidian reads them as local times). */
@@ -193,6 +243,6 @@ export class KnowledgeBaseStore {
     } catch {
       // Unknown: the server writes UTC
     }
-    return this.api.exportKnowledgeBase(timeZone);
+    return this.api.exportKnowledgeBase(timeZone, this.vault());
   }
 }

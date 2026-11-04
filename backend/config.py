@@ -114,6 +114,18 @@ LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 DEFAULT_CONTEXT_WINDOW = int(os.getenv("DEFAULT_CONTEXT_WINDOW", "32768"))
 HISTORY_MAX_MESSAGES = int(os.getenv("HISTORY_MAX_MESSAGES", "1000"))
 
+# Memory review (backend/services/memory_review.py): once a conversation with a knowledge base
+# agent has had no new message for MEMORY_REVIEW_IDLE_MINUTES, a model reads what was said since
+# the last review and saves what matters to the agent's memory and knowledge base. Conversations
+# quiet for more than MEMORY_REVIEW_MAX_AGE_DAYS are left alone (e.g. old ones of an agent that
+# just got the knowledge base).
+MEMORY_REVIEW_ENABLED = os.getenv("MEMORY_REVIEW_ENABLED", "true").lower() == "true"
+MEMORY_REVIEW_IDLE_MINUTES = float(os.getenv("MEMORY_REVIEW_IDLE_MINUTES", "15"))
+MEMORY_REVIEW_MAX_AGE_DAYS = float(os.getenv("MEMORY_REVIEW_MAX_AGE_DAYS", "7"))
+# The time zone of the memory's dates ("today" in the prompt, the date of a memory line) and of the
+# days in the journal of the nightly consolidation (backend/services/memory_dream.py), e.g. Europe/Berlin
+MEMORY_TIME_ZONE = os.getenv("MEMORY_TIME_ZONE", "UTC")
+
 # Reasoning effort of the environment fallback model (backend/llm/types.py reads these directly):
 # REASONING_LEVEL is the reasoning_effort of the OpenAI environment model for chat answers,
 # AUXILIARY_REASONING_LEVEL the effort for titles and speech preprocessing (Claude: output_config.effort).

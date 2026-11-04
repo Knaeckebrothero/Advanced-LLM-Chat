@@ -1,16 +1,18 @@
 """
 Knowledge base API models (the Knowledge base page, backend/api/knowledge_base.py).
 
-A note's slug is its id in every path. "version" is the id of its newest revision: an edit sends
-the version it was made on (baseVersion) and is refused with 409 if the note changed since. Times
-are sent as UTC with a Z (UtcDatetime).
+A note's slug is its id in every path, within a vault (the query parameter vault: 0 for the
+user's shared knowledge base, else the id of an agent with its own). "version" is the id of its
+newest revision: an edit sends the version it was made on (baseVersion) and is refused with 409 if
+the note changed since. Times are sent as UTC with a Z (UtcDatetime).
 """
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from backend.models.common import UtcDatetime
-from backend.services.knowledge_base import MAX_DESCRIPTION_CHARS, MAX_TAGS, MAX_TITLE_CHARS
+from backend.services.knowledge_base import (MAX_DESCRIPTION_CHARS, MAX_TAGS, MAX_TITLE_CHARS, MEMORY_MAX_CHARS,
+                                             MEMORY_MAX_LINES)
 
 NoteStatus = Literal["active", "archived"]
 
@@ -64,7 +66,7 @@ class KBRevisionSummary(BaseModel):
     action: str  # 'create' | 'update' | 'archive' | 'restore'
     title: str
     status: NoteStatus
-    author: str  # 'agent' | 'user'
+    author: str  # 'agent' | 'review' (the memory review) | 'dream' (the nightly consolidation) | 'user'
     conversationId: Optional[str] = None
     conversationName: Optional[str] = None  # None: no conversation, or it was deleted
     personaId: Optional[int] = None
@@ -120,3 +122,47 @@ class KBArchiveRequest(BaseModel):
 
 class KBRestoreRevisionRequest(BaseModel):
     baseVersion: Optional[int] = None
+
+
+class KBVault(BaseModel):
+    """A knowledge base of the user: the shared one (id 0) or an agent's own one."""
+    id: int
+    personaId: Optional[int] = None  # The agent whose own knowledge base it is; None for the shared one
+    personaName: Optional[str] = None  # None for the shared one, or if the agent was deleted
+    available: bool = True  # The agent exists, has own_memory and the knowledge base, and the user may use it
+    active: int = 0
+    archived: int = 0
+    memoryLines: int = 0
+
+
+class KBMemory(BaseModel):
+    """The memory of a vault (its note "memory") with how full it is; note None while it is empty."""
+    note: Optional["KBNote"] = None
+    lines: int = 0
+    chars: int = 0
+    maxLines: int = MEMORY_MAX_LINES
+    maxChars: int = MEMORY_MAX_CHARS
+
+
+class KBReviewRequest(BaseModel):
+    conversationId: str
+
+
+class KBReviewChange(BaseModel):
+    tool: str  # kb_write, kb_update, kb_archive, memory_add, memory_replace, memory_remove
+    title: str
+    content: str
+    note: Optional[str] = None  # The note's slug ("memory" for the memory)
+    vault: int = 0
+
+
+class KBReviewResult(BaseModel):
+    """What a memory review on request did."""
+    status: Literal["done", "nothing_new", "not_available", "failed"]
+    detail: str = ""
+    modelName: Optional[str] = None
+    changes: List[KBReviewChange] = []
+    reviewedUntil: Optional[int] = None
+
+
+KBMemory.model_rebuild()

@@ -24,6 +24,7 @@ from backend.database import db
 from backend.config import AUTH_MODE
 from backend.security import oidc
 from backend.security.auth import cleanup_expired_sessions
+from backend.services.memory_review import review_loop
 from backend.utils.certificates import setup_development_certificates
 
 # Import API routers
@@ -61,6 +62,8 @@ async def lifespan(app: FastAPI):
 
     # Start background cleanup task
     asyncio.create_task(cleanup_expired_sessions())
+    # Review quiet conversations of knowledge base agents for their memory (backend/services/memory_review.py)
+    asyncio.create_task(review_loop())
 
     yield
 
