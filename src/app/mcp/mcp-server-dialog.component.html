@@ -1,0 +1,207 @@
+<h2 mat-dialog-title>{{ (isNew ? 'mcp.dialog.addTitle' : 'mcp.dialog.editTitle') | translate }}</h2>
+
+<form [formGroup]="form" (ngSubmit)="save()">
+  <mat-dialog-content class="catalog-dialog-content">
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'mcp.dialog.name' | translate }}</mat-label>
+        <input matInput formControlName="name" required placeholder="GitHub">
+        @if (form.controls.name.hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'mcp.dialog.slug' | translate }}</mat-label>
+        <input matInput formControlName="slug" class="code-input" autocomplete="off"
+               [placeholder]="isNew ? 'github' : ''">
+        <mat-hint>{{ (isNew ? 'mcp.dialog.slugHint' : 'mcp.dialog.slugFixed') | translate }}</mat-hint>
+        @if (form.controls.slug.hasError('pattern')) {
+          <mat-error>{{ 'mcp.dialog.slugPattern' | translate }}</mat-error>
+        }
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>{{ 'mcp.dialog.description' | translate }}</mat-label>
+      <textarea matInput formControlName="description"
+                cdkTextareaAutosize cdkAutosizeMinRows="2" cdkAutosizeMaxRows="8"></textarea>
+      <mat-hint>{{ 'mcp.dialog.descriptionHint' | translate }}</mat-hint>
+    </mat-form-field>
+
+    <!-- Connection: an address, or (admins) a command the backend starts -->
+    <h3 class="form-section" id="mcp-transport-label">{{ 'mcp.dialog.connectionSection' | translate }}</h3>
+    <mat-radio-group class="choice-group" formControlName="transport" aria-labelledby="mcp-transport-label">
+      @for (option of transports; track option) {
+        <mat-radio-button [value]="option" [disabled]="isTransportDisabled(option)">
+          {{ ('mcp.dialog.transport.' + option) | translate }}
+        </mat-radio-button>
+      }
+    </mat-radio-group>
+    @if (admin && stdioOff && transport !== 'stdio') {
+      <p class="choice-hint">{{ 'mcp.dialog.stdioOff' | translate }}</p>
+    }
+
+    @if (transport === 'stdio') {
+      <p class="choice-hint" [class.choice-hint--warning]="stdioOff">
+        {{ (stdioOff ? 'mcp.dialog.stdioOff' : 'mcp.dialog.stdioHint') | translate }}
+      </p>
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>{{ 'mcp.dialog.command' | translate }}</mat-label>
+        <input matInput formControlName="command" class="code-input" required placeholder="npx" autocomplete="off">
+        <mat-hint>{{ 'mcp.dialog.commandHint' | translate }}</mat-hint>
+        @if (form.controls.command.hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        }
+      </mat-form-field>
+
+      <h4 class="subsection">{{ 'mcp.dialog.args' | translate }}</h4>
+      <div formArrayName="args">
+        @for (arg of args.controls; track arg; let i = $index) {
+          <div class="arg-row">
+            <mat-form-field appearance="outline">
+              <mat-label>{{ 'mcp.dialog.arg' | translate: { n: i + 1 } }}</mat-label>
+              <input matInput [formControlName]="i" class="code-input" autocomplete="off"
+                     [placeholder]="i === 0 ? '-y' : ''">
+            </mat-form-field>
+            <button mat-icon-button type="button" (click)="removeArg(i)"
+                    [matTooltip]="'mcp.dialog.removeRow' | translate"
+                    [attr.aria-label]="('mcp.dialog.removeRow' | translate) + ': ' + ('mcp.dialog.arg' | translate: { n: i + 1 })">
+              <mat-icon>remove_circle_outline</mat-icon>
+            </button>
+          </div>
+        }
+      </div>
+      <div class="row-actions">
+        <button mat-stroked-button type="button" (click)="addArg()">
+          <mat-icon>add</mat-icon>
+          {{ 'mcp.dialog.addArg' | translate }}
+        </button>
+      </div>
+
+      <h4 class="subsection">{{ 'mcp.dialog.env' | translate }}</h4>
+      <p class="choice-hint">{{ 'mcp.dialog.envHint' | translate }}</p>
+      <app-mcp-key-value-rows [rows]="env"
+                              [keyLabel]="'mcp.dialog.envName' | translate"
+                              [valueLabel]="'mcp.dialog.envValue' | translate"
+                              keyPlaceholder="GITHUB_TOKEN"
+                              [valuePlaceholder]="envValuePlaceholder"
+                              [keyPatternError]="'mcp.dialog.envNamePattern' | translate"
+                              [addLabel]="'mcp.dialog.addEnv' | translate"
+                              (add)="addEnv()"></app-mcp-key-value-rows>
+    } @else {
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>{{ 'mcp.dialog.url' | translate }}</mat-label>
+        <input matInput formControlName="url" class="code-input" required type="url" autocomplete="off"
+               placeholder="https://example.com/mcp">
+        <mat-hint>
+          {{ (admin ? 'mcp.dialog.urlHintAdmin' : 'mcp.dialog.urlHintUser') | translate }}
+          @if (!admin && config?.privateUrls === false) {
+            {{ 'mcp.dialog.privateUrls' | translate }}
+          }
+        </mat-hint>
+        @if (form.controls.url.hasError('required')) {
+          <mat-error>{{ 'catalog.admin.validation.required' | translate }}</mat-error>
+        } @else if (form.controls.url.hasError('url')) {
+          <mat-error>{{ 'mcp.dialog.urlInvalid' | translate }}</mat-error>
+        } @else if (secretVarNames(form.controls.url)) {
+          <mat-error>{{ 'mcp.dialog.secretVar' | translate: { names: secretVarNames(form.controls.url) } }}</mat-error>
+        }
+      </mat-form-field>
+    }
+
+    <!-- Sign-in (HTTP servers only: a command gets its secrets from its environment) -->
+    @if (transport !== 'stdio') {
+      <h3 class="form-section" id="mcp-auth-label">{{ 'mcp.dialog.authSection' | translate }}</h3>
+      <mat-radio-group class="choice-group" formControlName="auth" aria-labelledby="mcp-auth-label">
+        @for (option of authModes; track option) {
+          <mat-radio-button [value]="option" [disabled]="isAuthDisabled(option)">
+            {{ ('mcp.dialog.auth.' + option) | translate }}
+          </mat-radio-button>
+        }
+      </mat-radio-group>
+      @if (!admin && config?.encryption === false) {
+        <p class="choice-hint choice-hint--warning">{{ 'mcp.dialog.needsEncryptionUser' | translate }}</p>
+      }
+
+      @if (auth === 'headers') {
+        <p class="choice-hint">{{ (admin ? 'mcp.dialog.headersHintAdmin' : 'mcp.dialog.headersHintUser') | translate }}</p>
+        <app-mcp-key-value-rows [rows]="headers"
+                                [secret]="!admin"
+                                [keyLabel]="'mcp.dialog.headerName' | translate"
+                                [valueLabel]="'mcp.dialog.headerValue' | translate"
+                                keyPlaceholder="Authorization"
+                                [valuePlaceholder]="headerValuePlaceholder"
+                                [keyPatternError]="'mcp.dialog.headerNamePattern' | translate"
+                                [addLabel]="'mcp.dialog.addHeader' | translate"
+                                (add)="addHeader()"></app-mcp-key-value-rows>
+      } @else if (auth === 'oauth') {
+        <p class="choice-hint">{{ (admin ? 'mcp.dialog.oauthHintAdmin' : 'mcp.dialog.oauthHintUser') | translate }}</p>
+        @if (admin && oauthNeedsEncryption) {
+          <p class="choice-hint choice-hint--warning">{{ 'mcp.dialog.needsEncryptionAdmin' | translate }}</p>
+        }
+        <div class="form-row" [class.form-row--3]="admin">
+          <mat-form-field appearance="outline">
+            <mat-label>{{ 'mcp.dialog.oauthClientId' | translate }}</mat-label>
+            <input matInput formControlName="oauthClientId" class="code-input" autocomplete="off">
+            <mat-hint>{{ 'mcp.dialog.oauthClientIdHint' | translate }}</mat-hint>
+          </mat-form-field>
+          @if (admin) {
+            <mat-form-field appearance="outline">
+              <mat-label>{{ 'mcp.dialog.oauthClientSecretEnv' | translate }}</mat-label>
+              <input matInput formControlName="oauthClientSecretEnv" class="code-input" autocomplete="off"
+                     placeholder="GITHUB_CLIENT_SECRET">
+              <mat-hint>{{ 'mcp.dialog.oauthClientSecretEnvHint' | translate }}</mat-hint>
+              @if (form.controls.oauthClientSecretEnv.hasError('secretEnv')) {
+                <mat-error>{{ 'mcp.dialog.secretEnvName' | translate }}</mat-error>
+              }
+            </mat-form-field>
+          }
+          <mat-form-field appearance="outline">
+            <mat-label>{{ 'mcp.dialog.oauthScopes' | translate }}</mat-label>
+            <input matInput formControlName="oauthScopes" class="code-input" autocomplete="off">
+            <mat-hint>{{ 'mcp.dialog.oauthScopesHint' | translate }}</mat-hint>
+          </mat-form-field>
+        </div>
+      }
+    }
+
+    <!-- Visibility -->
+    <h3 class="form-section">{{ 'catalog.admin.personas.visibilitySection' | translate }}</h3>
+    <div class="toggle-grid">
+      <div class="toggle-with-hint">
+        <mat-slide-toggle formControlName="enabled">{{ 'catalog.admin.fields.enabled' | translate }}</mat-slide-toggle>
+        @if (!admin) {
+          <p class="toggle-hint">{{ 'mcp.dialog.enabledHintUser' | translate }}</p>
+        }
+      </div>
+      @if (admin) {
+        <div class="toggle-with-hint">
+          <mat-slide-toggle formControlName="availableToGuests">{{ 'catalog.admin.fields.availableToGuests' | translate }}</mat-slide-toggle>
+          <p class="toggle-hint">{{ 'mcp.dialog.guestsHint' | translate }}</p>
+        </div>
+      }
+    </div>
+    @if (admin) {
+      <mat-form-field appearance="outline" class="sort-order-field">
+        <mat-label>{{ 'catalog.admin.fields.sortOrder' | translate }}</mat-label>
+        <input matInput type="number" formControlName="sortOrder" step="10">
+        <mat-hint>{{ 'catalog.admin.models.sortOrderHint' | translate }}</mat-hint>
+      </mat-form-field>
+    }
+
+    @if (error) {
+      <p class="dialog-error" role="alert"><mat-icon aria-hidden="true">error_outline</mat-icon>{{ error }}</p>
+    }
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button type="button" mat-dialog-close>{{ 'catalog.common.cancel' | translate }}</button>
+    <button mat-flat-button color="primary" type="submit" [disabled]="saving">
+      @if (saving) {
+        <mat-spinner diameter="18"></mat-spinner>
+      }
+      {{ 'catalog.common.save' | translate }}
+    </button>
+  </mat-dialog-actions>
+</form>

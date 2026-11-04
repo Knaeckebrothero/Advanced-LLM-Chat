@@ -1,0 +1,109 @@
+// The MCP servers page: the layout of the Agents page (catalog-admin.component.scss)
+
+:host {
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.mcp-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+  color: var(--theme-text);
+}
+
+.mcp-header {
+  margin-bottom: 8px;
+
+  h1 {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 600;
+  }
+
+  p {
+    margin: 4px 0 0;
+    max-width: 680px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.mcp-notice {
+  margin: 16px 0 0;
+}
+
+// Sections stack on one page, separated by a line
+.page-section {
+  display: block;
+  padding: 24px 0 8px;
+
+  & + .page-section {
+    margin-top: 16px;
+    border-top: 1px solid var(--theme-border);
+  }
+}
+
+.mcp-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 64px 16px;
+  text-align: center;
+  color: var(--theme-text-secondary);
+
+  // The state's own icon, not the one in the Retry button
+  > mat-icon {
+    font-size: 40px;
+    width: 40px;
+    height: 40px;
+  }
+
+  p {
+    margin: 0;
+    max-width: 480px;
+  }
+
+  .mcp-state-detail {
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+  }
+}
+
+// The URL of a server may be long: it wraps anywhere instead of widening the row
+.item-meta .mono {
+  min-width: 0;
+}
+
+// With a background image (settings), the page sits on a frosted sheet so its text stays readable
+:host-context(body.has-background-image) .mcp-page {
+  margin: 24px auto;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+  background: color-mix(in srgb, var(--theme-background) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+// Phones: the shell's top bar sits above the page, so only the usual gutter
+@media (max-width: 768px) {
+  .mcp-page {
+    padding: 16px 16px 32px;
+  }
+
+  .mcp-header h1 {
+    font-size: 1.45rem;
+  }
+
+  :host-context(body.has-background-image) .mcp-page {
+    margin: 0;
+    min-height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+}

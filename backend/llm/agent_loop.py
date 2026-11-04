@@ -27,7 +27,7 @@ from ..models.message import AgentStep
 from . import anthropic_chat, openai_chat
 from .client import get_client
 from .common import STOP_MAX_TOKENS, STOP_REFUSAL, TOOL_ERROR_KEY, ModelTurn, ToolCall
-from .tools import ToolInputError, ToolRegistry, ToolText, format_tool_output
+from .tools import ToolError, ToolInputError, ToolRegistry, ToolText, format_tool_output
 from .types import KIND_ANTHROPIC, ModelConfig, Usage
 
 log = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ async def _run_tool(registry: ToolRegistry, call: ToolCall, arguments: Any, erro
         try:
             output = await registry.call(call.name, arguments)
             return output, False, int((time.monotonic() - started) * 1000)
-        except ToolInputError as e:
+        except (ToolInputError, ToolError) as e:
             error = str(e)
         except Exception as e:
             log.error(f"Tool {call.name} failed: {e}", exc_info=True)

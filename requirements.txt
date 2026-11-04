@@ -13,6 +13,10 @@ anthropic>=2.0.0
 # Security
 trustme>=1.1.0
 PyJWT[crypto]>=2.10.0  # Checks the OIDC provider's tokens (AUTH_MODE=oidc)
+cryptography>=42.0.0  # Encrypts users' MCP secrets and OAuth tokens (ENCRYPTION_KEY)
+
+# MCP servers as tools of the agents (docs/mcp.md); 2.x speaks the 2026-07-28 protocol and the older handshake
+mcp>=2.3.0,<3
 
 # Database
 psycopg2-binary>=2.9.9

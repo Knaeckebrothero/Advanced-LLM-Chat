@@ -137,6 +137,13 @@ env:
         name: {{ include "llmchat.fullname" . }}-oidc
         key: client-secret
   {{- end }}
+  {{- if or .Values.backend.encryptionKey .Values.backend.generateEncryptionKey }}
+  - name: ENCRYPTION_KEY
+    valueFrom:
+      secretKeyRef:
+        name: {{ include "llmchat.fullname" . }}-encryption
+        key: key
+  {{- end }}
 volumeMounts:
   - name: data
     mountPath: /app/.filesystem

@@ -14,7 +14,7 @@ PrivacyTier = Literal["local", "eu", "trusted", "untrusted"]
 ReasoningMode = Literal["none", "optional", "always"]
 Currency = Literal["USD", "EUR"]
 # Tool groups a persona can use; the keys of backend.llm.tools.TOOL_GROUPS
-ToolGroup = Literal["files", "web_search", "knowledge_graph", "knowledge_base"]
+ToolGroup = Literal["files", "web_search", "knowledge_graph", "knowledge_base", "user_mcp"]
 
 
 # Providers
@@ -160,6 +160,7 @@ class PersonaBase(BaseModel):
     enabled: bool = True
     sortOrder: int = 0
     ownMemory: bool = False  # With the knowledge base: its own knowledge base and memory per user, not the shared one
+    mcpServers: Optional[List[str]] = None  # Slugs of the admin MCP servers it uses (docs/mcp.md); None = none
 
 
 class PersonaCreate(PersonaBase):
@@ -177,6 +178,7 @@ class PersonaUpdate(BaseModel):
     enabled: Optional[bool] = None
     sortOrder: Optional[int] = None
     ownMemory: Optional[bool] = None
+    mcpServers: Optional[List[str]] = None  # Send null or [] for none
 
 
 class PersonaOut(PersonaBase):
@@ -216,4 +218,5 @@ class ImportResult(BaseModel):
     """
     models: ImportCounts
     personas: ImportCounts
+    mcpServers: ImportCounts = ImportCounts()  # The admin MCP servers (docs/mcp.md)
     errors: List[str] = []

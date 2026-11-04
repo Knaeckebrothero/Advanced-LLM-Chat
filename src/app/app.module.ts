@@ -72,6 +72,12 @@ const routes: Routes = [
     loadComponent: () => import('./knowledge-base/knowledge-base.component').then(m => m.KnowledgeBaseComponent),
     canActivate: [AuthGuard, memberGuard]
   },
+  // A signed-in user's own MCP servers and sign-ins to the agents' servers (the OAuth callback lands here); loaded on demand
+  {
+    path: 'mcp',
+    loadComponent: () => import('./mcp/mcp.component').then(m => m.McpComponent),
+    canActivate: [AuthGuard, memberGuard]
+  },
   { path: 'auth/callback', component: AuthCallbackComponent },
 ];
 

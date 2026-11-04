@@ -51,6 +51,15 @@ backend:
   secretEnv: {}
   # A model catalog (the content of a catalog JSON file) instead of the image's catalog/models.json
   catalog: ""
+  # ENCRYPTION_KEY: encrypts the secrets users store (MCP server headers, OAuth sign-ins; docs/mcp.md).
+  # Empty: a random key, kept in the Secret <release>-encryption across upgrades. Losing or changing it
+  # makes users sign in to their MCP servers again. Set generateEncryptionKey to false when
+  # ENCRYPTION_KEY comes from existingSecret instead.
+  encryptionKey: ""
+  generateEncryptionKey: true
+  # MCP servers (docs/mcp.md) are on by default; set MCP_* in env to change that, e.g.
+  # MCP_USER_SERVERS: "false" (only the admins' servers) or MCP_STDIO_ENABLED: "true" (admins may run
+  # commands in the backend container; the image has no Node or uv, so build one that does)
   # Uploaded files, the TTS cache and logs
   persistence:
     enabled: true

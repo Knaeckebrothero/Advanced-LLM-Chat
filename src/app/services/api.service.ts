@@ -37,6 +37,15 @@ import {
   IKBVault,
   NoteStatus
 } from '../data/models/knowledge-base.model';
+import {
+  IMcpConfig,
+  IMcpConnectResult,
+  IMcpServerCreate,
+  IMcpServerList,
+  IMcpServerOut,
+  IMcpServerUpdate,
+  IMcpTestResult
+} from '../data/models/mcp.model';
 
 /**
  * Response from file upload endpoint
@@ -753,6 +762,77 @@ export class ApiService {
     return await lastValueFrom(
       this.http.post<IImportResult>(`${this.baseUrl}/api/admin/catalog/import`, file, this.getHttpOptions())
     );
+  }
+
+  // MCP servers (docs/mcp.md): signed-in users (guests get 403 everywhere except the config)
+
+  /** What the server's configuration allows (MCP on, users' own servers, stdio, encryption). */
+  async getMcpConfig(): Promise<IMcpConfig> {
+    return await lastValueFrom(this.http.get<IMcpConfig>(`${this.baseUrl}/api/mcp/config`, this.getHttpOptions()));
+  }
+
+  /** The user's own servers, and the agents' servers with OAuth sign-in. */
+  async getMcpServers(): Promise<IMcpServerList> {
+    return await lastValueFrom(this.http.get<IMcpServerList>(`${this.baseUrl}/api/mcp/servers`, this.getHttpOptions()));
+  }
+
+  async createMcpServer(server: IMcpServerCreate): Promise<IMcpServerOut> {
+    return await lastValueFrom(
+      this.http.post<IMcpServerOut>(`${this.baseUrl}/api/mcp/servers`, server, this.getHttpOptions())
+    );
+  }
+
+  async updateMcpServer(id: number, update: IMcpServerUpdate): Promise<IMcpServerOut> {
+    return await lastValueFrom(
+      this.http.put<IMcpServerOut>(`${this.baseUrl}/api/mcp/servers/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  async deleteMcpServer(id: number): Promise<void> {
+    await lastValueFrom(this.http.delete(`${this.baseUrl}/api/mcp/servers/${id}`, this.getHttpOptions()));
+  }
+
+  /** Connects as the current user and lists the tools (own servers, shared OAuth servers, any admin server for admins). */
+  async testMcpServer(id: number): Promise<IMcpTestResult> {
+    return await lastValueFrom(
+      this.http.post<IMcpTestResult>(`${this.baseUrl}/api/mcp/servers/${id}/test`, {}, this.getHttpOptions())
+    );
+  }
+
+  /** Starts the OAuth sign-in; the browser then goes to the authorization URL. */
+  async connectMcpServer(id: number): Promise<IMcpConnectResult> {
+    return await lastValueFrom(
+      this.http.post<IMcpConnectResult>(`${this.baseUrl}/api/mcp/servers/${id}/connect`, {}, this.getHttpOptions())
+    );
+  }
+
+  /** Signs out of an OAuth server (deletes the user's tokens). */
+  async disconnectMcpServer(id: number): Promise<void> {
+    await lastValueFrom(this.http.delete(`${this.baseUrl}/api/mcp/servers/${id}/connection`, this.getHttpOptions()));
+  }
+
+  // MCP servers of the agents: admin endpoints (403 for everyone else)
+
+  async getAdminMcpServers(): Promise<IMcpServerOut[]> {
+    return await lastValueFrom(
+      this.http.get<IMcpServerOut[]>(`${this.baseUrl}/api/admin/mcp-servers`, this.getHttpOptions())
+    );
+  }
+
+  async createAdminMcpServer(server: IMcpServerCreate): Promise<IMcpServerOut> {
+    return await lastValueFrom(
+      this.http.post<IMcpServerOut>(`${this.baseUrl}/api/admin/mcp-servers`, server, this.getHttpOptions())
+    );
+  }
+
+  async updateAdminMcpServer(id: number, update: IMcpServerUpdate): Promise<IMcpServerOut> {
+    return await lastValueFrom(
+      this.http.put<IMcpServerOut>(`${this.baseUrl}/api/admin/mcp-servers/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  async deleteAdminMcpServer(id: number): Promise<void> {
+    await lastValueFrom(this.http.delete(`${this.baseUrl}/api/admin/mcp-servers/${id}`, this.getHttpOptions()));
   }
 
   // Knowledge base (signed-in users; backend/api/knowledge_base.py)

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Advanced LLM Chat: an Angular 19.2.2 PWA with a FastAPI backend for chatting with LLMs. Uses microservices architecture with:
 - **Frontend**: Angular with IndexedDB for offline-first capabilities, Angular Material UI, SCSS styling, ngx-translate for i18n (German/English)
-- **Backend**: FastAPI with PostgreSQL for persistence (image `pgvector/pgvector:pg16`), an agent loop with tool use (`backend/llm/`), a knowledge base per user that agents opt into (`kb_*` tools, `docs/knowledge_base.md`; the Knowledge base page `/knowledge-base` to read, edit and export it for Obsidian) with the agent's memory (its note `memory`, part of every answer, `memory_*` tools; a background memory review after quiet conversations; a nightly consolidation into a weekly journal, a Kubernetes CronJob; agents with `own_memory` get their own knowledge base), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
+- **Backend**: FastAPI with PostgreSQL for persistence (image `pgvector/pgvector:pg16`), an agent loop with tool use (`backend/llm/`), a knowledge base per user that agents opt into (`kb_*` tools, `docs/knowledge_base.md`; the Knowledge base page `/knowledge-base` to read, edit and export it for Obsidian) with the agent's memory (its note `memory`, part of every answer, `memory_*` tools; a background memory review after quiet conversations; a nightly consolidation into a weekly journal, a Kubernetes CronJob; agents with `own_memory` get their own knowledge base), MCP servers as tools of the agents (`docs/mcp.md`: the admins' servers picked per agent on the Agents page, users' own servers on the MCP servers page `/mcp` for agents that select `user_mcp`; Streamable HTTP, SSE, stdio for admins with `MCP_STDIO_ENABLED`; headers or OAuth sign-in, secrets encrypted with `ENCRYPTION_KEY`), optional Neo4j knowledge graph (`NEO4J_ENABLED`)
 - **LLM Integration**: Thin runtime on the official `openai` and `anthropic` SDKs (no LangChain): OpenAI, any OpenAI-compatible endpoint, and Anthropic, with SSE streaming for agent responses
 
 **Resuming work:** read the "Status" section of `docs/generalization_refactor.md` first (current state, decisions, backlog, next steps), and `docs/model_catalog_api.md` for the runtime and catalog contract.
@@ -50,6 +50,7 @@ python backend/app_init.py --prod            # Production migration (add missing
 
 **Note:** No Python test framework (pytest) is configured. There are test scripts instead:
 - `python -m backend.llm.tests.run_all`: offline tests of the LLM runtime, history and tools (fake OpenAI server, mocked Anthropic API)
+- `python backend/services/tests/mcp_test.py`: MCP servers against real MCP servers of the SDK (HTTP, SSE, stdio, headers, a fake OAuth authorization server) and a real Postgres, in a `<POSTGRES_DB>_mcp_test` database it creates itself
 - `python backend/services/tests/knowledge_base_test.py`: the knowledge base and memory tools, agents' own knowledge bases, the memory review (fake model server), the Obsidian export and the `/api/kb` endpoints against a real Postgres, in a `<POSTGRES_DB>_kb_test` database it creates itself
 - `backend/catalog/tests/catalog_api_test.py`: catalog end-to-end test against a backend on its own `*_test` database (see its docstring)
 - `backend/security/tests/oidc_test.py`: login through Keycloak end-to-end, against the bundled Keycloak and a backend in `AUTH_MODE=oidc` on a `*_test` database (see its docstring)
@@ -118,7 +119,7 @@ backend/
 ├── main.py           # FastAPI app entry point
 ├── config.py         # Configuration constants
 ├── app_init.py       # Database and filesystem initialization
-├── api/              # Route handlers (auth, conversations, messages, settings, files, catalog, knowledge_base)
+├── api/              # Route handlers (auth, conversations, messages, settings, files, catalog, knowledge_base, mcp)
 ├── catalog/          # Model catalog: resolver (model/persona per request), service, catalog file seed/import/export, fetch-models
 ├── database/
 │   ├── db.py         # PostgreSQL database manager (SQLAlchemy)
@@ -149,8 +150,9 @@ backend/
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation
 │   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
+│   ├── mcp/              # MCP servers (docs/mcp.md): store, servers (validation, ${VAR}), pool (connections per server and user), oauth (sign-in, token refresh), tools (an answer's MCP tools)
 │   └── tools/            # Tool implementations (files, web search, read-only knowledge graph, knowledge base)
-├── security/         # Sessions, login through an OIDC provider (oidc.py), CSRF, logging
+├── security/         # Sessions, login through an OIDC provider (oidc.py), CSRF, logging, secrets.py (ENCRYPTION_KEY)
 └── utils/            # Certificates, hashing
 ```
 

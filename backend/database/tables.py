@@ -224,6 +224,7 @@ personas = Table(
     Column('enabled', Boolean, server_default='true'),
     Column('sort_order', Integer, server_default='0'),
     Column('own_memory', Boolean, server_default='false'),  # Its own knowledge base and memory per user
+    Column('mcp_servers', JSONB),  # Slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
@@ -284,6 +285,58 @@ memory_dreams = Table(
     Column('dreamed_until', BigInteger),  # The end of the last period it consolidated (ms, like message ids)
     Column('failed_at', DateTime),  # The last run that failed (naive UTC), NULL after a success
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
+)
+
+# MCP servers (docs/mcp.md): the admins' servers, which agents pick (user_id NULL), and users' own
+mcp_servers = Table(
+    'mcp_servers',
+    metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE')),  # NULL: an admin server
+    Column('slug', Text, nullable=False),  # Prefix of its tool names, unique per owner, fixed
+    Column('name', Text, nullable=False),
+    Column('description', Text),
+    Column('transport', Text, nullable=False, server_default='http'),  # 'http' | 'sse' | 'stdio'
+    Column('url', Text),
+    Column('command', Text),
+    Column('args', JSONB),
+    Column('env', JSONB),
+    Column('auth', Text, nullable=False, server_default='none'),  # 'none' | 'headers' | 'oauth'
+    Column('headers', JSONB),  # Admin servers, values may use ${VAR}
+    Column('headers_encrypted', Text),  # Users' servers
+    Column('oauth_client_id', Text),
+    Column('oauth_client_secret_env', Text),
+    Column('oauth_scopes', Text),
+    Column('oauth_client_encrypted', Text),  # The client from dynamic client registration
+    Column('tools', JSONB),  # MCP tool names offered to the model, NULL = all
+    Column('available_to_guests', Boolean, server_default='false'),
+    Column('enabled', Boolean, server_default='true'),
+    Column('sort_order', Integer, server_default='0'),
+    Column('created_at', DateTime, server_default=func.now()),
+    Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
+)
+
+# A user's OAuth sign-in to an MCP server (encrypted)
+mcp_tokens = Table(
+    'mcp_tokens',
+    metadata,
+    Column('server_id', Integer, ForeignKey('mcp_servers.id', ondelete='CASCADE'), primary_key=True),
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('tokens_encrypted', Text, nullable=False),
+    Column('expires_at', DateTime),  # Naive UTC
+    Column('created_at', DateTime, server_default=func.now()),
+    Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
+)
+
+# OAuth sign-ins to MCP servers in progress
+mcp_oauth_flows = Table(
+    'mcp_oauth_flows',
+    metadata,
+    Column('state', Text, primary_key=True),
+    Column('server_id', Integer, ForeignKey('mcp_servers.id', ondelete='CASCADE'), nullable=False),
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+    Column('flow_encrypted', Text, nullable=False),
+    Column('created_at', DateTime, server_default=func.now()),
 )
 
 # Define indexes

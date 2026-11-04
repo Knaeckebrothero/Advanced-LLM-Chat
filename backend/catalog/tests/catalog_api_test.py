@@ -55,7 +55,7 @@ TOGGLE_KEY_ENV = "ZZ_CATALOG_TOGGLE_API_KEY"
 PROVIDER_OUT_FIELDS = {"id", "name", "kind", "baseUrl", "apiKeyEnv", "apiKeySet", "privacyTier", "currency",
                        "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
 PERSONA_OUT_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "availableToGuests",
-                      "enabled", "sortOrder", "ownMemory"}
+                      "enabled", "sortOrder", "ownMemory", "mcpServers"}
 PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools"}
 
 
@@ -259,13 +259,14 @@ def run_tools(c, admin):
     r = admin.get("/api/admin/tools")
     groups = r.json()
     c.check(r.status_code == 200 and [g["id"] for g in groups] == ["files", "web_search", "knowledge_graph",
-                                                                   "knowledge_base"],
-            "GET /api/admin/tools lists the four groups", r.text)
+                                                                   "knowledge_base", "user_mcp"],
+            "GET /api/admin/tools lists the five groups", r.text)
     c.check(all(set(g) == {"id", "available", "reason", "optIn"} for g in groups), "tool group fields", r.text)
     c.check(groups[0] == {"id": "files", "available": True, "reason": None, "optIn": False},
             "files is always available")
     c.check(groups[3] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True},
             "the knowledge base is always available, and opt-in", r.text)
+    c.check(groups[4]["id"] == "user_mcp" and groups[4]["optIn"] is True, "users' own MCP servers are opt-in", r.text)
     c.check(all((g["available"] and g["reason"] is None) or (not g["available"] and g["reason"]) for g in groups),
             "unavailable groups say why", r.text)
     print("        " + ", ".join(f"{g['id']}: {'on' if g['available'] else g['reason']}" for g in groups))
@@ -595,7 +596,7 @@ def run_import_export(c, admin, main):
 
     r = admin.post("/api/admin/catalog/import", json=first)
     result = r.json()
-    c.check(r.status_code == 200 and set(result) == {"models", "personas", "errors"}
+    c.check(r.status_code == 200 and set(result) == {"models", "personas", "mcpServers", "errors"}
             and result["errors"] == [catalog_file.PROVIDERS_IGNORED]
             and result["models"] == {"created": 0, "updated": len(first["models"])}
             and result["personas"] == {"created": 0, "updated": len(first["personas"])},

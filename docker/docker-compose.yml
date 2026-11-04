@@ -151,6 +151,12 @@ services:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}  # Web search tool
+      # MCP servers (docs/mcp.md); ENCRYPTION_KEY encrypts users' MCP headers and OAuth sign-ins
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - MCP_ENABLED=${MCP_ENABLED:-true}
+      - MCP_USER_SERVERS=${MCP_USER_SERVERS:-true}
+      - MCP_STDIO_ENABLED=${MCP_STDIO_ENABLED:-false}
+      - MCP_ALLOW_PRIVATE_URLS=${MCP_ALLOW_PRIVATE_URLS:-false}
       # Vision/Multimodal
       - MODEL_RECEIVE_IMAGES=${MODEL_RECEIVE_IMAGES:-false}
       - MODEL_RECEIVE_IMAGES_PDF=${MODEL_RECEIVE_IMAGES_PDF:-false}

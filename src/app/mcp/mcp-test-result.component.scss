@@ -1,0 +1,233 @@
+// The test result of an MCP server, under its row (on top of catalog-admin-list.scss)
+
+:host {
+  flex-basis: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.test-result {
+  // In this column, not a row of the item card (catalog-admin-list.scss)
+  flex-basis: auto;
+  align-items: center;
+
+  .test-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .test-detail {
+    margin-left: 6px;
+    color: var(--theme-text-secondary);
+  }
+
+  // Needs a sign-in: not a failure
+  &.test-result--auth {
+    background: var(--theme-hover);
+    color: var(--theme-text);
+
+    mat-icon {
+      color: var(--theme-text-accent);
+    }
+  }
+
+  // A small close button, so the status line keeps its height
+  .test-close {
+    flex-shrink: 0;
+    --mdc-icon-button-state-layer-size: 32px;
+    width: 32px;
+    height: 32px;
+    padding: 7px;
+    margin: -6px -6px -6px 0;
+
+    .mat-icon {
+      color: inherit;
+      opacity: 0.7;
+    }
+  }
+}
+
+.test-sign-in {
+  display: flex;
+
+  mat-spinner {
+    display: inline-block;
+    margin-right: 8px;
+  }
+}
+
+.test-instructions {
+  font-size: 0.8rem;
+  color: var(--theme-text-secondary);
+
+  summary {
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  p {
+    margin: 6px 0 0;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--theme-hover);
+    line-height: 1.45;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+}
+
+.mcp-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+}
+
+.mcp-tools-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
+}
+
+.mcp-tools-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--theme-text-secondary);
+}
+
+.mcp-tools-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--theme-text-secondary);
+
+  &.mcp-tools-hint--warning {
+    color: var(--theme-tier-untrusted);
+  }
+}
+
+// Long lists (servers with dozens of tools) scroll inside the row
+.mcp-tool-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.mcp-tool {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 0;
+
+  & + .mcp-tool {
+    border-top: 1px solid var(--theme-border);
+  }
+
+  &.is-off .mcp-tool-main {
+    opacity: 0.55;
+  }
+}
+
+.mcp-tool-check {
+  flex-shrink: 0;
+  margin: -4px 0 -4px -8px;
+}
+
+.mcp-tool-state {
+  flex-shrink: 0;
+  margin: 2px 6px 0 2px;
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  color: var(--theme-text-accent);
+}
+
+.mcp-tool-main {
+  flex: 1;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.mcp-tool-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.mcp-tool-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--theme-text);
+  overflow-wrap: anywhere;
+}
+
+.mcp-tool-name {
+  color: var(--theme-text-secondary);
+}
+
+.mcp-tool-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--theme-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+// The server's annotations
+.tool-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px 0 5px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.6;
+
+  mat-icon {
+    font-size: 13px;
+    width: 13px;
+    height: 13px;
+  }
+
+  &.tool-hint--safe {
+    background: var(--theme-tier-local-bg);
+    color: var(--theme-tier-local);
+  }
+
+  &.tool-hint--danger {
+    background: var(--theme-tier-untrusted-bg);
+    color: var(--theme-tier-untrusted);
+  }
+}
+
+.mcp-tools-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+
+  mat-spinner {
+    display: inline-block;
+    margin-right: 8px;
+  }
+}
