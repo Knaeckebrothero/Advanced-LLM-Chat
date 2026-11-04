@@ -31,9 +31,10 @@ import {
 import { IConversationFile } from '../data/models/api.model';
 import { IConversationSummary } from '../data/models/conversation.model';
 import { environment } from '../environments/environment';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { DBService } from '../data/db.service';
 import { AppSettings } from '../models/settings.model';
+import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
 
 /** Model and persona for a new conversation, kept until it is created with the first message. */
 const EMPTY_DRAFT: IConversationSelection = { modelId: null, personaId: null, personaValues: null };
@@ -73,6 +74,15 @@ export class ChatStateService implements OnDestroy {
   // The summary the model gets instead of the active conversation's oldest messages (kept on the server only)
   private summary$ = new BehaviorSubject<IConversationSummary | null>(null);
   public conversationSummary$: Observable<IConversationSummary | null> = this.summary$.asObservable();
+
+  // Summaries being written at the user's request, by conversation (summarizeConversation())
+  private summaryRequests = new Map<string, Promise<IConversationSummary>>();
+  private summarizingIds$ = new BehaviorSubject<ReadonlySet<string>>(new Set());
+  /** Whether a summary of the active conversation is being written at the user's request. */
+  public isSummarizing$: Observable<boolean> = combineLatest([this.activeConversationId$, this.summarizingIds$]).pipe(
+    map(([id, ids]) => id !== null && ids.has(id)),
+    distinctUntilChanged()
+  );
 
   // Current conversation stream
   public activeConversation$: Observable<Conversation | null> = this.activeConversationId$.pipe(
@@ -254,6 +264,47 @@ export class ChatStateService implements OnDestroy {
     const summary = this.summary$.getValue();
     if (summary && roleName !== 'system' && messageId > 0 && messageId <= summary.coversUntil) {
       this.summary$.next(null);
+    }
+  }
+
+  /** Whether a summary of this conversation is being written at the user's request. */
+  isSummarizing(conversationId: string): boolean {
+    return this.summaryRequests.has(conversationId);
+  }
+
+  /**
+   * Fold all messages of a conversation so far into its summary now, rather than once they nearly
+   * fill the model's context window: the next answer gets the summary and only the newer messages.
+   * The conversation's model writes it on the server, which takes a while; a second call meanwhile
+   * gets the same result.
+   *
+   * @throws HttpErrorResponse: 409 nothing new to summarize, 422 too short, 429 guest limit (shown in
+   *   the chat), 502 the model failed
+   */
+  summarizeConversation(conversationId: string): Promise<IConversationSummary> {
+    const running = this.summaryRequests.get(conversationId);
+    if (running) return running;
+    const request = this.writeSummary(conversationId).finally(() => {
+      this.summaryRequests.delete(conversationId);
+      this.summarizingIds$.next(new Set(this.summaryRequests.keys()));
+    });
+    this.summaryRequests.set(conversationId, request);
+    this.summarizingIds$.next(new Set(this.summaryRequests.keys()));
+    return request;
+  }
+
+  private async writeSummary(conversationId: string): Promise<IConversationSummary> {
+    try {
+      const summary = await this.apiService.summarizeConversation(conversationId);
+      if (this.activeConversationId$.getValue() === conversationId) {
+        this.summary$.next(summary);
+      }
+      return summary;
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 429) {
+        this.handleRateLimitError(describeHttpError(error));
+      }
+      throw error;
     }
   }
 

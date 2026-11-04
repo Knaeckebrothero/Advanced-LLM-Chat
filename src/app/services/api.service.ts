@@ -564,6 +564,16 @@ export class ApiService {
     );
   }
 
+  /**
+   * Folds all messages of the conversation so far into its summary, now (the model writes it, which
+   * takes a while). 409: no messages after the summary, 422: too short to summarize, 502: the model failed.
+   */
+  async summarizeConversation(conversationId: string): Promise<IConversationSummary> {
+    return await lastValueFrom(
+      this.http.post<IConversationSummary>(`${this.baseUrl}/api/message/summarize`, { conversationId }, this.getHttpOptions())
+    );
+  }
+
   /** Creates a new conversation from a conversation file (not for guests). */
   async importConversation(file: IConversationFile): Promise<Conversation> {
     const responseData = await lastValueFrom(

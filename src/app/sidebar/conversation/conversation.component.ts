@@ -8,13 +8,16 @@ import { firstValueFrom } from 'rxjs';
 import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { HttpErrorResponse } from '@angular/common/http';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 
 
 @Component({
   selector: 'app-conversation',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatMenuModule, MatIconModule, MatButtonModule],
+  imports: [CommonModule, FormsModule, MatMenuModule, MatIconModule, MatButtonModule, TranslateModule],
   templateUrl: './conversation.component.html',
   styleUrls: ['./conversation.component.scss']
 })
@@ -32,7 +35,11 @@ export class ConversationComponent implements OnInit, OnDestroy {
   private longPressTimer: any;
   private longPressTriggered = false;
 
-  constructor(private chatState: ChatStateService) {}
+  constructor(
+    private chatState: ChatStateService,
+    private snackBar: MatSnackBar,
+    private translate: TranslateService
+  ) {}
 
   onSelect(): void {
     // Don't select if long press was triggered
@@ -147,6 +154,33 @@ export class ConversationComponent implements OnInit, OnDestroy {
     } catch (error) {
       alert(`The conversation could not be exported: ${describeHttpError(error)}`);
     }
+  }
+
+  /** Whether the summary of this conversation is being written (summarizeConversation()). */
+  get summarizing(): boolean {
+    return this.chatState.isSummarizing(this.conversation.id);
+  }
+
+  /**
+   * Folds the messages so far into the conversation's summary now: the model gets the summary
+   * instead of them from the next answer on, which keeps a long conversation short and focused.
+   */
+  async summarizeConversation(): Promise<void> {
+    let key: string;
+    let params: Record<string, unknown> = {};
+    try {
+      const summary = await this.chatState.summarizeConversation(this.conversation.id);
+      key = summary.messageCount === 1 ? 'conversationMenu.summarizedOne' : 'conversationMenu.summarized';
+      params = { count: summary.messageCount };
+    } catch (error) {
+      const status = error instanceof HttpErrorResponse ? error.status : undefined;
+      if (status === 429) return;  // The chat shows the guest limit
+      key = status === 409 ? 'conversationMenu.nothingToSummarize'
+        : status === 422 ? 'conversationMenu.tooShortToSummarize'
+        : 'conversationMenu.summaryFailed';
+      params = { error: describeHttpError(error, this.translate) };
+    }
+    this.snackBar.open(this.translate.instant(key, params), undefined, { duration: 5000 });
   }
 
   ngOnDestroy(): void {

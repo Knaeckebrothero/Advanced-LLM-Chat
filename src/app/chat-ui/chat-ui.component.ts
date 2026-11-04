@@ -85,6 +85,9 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     })
   );
 
+  // A summary being written at the user's request (from the conversation's menu)
+  isSummarizing$ = this.chatState.isSummarizing$;
+
   // Mobile state from UIStateService
   isMobile$ = this.uiState.isMobile$;
 
@@ -138,6 +141,13 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
           // Use setTimeout to ensure DOM has updated
           setTimeout(() => this.scrollToBottom(), 100);
         }
+      })
+    );
+
+    // Keep the pending summary at the end of the chat in view
+    this.destroy$.add(
+      this.isSummarizing$.pipe(filter(Boolean)).subscribe(() => {
+        if (this.userIsAtBottom) setTimeout(() => this.scrollToBottom(), 0);
       })
     );
 

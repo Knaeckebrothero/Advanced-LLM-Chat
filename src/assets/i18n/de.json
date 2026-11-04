@@ -320,10 +320,24 @@
     "guidedHint": "Du bearbeitest deine eigenen Nachrichten, und eine bearbeitete Nachricht wird neu beantwortet.",
     "manualHint": "Du bearbeitest jede Nachricht, auch die Antworten, und fügst überall Nachrichten ein. Es wird nichts generiert."
   },
+  "conversationMenu": {
+    "rename": "Umbenennen",
+    "export": "Exportieren",
+    "summarize": "Zusammenfassen",
+    "summarizing": "Wird zusammengefasst…",
+    "summarizeHint": "Ab der nächsten Antwort bekommt das Modell eine Zusammenfassung statt der bisherigen Nachrichten",
+    "delete": "Löschen",
+    "summarized": "{{count}} Nachrichten zusammengefasst",
+    "summarizedOne": "1 Nachricht zusammengefasst",
+    "nothingToSummarize": "Nichts Neues zum Zusammenfassen: Die Zusammenfassung umfasst schon alle Nachrichten.",
+    "tooShortToSummarize": "Die Unterhaltung ist noch zu kurz für eine Zusammenfassung.",
+    "summaryFailed": "Die Unterhaltung konnte nicht zusammengefasst werden: {{error}}"
+  },
   "summary": {
     "title": "{{count}} frühere Nachrichten zusammengefasst",
     "titleOne": "1 frühere Nachricht zusammengefasst",
-    "hint": "Ab hier bekommt das Modell diese Zusammenfassung statt der Nachrichten darüber, die nicht mehr in sein Kontextfenster passen.",
+    "pending": "Unterhaltung wird zusammengefasst…",
+    "hint": "Ab hier bekommt das Modell diese Zusammenfassung statt der Nachrichten darüber, damit sie sein Kontextfenster nicht mehr füllen.",
     "writtenBy": "Geschrieben von {{model}}."
   },
   "knowledgeBase": {
