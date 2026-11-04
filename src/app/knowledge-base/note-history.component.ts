@@ -1,4 +1,4 @@
-import { Component, OnInit, input, output, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, input, output, signal, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -33,6 +33,7 @@ export class NoteHistoryComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly restoring = signal(false);
 
+  private readonly preview = viewChild<ElementRef<HTMLElement>>('preview');
   private request = 0;
 
   constructor(
@@ -55,11 +56,21 @@ export class NoteHistoryComponent implements OnInit {
   }
 
   label(revision: IKBRevisionSummary): string {
-    return `${actionLabel(revision.action, this.translate)} · ${authorLabel(revision, this.translate)}`;
+    // A no-break space before the "·": a line never starts with it
+    return `${actionLabel(revision.action, this.translate)}\u00a0· ${authorLabel(revision, this.translate)}`;
   }
 
   date(value: string | null): string {
     return formatDateTime(value, this.translate);
+  }
+
+  /** A version picked in the list. Where the list and the version are stacked (phones), the version scrolls into view. */
+  pick(revision: IKBRevisionSummary): void {
+    this.select(revision);
+    if (window.matchMedia('(max-width: 1100px)').matches) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      this.preview()?.nativeElement.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    }
   }
 
   async select(revision: IKBRevisionSummary): Promise<void> {

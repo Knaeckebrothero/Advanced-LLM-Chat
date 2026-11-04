@@ -1,12 +1,12 @@
 <div class="audio-message" [class.is-transcribing]="isTranscribing">
   <!-- Header with icon and title -->
   <div class="audio-header">
-    <mat-icon class="audio-icon">mic</mat-icon>
-    <span class="audio-title">Voice message ({{ displayDuration }})</span>
+    <mat-icon class="audio-icon" aria-hidden="true">mic</mat-icon>
+    <span class="audio-title">{{ 'voiceMessage.title' | translate: { duration: displayDuration } }}</span>
     <!-- Transcribing indicator -->
     <span *ngIf="isTranscribing" class="transcribing-badge">
       <mat-spinner diameter="14"></mat-spinner>
-      <span>Transcribing...</span>
+      <span>{{ 'voiceMessage.transcribing' | translate }}</span>
     </span>
   </div>
 
@@ -17,7 +17,7 @@
             class="play-button"
             (click)="togglePlay()"
             [disabled]="isLoading || audioError || isTranscribing"
-            [attr.aria-label]="isPlaying ? 'Pause' : 'Play'">
+            [attr.aria-label]="(isPlaying ? 'voiceMessage.pause' : 'voiceMessage.play') | translate">
       <mat-icon *ngIf="isLoading">hourglass_empty</mat-icon>
       <mat-icon *ngIf="!isLoading && !audioError && !isTranscribing">{{ isPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
       <mat-icon *ngIf="audioError">error_outline</mat-icon>
@@ -40,10 +40,10 @@
 
   <!-- Error state -->
   <div *ngIf="audioError && !isTranscribing" class="audio-error">
-    <span>Failed to load audio</span>
+    <span>{{ 'voiceMessage.loadFailed' | translate }}</span>
     <button mat-button color="primary" (click)="retryLoad()">
       <mat-icon>refresh</mat-icon>
-      Retry
+      {{ 'voiceMessage.retry' | translate }}
     </button>
   </div>
 
@@ -51,8 +51,8 @@
   <div *ngIf="isUploadPending || isUploadFailed" class="upload-status">
     <mat-icon *ngIf="isUploadPending">cloud_off</mat-icon>
     <mat-icon *ngIf="isUploadFailed" class="error-icon">error_outline</mat-icon>
-    <span *ngIf="isUploadPending">Waiting for connection...</span>
-    <span *ngIf="isUploadFailed">{{ attachment.error || 'Upload failed' }}</span>
+    <span *ngIf="isUploadPending">{{ 'voiceMessage.waiting' | translate }}</span>
+    <span *ngIf="isUploadFailed">{{ 'voiceMessage.uploadFailed' | translate }}</span>
   </div>
 
   <!-- Transcript section (auto-shown when transcribing completes) -->
@@ -61,16 +61,17 @@
     <button mat-button
             class="transcript-toggle"
             (click)="toggleTranscript()"
-            [disabled]="isLoadingTranscript">
+            [disabled]="isLoadingTranscript"
+            [attr.aria-expanded]="showTranscript">
       <mat-icon>{{ showTranscript ? 'expand_less' : 'expand_more' }}</mat-icon>
-      {{ showTranscript ? 'Hide transcript' : 'Show transcript' }}
+      {{ (showTranscript ? 'voiceMessage.hideTranscript' : 'voiceMessage.showTranscript') | translate }}
       <mat-icon *ngIf="isLoadingTranscript" class="loading-spinner">hourglass_empty</mat-icon>
     </button>
 
     <!-- Transcript content -->
     <div *ngIf="showTranscript" class="transcript-container">
       <div class="transcript-divider"></div>
-      <p class="transcript-text">{{ loadedTranscript || 'No transcript available' }}</p>
+      <p class="transcript-text">{{ loadedTranscript || ('voiceMessage.noTranscript' | translate) }}</p>
     </div>
   </div>
 

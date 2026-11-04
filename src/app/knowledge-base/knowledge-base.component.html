@@ -1,7 +1,7 @@
 <div class="kb-page">
   <header class="kb-header">
     <div class="kb-heading">
-      <h1>{{ 'knowledgeBase.title' | translate }}</h1>
+      <h1 class="page-title-in-topbar">{{ 'knowledgeBase.title' | translate }}</h1>
       <p>{{ 'knowledgeBase.subtitle' | translate }}</p>
     </div>
     <div class="kb-header-actions">
@@ -12,9 +12,10 @@
         } @else {
           <mat-icon>download</mat-icon>
         }
-        {{ 'knowledgeBase.export' | translate }}
+        <span class="label-long">{{ 'knowledgeBase.export' | translate }}</span>
+        <span class="label-short">{{ 'knowledgeBase.exportShort' | translate }}</span>
       </button>
-      <button mat-flat-button type="button" (click)="newNote()">
+      <button mat-flat-button color="primary" type="button" (click)="newNote()">
         <mat-icon>add</mat-icon>
         {{ 'knowledgeBase.newNote' | translate }}
       </button>
@@ -81,18 +82,22 @@
           }
           @default {
             @if (store.searching()) {
-              <p class="list-summary" aria-live="polite">{{ 'knowledgeBase.found' | translate: { count: store.items().length } }}</p>
+              @if (store.items().length) {
+                <p class="list-summary" aria-live="polite">{{ 'knowledgeBase.found' | translate: { count: store.items().length } }}</p>
+              }
             } @else if (store.total() > store.notes().length) {
               <p class="list-summary">{{ 'knowledgeBase.shown' | translate: { shown: store.notes().length, total: store.total() } }}</p>
             }
             @if (store.items().length === 0) {
-              <p class="list-empty">
+              <p class="list-empty" [attr.aria-live]="store.searching() ? 'polite' : null">
                 @if (store.searching()) {
                   {{ 'knowledgeBase.noHits' | translate }}
                 } @else if (store.tag()) {
                   {{ 'knowledgeBase.emptyTag' | translate }}
                 } @else if (store.status() === 'archived') {
                   {{ 'knowledgeBase.emptyArchive' | translate }}
+                } @else if (store.counts().archived > 0) {
+                  {{ 'knowledgeBase.emptyAllArchived' | translate }}
                 } @else {
                   {{ 'knowledgeBase.empty' | translate }}
                 }

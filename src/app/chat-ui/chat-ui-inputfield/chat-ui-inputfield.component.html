@@ -1,11 +1,11 @@
 <!-- Input field container with background visualization -->
-<div class="input-field-container" [class.recording-mode]="isRecording">
-  <!-- Background waveform canvas (always present but only visible when recording) -->
+<div #composer class="input-field-container" [class.recording-mode]="isRecording">
+  <!-- Background waveform canvas (always present but only visible when recording).
+       Its pixel size is set in code (updateCanvasDimensions), not bound here: it is measured after the first render. -->
   <canvas #waveformCanvas
           class="background-waveform-canvas"
           [class.hidden]="!isRecording"
-          [width]="canvasWidth"
-          [height]="canvasHeight">
+          aria-hidden="true">
   </canvas>
 
   <!-- File preview area (shown when files are selected) -->
@@ -44,16 +44,17 @@
           <mat-icon *ngIf="preview.uploadStatus === 'completed'" class="status-completed">check_circle</mat-icon>
           <mat-icon *ngIf="preview.uploadStatus === 'failed'" class="status-failed">error</mat-icon>
           <mat-icon *ngIf="preview.uploadStatus === 'pending'" class="status-pending">schedule</mat-icon>
-          <span *ngIf="preview.uploadStatus === 'failed' && preview.error" class="error-message">{{ preview.error }}</span>
-          <span *ngIf="preview.uploadStatus === 'pending'" class="pending-message">Uploading...</span>
+          <span *ngIf="preview.uploadStatus === 'failed'" class="error-message">{{ 'composer.uploadFailed' | translate }}</span>
+          <span *ngIf="preview.uploadStatus === 'pending'" class="pending-message">{{ 'composer.uploading' | translate }}</span>
         </div>
       </div>
 
       <!-- Remove button -->
       <button mat-icon-button
               class="remove-file-button"
-              (click)="removeFilePreview(preview.id); $event.preventDefault()"
-              aria-label="Remove file">
+              (click)="removeFilePreview(preview.id); $event.preventDefault(); $event.stopPropagation()"
+              [attr.aria-label]="'composer.removeFile' | translate: { name: preview.name }"
+              [matTooltip]="'composer.removeFile' | translate: { name: preview.name }">
         <mat-icon>close</mat-icon>
       </button>
     </a>
@@ -68,7 +69,7 @@
               class="message-textarea"
               [placeholder]="'Type your message...' | translate"
               rows="1"
-              aria-label="Message input">
+              [attr.aria-label]="'composer.message' | translate">
     </textarea>
   </div>
 
@@ -78,11 +79,12 @@
     <button mat-icon-button
             class="cancel-recording-button"
             (click)="cancelRecording()"
-            aria-label="Cancel recording">
+            [attr.aria-label]="'composer.cancelRecording' | translate"
+            [matTooltip]="'composer.cancelRecording' | translate">
       <mat-icon>close</mat-icon>
     </button>
     <!-- Recording indicator -->
-    <div class="recording-indicator">
+    <div class="recording-indicator" role="timer" [attr.aria-label]="'composer.recording' | translate">
       <span class="recording-dot"></span>
       <span class="recording-time">{{ recordingTime | date:'mm:ss' }}</span>
     </div>
@@ -90,7 +92,8 @@
     <button mat-icon-button
             class="send-voice-button"
             (click)="sendVoiceMessage()"
-            aria-label="Send voice message">
+            [attr.aria-label]="'composer.sendVoice' | translate"
+            [matTooltip]="'composer.sendVoice' | translate">
       <mat-icon>send</mat-icon>
     </button>
   </div>
@@ -103,16 +106,16 @@
       <label *ngIf="hasCamera && isMobile"
              for="cameraInputId"
              class="action-button camera-button camera-label"
-             aria-label="Take photo"
-             matTooltip="Take photo">
+             [attr.aria-label]="'composer.takePhoto' | translate"
+             [matTooltip]="'composer.takePhoto' | translate">
         <mat-icon>photo_camera</mat-icon>
       </label>
       <!-- File attachment button with menu -->
       <button mat-icon-button
               class="action-button attachment-button"
               [matMenuTriggerFor]="attachmentMenu"
-              aria-label="Attach file"
-              matTooltip="Attach file">
+              [attr.aria-label]="'composer.attach' | translate"
+              [matTooltip]="'composer.attach' | translate">
         <mat-icon>attach_file</mat-icon>
       </button>
       <!-- Attachment menu -->
@@ -120,21 +123,21 @@
         <!-- Camera option (only shown if device has camera) - using label for mobile, button for desktop -->
         <label *ngIf="hasCamera && isMobile" mat-menu-item for="cameraInputId" class="file-upload-label">
           <mat-icon>photo_camera</mat-icon>
-          <span>Take Photo</span>
+          <span>{{ 'composer.takePhoto' | translate }}</span>
         </label>
         <button *ngIf="hasCamera && !isMobile" mat-menu-item (click)="handleFileMenuClick('camera')">
           <mat-icon>photo_camera</mat-icon>
-          <span>Take Photo</span>
+          <span>{{ 'composer.takePhoto' | translate }}</span>
         </button>
         <!-- File upload option - using label to preserve trusted user gesture -->
         <label mat-menu-item for="fileInputId" class="file-upload-label">
           <mat-icon>folder_open</mat-icon>
-          <span>Choose File</span>
+          <span>{{ 'composer.chooseFile' | translate }}</span>
         </label>
         <!-- Location option (only shown if device supports geolocation) -->
         <button *ngIf="hasGeolocation" mat-menu-item (click)="handleFileMenuClick('location')">
           <mat-icon>location_on</mat-icon>
-          <span>Share Location</span>
+          <span>{{ 'composer.shareLocation' | translate }}</span>
         </button>
       </mat-menu>
 
@@ -150,8 +153,8 @@
         mat-icon-button
         class="action-button send-button"
         (click)="sendMessage()"
-        aria-label="Send message"
-        matTooltip="Send message">
+        [attr.aria-label]="'composer.send' | translate"
+        [matTooltip]="'composer.send' | translate">
         <mat-icon>send</mat-icon>
       </button>
 
@@ -161,8 +164,8 @@
         mat-icon-button
         class="action-button stop-button"
         (click)="stopRequested.emit()"
-        aria-label="Stop generating"
-        matTooltip="Stop generating">
+        [attr.aria-label]="'composer.stop' | translate"
+        [matTooltip]="'composer.stop' | translate">
         <mat-icon>stop</mat-icon>
       </button>
 
@@ -177,8 +180,8 @@
         (mousedown)="onMicMouseDown($event)"
         (mouseup)="onMicMouseUp($event)"
         (mouseleave)="onMicMouseLeave($event)"
-        aria-label="Record voice message"
-        matTooltip="Hold to record">
+        [attr.aria-label]="'composer.record' | translate"
+        [matTooltip]="'composer.record' | translate">
         <mat-icon>mic</mat-icon>
       </button>
     </div>

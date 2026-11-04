@@ -148,11 +148,9 @@
   background: var(--theme-surface);
   box-shadow: var(--theme-shadow-sm);
 
-  &.is-disabled {
-    .item-title,
-    .item-meta {
-      opacity: 0.6;
-    }
+  // Title, badges and details fade together; the switches and actions stay as they are
+  &.is-disabled .item-main {
+    opacity: 0.6;
   }
 }
 
@@ -283,9 +281,20 @@
     color: var(--theme-tier-untrusted);
   }
 
+  .test-status {
+    font-weight: 600;
+  }
+
   .test-reply {
+    margin-left: 4px;
     color: var(--theme-text);
     font-style: italic;
+  }
+
+  // The provider's message on its own line under "Failed"
+  .test-error {
+    display: block;
+    margin-top: 2px;
   }
 }
 
@@ -316,9 +325,10 @@
   }
 }
 
+// Centered: a name without tags sits level with the avatar
 .agent-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   min-width: 0;
 }

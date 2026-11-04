@@ -1,14 +1,17 @@
-<div class="sidebar">
+<div class="sidebar" *ngIf="{ selectedId: selectedConversationId$ | async, path: currentPath$ | async } as view">
   <div class="sidebar-header">
-    <div class="logo" [class.dark-theme]="isDarkMode">
-      <div class="logo-text">LLM Chat</div>
+    <div class="brand">
+      <mat-icon class="brand-mark" aria-hidden="true">forum</mat-icon>
+      <span class="brand-name">LLM Chat</span>
     </div>
-    <button class="sidebar-close-btn" (click)="closeSidebar()" aria-label="Close sidebar">
+    <button class="sidebar-close-btn" (click)="closeSidebar()"
+      [attr.aria-label]="'sidebar.close' | translate" [title]="'sidebar.close' | translate">
       <mat-icon>chevron_left</mat-icon>
     </button>
   </div>
 
-  <button class="new-conversation-button" [class.highlighted]="(activeConversationId$ | async) === '0'"
+  <button class="new-conversation-button" [class.highlighted]="view.selectedId === '0'"
+    [attr.aria-current]="view.selectedId === '0' ? 'page' : null"
     (click)="createNewConversation()">
     <mat-icon>add</mat-icon>
     {{ 'New Chat' | translate }}
@@ -19,34 +22,41 @@
       <ng-container *ngIf="groupedConversations[label]?.length">
         <div class="group-label">{{ label | translate }}</div>
         <app-conversation *ngFor="let conv of groupedConversations[label]" [conversation]="conv"
-          [highlighted]="(activeConversationId$ | async) === conv.id" (selected)="onSelectConversation($event)">
+          [highlighted]="view.selectedId === conv.id" (selected)="onSelectConversation($event)">
         </app-conversation>
       </ng-container>
     </ng-container>
   </div>
 
-  <div class="sidebar-navigation-main-links">
-    <button class="nav-button" (click)="navigateTo('/')"
-      [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      {{ 'Chat' | translate }}
+  <nav class="sidebar-navigation-main-links">
+    <button class="nav-button" (click)="navigateTo('/')" [class.selected]="isNavActive(view.path, '/')"
+      [attr.aria-current]="isNavActive(view.path, '/') ? 'page' : null">
+      <mat-icon aria-hidden="true">chat</mat-icon>
+      <span>{{ 'Chat' | translate }}</span>
     </button>
     <button *ngIf="isMember$ | async" class="nav-button" (click)="navigateTo('/knowledge-base')"
-      [class.selected]="router.isActive('/knowledge-base', {paths: 'subset', queryParams: 'ignored', fragment: 'ignored', matrixParams: 'ignored'})">
-      {{ 'knowledgeBase.title' | translate }}
+      [class.selected]="isNavActive(view.path, '/knowledge-base')"
+      [attr.aria-current]="isNavActive(view.path, '/knowledge-base') ? 'page' : null">
+      <mat-icon aria-hidden="true">menu_book</mat-icon>
+      <span>{{ 'knowledgeBase.title' | translate }}</span>
     </button>
     <button *ngIf="isAdmin$ | async" class="nav-button" (click)="navigateTo('/agents')"
-      [class.selected]="router.isActive('/agents', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
-      {{ 'Agents' | translate }}
+      [class.selected]="isNavActive(view.path, '/agents')"
+      [attr.aria-current]="isNavActive(view.path, '/agents') ? 'page' : null">
+      <mat-icon aria-hidden="true">smart_toy</mat-icon>
+      <span>{{ 'Agents' | translate }}</span>
     </button>
-  </div>
+  </nav>
 
-  <!-- User profile section - now clickable for login/logout -->
+  <!-- The user: a guest logs in from here, a signed-in user logs out -->
   <div class="user-with-settings">
-    <button class="user-button" (click)="handleUserClick()">
-      <div class="avatar">{{ getUserInitials() }}</div>
-      <div class="username" [title]="getUserName()">{{ getUserName() }}</div>
+    <button class="user-button" (click)="handleUserClick()"
+      [title]="getUserName() + ' · ' + ((isGuest() ? 'Login' : 'Logout') | translate)">
+      <div class="avatar" aria-hidden="true">{{ getUserInitials() }}</div>
+      <div class="username">{{ getUserName() }}</div>
     </button>
-    <button class="settings-icon-button" mat-icon-button (click)="openSettings()">
+    <button class="settings-icon-button" (click)="openSettings()"
+      [attr.aria-label]="'Settings' | translate" [title]="'Settings' | translate">
       <mat-icon>settings</mat-icon>
     </button>
   </div>

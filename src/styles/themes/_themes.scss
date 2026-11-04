@@ -51,6 +51,8 @@
     --theme-avatar-ai: #{map.get($theme-map, 'avatar-ai')};
     --theme-hover: #{map.get($theme-map, 'hover')};
     --theme-active: #{map.get($theme-map, 'active')};
+    --theme-row-hover: #{map.get($theme-map, 'row-hover')};
+    --theme-row-selected: #{map.get($theme-map, 'row-selected')};
     --theme-code-bg: #{map.get($theme-map, 'code-bg')};
     --theme-shadow-sm: #{map.get($theme-map, 'shadow-sm')};
     --theme-shadow-md: #{map.get($theme-map, 'shadow-md')};

@@ -57,22 +57,23 @@
         }
       </div>
     }
+    <!-- Flows as one sentence: the "·" sticks to the word before it, so a line never starts with it -->
     <p class="note-meta">
       @if (latest(); as revision) {
         <span>{{ lastChange() }}</span>
         @if (revision.conversationId) {
+          &ngsp;
           @if (revision.conversationName) {
-            <span>
-              {{ 'knowledgeBase.note.in' | translate }}
-              <a class="meta-link" href="#" (click)="$event.preventDefault(); conversation.emit(revision.conversationId)">{{ revision.conversationName }}</a>
-            </span>
+            <span>{{ 'knowledgeBase.note.in' | translate }} <a class="meta-link" href="#"
+              (click)="$event.preventDefault(); conversation.emit(revision.conversationId)">{{ revision.conversationName }}</a></span>
           } @else {
             <span>{{ 'knowledgeBase.note.inDeletedChat' | translate }}</span>
           }
         }
         @if (note().revisions.length > 1) {
-          <span class="meta-separator" aria-hidden="true">·</span>
-          <span>{{ created() }}</span>
+          <span class="meta-separator" aria-hidden="true">&nbsp;·</span>
+          &ngsp;
+          <span class="meta-created">{{ created() }}</span>
         }
       }
     </p>

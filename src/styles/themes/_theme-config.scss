@@ -23,6 +23,9 @@ $light-avatar-user: linear-gradient(135deg, #227a86 0%, #17806f 100%);
 $light-avatar-ai: linear-gradient(135deg, #0e7468 0%, #178f80 100%);
 $light-hover: rgba(14, 116, 104, 0.05);
 $light-active: rgba(14, 116, 104, 0.1);
+// Rows in lists (sidebar): hover, and the selected row (dark text on it: at least 12:1)
+$light-row-hover: rgba(14, 116, 104, 0.06);
+$light-row-selected: rgba(14, 116, 104, 0.14);
 $light-code-bg: #f2f6f6;
 $light-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 $light-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
@@ -57,6 +60,9 @@ $dark-avatar-user: linear-gradient(135deg, #227a86 0%, #17806f 100%);
 $dark-avatar-ai: linear-gradient(135deg, #0e7468 0%, #178f80 100%);
 $dark-hover: rgba(255, 255, 255, 0.04);
 $dark-active: rgba(255, 255, 255, 0.08);
+// Rows in lists (sidebar): a neutral hover, a teal tint for the selected row (light text on it: at least 10:1)
+$dark-row-hover: rgba(255, 255, 255, 0.05);
+$dark-row-selected: rgba(44, 181, 165, 0.18);
 $dark-code-bg: #1d2528;
 $dark-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
 $dark-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
@@ -94,6 +100,8 @@ $light-theme: (
   'avatar-ai': $light-avatar-ai,
   'hover': $light-hover,
   'active': $light-active,
+  'row-hover': $light-row-hover,
+  'row-selected': $light-row-selected,
   'code-bg': $light-code-bg,
   'shadow-sm': $light-shadow-sm,
   'shadow-md': $light-shadow-md,
@@ -129,6 +137,8 @@ $dark-theme: (
   'avatar-ai': $dark-avatar-ai,
   'hover': $dark-hover,
   'active': $dark-active,
+  'row-hover': $dark-row-hover,
+  'row-selected': $dark-row-selected,
   'code-bg': $dark-code-bg,
   'shadow-sm': $dark-shadow-sm,
   'shadow-md': $dark-shadow-md,

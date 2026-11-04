@@ -16,11 +16,32 @@
 // --- STEP 3: Generate Theme Classes ---
 // This is where the light and dark themes are actually created.
 .theme-light {
+  // Native scrollbars and form controls follow the app's theme, not the system's
+  color-scheme: light;
   @include theme.apply-app-theme('light', typography.$custom-typography);
 }
 
 .theme-dark {
+  color-scheme: dark;
   @include theme.apply-app-theme('dark', typography.$custom-typography);
+}
+
+// Dark mode: menus, dropdowns, dialogs and chips in the theme's graphite instead of the M2 dark theme's
+// grey (#424242). Menus sit a step above the surface so they stand out over cards and dialogs.
+// (body.theme-dark outranks the tokens the theme mixin sets on .theme-dark)
+body.theme-dark {
+  --mat-menu-container-color: #1f272b;
+  --mat-select-panel-background-color: #1f272b;
+  --mat-autocomplete-background-color: #1f272b;
+  --mdc-dialog-container-color: var(--theme-surface);
+  --mdc-chip-elevated-container-color: rgba(255, 255, 255, 0.08);
+  --mdc-chip-elevated-disabled-container-color: rgba(255, 255, 255, 0.04);
+
+  .mat-mdc-menu-panel,
+  .mat-mdc-select-panel,
+  .mat-mdc-autocomplete-panel {
+    outline: 1px solid var(--theme-border);
+  }
 }
 
 // --- Global Styles ---
@@ -87,16 +108,14 @@ a {
 // Selective transitions for theme-aware elements
 body.theme-initialized {
 
-  // Main containers and surfaces
+  // Main containers and surfaces (the app shell's content area and the sidebar's buttons set their own
+  // transitions: this rule would replace the sidebar's slide)
   .sidebar,
-  .content-wrapper,
   .chat-ui,
   .settings-container,
   .input-field-container,
   .message,
   .surface-element,
-  .nav-button,
-  .new-conversation-button,
   mat-card {
     transition: background-color 0.3s ease,
       color 0.3s ease,
@@ -126,6 +145,30 @@ body.theme-initialized {
     transition: background-color 0.3s ease,
       color 0.3s ease,
       border-color 0.3s ease;
+  }
+}
+
+// A page's own heading, while the shell's top bar shows the same name (always on phones, on wider screens
+// while the sidebar is closed; see app.component.scss): hidden on screen, kept for screen readers
+@mixin visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.content-wrapper:not(.sidebar-open):not(.no-sidebar) .page-title-in-topbar {
+  @include visually-hidden;
+}
+
+@media (max-width: 768px) {
+  .content-wrapper:not(.no-sidebar) .page-title-in-topbar {
+    @include visually-hidden;
   }
 }
 

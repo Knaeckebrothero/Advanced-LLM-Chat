@@ -54,6 +54,22 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+
+  // Narrow phones: "Export" instead of "Export for Obsidian" (the tooltip says the rest), so both
+  // buttons fit next to each other
+  .label-short {
+    display: none;
+  }
+
+  @media (max-width: 480px) {
+    .label-long {
+      display: none;
+    }
+
+    .label-short {
+      display: inline;
+    }
+  }
 }
 
 .button-spinner {
@@ -84,10 +100,20 @@
 
 .kb-search {
   width: 100%;
+  // A bit lower than a form field with a label: in rhythm with the toggle and the list below
+  --mat-form-field-container-height: 44px;
+  --mat-form-field-container-vertical-padding: 10px;
 
   mat-icon[matPrefix] {
-    margin: 0 4px 0 12px;
+    margin: 0 0 0 12px;
     color: var(--theme-text-secondary);
+  }
+
+  // The field has its own clear button: hide the browser's
+  input[type='search']::-webkit-search-cancel-button,
+  input[type='search']::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
   }
 }
 
@@ -103,7 +129,7 @@
     margin-left: 6px;
     font-size: 0.75rem;
     font-variant-numeric: tabular-nums;
-    color: var(--theme-text-secondary);
+    opacity: 0.75;
   }
 }
 
@@ -175,15 +201,19 @@
   cursor: pointer;
   transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
 
+  // The same tints as the rows of the sidebar
   &:hover,
   &:focus-visible {
-    background: var(--theme-hover);
+    background: var(--theme-row-hover, var(--theme-hover));
   }
 
   &.is-selected {
-    border-color: var(--theme-border);
-    background: var(--theme-surface);
-    box-shadow: var(--theme-shadow-sm);
+    background: var(--theme-row-selected, var(--theme-active));
+  }
+
+  // Inside the row: the list scrolls and would cut off a ring outside of it
+  &:focus-visible {
+    outline-offset: -2px;
   }
 }
 
@@ -216,11 +246,13 @@
   opacity: 0.85;
 }
 
-// The open note: a sheet next to the list
+// The open note: a sheet next to the list. Its side padding is a variable: the editor's sticky
+// toolbar reaches across it.
 .kb-note-pane {
+  --kb-pane-padding-x: 24px;
   min-width: 0;
   min-height: 320px;
-  padding: 20px 24px 28px;
+  padding: 20px var(--kb-pane-padding-x) 28px;
   border: 1px solid var(--theme-border);
   border-radius: 18px;
   background: var(--theme-surface);
@@ -282,14 +314,37 @@
   }
 
   .kb-note-pane {
-    padding: 16px 18px 24px;
+    --kb-pane-padding-x: 18px;
+    padding: 16px var(--kb-pane-padding-x) 24px;
   }
 }
 
-// Phones: the list and the note take turns; the sidebar toggle sits fixed at the top left
+// Phones: the list and the note take turns (the app's top bar with the sidebar toggle sits above the page)
 @media (max-width: 768px) {
   .kb-page {
-    padding: 64px 16px 32px;
+    padding: 16px 16px 32px;
+  }
+
+  .kb-header {
+    gap: 12px;
+    margin-bottom: 16px;
+
+    h1 {
+      font-size: 1.45rem;
+    }
+
+    p {
+      font-size: 0.85rem;
+    }
+  }
+
+  // The actions fill the row under the description, as one bar
+  .kb-header-actions {
+    width: 100%;
+
+    button {
+      flex: 1 1 auto;
+    }
   }
 
   .kb-body {
@@ -304,8 +359,9 @@
   }
 
   .kb-note-pane {
+    --kb-pane-padding-x: 14px;
     display: none;
-    padding: 12px 14px 20px;
+    padding: 12px var(--kb-pane-padding-x) 20px;
     border-radius: 14px;
   }
 

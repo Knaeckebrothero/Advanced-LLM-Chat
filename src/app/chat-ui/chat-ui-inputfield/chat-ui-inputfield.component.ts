@@ -17,7 +17,7 @@ import { UploadStatus } from '../../data/objects/file-preview';
 import { environment } from '../../environments/environment';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { ImagePreviewDialogComponent, ImagePreviewDialogData } from './image-preview-dialog/image-preview-dialog.component';
-import {TranslateModule, TranslatePipe} from "@ngx-translate/core";
+import { TranslateModule, TranslateService } from "@ngx-translate/core";
 
 
 /**
@@ -85,7 +85,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     private fileHandlingService: FileHandlingService,
     private apiService: ApiService,
     private sanitizer: DomSanitizer,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private translate: TranslateService
   ) {}
 
   // ViewChild to access the textarea element directly
@@ -93,6 +94,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
   @ViewChild('cameraInput') private cameraInput!: ElementRef<HTMLInputElement>;
   @ViewChild('waveformCanvas') private waveformCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('composer') private composer!: ElementRef<HTMLElement>;
 
   // The message text bound to the textarea
   messageText: string = '';
@@ -127,8 +129,6 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Voice recording properties
   isRecording: boolean = false;
   recordingTime: Date = new Date(0);
-  canvasWidth: number = 800;
-  canvasHeight: number = 80; // Taller to fill the input field
   isHoldToRecord: boolean = true; // Toggle between hold-to-record and tap-to-record
   recordingDuration: number = 0; // Store duration in seconds
 
@@ -144,6 +144,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Subscription to recording state
   private recordingStateSubscription: any;
 
+  // Keeps the waveform canvas sized to the composer (a field, so removeEventListener gets the same function)
+  private readonly onWindowResize = () => this.updateCanvasDimensions();
+
   ngOnInit() {
     // Subscribe to device capabilities
     this.deviceCapabilitiesService.getCapabilities().subscribe(capabilities => {
@@ -154,8 +157,15 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
     // Subscribe to recording state
     this.recordingStateSubscription = this.voiceRecordingService.getRecordingState().subscribe(state => {
+      const started = state.isRecording && !this.isRecording;
+      const stopped = !state.isRecording && this.isRecording;
       this.isRecording = state.isRecording;
       this.recordingDuration = state.duration;
+
+      // The composer changes its layout (and height) while recording: once that is rendered, fit the
+      // waveform to it, and afterwards fit the textarea (it is re-created) to the text kept in it
+      if (started) requestAnimationFrame(() => this.updateCanvasDimensions());
+      if (stopped) requestAnimationFrame(() => this.adjustTextareaHeight());
 
       // Update recording time for display
       if (state.isRecording) {
@@ -172,8 +182,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     // Set initial canvas dimensions
     this.updateCanvasDimensions();
 
-    // Add resize listener for responsive canvas
-    window.addEventListener('resize', () => this.updateCanvasDimensions());
+    // Add resize listener for responsive canvas (it only touches the DOM, so no change detection needed)
+    this.ngZone.runOutsideAngular(() => window.addEventListener('resize', this.onWindowResize));
   }
 
   // Handle Enter key press - send on Enter, new line on Shift+Enter
@@ -199,19 +209,29 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
    * Called externally when a new conversation is created.
    */
   public focusInput(): void {
+    // On touch screens focusing pops up the on-screen keyboard over the chat, so only focus where there is a mouse
+    if (this.isTouchPrimary()) return;
     this.messageTextarea?.nativeElement.focus();
+  }
+
+  /** True when the main input is a finger (phones, tablets), not a mouse or trackpad. */
+  private isTouchPrimary(): boolean {
+    return typeof window.matchMedia === 'function'
+      && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
   }
 
   // Method to dynamically adjust the textarea height
   private adjustTextareaHeight(): void {
-    const textarea = this.messageTextarea.nativeElement;
+    const textarea = this.messageTextarea?.nativeElement;
+    if (!textarea) return;  // Not rendered while recording
 
     // Reset height to auto to get the correct scrollHeight
     textarea.style.height = 'auto';
 
-    // Calculate new height (max 150px which is roughly 5-6 lines)
-    const newHeight = Math.min(textarea.scrollHeight, 150);
-    textarea.style.height = newHeight + 'px';
+    // Grow with the text up to the stylesheet's max-height (smaller on phones), then scroll
+    const maxHeight = parseFloat(getComputedStyle(textarea).maxHeight) || 240;
+    textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }
 
   // Send the message
@@ -383,8 +403,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       gap: 10px;
     `;
 
-      const captureBtn = this.createButton('Capture Photo', '#4CAF50');
-      const cancelBtn = this.createButton('Cancel', '#f44336');
+      const captureBtn = this.createButton(this.translate.instant('composer.capturePhoto'), '#4CAF50');
+      const cancelBtn = this.createButton(this.translate.instant('composer.cancel'), '#f44336');
 
       buttonContainer.appendChild(captureBtn);
       buttonContainer.appendChild(cancelBtn);
@@ -424,7 +444,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
     } catch (error) {
       console.error('Camera error:', error);
-      alert('Could not access camera. Please check permissions.');
+      alert(this.translate.instant('composer.cameraError'));
     }
   }
 
@@ -490,11 +510,11 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Show error to user
       if (error instanceof DOMException) {
         if (error.name === 'NotAllowedError') {
-          alert('Microphone access denied. Please allow microphone access and try again.');
+          alert(this.translate.instant('composer.micDenied'));
         } else if (error.name === 'NotFoundError') {
-          alert('No microphone found. Please connect a microphone and try again.');
+          alert(this.translate.instant('composer.micNotFound'));
         } else {
-          alert('Error accessing microphone: ' + error.message);
+          alert(this.translate.instant('composer.micError', { error: error.message }));
         }
       }
     }
@@ -569,22 +589,32 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     await this.stopRecording();
   }
 
-  // Update canvas dimensions to match container
+  // Update canvas dimensions to match container. Written to the element directly rather than through
+  // a template binding: the size is only known after the first render (NG0100 otherwise).
   private updateCanvasDimensions(): void {
-    // Get the container element to match its size
-    const container = document.querySelector('.input-field-container');
-    if (container) {
-      const rect = container.getBoundingClientRect();
-      this.canvasWidth = Math.floor(rect.width);
-      this.canvasHeight = Math.floor(rect.height) || 80; // Default height if not yet rendered
+    const canvas = this.waveformCanvas?.nativeElement;
+    const container = this.composer?.nativeElement;
+    if (!canvas || !container) return;
 
-      // Note: The visualizer is now managed by VoiceRecordingService
-      // and will adapt to the canvas size automatically
-    }
+    const rect = container.getBoundingClientRect();
+    const width = Math.floor(rect.width) || 800;
+    const height = Math.floor(rect.height) || 80; // Defaults if not yet rendered
+    // Setting the size clears the canvas, so only do it when it changes.
+    // The visualizer (VoiceRecordingService) reads the canvas size on every frame.
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
   }
 
-  // Hold-to-record event handlers
+  // Hold-to-record event handlers. Touch and mouse both work at any screen width; the mouse
+  // events a browser emulates after a touch are ignored (lastTouchAt).
+  private lastTouchAt = 0;
+
+  private isEmulatedMouseEvent(): boolean {
+    return Date.now() - this.lastTouchAt < 1000;
+  }
+
   onMicTouchStart(event: TouchEvent): void {
+    this.lastTouchAt = Date.now();
     if (this.isHoldToRecord) {
       event.preventDefault();
       this.beginRecording();
@@ -592,6 +622,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   }
 
   onMicTouchEnd(event: TouchEvent): void {
+    this.lastTouchAt = Date.now();
     if (this.isHoldToRecord && this.isRecording) {
       event.preventDefault();
       this.stopRecording();
@@ -599,21 +630,21 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   }
 
   onMicMouseDown(event: MouseEvent): void {
-    if (this.isHoldToRecord && !this.isMobileDevice()) {
+    if (this.isHoldToRecord && !this.isEmulatedMouseEvent()) {
       event.preventDefault();
       this.beginRecording();
     }
   }
 
   onMicMouseUp(event: MouseEvent): void {
-    if (this.isHoldToRecord && this.isRecording && !this.isMobileDevice()) {
+    if (this.isHoldToRecord && this.isRecording && !this.isEmulatedMouseEvent()) {
       event.preventDefault();
       this.stopRecording();
     }
   }
 
   onMicMouseLeave(event: MouseEvent): void {
-    if (this.isHoldToRecord && this.isRecording && !this.isMobileDevice()) {
+    if (this.isHoldToRecord && this.isRecording && !this.isEmulatedMouseEvent()) {
       this.stopRecording();
     }
   }
@@ -728,7 +759,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Clean up resources when component is destroyed
   ngOnDestroy(): void {
     // Remove resize listener
-    window.removeEventListener('resize', () => this.updateCanvasDimensions());
+    window.removeEventListener('resize', this.onWindowResize);
 
     // Unsubscribe from observables
     if (this.recordingStateSubscription) {

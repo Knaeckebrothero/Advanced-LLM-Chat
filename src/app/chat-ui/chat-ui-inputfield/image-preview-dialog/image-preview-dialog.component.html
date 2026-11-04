@@ -10,14 +10,15 @@
         <button mat-icon-button 
                 class="download-button"
                 (click)="downloadImage()"
-                aria-label="Download image"
-                matTooltip="Download">
+                [attr.aria-label]="'filePreview.download' | translate"
+                [matTooltip]="'filePreview.download' | translate">
           <mat-icon>download</mat-icon>
         </button>
         <button mat-icon-button 
                 class="close-button"
                 (click)="close()"
-                aria-label="Close dialog">
+                [attr.aria-label]="'filePreview.close' | translate"
+                [matTooltip]="'filePreview.close' | translate">
           <mat-icon>close</mat-icon>
         </button>
       </div>

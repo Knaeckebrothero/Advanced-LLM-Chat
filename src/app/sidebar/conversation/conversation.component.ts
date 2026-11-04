@@ -133,7 +133,7 @@ export class ConversationComponent implements OnInit, OnDestroy {
    * @return {Promise<void>} A promise that resolves when the conversation is successfully deleted or is rejected if an error occurs.
    */
   async deleteConversation(): Promise<void> {
-    if (confirm('Delete this conversation?')) {
+    if (confirm(this.translate.instant('conversationMenu.deleteConfirm'))) {
       await this.chatState.deleteConversation(this.conversation.id);
     }
   }
@@ -152,7 +152,7 @@ export class ConversationComponent implements OnInit, OnDestroy {
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      alert(`The conversation could not be exported: ${describeHttpError(error)}`);
+      alert(this.translate.instant('conversationMenu.exportFailed', { error: describeHttpError(error, this.translate) }));
     }
   }
 

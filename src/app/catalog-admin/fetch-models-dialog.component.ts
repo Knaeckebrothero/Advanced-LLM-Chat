@@ -100,6 +100,9 @@ export interface FetchModelsDialogResult {
   styles: [`
     .fetch-content { min-height: 200px; }
 
+    // Material drops the content's top padding right under a title, which cuts off the filter's label
+    :host .catalog-dialog-content.fetch-content { padding-top: 12px; }
+
     .fetch-state {
       display: flex;
       justify-content: center;
@@ -136,14 +139,21 @@ export interface FetchModelsDialogResult {
     .fetch-id {
       font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
       font-size: 0.85rem;
+      letter-spacing: normal;
       overflow-wrap: anywhere;
     }
 
+    // On the right, also when it wraps under a long id; its parts don't break inside
     .fetch-meta {
       display: flex;
-      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 2px 10px;
+      margin-left: auto;
       font-size: 0.75rem;
       color: var(--theme-text-secondary);
+
+      > span { white-space: nowrap; }
     }
 
     .added-tag {

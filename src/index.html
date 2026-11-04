@@ -14,11 +14,21 @@
 
   <!-- Security Headers as Meta Tags (fallback for when headers aren't set) -->
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <!-- CSP meta tag as fallback - matches the backend CSP -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' wss: https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <!-- CSP meta tag as fallback - matches the backend CSP, except frame-ancestors: browsers ignore it in a meta tag,
+       so it comes only as a header (nginx.conf, backend) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' wss: https:; base-uri 'self'; form-action 'self'">
   <!-- Fonts (Roboto, Inter, Material Icons) are bundled from npm packages, see angular.json "styles" -->
 </head>
 <body class="mat-typography">
+  <script>
+    // The theme's class before the app starts, so a dark theme doesn't flash white; ThemeService takes over
+    (function () {
+      var stored = null;
+      try { stored = localStorage.getItem('theme-preference'); } catch (e) {}
+      var dark = stored === 'dark' || (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.body.classList.add(dark ? 'theme-dark' : 'theme-light');
+    })();
+  </script>
   <app-root></app-root>
   <noscript>Please enable JavaScript to continue using this application.</noscript>
 </body>

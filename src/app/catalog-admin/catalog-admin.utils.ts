@@ -22,6 +22,19 @@ export function describeHttpError(error: unknown, translate?: TranslateService):
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Scrolls the first element in a dialog that matches the selector into view, once the view shows
+ * it: a field that failed validation or the error of a failed save, which may be out of sight in a
+ * long form that scrolls.
+ */
+export function revealInDialog(host: HTMLElement, selector: string): void {
+  setTimeout(() => host.querySelector(selector)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+}
+
+/** Selectors for revealInDialog(): the first invalid field, and the error of a failed save. */
+export const INVALID_FIELD = '.mat-mdc-form-field.mat-form-field-invalid';
+export const DIALOG_ERROR = '.dialog-error';
+
 /** Trimmed text, or null when empty (for optional fields). */
 export function textOrNull(value: unknown): string | null {
   if (value === null || value === undefined) return null;

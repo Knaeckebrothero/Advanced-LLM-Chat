@@ -146,7 +146,7 @@ interface TestState {
                     @if (priceText(model); as price) {
                       <span>{{ price }}</span>
                     }
-                    <span>#{{ model.sortOrder }}</span>
+                    <span [matTooltip]="'catalog.admin.fields.sortOrder' | translate">#{{ model.sortOrder }}</span>
                   </div>
                   @if (model.description) {
                     <p class="item-description">{{ model.description }}</p>
@@ -155,11 +155,14 @@ interface TestState {
 
                 <div class="item-controls">
                   <div class="item-toggles">
+                    <!-- The accessible names include the model: a screen reader hears many "Enabled" switches -->
                     <mat-slide-toggle [checked]="model.enabled"
+                                      [aria-label]="('catalog.admin.fields.enabled' | translate) + ': ' + model.displayName"
                                       (change)="setFlag(model, 'enabled', $event)">
                       {{ 'catalog.admin.fields.enabled' | translate }}
                     </mat-slide-toggle>
                     <mat-slide-toggle [checked]="model.availableToGuests"
+                                      [aria-label]="('catalog.admin.fields.guests' | translate) + ': ' + model.displayName"
                                       (change)="setFlag(model, 'availableToGuests', $event)">
                       {{ 'catalog.admin.fields.guests' | translate }}
                     </mat-slide-toggle>
@@ -194,12 +197,12 @@ interface TestState {
                        [class.test-result--failed]="!result.ok">
                     <mat-icon aria-hidden="true">{{ result.ok ? 'check_circle' : 'error_outline' }}</mat-icon>
                     <span>
-                      {{ (result.ok ? 'catalog.admin.models.testOk' : 'catalog.admin.models.testFailed') | translate: { ms: formatCount(result.latencyMs) } }}
+                      <span class="test-status">{{ (result.ok ? 'catalog.admin.models.testOk' : 'catalog.admin.models.testFailed') | translate: { ms: formatCount(result.latencyMs) } }}</span>
                       @if (result.reply) {
                         <span class="test-reply">“{{ result.reply }}”</span>
                       }
                       @if (result.error) {
-                        <span>{{ result.error }}</span>
+                        <span class="test-error">{{ result.error }}</span>
                       }
                     </span>
                   </div>

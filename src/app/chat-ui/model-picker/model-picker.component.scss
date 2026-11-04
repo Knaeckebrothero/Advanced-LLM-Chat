@@ -10,6 +10,16 @@ app-model-picker {
   align-items: center;
   gap: 6px;
   min-width: 0;
+
+  // When the composer is narrow the model chip gives way: model names are long, agent names
+  // short (and capped below), and the model is also shown on every answer
+  app-model-select {
+    flex: 0 1 auto;
+  }
+
+  .persona-trigger {
+    flex: 0 0 auto;
+  }
 }
 
 .persona-trigger {
@@ -29,10 +39,13 @@ app-model-picker {
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 
-  &:hover {
-    background: var(--theme-hover);
-    border-color: var(--theme-primary);
-    color: var(--theme-text);
+  // Only where there is real hover: on touch screens it would stick after a tap
+  @media (hover: hover) {
+    &:hover {
+      background: var(--theme-hover);
+      border-color: var(--theme-primary);
+      color: var(--theme-text);
+    }
   }
 
   &--active {
@@ -72,7 +85,16 @@ app-model-picker {
 }
 
 @media (max-width: 480px) {
-  .persona-trigger .persona-trigger-name {
-    max-width: 64px;
+  .model-picker {
+    gap: 4px;
+  }
+
+  .persona-trigger {
+    gap: 2px;
+    padding-left: 6px;
+
+    .persona-trigger-name {
+      max-width: 88px;
+    }
   }
 }

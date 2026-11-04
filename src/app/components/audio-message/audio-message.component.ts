@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { IFilePreview, UploadStatus } from '../../data/models';
 import { ApiService } from '../../services/api.service';
 
@@ -17,7 +18,8 @@ import { ApiService } from '../../services/api.service';
     CommonModule,
     MatIconModule,
     MatButtonModule,
-    MatProgressSpinnerModule
+    MatProgressSpinnerModule,
+    TranslateModule
   ],
   templateUrl: './audio-message.component.html',
   styleUrls: ['./audio-message.component.scss']
@@ -59,7 +61,7 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
     return this.attachment?.uploadStatus === UploadStatus.FAILED;
   }
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService, private translate: TranslateService) {}
 
   ngOnInit(): void {
     // If transcript is provided directly (from inline content), use it
@@ -283,7 +285,7 @@ export class AudioMessageComponent implements OnInit, OnDestroy, OnChanges {
       this.loadedTranscript = text;
     } catch (error) {
       console.error('Error loading transcript:', error);
-      this.loadedTranscript = 'Could not load transcript';
+      this.loadedTranscript = this.translate.instant('voiceMessage.transcriptFailed');
     } finally {
       this.isLoadingTranscript = false;
     }

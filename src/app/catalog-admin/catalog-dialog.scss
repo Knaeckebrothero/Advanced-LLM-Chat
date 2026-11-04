@@ -4,13 +4,27 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: min(640px, 86vw);
+  // Phones: nearly the full width (the panel may be up to 95vw wide)
+  width: min(640px, calc(100vw - 32px));
   max-height: 70vh;
 
   // The content scrolls; its items must keep their height instead of shrinking
   > * {
     flex-shrink: 0;
   }
+
+  // Phones: as much of the height as the title and buttons leave
+  @media (max-width: 600px) {
+    max-height: calc(100dvh - 176px);
+  }
+}
+
+// The buttons line up with the fields (Material's default inset is smaller); a line separates
+// them from the content that scrolls under them
+.mat-mdc-dialog-actions {
+  gap: 8px;
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--theme-border);
 }
 
 .full-width {
@@ -55,8 +69,9 @@
   flex-direction: column;
   gap: 2px;
 
+  // Under the switch's label, not under the switch
   .toggle-hint {
-    margin: 0 0 0 52px;
+    margin: 0 0 0 40px;
     font-size: 0.75rem;
     color: var(--theme-text-secondary);
   }
@@ -65,6 +80,7 @@
 .code-input {
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   font-size: 0.85rem;
+  letter-spacing: normal;
 }
 
 .dialog-error {
@@ -110,6 +126,12 @@ mat-dialog-actions mat-spinner {
     .variable-default {
       grid-column: 1 / 3;
       grid-row: 2;
+    }
+
+    // Two lines per variable: a line between variables shows which fields belong together
+    & + .variable-row {
+      padding-top: 12px;
+      border-top: 1px dashed var(--theme-border);
     }
   }
 }
