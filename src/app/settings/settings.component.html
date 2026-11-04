@@ -1,36 +1,39 @@
 <div class="settings-container" *ngIf="settings$ | async as settings">
-  <h2>{{ 'Settings' | translate }}</h2>
+  <h2 id="settings-title">{{ 'Settings' | translate }}</h2>
 
   <!-- Wide screens: two columns, how the app looks on the left and how you chat on the right -->
   <div class="settings-columns">
     <div class="settings-column">
       <div class="setting-option">
-        <label>{{ 'Theme' | translate }}</label>
-        <div class="options-group">
+        <label id="theme-label">{{ 'Theme' | translate }}</label>
+        <div class="options-group" role="group" aria-labelledby="theme-label">
           <button
             *ngFor="let option of themeOptions"
+            type="button"
             class="option-button"
             [class.active]="settings.theme === option.value"
             (click)="updateTheme(option.value)"
             [attr.aria-pressed]="settings.theme === option.value"
           >
-            <mat-icon>{{ option.icon }}</mat-icon>
+            <mat-icon aria-hidden="true">{{ option.icon }}</mat-icon>
             <span>{{ option.label | translate }}</span>
           </button>
         </div>
       </div>
 
+      <!-- Each language by its own name -->
       <div class="setting-option">
-        <label>{{ 'Language' | translate }}</label>
-        <div class="options-group">
+        <label id="language-label">{{ 'Language' | translate }}</label>
+        <div class="options-group" role="group" aria-labelledby="language-label">
           <button
             *ngFor="let option of languageOptions"
+            type="button"
             class="option-button"
             [class.active]="settings.language === option.value"
             (click)="updateLanguage(option.value)"
             [attr.aria-pressed]="settings.language === option.value"
           >
-            <span>{{ option.label }}</span>
+            <span [attr.lang]="option.value">{{ option.label }}</span>
           </button>
         </div>
       </div>
@@ -110,16 +113,17 @@
 
       <!-- Editing: guided (an edited message is answered again) or manual (edit and insert any message) -->
       <div class="setting-option">
-        <label>{{ 'editing.title' | translate }}</label>
-        <div class="options-group">
+        <label id="editing-label">{{ 'editing.title' | translate }}</label>
+        <div class="options-group" role="group" aria-labelledby="editing-label">
           <button
             *ngFor="let option of editingOptions"
+            type="button"
             class="option-button"
             [class.active]="editingMode(settings) === option.value"
             (click)="updateEditingMode(option.value)"
             [attr.aria-pressed]="editingMode(settings) === option.value"
           >
-            <mat-icon>{{ option.icon }}</mat-icon>
+            <mat-icon aria-hidden="true">{{ option.icon }}</mat-icon>
             <span>{{ option.label | translate }}</span>
           </button>
         </div>
@@ -129,7 +133,7 @@
       <!-- Conversations: files exported from a conversation's menu (guests' conversations are not kept) -->
       <div class="setting-option">
         <label>{{ 'conversations.title' | translate }}</label>
-        <button type="button" class="text-button" [disabled]="!canImport || importing" (click)="importInput.click()">
+        <button type="button" class="secondary-button" [disabled]="!canImport || importing" (click)="importInput.click()">
           <mat-icon aria-hidden="true">upload_file</mat-icon>
           {{ (importing ? 'conversations.importing' : 'conversations.import') | translate }}
         </button>
@@ -144,6 +148,6 @@
   </div>
 
   <div class="button-row">
-    <button class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
+    <button type="button" class="done-button" (click)="close()">{{ 'Done' | translate }}</button>
   </div>
 </div>

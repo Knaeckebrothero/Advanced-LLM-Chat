@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { MAT_DIALOG_DATA, MatDialogRef, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { TranslateModule } from '@ngx-translate/core';
 
 export interface ImagePreviewDialogData {
   imageUrl: string;
@@ -17,7 +19,9 @@ export interface ImagePreviewDialogData {
     CommonModule,
     MatDialogModule,
     MatIconModule,
-    MatButtonModule
+    MatButtonModule,
+    MatTooltipModule,
+    TranslateModule
   ],
   templateUrl: './image-preview-dialog.component.html',
   styleUrls: ['./image-preview-dialog.component.scss']

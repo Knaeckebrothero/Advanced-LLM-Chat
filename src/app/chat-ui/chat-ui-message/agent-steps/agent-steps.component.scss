@@ -97,28 +97,32 @@
   }
 }
 
-// Inner steps list (nested accordion)
+// Inner steps list (nested accordion): light rows instead of a card per step,
+// an open step gets a tinted background that holds its header and content together
 .steps-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 
   // Individual step items
   .step-item {
-    background-color: var(--theme-surface-variant, var(--theme-surface));
-    border: 1px solid var(--theme-border);
+    background-color: transparent;
     border-radius: 8px !important;
     box-shadow: none !important;
     overflow: hidden;
+    transition: background-color 0.15s ease;
 
     &::before {
       display: none;
     }
 
+    &.mat-expanded {
+      background-color: var(--theme-hover);
+    }
+
     // Current step highlight (last step while processing)
     &.step-current {
-      border-color: var(--theme-primary);
-      background-color: var(--theme-surface-highlight, rgba(var(--theme-primary-rgb), 0.05));
+      background-color: rgba(var(--theme-primary-rgb), 0.08);
     }
 
     // Step type icon colors
@@ -140,20 +144,27 @@
 
     // Step header
     ::ng-deep .mat-expansion-panel-header {
-      padding: 8px 12px;
+      padding: 6px 10px;
       font-family: inherit;
-      min-height: 40px;
+      min-height: 36px;
       height: auto !important;
+      border-radius: 8px;
+
+      &:focus-visible {
+        outline: 2px solid var(--theme-primary);
+        outline-offset: -2px;
+      }
 
       .mat-expansion-panel-header-title {
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-right: 12px;
+        min-width: 0;
+        margin-right: 8px;
 
         .step-icon-wrapper {
-          width: 24px;
-          height: 24px;
+          width: 22px;
+          height: 22px;
           border-radius: 6px;
           display: flex;
           align-items: center;
@@ -169,16 +180,20 @@
         }
 
         .step-title {
+          min-width: 0;
           font-weight: 500;
           font-size: 13px;
           color: var(--theme-text);
+          overflow-wrap: anywhere;
         }
       }
 
       .mat-expansion-panel-header-description {
+        flex: 0 0 auto;
         align-items: center;
         justify-content: flex-end;
         gap: 8px;
+        margin-right: 6px;
 
         .step-note-link {
           display: inline-flex;
@@ -201,13 +216,14 @@
         .step-duration {
           font-size: 11px;
           color: var(--theme-text-secondary);
-          font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
         }
       }
     }
 
     ::ng-deep .mat-expansion-panel-body {
-      padding: 0 12px 12px;
+      padding: 0 10px 10px 42px;
     }
 
     // Step content
@@ -232,6 +248,8 @@
         font-size: 13px;
         line-height: 1.5;
         color: var(--theme-text);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
 
       .step-note-button {
@@ -328,6 +346,21 @@
       .header-text {
         font-size: 13px;
       }
+    }
+
+    ::ng-deep .mat-expansion-panel-body {
+      padding: 0 4px 4px;
+    }
+  }
+
+  // The content of an open step uses the full width
+  .steps-list .step-item {
+    ::ng-deep .mat-expansion-panel-header {
+      padding: 6px 8px;
+    }
+
+    ::ng-deep .mat-expansion-panel-body {
+      padding: 0 8px 8px;
     }
   }
 }

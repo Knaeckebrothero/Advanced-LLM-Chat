@@ -1,8 +1,16 @@
 <div class="chat-ui-container">
   <div class="message-container" #messageContainer (scroll)="onScroll($event)">
-    <div class="loading-older-messages" *ngIf="isLoadingOlderMessages">
-      <mat-spinner diameter="30"></mat-spinner>
-      <span>Loading older messages...</span>
+    <div class="loading-older-messages" *ngIf="isLoadingOlderMessages" role="status">
+      <mat-spinner diameter="30" aria-hidden="true"></mat-spinner>
+      <span>{{ 'message.loadingOlder' | translate }}</span>
+    </div>
+    <!-- A new conversation: a short greeting instead of an empty page -->
+    <div class="empty-state" *ngIf="showEmptyState$ | async">
+      <div class="empty-state-content">
+        <span class="empty-state-icon" aria-hidden="true"><mat-icon>forum</mat-icon></span>
+        <h2 class="empty-state-title">{{ 'message.emptyTitle' | translate }}</h2>
+        <p class="empty-state-hint">{{ 'message.emptyHint' | translate }}</p>
+      </div>
     </div>
     <ng-container *ngIf="{ divider: summaryDivider$ | async } as view">
       <ng-container *ngFor="let message of messages | async; let i = index">
@@ -22,8 +30,17 @@
                          [isLastAiMessage]="true"
                          (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
   </div>
+  <!-- Scrolled up: back to the newest message -->
+  <div class="scroll-to-bottom-anchor">
+    <button *ngIf="showScrollToBottom" type="button" mat-icon-button class="scroll-to-bottom"
+            (click)="jumpToBottom()"
+            [matTooltip]="'message.scrollToBottom' | translate" matTooltipPosition="above"
+            [attr.aria-label]="'message.scrollToBottom' | translate">
+      <mat-icon>arrow_downward</mat-icon>
+    </button>
+  </div>
   <div class="guest-limit-warning" *ngIf="showGuestLimitWarning">
-    <p>{{ guestLimitWarningMessage }} Please <a routerLink="/login">login</a> for full access.</p>
+    <p>{{ guestLimitWarningMessage }} <a routerLink="/login">{{ 'message.guestLimitLogin' | translate }}</a></p>
   </div>
   <!-- Privacy notice for models whose provider may keep or train on messages -->
   <div class="untrusted-notice" *ngIf="(effectiveModel$ | async)?.privacyTier === 'untrusted'" role="note">

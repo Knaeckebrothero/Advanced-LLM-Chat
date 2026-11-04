@@ -6,10 +6,11 @@ import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { ICatalogFile, IImportResult } from '../data/models/catalog.model';
 import { CatalogAdminStore } from './catalog-admin.store';
 import { describeHttpError } from './catalog-admin.utils';
+import { CatalogAdminDialogs } from './catalog-admin-dialogs';
 
 /**
- * Download the catalog as JSON, and upload a catalog file (models and agents are upserted by
- * name, nothing is deleted; provider entries are skipped, providers come from the server).
+ * Download the catalog as JSON, and upload a catalog file after a confirmation (models and agents
+ * are upserted by name, nothing is deleted; provider entries are skipped, providers come from the server).
  */
 @Component({
   selector: 'app-import-export-tab',
@@ -168,6 +169,7 @@ export class ImportExportTabComponent {
 
   constructor(
     private store: CatalogAdminStore,
+    private dialogs: CatalogAdminDialogs,
     private translate: TranslateService
   ) {}
 
@@ -209,6 +211,21 @@ export class ImportExportTabComponent {
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       this.importError = this.translate.instant('catalog.admin.transfer.invalidFile');
+      return;
+    }
+
+    // The import overwrites models and agents of the same name: ask first, with what the file holds
+    const confirmed = await this.dialogs.confirm({
+      title: this.translate.instant('catalog.admin.transfer.confirmTitle'),
+      message: this.translate.instant('catalog.admin.transfer.confirmMessage', {
+        file: file.name,
+        models: Array.isArray(parsed.models) ? parsed.models.length : 0,
+        agents: Array.isArray(parsed.personas) ? parsed.personas.length : 0
+      }),
+      confirmLabel: this.translate.instant('catalog.admin.transfer.confirmImport')
+    });
+    if (!confirmed) {
+      this.fileName = null;
       return;
     }
 

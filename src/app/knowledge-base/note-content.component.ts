@@ -53,7 +53,13 @@ export class NoteContentComponent {
       if (!link || link.title === null) {
         anchor.classList.add('note-link--missing');
         anchor.title = this.translate.instant('knowledgeBase.note.missing');
-      } else if (link.status === 'archived') {
+        return;
+      }
+      // A bare [[slug]] reads as the note's title, as in the lists of links (the target stays the slug)
+      if ((anchor.textContent ?? '').trim() === slug && anchor.childElementCount === 0) {
+        anchor.textContent = link.title;
+      }
+      if (link.status === 'archived') {
         anchor.classList.add('note-link--archived');
         anchor.title = this.translate.instant('knowledgeBase.note.archivedLink');
       }

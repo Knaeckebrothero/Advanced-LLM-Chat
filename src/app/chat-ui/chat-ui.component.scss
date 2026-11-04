@@ -74,6 +74,126 @@
   }
 }
 
+// A new conversation: a short greeting in the middle of the empty thread
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 0 16px 48px;
+  box-sizing: border-box;
+  text-align: center;
+  animation: empty-state-in 0.3s ease-out;
+}
+
+.empty-state-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 480px;
+}
+
+.empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background: rgba(var(--theme-primary-rgb), 0.12);
+  color: var(--theme-primary);
+
+  mat-icon {
+    font-size: 28px;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--theme-text);
+}
+
+.empty-state-hint {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--theme-text-secondary);
+}
+
+@keyframes empty-state-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-state {
+    animation: none;
+  }
+}
+
+// Back to the newest message: floats above the composer, over the thread
+.scroll-to-bottom-anchor {
+  position: relative;
+  z-index: 3;
+  height: 0;
+  width: 100%;
+}
+
+.scroll-to-bottom {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  border: 1px solid var(--theme-border);
+  background-color: var(--theme-surface);
+  color: var(--theme-text-secondary);
+  box-shadow: var(--theme-shadow-sm);
+  animation: scroll-button-in 0.15s ease-out;
+
+  &:hover {
+    color: var(--theme-text);
+    background-color: color-mix(in srgb, var(--theme-text) 6%, var(--theme-surface));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+  }
+
+  mat-icon {
+    font-size: 22px;
+    width: 22px;
+    height: 22px;
+  }
+}
+
+@keyframes scroll-button-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 // With a background image (settings), the status line gets a backing so it stays readable
 :host-context(body.has-background-image) {
   .loading-older-messages span {
@@ -81,6 +201,16 @@
     border-radius: 999px;
     background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
     opacity: 1;
+  }
+
+  // The greeting sits on a frosted card like the messages
+  .empty-state-content {
+    padding: 20px 24px;
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+    background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 }
 

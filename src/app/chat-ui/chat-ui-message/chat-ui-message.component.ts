@@ -1,6 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnChanges, OnDestroy, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
 import { Message, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+import { Router } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
@@ -12,6 +13,7 @@ import { IMessageUsage, IPublicModel } from '../../data/models/catalog.model';
 import { TranslateService } from '@ngx-translate/core';
 import { Observable } from 'rxjs';
 import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
+import { NOTE_ROUTE, noteMarkdown, noteSlugFromHref } from '../../knowledge-base/kb-markdown';
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -55,6 +57,14 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Phones: your own messages show edit and delete only after a tap on them
   actionsOpen = false;
 
+  // The copy button shows a check for a moment after copying
+  copied = false;
+  private copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // The agent's answer with links to knowledge base notes, computed again only when the answer changes
+  private answerSource: string | null = null;
+  private answerMarkdown = '';
+
   // Model catalog: per-message model and usage
   showUsage = false;
   catalogModels$: Observable<IPublicModel[]>;
@@ -67,7 +77,8 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     private settingsState: SettingsStateService,
     private elementRef: ElementRef,
     private catalogService: CatalogService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private router: Router
   ) {
     this.catalogModels$ = this.catalogService.models$;
   }
@@ -94,7 +105,12 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
     if (textToCopy) {
       navigator.clipboard.writeText(textToCopy).then(() => {
-        console.log('Message copied to clipboard');
+        this.copied = true;
+        if (this.copiedTimer) clearTimeout(this.copiedTimer);
+        this.copiedTimer = setTimeout(() => {
+          this.copied = false;
+          this.copiedTimer = null;
+        }, 1500);
       }).catch(err => {
         console.error('Failed to copy message:', err);
       });
@@ -112,19 +128,48 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     if (this.message && this.message.isText()) {
       const textContent = this.message.getDisplayContent();
       // Apply user/AI name replacements - markdown will be parsed by ngx-markdown
-      this.messageTextContent = textContent
+      this.messageTextContent = noteMarkdown(textContent
         .replace(/\{\{user\}\}/g, this.chatUI.userName)
         .replace(this.chatUI.aiName + ':', '')
-        .replace(/"/ + this.chatUI.aiName + ':' + /"/, '');
+        .replace(/"/ + this.chatUI.aiName + ':' + /"/, ''));
     }
   }
 
-  // Getter for agent response content (for ngx-markdown)
+  // The agent's answer for ngx-markdown: [[note]] links open the note on the Knowledge base page
   get agentResponseContent(): string {
-    if (this.message?.isAgent()) {
-      return this.message.content?.content || '';
+    const content = this.message?.isAgent() ? this.message.content?.content || '' : '';
+    if (content !== this.answerSource) {
+      this.answerSource = content;
+      this.answerMarkdown = noteMarkdown(content);
     }
-    return '';
+    return this.answerMarkdown;
+  }
+
+  /** Once the Markdown is rendered: links to notes get their look, web links open in a new tab. */
+  decorateLinks(): void {
+    const host = this.elementRef.nativeElement as HTMLElement;
+    host.querySelectorAll<HTMLAnchorElement>('.message-body markdown a[href]').forEach(anchor => {
+      if (noteSlugFromHref(anchor.getAttribute('href'))) {
+        anchor.classList.add('note-link');
+      } else if (/^https?:/i.test(anchor.getAttribute('href') ?? '')) {
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+      }
+    });
+  }
+
+  /** A link to a note opens it in the app instead of loading the page again. */
+  onBodyClick(event: MouseEvent): void {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return;
+    }
+    const anchor = (event.target as HTMLElement | null)?.closest('a');
+    const slug = noteSlugFromHref(anchor?.getAttribute('href') ?? null);
+    if (!anchor || !slug) {
+      return;
+    }
+    event.preventDefault();
+    this.router.navigate([NOTE_ROUTE, slug]);
   }
 
   getAttachmentIcon(type: FileType): string {
@@ -305,6 +350,12 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     return !this.manualEditing && this.message.roleName === 'user';
   }
 
+  /** An agent answer that is still being written: no actions on it until it is done. */
+  get inProgress(): boolean {
+    return this.chatUI.isStreaming && this.message.isAgent()
+      && (this.message.content.status === 'thinking' || this.message.content.status === 'responding');
+  }
+
   /** An answer of the assistant: not your message, nor a system message (an instruction to the model). */
   get isAnswer(): boolean {
     return this.message.roleName !== 'user' && this.message.roleName !== 'system';
@@ -448,13 +499,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
   // Get status text for agent status
   getStatusText(status: AgentStatus): string {
-    const texts: Record<AgentStatus, string> = {
-      thinking: 'Reasoning...',
-      responding: 'Generating response...',
-      complete: '',
-      error: 'An error occurred',
-    };
-    return texts[status];
+    return status === 'complete' ? '' : this.translate.instant(`message.status.${status}`);
   }
 
   // Handle steps panel expansion change - emit event for scroll adjustment
@@ -629,5 +674,8 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
    */
   ngOnDestroy(): void {
     this.closeTTSPlayer();
+    if (this.copiedTimer) {
+      clearTimeout(this.copiedTimer);
+    }
   }
 }

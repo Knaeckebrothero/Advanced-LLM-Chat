@@ -1,19 +1,17 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
 import { Conversation } from '../data/objects/conversation';
 import { ConversationComponent } from './conversation/conversation.component';
 import { MatIcon } from "@angular/material/icon";
-import { SettingsComponent } from "../settings/settings.component";
-import { MatDialog } from "@angular/material/dialog";
+import { SettingsDialogService } from "../settings/settings-dialog";
 import { MatDialogModule } from '@angular/material/dialog';
 import { AuthService } from '../auth/auth.service';
 import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
-import { Observable, Subject, Subscription } from 'rxjs'; // Import Subscription
-import { map, takeUntil } from 'rxjs/operators';
-import { TranslateModule, TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { ThemeService } from '../services/theme.service'; // <-- IMPORT THEME SERVICE
+import { Observable, Subject, combineLatest } from 'rxjs';
+import { filter, map, shareReplay, startWith, takeUntil } from 'rxjs/operators';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 
 @Component({
   selector: 'app-sidebar',
@@ -39,21 +37,44 @@ export class SidebarComponent implements OnInit, OnDestroy {
   // The knowledge base is for signed-in users (AuthService sets isGuest before it publishes the user)
   isMember$: Observable<boolean> = this.authService.currentUser$.pipe(map(user => !!user && !this.authService.isGuest));
 
-  isDarkMode: boolean = false; // <-- ADD THIS PROPERTY
-  private themeSubscription!: Subscription; // <-- ADD THIS PROPERTY
+  /** The current page's path, without query and fragment (the nav marks its page with it). */
+  currentPath$: Observable<string> = this.router.events.pipe(
+    filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+    map(event => event.urlAfterRedirects),
+    startWith(this.router.url),
+    map(url => url.split(/[?#]/)[0] || '/'),
+    shareReplay({ bufferSize: 1, refCount: true })
+  );
+
+  /**
+   * The conversation shown as selected ('0' marks New Chat): only while the chat is open, so on the
+   * other pages nothing in the list looks selected.
+   */
+  selectedConversationId$: Observable<string | null> = combineLatest([this.activeConversationId$, this.currentPath$]).pipe(
+    map(([id, path]) => path === '/' ? id : null)
+  );
+
   private destroy$ = new Subject<void>();
 
   constructor(
     private chatState: ChatStateService,
     private uiState: UIStateService,
     public router: Router,
-    private dialog: MatDialog,
+    private settingsDialog: SettingsDialogService,
     private authService: AuthService,
-    private translate: TranslateService,
-    private themeService: ThemeService // <-- INJECT THEME SERVICE
+    private translate: TranslateService
   ) { }
 
-  // ... (getUserName, getUserInitials, handleUserClick, openSettings methods remain the same)
+  /** Whether the nav item of the route is the current page ('/' only exactly, the others with their subpages). */
+  isNavActive(path: string | null, route: string): boolean {
+    if (path === null) return false;
+    return route === '/' ? path === '/' : path === route || path.startsWith(route + '/');
+  }
+
+  isGuest(): boolean {
+    return this.authService.isGuest;
+  }
+
   getUserName(): string {
     const user = this.authService.getCurrentUser();
     if (user) {
@@ -83,39 +104,18 @@ export class SidebarComponent implements OnInit, OnDestroy {
       this.router.navigate(['/login']);
       this.uiState.closeSidebarOnMobile();
     } else {
-      if (confirm('Are you sure you want to logout?')) {
+      if (confirm(this.translate.instant('sidebar.logoutConfirm'))) {
         this.authService.logout();
       }
     }
   }
 
   openSettings(): void {
-    // Its width is in the styles (two columns on wide screens); never larger than the screen:
-    // the dialog scrolls instead (dvh leaves out the browser bars on phones)
-    const dialogRef = this.dialog.open(SettingsComponent, {
-      panelClass: 'settings-dialog-panel',
-      backdropClass: 'custom-backdrop',
-      maxWidth: 'calc(100vw - 24px)',
-      maxHeight: 'calc(100dvh - 24px)'
-    });
-
-    // After an import, the imported conversation opens
-    dialogRef.afterClosed().subscribe((result?: { openConversationId?: string }) => {
-      if (result?.openConversationId) {
-        this.chatState.loadConversation(result.openConversationId);
-        this.router.navigate(['/']);
-        this.uiState.closeSidebarOnMobile();
-      }
-    });
+    this.settingsDialog.open();
   }
 
 
   ngOnInit(): void {
-    // Subscribe to theme changes
-    this.themeSubscription = this.themeService.theme$.subscribe(() => {
-      this.isDarkMode = this.themeService.getCurrentEffectiveTheme() === 'dark';
-    });
-
     this.conversations$
       .pipe(takeUntil(this.destroy$))
       .subscribe(conversations => {
@@ -123,7 +123,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
       });
   }
 
-  // ... (groupConversationsByDate, onSelectConversation, createNewConversation, navigateTo methods remain the same)
   groupConversationsByDate(conversations: Conversation[]): { [key: string]: Conversation[] } {
     const groups: { [key: string]: Conversation[] } = {
       'Today': [],
@@ -188,10 +187,5 @@ export class SidebarComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
-
-    // Unsubscribe from theme changes
-    if (this.themeSubscription) {
-      this.themeSubscription.unsubscribe();
-    }
   }
 }

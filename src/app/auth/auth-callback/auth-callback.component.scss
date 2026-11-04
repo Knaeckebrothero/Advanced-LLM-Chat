@@ -1,0 +1,24 @@
+// A short wait after the login provider redirects back; a failed login ends on the login page
+:host {
+  display: block;
+  height: 100%;
+}
+
+.callback-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  height: 100%;
+  padding: 24px;
+  box-sizing: border-box;
+  background: var(--theme-background);
+  color: var(--theme-text-secondary);
+  --mdc-circular-progress-active-indicator-color: var(--theme-primary);
+
+  p {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+}

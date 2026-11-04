@@ -1,10 +1,19 @@
+// A conversation in the sidebar: a tint on hover, a stronger tint while it is open in the chat
+// (same values as the sidebar's other rows)
+$row-hover: var(--theme-row-hover);
+$row-selected: var(--theme-row-selected);
+
 .conversation-container {
   display: flex;
   align-items: center;
-  margin-bottom: 4px; // Reduced margin for a tighter list
+  margin-bottom: 2px;
   position: relative;
-  
-  &:hover {
+
+  // The options button shows on hover, for the open conversation, while its menu is open and for keyboard focus
+  &:hover,
+  &:focus-within,
+  &.active,
+  &.menu-open {
     .options-button {
       opacity: 1;
     }
@@ -13,84 +22,80 @@
 
 button.conversation-button {
   flex: 1;
+  min-width: 0;
+  min-height: 40px;
   text-align: left;
-  // Use a transparent background by default
   background-color: transparent;
-  // Use theme's text color
   color: var(--theme-text);
-  border: none; // Remove border
-  padding: 12px;
-  padding-right: 40px; // Reserve space for absolutely-positioned options button
+  border: none;
+  padding: 10px 12px;
+  padding-right: 40px; // Room for the options button on top of it
   border-radius: 8px;
   cursor: pointer;
+  font-size: 14px;
+  line-height: 20px;
   transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 
   &:hover {
-    // Use the theme's input background for hover
-    background-color: var(--theme-input-bg);
+    background-color: $row-hover;
   }
 
   &.active {
-    // Use the primary theme color when active/highlighted
-    background-color: var(--theme-primary);
-    color: var(--theme-primary-contrast);
+    background-color: $row-selected;
+    font-weight: 500;
   }
 
-  div {
-    font-size: 14px;
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: -2px;
   }
 }
 
-button.delete-button {
-  // Make the button transparent by default
-  background-color: transparent;
-  border: none;
-  // Use the standard text color, with some opacity to make it less prominent
-  color: var(--theme-text);
-  opacity: 0.6;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  margin-left: 8px;
-  transition: all 0.2s ease-in-out;
-
-  &:hover {
-    // On hover, use a subtle background and a stronger color for the icon
-    background-color: rgba(220, 53, 69, 0.1); // Using a fixed danger color for universal recognition
-    color: #dc3545;
-    opacity: 1;
-  }
-
-  .delete-icon {
-    font-size: 18px;
-    font-weight: bold;
-  }
+.conversation-container.menu-open button.conversation-button:not(.active) {
+  background-color: $row-hover;
 }
 
 .options-button {
   opacity: 0;
-  transition: opacity 0.2s ease-in-out;
+  transition: opacity 0.15s ease-in-out;
   position: absolute;
   right: 4px;
   top: 50%;
   transform: translateY(-50%);
-  
+  // Smaller than Material's 48px so it fits the row; its touch target stays 48px
+  --mdc-icon-button-state-layer-size: 32px;
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
   mat-icon {
+    color: var(--theme-text-secondary);
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  &:hover mat-icon {
     color: var(--theme-text);
   }
-  
-  // Hide options button on mobile devices but keep it as anchor
-  @media (max-width: 767px) {
-    visibility: hidden;
-    pointer-events: none;
-    opacity: 0 !important; // Ensure it's not visible even on hover
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: -2px;
+  }
+}
+
+// Touch screens have no hover: the options button is always there (a long press opens the menu too)
+@media (hover: none) {
+  .options-button {
+    opacity: 1;
+  }
+
+  button.conversation-button {
+    min-height: 44px;
   }
 }
 
@@ -101,16 +106,22 @@ button.delete-button {
   overflow: hidden;
   text-overflow: ellipsis;
 
+  &:has(.edit-input) {
+    overflow: visible;
+  }
+
   .edit-input {
-    width: 100%;
-    background-color: var(--theme-input-bg);
+    width: calc(100% + 9px);
+    background-color: var(--theme-surface);
     color: var(--theme-text);
     border: 1px solid var(--theme-primary);
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 4px 8px;
-    font-size: 14px;
+    margin: -5px 0 -5px -9px; // Keeps the text where it was and the row's height
+    font: inherit;
+    font-weight: 400;
     outline: none;
-    
+
     &:focus {
       border-color: var(--theme-primary);
       box-shadow: 0 0 0 1px var(--theme-primary);

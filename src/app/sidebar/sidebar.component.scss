@@ -1,25 +1,27 @@
+// Shared states of the sidebar's rows and buttons: a light tint on hover, a stronger one for the
+// selected conversation (theme tokens, so the text on them stays readable in both themes)
+$row-hover: var(--theme-row-hover);
+$row-selected: var(--theme-row-selected);
+
+// Keyboard focus: a ring inside the element's rounded shape instead of a box around it
+@mixin focus-ring($offset: -2px) {
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: $offset;
+  }
+}
+
 .sidebar {
   background-color: var(--theme-surface);
   color: var(--theme-text);
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 1rem;
+  padding: 12px 12px 8px;
   box-sizing: border-box;
   overflow-y: auto;
-
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background-color: var(--theme-border);
-    border-radius: 8px;
-  }
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-border) transparent;
 }
 
 // ============================================
@@ -29,23 +31,51 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 1rem;
+  gap: 8px;
+  min-height: 40px;
+  margin-bottom: 12px;
+  padding-left: 8px;
   flex-shrink: 0;
+}
+
+// The app's name: a title with a small mark, not a button
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+
+  .brand-mark {
+    flex-shrink: 0;
+    font-size: 22px;
+    width: 22px;
+    height: 22px;
+    color: var(--theme-primary);
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 1.1rem;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .sidebar-close-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border: none;
-  border-radius: 8px;
+  border-radius: 50%;
   cursor: pointer;
   background: transparent;
-  color: var(--theme-text);
-  transition: background-color 0.2s ease, transform 0.15s ease;
+  color: var(--theme-text-secondary);
+  transition: background-color 0.2s ease, color 0.2s ease;
   flex-shrink: 0;
 
   mat-icon {
@@ -55,84 +85,170 @@
   }
 
   &:hover {
-    background-color: var(--theme-hover);
+    background-color: $row-hover;
+    color: var(--theme-text);
   }
 
-  &:active {
-    transform: scale(0.95);
+  @include focus-ring();
+}
+
+// ============================================
+// NEW CHAT
+// ============================================
+// Looks the same on every page; only while a new, empty chat is open it is marked like a selected conversation
+.new-conversation-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  background-color: transparent;
+  border: 1px solid rgba(var(--theme-primary-rgb), 0.45);
+  color: var(--theme-text-accent);
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    background-color: $row-hover;
+    border-color: var(--theme-primary);
+  }
+
+  // Marked like a selected conversation: the tint with the text color
+  &.highlighted {
+    background-color: $row-selected;
+    border-color: transparent;
+    color: var(--theme-text);
+    font-weight: 500;
+  }
+
+  @include focus-ring(2px);
+
+  mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
   }
 }
 
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background-color: var(--theme-primary);
-  padding: 0.5rem 0.75rem;
-  border-radius: 10px;
-  transition: background-color 0.3s ease;
-  flex: 1;
-  min-width: 0;
+// ============================================
+// CONVERSATIONS
+// ============================================
+.conversation-list {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  // The menu buttons' 48px touch targets reach past the rows: no horizontal scrollbar for that
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-border) transparent;
+}
 
-  .logo-text {
-    color: var(--theme-primary-contrast);
-    font-weight: 700;
-    font-size: 1.1rem;
-    line-height: 1.2;
-    white-space: nowrap;
+.group-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--theme-text-secondary);
+  margin: 16px 0 4px;
+  padding-left: 12px;
+
+  &:first-child {
+    margin-top: 8px;
   }
+}
+
+// ============================================
+// PAGES (Chat, Knowledge base, Agents)
+// ============================================
+// The current page is marked by color, the selected conversation above by a tint: one clear "selected" item
+.sidebar-navigation-main-links {
+  margin-top: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--theme-border);
+  flex-shrink: 0;
 }
 
 .nav-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
+  min-height: 40px;
   background: none;
   border: none;
   color: var(--theme-text);
   text-align: left;
-  padding: 0.75rem 0.5rem;
-  border-radius: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 0.9rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 2px;
   transition: background-color 0.2s ease, color 0.2s ease;
 
+  mat-icon {
+    flex-shrink: 0;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    color: var(--theme-text-secondary);
+    transition: color 0.2s ease;
+  }
+
   &:hover {
-    background-color: var(--theme-input-bg);
+    background-color: $row-hover;
   }
 
   &.selected {
-    background-color: var(--theme-primary);
-    color: var(--theme-primary-contrast);
-    font-weight: bold;
+    color: var(--theme-text-accent);
+    font-weight: 600;
+
+    mat-icon {
+      color: var(--theme-text-accent);
+    }
   }
+
+  @include focus-ring();
 }
 
+// ============================================
+// USER AND SETTINGS
+// ============================================
 .user-with-settings {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: auto;
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--theme-border);
-  gap: 8px;
+  gap: 4px;
+  flex-shrink: 0;
 
   .user-button {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     background: none;
     border: none;
     color: var(--theme-text);
     cursor: pointer;
-    padding: 8px;
-    border-radius: 6px;
+    padding: 6px 8px;
+    border-radius: 10px;
     flex: 1;
     min-width: 0;  // Lets a long name shrink (ellipsis) instead of pushing the settings button out
+    font-size: 14px;
     transition: background-color 0.2s ease;
 
     &:hover {
-      background-color: var(--theme-input-bg);
+      background-color: $row-hover;
     }
+
+    @include focus-ring();
 
     .avatar {
       background-color: var(--theme-primary);
@@ -142,14 +258,13 @@
       height: 32px;
       text-align: center;
       line-height: 32px;
-      font-weight: bold;
+      font-size: 13px;
+      font-weight: 600;
       flex-shrink: 0;
     }
 
     .username {
       min-width: 0;
-      font-size: 14px;
-      opacity: 0.9;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -158,78 +273,31 @@
   }
 
   .settings-icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    color: var(--theme-text);
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    color: var(--theme-text-secondary);
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
-    border-radius: 6px;
+    border-radius: 50%;
+    transition: background-color 0.2s ease, color 0.2s ease;
 
     &:hover {
-      background-color: var(--theme-input-bg);
+      background-color: $row-hover;
+      color: var(--theme-text);
     }
+
+    @include focus-ring();
 
     mat-icon {
-      font-size: 20px;
+      font-size: 22px;
+      width: 22px;
+      height: 22px;
     }
-  }
-}
-
-.group-label {
-  font-size: 0.75rem;
-  color: var(--theme-text);
-  opacity: 0.7;
-  margin: 1rem 0 0.5rem 0;
-  padding-left: 0.5rem;
-  font-weight: 600;
-}
-
-.conversation-list {
-  flex-grow: 1;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--theme-border) transparent;
-}
-
-.sidebar-navigation-main-links {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-  flex-shrink: 0;
-}
-
-.new-conversation-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  background-color: transparent;
-  border: 1px dashed var(--theme-text-accent);
-  color: var(--theme-text-accent);
-  text-align: center;
-  padding: 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  margin-bottom: 1rem;
-  transition: all 0.2s ease;
-
-  &:hover {
-    background-color: rgba(var(--theme-primary-rgb), 0.2);
-    border-color: var(--theme-primary);
-    color: var(--theme-primary);
-  }
-
-  &.highlighted {
-    background-color: var(--theme-primary);
-    border-color: var(--theme-primary);
-    color: var(--theme-primary-contrast);
-  }
-
-  mat-icon {
-    font-size: 20px;
-    width: 20px;
-    height: 20px;
   }
 }

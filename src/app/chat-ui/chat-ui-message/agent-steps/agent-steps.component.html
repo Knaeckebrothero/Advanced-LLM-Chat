@@ -27,7 +27,7 @@
   </mat-expansion-panel-header>
 
   <!-- Expanded: Nested accordion for individual steps -->
-  <mat-accordion class="steps-list" multi>
+  <mat-accordion class="steps-list" multi displayMode="flat">
     <mat-expansion-panel
       *ngFor="let step of steps; trackBy: trackStep; let last = last"
       [expanded]="false"
@@ -49,7 +49,7 @@
              [matTooltip]="'knowledgeBase.openNote' | translate" [attr.aria-label]="'knowledgeBase.openNote' | translate">
             <mat-icon>menu_book</mat-icon>
           </a>
-          <span class="step-duration" *ngIf="step.duration">{{ step.duration }}ms</span>
+          <span class="step-duration" *ngIf="step.duration">{{ formatDuration(step.duration) }}</span>
         </mat-panel-description>
       </mat-expansion-panel-header>
 

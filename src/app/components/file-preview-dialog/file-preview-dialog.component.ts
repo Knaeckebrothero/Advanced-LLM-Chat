@@ -4,6 +4,8 @@ import { MAT_DIALOG_DATA, MatDialogRef, MatDialogModule } from '@angular/materia
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { FileType } from '../../data/models';
 import { ApiService } from '../../services/api.service';
 import { DBService } from '../../data/db.service';
@@ -33,7 +35,9 @@ export interface FilePreviewDialogData {
     MatDialogModule,
     MatIconModule,
     MatButtonModule,
-    MatProgressSpinnerModule
+    MatProgressSpinnerModule,
+    MatTooltipModule,
+    TranslateModule
   ],
   templateUrl: './file-preview-dialog.component.html',
   styleUrls: ['./file-preview-dialog.component.scss']
@@ -54,7 +58,8 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
     @Inject(MAT_DIALOG_DATA) public data: FilePreviewDialogData,
     private apiService: ApiService,
     private dbService: DBService,
-    private messageRepository: MessageRepository
+    private messageRepository: MessageRepository,
+    private translate: TranslateService
   ) {}
 
   ngOnInit(): void {
@@ -89,7 +94,7 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
         this.state = 'loaded';
       } catch (error) {
         console.error('Failed to load document text:', error);
-        this.errorMessage = 'Failed to load document content. You can still download the file.';
+        this.errorMessage = this.translate.instant('filePreview.documentFailed');
         this.state = 'error';
       }
       return;
@@ -107,7 +112,7 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
       }
     } catch (error) {
       console.error('Failed to load file:', error);
-      this.errorMessage = 'Failed to load file. Please try again.';
+      this.errorMessage = this.translate.instant('filePreview.loadFailed');
       this.state = 'error';
     }
   }

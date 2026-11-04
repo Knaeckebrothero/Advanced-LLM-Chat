@@ -1,287 +1,265 @@
-// login.component.scss
-
-// Modern white-blue color variables have been replaced with theme variables.
+// The login page fills the content area and scrolls when the card is taller than the screen
 :host {
-  // Override Material Design CSS custom properties for modern white-blue theming
-  --mdc-theme-primary: var(--theme-primary);
-  --mdc-theme-secondary: var(--theme-secondary);
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+
+  // Material's form field and buttons in the app's teal
   --mat-form-field-focus-label-color: var(--theme-primary);
   --mdc-outlined-text-field-focus-outline-color: var(--theme-primary);
   --mdc-outlined-text-field-outline-color: var(--theme-border);
+  --mdc-outlined-text-field-hover-outline-color: var(--theme-text-secondary);
+  --mdc-outlined-text-field-container-shape: 12px;
+  --mdc-outlined-text-field-caret-color: var(--theme-primary);
+  --mdc-outlined-text-field-input-text-color: var(--theme-text);
+  --mdc-outlined-text-field-label-text-color: var(--theme-text-secondary);
+  --mdc-outlined-text-field-input-text-placeholder-color: var(--theme-text-secondary);
+  --mdc-outlined-text-field-error-outline-color: var(--theme-tier-untrusted);
+  --mdc-outlined-text-field-error-focus-outline-color: var(--theme-tier-untrusted);
+  --mdc-outlined-text-field-error-label-text-color: var(--theme-tier-untrusted);
+  --mdc-outlined-text-field-error-focus-label-text-color: var(--theme-tier-untrusted);
+  --mat-form-field-error-text-color: var(--theme-tier-untrusted);
 
-  // Custom button color variables
-  --mdc-protected-button-container-color: var(--theme-primary);
-  --mdc-protected-button-label-text-color: var(--theme-primary-contrast);
+  --mdc-filled-button-container-color: var(--theme-primary);
+  --mdc-filled-button-label-text-color: var(--theme-primary-contrast);
+  --mdc-filled-button-container-shape: 12px;
+  --mdc-filled-button-container-height: 48px;
+  --mdc-filled-button-label-text-size: 1rem;
+  --mdc-filled-button-label-text-weight: 600;
+  // Not yet usable (no email): a pale teal instead of a grey slab
+  --mdc-filled-button-disabled-container-color: rgba(var(--theme-primary-rgb), 0.12);
+  --mdc-filled-button-disabled-label-text-color: rgba(var(--theme-primary-rgb), 0.6);
+
+  --mdc-outlined-button-outline-color: var(--theme-border);
+  --mdc-outlined-button-label-text-color: var(--theme-text);
+  --mdc-outlined-button-container-shape: 12px;
+  --mdc-outlined-button-container-height: 48px;
+  --mdc-outlined-button-label-text-size: 1rem;
+  --mdc-outlined-button-label-text-weight: 500;
+
+  // Hover and focus tint the buttons in the teal, not grey
+  --mat-filled-button-state-layer-color: var(--theme-primary-contrast);
+  --mat-outlined-button-state-layer-color: var(--theme-primary);
+  --mat-outlined-button-ripple-color: rgba(var(--theme-primary-rgb), 0.12);
+  --mat-text-button-state-layer-color: var(--theme-primary);
+  --mat-text-button-ripple-color: rgba(var(--theme-primary-rgb), 0.12);
+
+  --mdc-text-button-label-text-color: var(--theme-link);
+  --mdc-text-button-container-shape: 12px;
+  --mdc-text-button-container-height: 44px;
 }
 
 .login-container {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 100vh;
-  background: var(--theme-background);
+  min-height: 100%;
   padding: 24px;
   box-sizing: border-box;
   position: relative;
+  background: var(--theme-background);
 
-  // Add subtle animated background elements
+  // A soft teal glow behind the card
   &::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: radial-gradient(circle at 20% 50%, rgba(var(--theme-primary-rgb), 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(var(--theme-secondary-rgb), 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 40% 80%, rgba(var(--theme-primary-rgb), 0.05) 0%, transparent 50%);
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 50%, rgba(var(--theme-primary-rgb), 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(var(--theme-primary-rgb), 0.06) 0%, transparent 50%),
+      radial-gradient(circle at 40% 80%, rgba(var(--theme-primary-rgb), 0.05) 0%, transparent 50%);
     pointer-events: none;
   }
 }
 
 .login-card {
-  background: var(--theme-surface);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--theme-border);
-  max-width: 440px;
-  width: 100%;
-  padding: 40px;
-  border-radius: 20px;
-  box-shadow:
-    0 20px 60px rgba(var(--theme-primary-rgb), 0.15),
-    0 8px 32px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  text-align: center;
+  --mdc-elevated-card-container-color: var(--theme-surface);
+  --mdc-elevated-card-container-shape: 20px;
+  --mdc-elevated-card-container-elevation: none;
+
   position: relative;
   z-index: 1;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      0 25px 70px rgba(var(--theme-primary-rgb), 0.2),
-      0 12px 40px rgba(0, 0, 0, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  }
-}
-
-.mat-card-header {
-  padding-bottom: 32px;
-  border-bottom: 1px solid rgba(var(--theme-primary-rgb), 0.1);
-  margin-bottom: 32px;
-  display: block;
-  position: relative;
-
-  &::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 60px;
-    height: 2px;
-    background: linear-gradient(90deg, var(--theme-primary), var(--theme-secondary));
-    border-radius: 2px;
-  }
-}
-
-.mat-card-title {
-  font-size: 2.5rem;
-  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 420px;
+  padding: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--theme-border);
+  box-shadow:
+    0 20px 60px rgba(var(--theme-primary-rgb), 0.12),
+    0 8px 32px rgba(0, 0, 0, 0.08);
   color: var(--theme-text);
-  margin-bottom: 8px;
-  letter-spacing: -0.02em;
 }
 
-.mat-card-subtitle {
-  font-size: 1rem;
-  color: var(--theme-text-secondary);
-  font-weight: 400;
-  line-height: 1.5;
-  margin-bottom: 0;
+// The app's mark and name, then what this page is for
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 28px;
 }
 
+.brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--theme-primary);
+  color: var(--theme-primary-contrast);
+  box-shadow: 0 6px 18px rgba(var(--theme-primary-rgb), 0.3);
 
-.mat-card-content {
-  form {
-    display: flex;
-    flex-direction: column;
+  mat-icon {
+    font-size: 30px;
+    width: 30px;
+    height: 30px;
   }
+}
+
+.app-name {
+  margin: 14px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--theme-text-accent);
+}
+
+.login-title {
+  margin: 6px 0 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--theme-text);
+}
+
+.login-subtitle {
+  margin: 8px 0 0;
+  max-width: 32ch;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--theme-text-secondary);
+}
+
+// Notes above the form: an error, or who is signed in already
+.error-message,
+.signed-in-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  text-align: left;
+
+  mat-icon {
+    flex-shrink: 0;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.error-message {
+  border: 1px solid color-mix(in srgb, var(--theme-tier-untrusted) 30%, transparent);
+  background: var(--theme-tier-untrusted-bg);
+  color: var(--theme-tier-untrusted);
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.signed-in-note {
+  background: var(--theme-hover);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-secondary);
+
+  mat-icon {
+    color: var(--theme-primary);
+  }
+
+  .signed-in-email {
+    display: block;
+    font-weight: 500;
+    color: var(--theme-text);
+  }
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .full-width {
   width: 100%;
 }
 
-// Enhanced Material form field styling using modern white-blue theme
-.mat-mdc-form-field {
-  margin-bottom: 20px;
+.primary-action,
+.secondary-action {
+  width: 100%;
 
-  .mat-mdc-text-field-wrapper {
-    border-radius: 12px;
-    background: var(--theme-input-bg);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-
-    &:hover {
-      background: var(--theme-input-bg);
-    }
-  }
-
-  // Modern outline styling
-  &.mat-form-field-appearance-outline {
-    .mat-mdc-form-field-outline {
-      color: var(--theme-border);
-
-      .mat-mdc-form-field-outline-thick {
-        color: var(--theme-primary);
-      }
-    }
-
-    &.mat-focused {
-      .mat-mdc-form-field-outline-thick {
-        color: var(--theme-primary);
-        box-shadow: 0 0 0 3px rgba(var(--theme-primary-rgb), 0.1);
-      }
-
-      .mat-mdc-text-field-wrapper {
-        background: var(--theme-input-bg);
-        box-shadow: inset 0 2px 4px rgba(var(--theme-primary-rgb), 0.05);
-      }
-    }
-  }
-
-  // Enhanced label styling
-  .mat-mdc-floating-label {
-    color: var(--theme-text-secondary);
-    font-weight: 500;
-
-    &.mdc-floating-label--float-above {
-      color: var(--theme-primary);
-      font-weight: 600;
-    }
-  }
-
-  // Modern input element styling
-  .mat-mdc-input-element {
-    color: var(--theme-text);
-    font-weight: 500;
-    font-size: 1.05em;
-
-    &::placeholder {
-      color: var(--theme-text-secondary);
-      font-weight: 400;
-    }
-
-    // All placeholder vendor prefixes
-    &::-webkit-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
-    &::-moz-placeholder { color: var(--theme-text-secondary); opacity: 1; font-weight: 400; }
-    &:-ms-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
-    &::-ms-input-placeholder { color: var(--theme-text-secondary); font-weight: 400; }
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
   }
 }
 
-// Modern gradient button styling
-.login-button {
-  &.mat-mdc-raised-button {
-    margin-top: 32px;
-    padding: 16px 0;
-    font-size: 1.1em;
-    font-weight: 600;
-    border-radius: 12px;
-    height: auto;
-    border: none;
-    position: relative;
-    overflow: hidden;
+.primary-action {
+  box-shadow: 0 6px 20px rgba(var(--theme-primary-rgb), 0.25);
+  transition: box-shadow 0.2s ease, background-color 0.2s ease;
 
-    // Modern gradient background
-    background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-secondary) 100%);
-    box-shadow:
-      0 8px 32px rgba(var(--theme-primary-rgb), 0.3),
-      0 4px 16px rgba(0, 0, 0, 0.1);
+  &:hover:not([disabled]) {
+    --mdc-filled-button-container-color: var(--theme-secondary);
+    box-shadow: 0 8px 24px rgba(var(--theme-primary-rgb), 0.32);
+  }
 
-    // Animated gradient overlay
-    &::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-      transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+  &[disabled] {
+    box-shadow: none;
+  }
 
-    &:hover:not([disabled]) {
-      background: linear-gradient(135deg, var(--theme-secondary) 0%, var(--theme-primary) 100%);
-      transform: translateY(-2px);
-      box-shadow:
-        0 12px 40px rgba(var(--theme-primary-rgb), 0.4),
-        0 6px 20px rgba(0, 0, 0, 0.15);
-
-      &::before {
-        left: 100%;
-      }
-    }
-
-    &:active {
-      transform: translateY(0);
-    }
-
-    &:disabled {
-      background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
-      color: #9ca3af;
-      box-shadow: none;
-      transform: none;
-    }
-
-    // Modern spinner styling
-    mat-spinner {
-      ::ng-deep circle {
-        stroke: var(--theme-primary-contrast) !important;
-        stroke-width: 3;
-      }
-    }
+  mat-spinner {
+    margin: 0 auto;
+    --mdc-circular-progress-active-indicator-color: var(--theme-primary);
   }
 }
 
-// Without login (AUTH_MODE=none)
-.login-off {
-  margin-top: 24px;
-  color: var(--theme-text-secondary);
-  line-height: 1.5;
+// "Try again" under "Continue as guest" when the server can't be reached
+.secondary-action.mat-mdc-button {
+  margin-top: 12px;
 }
 
-.guest-link {
-  margin-top: 16px;
-}
-
-// Modern error message styling
-.error-message {
+// "or" between the login and continuing as a guest
+.divider {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  color: var(--theme-accent-danger);
-  margin-top: 20px;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, var(--theme-accent-danger-bg) 0%, #fef7f7 100%);
-  border-radius: 12px;
-  font-size: 0.95em;
-  text-align: left;
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1);
-  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 12px;
+  margin: 20px 0;
+  font-size: 0.8rem;
+  color: var(--theme-text-secondary);
 
-  mat-icon {
-    margin-right: 12px;
-    color: var(--theme-accent-danger);
-    font-size: 1.2em;
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--theme-border);
   }
 }
 
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;
@@ -289,46 +267,23 @@
   }
 }
 
-.mat-card-footer, .login-hint {
-  display: none;
-}
-
-// Modern enhancements using component theming
-::ng-deep {
-  // Custom ripple effect
-  .mat-ripple-element {
-    background-color: rgba(var(--theme-primary-rgb), 0.15) !important;
+// Phones: the card uses the width of the screen
+@media (max-width: 480px) {
+  .login-container {
+    padding: 16px;
   }
 
-  // Modern focus indicators
-  .cdk-focused {
-    outline: 2px solid var(--theme-secondary);
-    outline-offset: 2px;
-    border-radius: 8px;
+  .login-card {
+    padding: 28px 20px 24px;
   }
 
-  // Enhanced Material button focus
-  .mat-mdc-raised-button {
-    &:focus-visible {
-      outline: 2px solid var(--theme-secondary);
-      outline-offset: 2px;
-    }
-  }
-
-  // Smooth transitions for form fields
-  .mat-mdc-form-field {
-    .mat-mdc-text-field-wrapper,
-    .mat-mdc-form-field-outline,
-    .mat-mdc-floating-label {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+  .login-title {
+    font-size: 1.5rem;
   }
 }
 
-.skip-button {
-  margin-top: 16px;
-  background-color: var(--theme-secondary);
-  color: var(--theme-primary-contrast);
-  border-radius: 12px;
-
+@media (prefers-reduced-motion: reduce) {
+  .error-message {
+    animation: none;
+  }
 }

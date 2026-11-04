@@ -2,6 +2,7 @@
 import { ChatUiComponent } from './chat-ui/chat-ui.component';
 import { ChatUiMessageComponent } from './chat-ui/chat-ui-message/chat-ui-message.component';
 import { SettingsComponent } from './settings/settings.component';
+import { settingsDialogGuard } from './settings/settings-dialog';
 import { StatusBarComponent } from './status-bar/status-bar.component';
 import { AuthCallbackComponent } from './auth/auth-callback/auth-callback.component';
 import { AuthGuard } from './auth/auth.guard';
@@ -56,7 +57,8 @@ import { MarkdownModule, MARKED_OPTIONS } from 'ngx-markdown';
 const routes: Routes = [
   { path: 'login', component: LoginComponent },
   { path: '', component: ChatUiComponent, canActivate: [AuthGuard] },
-  { path: 'settings', component: SettingsComponent, canActivate: [AuthGuard] },
+  // Settings is a dialog: the link opens it over the current page (over the chat on a fresh start)
+  { path: 'settings', canActivate: [settingsDialogGuard], children: [] },
   // Agents, models and the catalog file, for admins; loaded on demand
   {
     path: 'agents',

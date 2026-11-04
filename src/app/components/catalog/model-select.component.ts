@@ -92,9 +92,8 @@ import { ModelCapabilitiesComponent } from './model-capabilities.component';
           <span class="model-option">
             <span class="model-option-main">
               <span class="model-option-name">{{ automaticLabel }}</span>
-              @if (selectedId === null) {
-                <mat-icon class="model-option-check" aria-hidden="true">check</mat-icon>
-              }
+              <mat-icon class="model-option-check" [class.model-option-check--off]="selectedId !== null"
+                        aria-hidden="true">check</mat-icon>
             </span>
             @if (automaticHint) {
               <span class="model-option-description">{{ automaticHint }}</span>
@@ -115,10 +114,10 @@ import { ModelCapabilitiesComponent } from './model-capabilities.component';
                 <app-privacy-badge [tier]="model.privacyTier"></app-privacy-badge>
                 <app-model-capabilities [supportsTools]="model.supportsTools"
                                         [supportsVision]="model.supportsVision"
-                                        [reasoning]="model.reasoning"></app-model-capabilities>
-                @if (model.id === selectedId) {
-                  <mat-icon class="model-option-check" aria-hidden="true">check</mat-icon>
-                }
+                                        [reasoning]="model.reasoning"
+                                        [slots]="true"></app-model-capabilities>
+                <mat-icon class="model-option-check" [class.model-option-check--off]="model.id !== selectedId"
+                          aria-hidden="true">check</mat-icon>
               </span>
               @if (model.description) {
                 <span class="model-option-description">{{ model.description }}</span>

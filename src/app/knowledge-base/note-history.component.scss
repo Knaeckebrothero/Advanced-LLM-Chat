@@ -35,15 +35,19 @@
   cursor: pointer;
   transition: background-color 0.15s, border-color 0.15s;
 
+  // The same tints as the rows of the sidebar and the note list
   &:hover,
   &:focus-visible {
-    background: var(--theme-hover);
+    background: var(--theme-row-hover, var(--theme-hover));
   }
 
   &.is-selected {
-    border-color: var(--theme-border);
-    background: var(--theme-surface);
-    box-shadow: var(--theme-shadow-sm);
+    background: var(--theme-row-selected, var(--theme-active));
+  }
+
+  // Inside the row: the list scrolls and would cut off a ring outside of it
+  &:focus-visible {
+    outline-offset: -2px;
   }
 }
 
@@ -85,6 +89,7 @@
 }
 
 .revision-preview {
+  scroll-margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -124,7 +129,9 @@
 .preview-meta {
   margin: 2px 0 0;
   font-size: 0.78rem;
+  line-height: 1.5;
   color: var(--theme-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .meta-link {
@@ -145,7 +152,18 @@
 .preview-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
+}
+
+// The tags of an old version, like those of the note but not clickable
+.tag-chip--static {
+  padding: 1px 9px;
+  cursor: default;
+
+  &:hover {
+    background: transparent;
+    color: var(--theme-text-secondary);
+  }
 }
 
 .preview-content {

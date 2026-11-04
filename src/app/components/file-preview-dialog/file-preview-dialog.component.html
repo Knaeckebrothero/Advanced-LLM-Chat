@@ -16,7 +16,8 @@
                   class="action-button"
                   (click)="zoomOut()"
                   [disabled]="!canZoomOut"
-                  aria-label="Zoom out">
+                  [attr.aria-label]="'filePreview.zoomOut' | translate"
+                  [matTooltip]="'filePreview.zoomOut' | translate">
             <mat-icon>zoom_out</mat-icon>
           </button>
           <span class="zoom-level">{{ zoomPercentage }}%</span>
@@ -24,14 +25,16 @@
                   class="action-button"
                   (click)="zoomIn()"
                   [disabled]="!canZoomIn"
-                  aria-label="Zoom in">
+                  [attr.aria-label]="'filePreview.zoomIn' | translate"
+                  [matTooltip]="'filePreview.zoomIn' | translate">
             <mat-icon>zoom_in</mat-icon>
           </button>
           <button mat-icon-button
                   class="action-button"
                   (click)="resetZoom()"
                   [disabled]="zoomLevel === 1"
-                  aria-label="Reset zoom">
+                  [attr.aria-label]="'filePreview.resetZoom' | translate"
+                  [matTooltip]="'filePreview.resetZoom' | translate">
             <mat-icon>fit_screen</mat-icon>
           </button>
         </ng-container>
@@ -39,13 +42,15 @@
                 class="action-button"
                 (click)="download()"
                 [disabled]="state !== 'loaded'"
-                aria-label="Download file">
+                [attr.aria-label]="'filePreview.download' | translate"
+                [matTooltip]="'filePreview.download' | translate">
           <mat-icon>download</mat-icon>
         </button>
         <button mat-icon-button
                 class="action-button close-button"
                 (click)="close()"
-                aria-label="Close dialog">
+                [attr.aria-label]="'filePreview.close' | translate"
+                [matTooltip]="'filePreview.close' | translate">
           <mat-icon>close</mat-icon>
         </button>
       </div>
@@ -56,7 +61,7 @@
       <!-- Loading state -->
       <div *ngIf="state === 'loading'" class="loading-state">
         <mat-spinner diameter="48"></mat-spinner>
-        <span class="loading-text">Loading file...</span>
+        <span class="loading-text">{{ 'filePreview.loading' | translate }}</span>
       </div>
 
       <!-- Error state -->
@@ -65,7 +70,7 @@
         <span class="error-message">{{ errorMessage }}</span>
         <button mat-stroked-button color="primary" (click)="retry()">
           <mat-icon>refresh</mat-icon>
-          Retry
+          {{ 'filePreview.retry' | translate }}
         </button>
       </div>
 
@@ -85,7 +90,7 @@
         <div class="audio-preview">
           <mat-icon class="audio-icon">audiotrack</mat-icon>
           <audio controls [src]="contentUrl" class="audio-player">
-            Your browser does not support the audio element.
+            {{ 'filePreview.noAudioSupport' | translate }}
           </audio>
         </div>
       </ng-container>
@@ -100,10 +105,10 @@
         <ng-template #documentFallback>
           <div class="document-preview document-preview--fallback">
             <mat-icon class="document-icon">description</mat-icon>
-            <span class="document-message">No text content available for this document</span>
+            <span class="document-message">{{ 'filePreview.noText' | translate }}</span>
             <button mat-stroked-button color="primary" (click)="download()">
               <mat-icon>download</mat-icon>
-              Download to view
+              {{ 'filePreview.downloadToView' | translate }}
             </button>
           </div>
         </ng-template>
@@ -113,10 +118,10 @@
       <ng-container *ngIf="state === 'loaded' && !isImage() && !isAudio() && !isDocument()">
         <div class="generic-preview">
           <mat-icon class="generic-icon">insert_drive_file</mat-icon>
-          <span class="generic-message">Preview not available for this file type</span>
+          <span class="generic-message">{{ 'filePreview.noPreview' | translate }}</span>
           <button mat-stroked-button color="primary" (click)="download()">
             <mat-icon>download</mat-icon>
-            Download file
+            {{ 'filePreview.downloadFile' | translate }}
           </button>
         </div>
       </ng-container>

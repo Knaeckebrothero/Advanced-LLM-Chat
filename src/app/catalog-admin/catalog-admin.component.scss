@@ -49,7 +49,8 @@
   text-align: center;
   color: var(--theme-text-secondary);
 
-  mat-icon {
+  // The state's own icon, not the one in the Retry button
+  > mat-icon {
     font-size: 40px;
     width: 40px;
     height: 40px;
@@ -76,10 +77,10 @@
   -webkit-backdrop-filter: blur(12px);
 }
 
-// The sidebar toggle sits fixed at the top left: keep the header clear of it
+// Phones: the shell's top bar sits above the page, so only the usual gutter
 @media (max-width: 768px) {
   .catalog-admin {
-    padding: 64px 16px 32px;
+    padding: 16px 16px 32px;
   }
 
   :host-context(body.has-background-image) .catalog-admin {

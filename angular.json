@@ -87,7 +87,17 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true,
-              "namedChunks": true
+              "namedChunks": true,
+              "assets": [
+                "src/favicon.ico",
+                "src/assets",
+                "src/manifest.webmanifest",
+                {
+                  "glob": "env.js",
+                  "input": "src/dev",
+                  "output": "assets"
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
