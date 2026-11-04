@@ -1,0 +1,134 @@
+<article class="pane">
+  <div class="pane-toolbar">
+    <button mat-icon-button type="button" class="back-button" (click)="back.emit()"
+            [attr.aria-label]="'knowledgeBase.back' | translate" [matTooltip]="'knowledgeBase.back' | translate">
+      <mat-icon>arrow_back</mat-icon>
+    </button>
+    <span class="toolbar-spacer"></span>
+    <button mat-stroked-button type="button" (click)="edit.emit()">
+      <mat-icon>edit</mat-icon>
+      {{ 'knowledgeBase.note.edit' | translate }}
+    </button>
+    <button mat-icon-button type="button" (click)="history.emit()"
+            [attr.aria-label]="'knowledgeBase.note.history' | translate" [matTooltip]="'knowledgeBase.note.history' | translate">
+      <mat-icon>history</mat-icon>
+    </button>
+    <button mat-icon-button type="button" [matMenuTriggerFor]="moreMenu"
+            [attr.aria-label]="'knowledgeBase.note.more' | translate" [matTooltip]="'knowledgeBase.note.more' | translate">
+      <mat-icon>more_vert</mat-icon>
+    </button>
+    <mat-menu #moreMenu="matMenu" xPosition="before">
+      @if (note().status === 'active') {
+        <button mat-menu-item type="button" (click)="archive.emit()">
+          <mat-icon>inventory_2</mat-icon>
+          <span>{{ 'knowledgeBase.note.archive' | translate }}</span>
+        </button>
+      } @else {
+        <button mat-menu-item type="button" (click)="restore.emit()">
+          <mat-icon>unarchive</mat-icon>
+          <span>{{ 'knowledgeBase.note.restore' | translate }}</span>
+        </button>
+      }
+      <button mat-menu-item type="button" class="danger-item" (click)="delete.emit()">
+        <mat-icon>delete_forever</mat-icon>
+        <span>{{ 'knowledgeBase.note.delete' | translate }}</span>
+      </button>
+    </mat-menu>
+  </div>
+
+  @if (note().status === 'archived') {
+    <div class="pane-banner" role="status">
+      <mat-icon aria-hidden="true">inventory_2</mat-icon>
+      <span class="pane-banner-text">{{ 'knowledgeBase.note.archivedBanner' | translate }}</span>
+      <button mat-button type="button" (click)="restore.emit()">{{ 'knowledgeBase.note.restore' | translate }}</button>
+    </div>
+  }
+
+  <header class="note-header">
+    <h2 class="note-title">{{ note().title }}</h2>
+    @if (note().description) {
+      <p class="note-description">{{ note().description }}</p>
+    }
+    @if (note().tags.length) {
+      <div class="note-tags">
+        @for (tag of note().tags; track tag) {
+          <button type="button" class="tag-chip" (click)="tagPicked.emit(tag)"
+                  [matTooltip]="'knowledgeBase.note.showTag' | translate">#{{ tag }}</button>
+        }
+      </div>
+    }
+    <p class="note-meta">
+      @if (latest(); as revision) {
+        <span>{{ lastChange() }}</span>
+        @if (revision.conversationId) {
+          @if (revision.conversationName) {
+            <span>
+              {{ 'knowledgeBase.note.in' | translate }}
+              <a class="meta-link" href="#" (click)="$event.preventDefault(); conversation.emit(revision.conversationId)">{{ revision.conversationName }}</a>
+            </span>
+          } @else {
+            <span>{{ 'knowledgeBase.note.inDeletedChat' | translate }}</span>
+          }
+        }
+        @if (note().revisions.length > 1) {
+          <span class="meta-separator" aria-hidden="true">·</span>
+          <span>{{ created() }}</span>
+        }
+      }
+    </p>
+  </header>
+
+  <app-note-content class="note-body" [content]="note().content" [links]="note().links" [slug]="note().slug"
+                    (missingLink)="missingLink.emit($event)"></app-note-content>
+
+  @if (note().links.length || note().backlinks.length) {
+    <footer class="note-links">
+      @if (note().links.length) {
+        <section class="link-group">
+          <h3 class="link-heading">
+            <mat-icon aria-hidden="true">north_east</mat-icon>
+            {{ 'knowledgeBase.note.linksTo' | translate }}
+          </h3>
+          <ul class="link-list">
+            @for (link of note().links; track link.slug) {
+              <li>
+                @if (link.title === null) {
+                  <button type="button" class="link-item link-item--missing"
+                          (click)="missingLink.emit({ slug: link.slug, text: link.slug })"
+                          [matTooltip]="'knowledgeBase.note.writeMissing' | translate">
+                    <span class="link-title">{{ link.slug }}</span>
+                    <span class="link-state">{{ 'knowledgeBase.note.missing' | translate }}</span>
+                  </button>
+                } @else {
+                  <a class="link-item" [class.link-item--archived]="link.status === 'archived'" [routerLink]="[noteRoute, link.slug]">
+                    <span class="link-title">{{ link.title }}</span>
+                    @if (link.status === 'archived') {
+                      <span class="link-state">{{ 'knowledgeBase.note.archivedLink' | translate }}</span>
+                    }
+                  </a>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+      @if (note().backlinks.length) {
+        <section class="link-group">
+          <h3 class="link-heading">
+            <mat-icon aria-hidden="true">south_west</mat-icon>
+            {{ 'knowledgeBase.note.linkedFrom' | translate }}
+          </h3>
+          <ul class="link-list">
+            @for (link of note().backlinks; track link.slug) {
+              <li>
+                <a class="link-item" [routerLink]="[noteRoute, link.slug]">
+                  <span class="link-title">{{ link.title }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    </footer>
+  }
+</article>

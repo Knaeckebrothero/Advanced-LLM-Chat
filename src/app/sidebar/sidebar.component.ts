@@ -11,7 +11,7 @@ import { AuthService } from '../auth/auth.service';
 import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
 import { Observable, Subject, Subscription } from 'rxjs'; // Import Subscription
-import { takeUntil } from 'rxjs/operators';
+import { map, takeUntil } from 'rxjs/operators';
 import { TranslateModule, TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ThemeService } from '../services/theme.service'; // <-- IMPORT THEME SERVICE
 
@@ -36,6 +36,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
   activeConversationId$: Observable<string | null> = this.uiState.activeConversationId$;
   isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
   isAdmin$: Observable<boolean> = this.authService.isAdmin$;  // The Agents page is for admins
+  // The knowledge base is for signed-in users (AuthService sets isGuest before it publishes the user)
+  isMember$: Observable<boolean> = this.authService.currentUser$.pipe(map(user => !!user && !this.authService.isGuest));
 
   isDarkMode: boolean = false; // <-- ADD THIS PROPERTY
   private themeSubscription!: Subscription; // <-- ADD THIS PROPERTY

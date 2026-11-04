@@ -66,6 +66,20 @@ class ToolInputError(ValueError):
     """The model sent arguments that don't match the tool's schema."""
 
 
+class ToolText(str):
+    """
+    A tool's text result with metadata for the chat: the model gets the text, the result step
+    also carries the metadata (e.g. {"kbNote": slug}, so the chat can open the note).
+    """
+
+    metadata: Optional[dict]
+
+    def __new__(cls, text: str, metadata: Optional[dict] = None):
+        result = super().__new__(cls, text)
+        result.metadata = metadata
+        return result
+
+
 @dataclass(frozen=True)
 class Tool:
     """One tool the model can call."""
@@ -198,7 +212,7 @@ def format_tool_output(output: Any) -> str:
     if output is None:
         return ""
     if isinstance(output, str):
-        return output
+        return str(output)  # A plain str, also for a ToolText
     return json.dumps(output, ensure_ascii=False, default=str)
 
 

@@ -1,6 +1,6 @@
 # Knowledge base
 
-Each signed-in user has one knowledge base: Markdown notes that the agent keeps across all of the user's conversations, like an Obsidian vault it writes itself. For now it is the agent's notebook, separate from the planned memory across conversations; it may be merged into that memory later.
+Each signed-in user has one knowledge base: Markdown notes that the agent keeps across all of the user's conversations, like an Obsidian vault it writes itself. For now it is the agent's notebook, separate from the planned memory across conversations; it may be merged into that memory later. On the Knowledge base page the user reads, searches, corrects, archives and deletes the notes, sees who wrote each version, and exports them as an Obsidian vault.
 
 It is adapted from the knowledge base of Superhuman Remote Worker (SRW): its `kb_*` tools, slugs and link parsing. SRW's notes live in a git repository per project, with Postgres as an index that is rebuilt from it. Here Postgres holds the only copy, which drops SRW's reindexing, sync bookkeeping and forge handling.
 
@@ -22,20 +22,23 @@ It is adapted from the knowledge base of Superhuman Remote Worker (SRW): its `kb
 | `kb_update(note, content? \| append?, title?, description?, tags?)` | Replaces the content or appends to it (not both), and can change the title, description or the whole tag list. The slug stays the same. Updating an archived note restores it |
 | `kb_archive(note, reason?)` | Hides a note from lists and searches; `kb_read` still shows it. Nothing is deleted for good |
 
-A refused request raises `ToolInputError`. The step shows as failed, and the model gets a message saying what to do instead, so a tool result never claims a write that didn't happen. A `## Knowledge Base:` section of the system prompt (`KB_PROMPT` in `backend/llm/prompts.py`) says when to search, write, update and link. It is only there when the tools are.
+A refused request raises `ToolInputError`. The step shows as failed, and the model gets a message saying what to do instead, so a tool result never claims a write that didn't happen. A `## Knowledge Base:` section of the system prompt (`KB_PROMPT` in `backend/llm/prompts.py`) says when to search, write, update and link, and to write down only what the user said or what the agent found out. It is only there when the tools are.
+
+The results of `kb_read`, `kb_write`, `kb_update` and `kb_archive` are a `ToolText` (`backend/llm/tools.py`): a string for the model that also carries `{"kbNote": slug}`. The agent loop puts that into the result step's `metadata`, and the chat shows a book icon on the step (and an "Open note" button inside it) that opens the note on the Knowledge base page.
 
 ## Notes (`backend/services/knowledge_base.py`)
 
 - **Slug:** the note's stable id, unique per user. It is made from the first title: lowercase ASCII, umlauts transliterated ("Größe" becomes `groesse`), at most 80 characters, and `note-<hash>` for a title with no letters it can keep. A note can be referred to by its slug, by its exact title or as `[[slug]]`.
 - **Fields:** title (up to 200 characters), optional one-sentence description (up to 300), lowercase tags (up to 20), Markdown content (up to 50,000 characters). A note over 15,000 characters gets a hint to split it. A first heading that repeats the title is dropped, because `kb_read` shows the title itself.
-- **Links:** `[[slug]]`, `[[Title]]`, `[[slug|alias]]`, `[[slug#heading]]` and Markdown links without a scheme (`[text](other-note.md)`). Each target is turned into a slug and stored in `kb_links` on every write; the backlinks come from there. Archived notes don't count as backlinks.
-- **History:** every write also stores the new version in `kb_note_revisions`, in the same transaction. A revision records the action (create, update, archive), the author (`agent`, later also `user`), the conversation and its agent, and for an archive the reason.
+- **Links:** `[[slug]]`, `[[Title]]`, `[[slug|alias]]`, `[[slug#heading]]` and Markdown links without a scheme (`[text](other-note.md)`). Each target is turned into a slug and stored in `kb_links` on every write; the backlinks come from there. Archived notes don't count as backlinks. Links inside code (fenced blocks, also unclosed ones, and inline code) are text, not links (`CODE_RE`).
+- **History:** every write also stores the new version in `kb_note_revisions`, in the same transaction. A revision records the action (`create`, `update`, `archive`, `restore`), the author (`agent`, or `user` for the page), the conversation and its agent, and a reason (why it was archived, or which version was restored).
+- **Version:** the id of a note's newest revision. An edit from the page sends the version it started from (`base_version`); if the note changed since, it is refused with `KBConflict`, so the user's save never silently overwrites what an agent wrote meanwhile (and vice versa).
 - **Parallel calls:** tool calls of one model turn run concurrently. An update locks the note's row, so parallel appends are all kept. Two notes with the same slug written at the same moment are stopped by the unique key, and the second one gets the usual "exists already" message.
 - **Deleting a user** deletes their notes, revisions and links (`ON DELETE CASCADE`).
 
 ## Search
 
-One query per search, over the user's active notes:
+One query per search, over the user's active notes (the page can also search the archived ones):
 
 - **Words:** Postgres full-text search with the `simple` configuration, so German and English work the same (no stemming, no stop words). A note matches if it contains any of the words, and words of four letters or more also match as prefixes ("katze" finds "Katzen"). Words in the title weigh most, then the description and tags, then the content.
 - **Exact:** a case-insensitive substring of slug, title, description, tags or content. LIKE wildcards in it are literal.
@@ -43,6 +46,50 @@ One query per search, over the user's active notes:
 - **Score:** the word rank, plus 1 for each exact text the note contains, plus 0.3 for each of the tags it has. Ties go to the more recently updated note.
 
 There is no index for this: a user's vault is small (SRW's agent-written notes have a median of 3 KB), so the user's rows are scanned. A generated `tsvector` column with a GIN index is the next step if that gets slow; `array_to_string` isn't immutable, so the tags would need their own handling there.
+
+## The Knowledge base page
+
+`/knowledge-base` and `/knowledge-base/<slug>` (`src/app/knowledge-base/`, loaded on demand; one route through `knowledgeBaseMatcher`, so the list stays when another note opens). The sidebar shows "Knowledge base" to signed-in users; `memberGuard` sends guests to the login. The page needs the server: the notes are only stored there, not in the browser.
+
+- **List:** search (the agent's search: any word, longer ones as prefixes, plus the text as a literal part of a note from three characters on), a switch between the notes and the archive with their counts, and the tags in use as filters. Search results show the passage around the match as plain text.
+- **Note:** the Markdown rendered with ngx-markdown. `[[links]]` become links to the page (`noteMarkdown()` in `kb-markdown.ts`, outside of code); a link to a note that doesn't exist yet is dashed, and clicking it starts writing that note. Task boxes show as ☐ and ☑, because the sanitizer removes checkboxes. Below: "Links to" and "Linked from". At the top: the tags (they filter the list), and who changed the note last, when and in which chat (a link to the chat).
+- **Edit:** title, description, tags (chips) and the Markdown with a preview; Ctrl+S saves. A new note's slug is shown while typing the title. If an agent changed the note meanwhile, the editor says so and offers "Save anyway" (the agent's version stays in the history) or "Discard my changes". Leaving the editor with unsaved changes asks first.
+- **History:** every version with its action, author (you, or the agent's name) and time; one of them in full; "Restore this version" makes it the current one as a new version.
+- **Archive, restore, delete:** archiving offers "Undo"; deleting for good asks first and removes all versions. The agent can only archive.
+- **Export for Obsidian:** downloads the zip (below).
+
+The frontend's `slugify()` matches the backend's (checked against it for umlauts, accents and other scripts).
+
+## API (`backend/api/knowledge_base.py`)
+
+All under `/api/kb`, for signed-in users only (guests get 403 with code `guest`), always the user's own notes:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /notes?status=&tag=` | Notes with the status (`active` or `archived`), newest first, with the tags in use and the counts per status |
+| `GET /search?q=&status=` | Search hits with the passage around the match |
+| `GET /notes/{slug}` | A note with its version, links, backlinks and versions (without content) |
+| `POST /notes` | A new note (author `user`); 409 `exists` with the existing note's slug |
+| `PUT /notes/{slug}` | Replaces title, description, tags and content (the slug stays); `baseVersion`, else 409 `conflict` with the version now |
+| `POST /notes/{slug}/archive`, `/restore` | Archive, or restore unchanged |
+| `DELETE /notes/{slug}` | Delete for good |
+| `GET /notes/{slug}/revisions/{id}` | One version with its content |
+| `POST /notes/{slug}/revisions/{id}/restore` | Makes that version the current one, as a new version (`baseVersion` as for an edit) |
+| `GET /export?tz=` | The Obsidian zip |
+
+Errors carry `{"code", "message"}` as detail: `not_found` (404), `exists` and `conflict` (409), `invalid` (400). Times are UTC with a `Z` (`UtcDatetime`).
+
+## Obsidian export (`backend/services/knowledge_base_export.py`)
+
+A zip with the folder `knowledge-base/`, which Obsidian opens as a vault:
+
+- one `<slug>.md` per note, so the `[[slug]]` links resolve as they are (link view, graph, backlinks); archived notes in `knowledge-base/archive/` (Obsidian finds a link's file by name in any folder);
+- YAML properties: `title`, `aliases` (the title, for Obsidian's link suggestions and search), `description`, `tags`, `created`, `updated`; then the title as a heading and the content;
+- links not written as a slug are rewritten to one, keeping their text (`[[Project Apollo]]` becomes `[[project-apollo|Project Apollo]]`, `[x](Project%20Apollo.md)` becomes `[x](project-apollo.md)`); code stays as it is;
+- tags as Obsidian accepts them: other characters than letters, digits, `_`, `-` and `/` become dashes, and a tag of only digits gets the prefix `tag-` (`2026` becomes `tag-2026`);
+- times in the browser's time zone (the page sends it as `tz`; Obsidian reads times without a zone as local time), also the files' dates in the zip; UTC for an unknown zone.
+
+Earlier versions aren't exported. Importing a vault is a later step: name clashes, folders and attachments need decisions first, and the export format should prove itself before.
 
 ## Postgres with pgvector
 
@@ -53,8 +100,8 @@ The compose files and the Helm chart run `pgvector/pgvector:pg16` (Debian) inste
 ## Testing
 
 - `python -m backend.llm.tests.run_all` (offline): the group is opt-in, guests and requests without a user get nothing, the prompt section, the tool status, and that writes record the conversation and its agent.
-- `python backend/services/tests/knowledge_base_test.py`: the tools against a real Postgres, in a database `<POSTGRES_DB>_kb_test` that it creates itself. It covers:
-  - slugs and link parsing;
+- `python backend/services/tests/knowledge_base_test.py`: the tools, the store and the API (FastAPI's test client on the knowledge base router) against a real Postgres, in a database `<POSTGRES_DB>_kb_test` that it creates itself. It covers:
+  - slugs and link parsing (also links in code);
   - read-after-write;
   - refused duplicate slugs;
   - links and backlinks;
@@ -64,11 +111,16 @@ The compose files and the Helm chart run `pgvector/pgvector:pg16` (Debian) inste
   - two users who can't see each other's notes;
   - revisions;
   - parallel tool calls;
-  - cascade on user delete.
+  - cascade on user delete;
+  - tool results that link their step to the note;
+  - page edits with the version check, restoring a version or an archived note, deleting for good;
+  - the Obsidian export (files, folders, properties, link rewriting, tags, time zones);
+  - the API, also for another user and for guests.
 
 ## Not built yet
 
 - **Embeddings (step 2):** a vector column next to the notes, filled from the homelab's Qwen3 embedding model, plus a semantic part in the search score. Keep the word and exact search as a fallback, because the router is flaky and SRW once lost its whole knowledge base to a missing embedding key. With a fixed dimension HNSW works up to 2000 dimensions (`halfvec` up to 4000). A per-user scan of an untyped `vector` column works without any index.
-- **UI:** a page to browse, edit and restore notes and to see the revisions, plus a link from a `kb_write` step to its note. Revisions with `author: user` are already planned for edits made there.
 - **Notes in the prompt:** the agent only sees notes it searches for or reads. A list of the user's notes in the system prompt, or SRW-style search hits for each message, would be next.
-- **Import and export** as Markdown files (Obsidian), and a way for users to delete notes for good.
+- **Import** of an Obsidian vault (see the export).
+- **`[[links]]` in chat answers:** the agent mentions notes as `[[slug]]`, which the chat shows as plain text; they could link to the page.
+- **A diff** between two versions in the history.

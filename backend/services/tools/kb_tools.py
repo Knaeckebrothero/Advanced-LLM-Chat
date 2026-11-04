@@ -7,13 +7,14 @@ The schemas the model sees are defined in backend/llm/tools.py, which binds the 
 writes, the conversation and its agent) so the model can't choose another knowledge base. The
 functions block on the database; the registry runs them in a worker thread. A refused request
 raises ToolInputError with a message for the model, so the step shows as failed and nothing claims
-a write that didn't happen.
+a write that didn't happen. The results of kb_read, kb_write, kb_update and kb_archive carry the
+note's slug ({"kbNote": slug}), so the chat can open the note on the Knowledge base page.
 """
 import logging
 from datetime import datetime
 from typing import List, Optional
 
-from backend.llm.tools import ToolInputError
+from backend.llm.tools import ToolInputError, ToolText
 from backend.services import knowledge_base as kb
 from backend.services.knowledge_base import KBError, Writer
 
@@ -33,6 +34,11 @@ def _tags(tags: List[str]) -> str:
 
 def _refused(error: KBError) -> ToolInputError:
     return ToolInputError(str(error))
+
+
+def _about(note: dict, text: str) -> ToolText:
+    """A result about one note: its step in the chat links to the note."""
+    return ToolText(text, {"kbNote": note["slug"]})
 
 
 def _clamp(value: Optional[int], default: int, maximum: int) -> int:
@@ -106,7 +112,7 @@ def kb_read(note: str, *, user_id: int) -> str:
         lines.append("Links to: " + "; ".join(links))
     if found["backlinks"]:
         lines.append("Linked from: " + "; ".join(f"[[{link['slug']}]] {link['title']}" for link in found["backlinks"]))
-    return "\n".join(lines).rstrip()
+    return _about(found, "\n".join(lines).rstrip())
 
 
 def _length_hint(content: str) -> str:
@@ -123,8 +129,8 @@ def kb_write(title: str, content: str, description: Optional[str] = None, tags: 
         note = kb.create_note(writer, title, content, description=description, tags=tags)
     except KBError as e:
         raise _refused(e)
-    return (f"Created note **{note['slug']}** (\"{note['title']}\", tags: {_tags(note['tags'])}). "
-            f"Link to it with [[{note['slug']}]].{_length_hint(note['content'])}")
+    return _about(note, f"Created note **{note['slug']}** (\"{note['title']}\", tags: {_tags(note['tags'])}). "
+                        f"Link to it with [[{note['slug']}]].{_length_hint(note['content'])}")
 
 
 def kb_update(note: str, content: Optional[str] = None, append: Optional[str] = None, title: Optional[str] = None,
@@ -136,8 +142,8 @@ def kb_update(note: str, content: Optional[str] = None, append: Optional[str] = 
     except KBError as e:
         raise _refused(e)
     if not changes:
-        return f"Note **{updated['slug']}** already has these values; nothing was changed."
-    return f"Updated note **{updated['slug']}**: {', '.join(changes)}.{_length_hint(updated['content'])}"
+        return _about(updated, f"Note **{updated['slug']}** already has these values; nothing was changed.")
+    return _about(updated, f"Updated note **{updated['slug']}**: {', '.join(changes)}.{_length_hint(updated['content'])}")
 
 
 def kb_archive(note: str, reason: Optional[str] = None, *, writer: Writer) -> str:
@@ -147,6 +153,6 @@ def kb_archive(note: str, reason: Optional[str] = None, *, writer: Writer) -> st
     except KBError as e:
         raise _refused(e)
     if not changed:
-        return f"Note **{archived['slug']}** was archived already."
-    return (f"Archived note **{archived['slug']}**. It no longer shows up in kb_list or kb_search; "
-            f"kb_read still shows it and kb_update restores it.")
+        return _about(archived, f"Note **{archived['slug']}** was archived already.")
+    return _about(archived, f"Archived note **{archived['slug']}**. It no longer shows up in kb_list or kb_search; "
+                            f"kb_read still shows it and kb_update restores it.")

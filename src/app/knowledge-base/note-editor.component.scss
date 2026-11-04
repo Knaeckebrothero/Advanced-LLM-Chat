@@ -1,0 +1,75 @@
+.editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  mat-form-field {
+    width: 100%;
+  }
+}
+
+.hint-error {
+  color: var(--theme-tier-untrusted);
+}
+
+.banner-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: var(--theme-text-secondary);
+}
+
+.button-spinner {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
+.content-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.content-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.content-count {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--theme-text-secondary);
+
+  &.is-over {
+    color: var(--theme-tier-untrusted);
+    font-weight: 600;
+  }
+}
+
+.content-input {
+  width: 100%;
+
+  textarea {
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+}
+
+.content-preview {
+  min-height: 240px;
+  padding: 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background: var(--theme-surface);
+}
+
+.preview-empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--theme-text-secondary);
+}

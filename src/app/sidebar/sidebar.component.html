@@ -30,6 +30,10 @@
       [class.selected]="router.isActive('/', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
       {{ 'Chat' | translate }}
     </button>
+    <button *ngIf="isMember$ | async" class="nav-button" (click)="navigateTo('/knowledge-base')"
+      [class.selected]="router.isActive('/knowledge-base', {paths: 'subset', queryParams: 'ignored', fragment: 'ignored', matrixParams: 'ignored'})">
+      {{ 'knowledgeBase.title' | translate }}
+    </button>
     <button *ngIf="isAdmin$ | async" class="nav-button" (click)="navigateTo('/agents')"
       [class.selected]="router.isActive('/agents', {paths: 'exact', queryParams: 'exact', fragment: 'ignored', matrixParams: 'ignored'})">
       {{ 'Agents' | translate }}

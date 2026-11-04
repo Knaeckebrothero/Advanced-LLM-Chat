@@ -13,6 +13,8 @@ import { ChatUiSummaryComponent } from './chat-ui/chat-ui-summary/chat-ui-summar
 import { ModelPickerComponent } from './chat-ui/model-picker/model-picker.component';
 import { ModelSelectComponent } from './components/catalog/model-select.component';
 import { adminGuard } from './auth/admin.guard';
+import { memberGuard } from './auth/member.guard';
+import { knowledgeBaseMatcher } from './knowledge-base/knowledge-base.route';
 
 // Services
 import { AuthService } from './auth/auth.service';
@@ -62,6 +64,12 @@ const routes: Routes = [
     canActivate: [AuthGuard, adminGuard]
   },
   { path: 'admin/catalog', redirectTo: 'agents' },
+  // The knowledge base of a signed-in user: /knowledge-base and /knowledge-base/<slug>, loaded on demand
+  {
+    matcher: knowledgeBaseMatcher,
+    loadComponent: () => import('./knowledge-base/knowledge-base.component').then(m => m.KnowledgeBaseComponent),
+    canActivate: [AuthGuard, memberGuard]
+  },
   { path: 'auth/callback', component: AuthCallbackComponent },
 ];
 

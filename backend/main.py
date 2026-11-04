@@ -27,7 +27,7 @@ from backend.security.auth import cleanup_expired_sessions
 from backend.utils.certificates import setup_development_certificates
 
 # Import API routers
-from backend.api import auth, docs, conversations, settings, files, messages, catalog
+from backend.api import auth, docs, conversations, settings, files, messages, catalog, knowledge_base
 
 # Import middleware
 from backend.middleware.middleware import (
@@ -101,6 +101,7 @@ app.include_router(messages.router)
 app.include_router(settings.router)
 app.include_router(files.router)
 app.include_router(catalog.router)
+app.include_router(knowledge_base.router)
 
 
 @app.get("/api/health", include_in_schema=False)
