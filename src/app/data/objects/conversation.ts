@@ -20,6 +20,8 @@ export class Conversation implements IConversation {
   hashsum?: number;
   createdAt: Date;
   updatedAt: Date;
+  // When the newest message was stored (the server's clock); undefined = none yet
+  lastMessageAt?: Date;
   version: number;
   lastModified: number;
   // Model catalog selection: null = the user's default model / no persona,
@@ -82,6 +84,36 @@ export class Conversation implements IConversation {
   }
 
   // =========================================================================
+  // Order in the sidebar
+  // =========================================================================
+
+  /** What the sidebar sorts by: the newest message, or the creation of a conversation without one. */
+  get lastActivity(): Date {
+    return this.lastMessageAt ?? this.createdAt;
+  }
+
+  /** Newest activity first. */
+  static compareByActivity(a: Conversation, b: Conversation): number {
+    return b.lastActivity.getTime() - a.lastActivity.getTime();
+  }
+
+  /**
+   * A message the server stored: its id is the server's clock in milliseconds. Messages only
+   * in the browser (negative ids) don't count. Returns whether the conversation moved up.
+   */
+  recordMessage(messageId: number): boolean {
+    return messageId > 0 && this.mergeLastMessageAt(new Date(messageId));
+  }
+
+  /** Takes a later time of the newest message (e.g. from the server); returns whether it changed. */
+  mergeLastMessageAt(time: Date | undefined): boolean {
+    if (!time || isNaN(time.getTime())) return false;
+    if (this.lastMessageAt && this.lastMessageAt.getTime() >= time.getTime()) return false;
+    this.lastMessageAt = time;
+    return true;
+  }
+
+  // =========================================================================
   // Model Catalog Selection
   // =========================================================================
 
@@ -124,6 +156,7 @@ export class Conversation implements IConversation {
     );
     conv.createdAt = new Date(data.createdAt);
     conv.updatedAt = new Date(data.updatedAt);
+    conv.mergeLastMessageAt(data.lastMessageAt ? new Date(data.lastMessageAt) : undefined);
     conv.version = data.version || 1;
     conv.lastModified = data.lastModified || Math.floor(Date.now() / 1000);
     if (data.hashsum !== undefined) {
@@ -145,6 +178,7 @@ export class Conversation implements IConversation {
     );
     conv.createdAt = new Date(data.createdAt);
     conv.updatedAt = new Date(data.updatedAt);
+    conv.mergeLastMessageAt(data.lastMessageAt ? new Date(data.lastMessageAt) : undefined);
     if (data.hashsum !== undefined) {
       conv.hashsum = data.hashsum;
     }
@@ -172,6 +206,7 @@ export class Conversation implements IConversation {
       participants: this.participants,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),
+      lastMessageAt: this.lastMessageAt?.toISOString(),
       version: this.version,
       lastModified: this.lastModified,
       hashsum: this.hashsum,

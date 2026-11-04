@@ -67,13 +67,30 @@ export class ConversationRepository extends BaseRepository<Conversation> {
    * leaves out the model fields, the local selection is kept.
    */
   async saveFromServer(conversation: Conversation): Promise<Conversation> {
-    this.keepLocalSelection(conversation);
+    this.keepLocalState(conversation);
     return this.save(conversation);
   }
 
-  private keepLocalSelection(incoming: Conversation): void {
+  /**
+   * A message the server stored (its id is the server's clock): the conversation moves up in
+   * the sidebar right away, before the next sync brings the server's lastMessageAt.
+   */
+  async recordMessage(conversationId: string, messageId: number): Promise<void> {
+    const conversation = this.cache$.getValue().find(c => c.id === conversationId);
+    if (conversation?.recordMessage(messageId)) {
+      await this.save(conversation);
+    }
+  }
+
+  /**
+   * Keep what the local copy knows better than a conversation the backend returned: a later
+   * newest message (the response may have been written before it), and the selection if the
+   * response leaves out the model fields or it still has to be sent.
+   */
+  private keepLocalState(incoming: Conversation): void {
     const local = this.cache$.getValue().find(c => c.id === incoming.id);
     if (!local) return;
+    incoming.mergeLastMessageAt(local.lastMessageAt);
     if (local.selectionPending || (incoming.modelId === undefined && incoming.personaId === undefined)) {
       incoming.modelId = local.modelId;
       incoming.personaId = local.personaId;
@@ -99,7 +116,7 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       const local = this.cache$.getValue().find(c => c.id === id);
       const knownSelection = local && local.modelId !== undefined ? local.selection : undefined;
       const updatedConversation = await this.apiService.updateConversationName(id, name, knownSelection);
-      this.keepLocalSelection(updatedConversation);
+      this.keepLocalState(updatedConversation);
       
       // Update local database
       await this.dbService.updateConversation(updatedConversation);
@@ -235,9 +252,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         };
       }
       
-      // Sort by updated date descending (most recent first) and take top N
-      const recentConversations = serverConversations
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      // The N with the newest messages
+      const recentConversations = [...serverConversations]
+        .sort(Conversation.compareByActivity)
         .slice(0, count);
       
       let itemsUpdated = 0;
@@ -346,8 +363,9 @@ export class ConversationRepository extends BaseRepository<Conversation> {
       
       if (!serverConv) return false;
 
-      // Model and persona may have been switched on another device
-      if (await this.mergeSelection(localConv, serverConv)) {
+      // Model and persona may have been switched, messages written on another device
+      const selectionChanged = await this.mergeSelection(localConv, serverConv);
+      if (localConv.mergeLastMessageAt(serverConv.lastMessageAt) || selectionChanged) {
         await this.save(localConv);
       }
       
@@ -550,6 +568,10 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         // Existing conversation - only update timestamp if server has newer timestamp
         // This prevents updating just from viewing/syncing
         let changed = await this.mergeSelection(localConv, serverConv);
+        // Messages written on another device move it up
+        if (localConv.mergeLastMessageAt(serverConv.lastMessageAt)) {
+          changed = true;
+        }
         if (serverConv.updatedAt && new Date(serverConv.updatedAt) > new Date(localConv.updatedAt)) {
           localConv.updatedAt = new Date(serverConv.updatedAt);
           changed = true;
