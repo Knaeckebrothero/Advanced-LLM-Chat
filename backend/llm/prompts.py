@@ -88,6 +88,14 @@ KB_TOOL_NAMES = set(TOOL_GROUPS["knowledge_base"])
 # Heads a conversation's system messages, after the rest of the prompt
 INSTRUCTIONS_HEADING = "## Instructions for this conversation:"
 
+# The section of the MCP servers an answer has tools from (docs/mcp.md)
+MCP_HEADING = "## Tools from MCP servers:"
+MCP_INTRO = ("Some of your tools come from MCP servers, external services connected to this chat. Their names "
+             "start with the server's prefix. Mind what a tool changes outside this chat before you call it.")
+MCP_INSTRUCTIONS_CHARS = 2000
+MCP_UNAVAILABLE_INTRO = ("Not available in this answer (their tools may appear in earlier answers of this conversation, "
+                         "they just can't be used now; tell the user what to do if they ask for them):")
+
 
 def build_system_prompt(
     persona_prompt: Optional[str],
@@ -167,3 +175,35 @@ def with_instructions(system_prompt: str, instructions: Iterable[str]) -> str:
     if not texts:
         return system_prompt
     return f"{system_prompt}\n\n{INSTRUCTIONS_HEADING}\n" + "\n\n".join(texts)
+
+
+def with_mcp_servers(system_prompt: str, servers: Iterable[dict], unavailable: Iterable[dict] = ()) -> str:
+    """
+    The system prompt with a section on the MCP servers of the answer: the ones it has tools from,
+    and the ones that give none this time (the model would otherwise take tool results of earlier
+    answers for made up).
+
+    Args:
+        servers: {"name", "prefix", "description", "instructions"} per server.
+        unavailable: {"name", "prefix", "reason"} per server without tools this time.
+    """
+    lines = []
+    for server in servers:
+        line = f"- **{server['name']}** (tools `{server['prefix']}__*`)"
+        if server.get("description"):
+            line += f": {server['description'].strip()}"
+        instructions = (server.get("instructions") or "").strip()
+        if instructions:
+            if len(instructions) > MCP_INSTRUCTIONS_CHARS:
+                instructions = instructions[:MCP_INSTRUCTIONS_CHARS].rstrip() + " [...]"
+            line += "\n  The server's instructions:\n  " + instructions.replace("\n", "\n  ")
+        lines.append(line)
+    missing = [f"- **{server['name']}** (tools `{server['prefix']}__*`): {server['reason']}" for server in unavailable]
+    if not lines and not missing:
+        return system_prompt
+    section = f"{system_prompt}\n\n{MCP_HEADING}\n{MCP_INTRO}"
+    if lines:
+        section += "\n" + "\n".join(lines)
+    if missing:
+        section += f"\n{MCP_UNAVAILABLE_INTRO}\n" + "\n".join(missing)
+    return section

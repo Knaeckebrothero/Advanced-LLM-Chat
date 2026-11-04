@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS personas (
     enabled BOOLEAN DEFAULT TRUE,
     sort_order INTEGER DEFAULT 0,
     own_memory BOOLEAN DEFAULT FALSE,        -- its own knowledge base and memory per user instead of the user's shared one
+    mcp_servers JSONB,                       -- slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -218,6 +219,61 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS memory_reviewed_until BIGINT;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS memory_review_failed_at TIMESTAMP;
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS own_memory BOOLEAN DEFAULT FALSE;
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS memory_model_id INTEGER;
+
+-- name: add_mcp_columns
+-- Databases from before MCP servers (the CREATE TABLE above has it)
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS mcp_servers JSONB;
+
+-- name: create_mcp_servers_table
+-- MCP servers (docs/mcp.md): the admins' servers, which agents pick (user_id NULL), and users' own
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,  -- NULL: an admin server, else the user's own
+    slug TEXT NOT NULL,                      -- prefix of its tool names, unique per owner, fixed: "github"
+    name TEXT NOT NULL,                      -- "GitHub"
+    description TEXT,
+    transport TEXT NOT NULL DEFAULT 'http',  -- 'http' (Streamable HTTP) | 'sse' | 'stdio' (admin servers only)
+    url TEXT,                                -- http, sse (admin servers may use ${VAR})
+    command TEXT,                            -- stdio
+    args JSONB,                              -- stdio: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+    env JSONB,                               -- stdio: {"GITHUB_TOKEN": "${GITHUB_TOKEN}"}
+    auth TEXT NOT NULL DEFAULT 'none',       -- 'none' | 'headers' | 'oauth'
+    headers JSONB,                           -- admin servers: {"Authorization": "Bearer ${X_TOKEN}"}
+    headers_encrypted TEXT,                  -- users' servers: the headers, encrypted with ENCRYPTION_KEY
+    oauth_client_id TEXT,                    -- a client registered by hand (else dynamic client registration)
+    oauth_client_secret_env TEXT,            -- admin servers: env var with that client's secret
+    oauth_scopes TEXT,                       -- space-separated, NULL: what the server asks for
+    oauth_client_encrypted TEXT,             -- the client from dynamic client registration (encrypted)
+    tools JSONB,                             -- MCP tool names offered to the model, NULL = all
+    available_to_guests BOOLEAN DEFAULT FALSE,
+    enabled BOOLEAN DEFAULT TRUE,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS mcp_servers_owner_slug_key ON mcp_servers(coalesce(user_id, 0), slug);
+
+-- name: create_mcp_tokens_table
+-- A user's OAuth sign-in to an MCP server, encrypted (access and refresh token, token endpoint, client)
+CREATE TABLE IF NOT EXISTS mcp_tokens (
+    server_id INTEGER NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tokens_encrypted TEXT NOT NULL,
+    expires_at TIMESTAMP,                    -- when the access token expires (UTC), NULL: unknown
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (server_id, user_id)
+);
+
+-- name: create_mcp_oauth_flows_table
+-- OAuth sign-ins to MCP servers in progress: between the redirect to the provider and its callback
+CREATE TABLE IF NOT EXISTS mcp_oauth_flows (
+    state TEXT PRIMARY KEY,
+    server_id INTEGER NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    flow_encrypted TEXT NOT NULL,            -- PKCE verifier, redirect URI, token endpoint, client, resource
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- name: create_kb_note_revisions_table
 -- Every version of a note, written in the same transaction as the note: what it was, who wrote it and where
@@ -338,6 +394,20 @@ CREATE TRIGGER update_personas_timestamp
 DROP TRIGGER IF EXISTS update_kb_notes_timestamp ON kb_notes;
 CREATE TRIGGER update_kb_notes_timestamp
     BEFORE UPDATE ON kb_notes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+-- name: create_mcp_servers_trigger
+DROP TRIGGER IF EXISTS update_mcp_servers_timestamp ON mcp_servers;
+CREATE TRIGGER update_mcp_servers_timestamp
+    BEFORE UPDATE ON mcp_servers
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+-- name: create_mcp_tokens_trigger
+DROP TRIGGER IF EXISTS update_mcp_tokens_timestamp ON mcp_tokens;
+CREATE TRIGGER update_mcp_tokens_timestamp
+    BEFORE UPDATE ON mcp_tokens
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();
 

@@ -28,7 +28,8 @@ from backend.database import db
 from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
 from backend.security.logging import crud_logger
 from backend.llm import (
-    ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups, with_instructions, with_memory
+    ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups, with_instructions,
+    with_mcp_servers, with_memory
 )
 from backend.llm.tools import MEMORY_TOOL_NAMES
 from backend.catalog.resolver import (
@@ -41,6 +42,7 @@ from backend.catalog.resolver import (
     resolve_model,
 )
 from backend.services import knowledge_base as kb
+from backend.services.mcp.tools import McpToolset, Notice, notice_step, tools_for_answer as mcp_tools_for_answer
 from backend.services.llm import generate_reply
 from backend.services.conversation_history import ConversationHistoryBuilder, HistoryEntry, history_token_budget
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
@@ -140,28 +142,57 @@ def _step_to_dict(step) -> dict:
     return step_dict
 
 
-def _answer_context(
+async def _mcp_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig,
+                     tools: Optional[ToolRegistry]) -> Tuple[Optional[ToolRegistry], McpToolset]:
+    """
+    The tools of the agent's MCP servers added to an answer's tools (docs/mcp.md). A failure
+    here never fails the answer: it goes on without MCP tools.
+    """
+    if not config.supports_tools:
+        return tools, McpToolset()
+    registry = tools if tools is not None else ToolRegistry()
+    try:
+        toolset = await mcp_tools_for_answer(current_user, conversation, set(registry.names()))
+    except Exception as e:
+        crud_logger.error(f"MCP tools of conversation {(conversation or {}).get('id')} failed: {e}", exc_info=True)
+        return tools, McpToolset()
+    for tool in toolset.tools:
+        registry.add(tool)
+    return (registry if len(registry) else None), toolset
+
+
+async def _answer_context(
     current_user: dict,
     conversation_id: str,
-    config: ModelConfig
-) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int]:
+    config: ModelConfig,
+    *,
+    mcp: bool = True
+) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int, List[Notice]]:
     """
     What an answer in this conversation is built from: the tools, the history builder,
-    the system prompt and the token budget of the history.
+    the system prompt, the token budget of the history, and the MCP servers that gave
+    no tools (to show as steps).
 
     The persona decides the prompt and which tools the model gets; the prompt only
-    describes the tools it really has. With the knowledge base, the agent's memory
-    follows (read for every answer, so a change shows in the next one). The
-    conversation's system messages are instructions to the model and come last.
+    describes the tools it really has. The tools of the agent's MCP servers come next
+    (not with mcp=False, which doesn't connect to them). With the knowledge base, the
+    agent's memory follows (read for every answer, so a change shows in the next one).
+    The conversation's system messages are instructions to the model and come last.
     """
     conversation = db.get_conversation_by_id(conversation_id)
     tools = _agent_tools(current_user, conversation, config)
+    toolset = McpToolset()
+    if mcp:
+        tools, toolset = await _mcp_tools(current_user, conversation, config, tools)
     history_builder = ConversationHistoryBuilder(db)
     system_prompt = with_instructions(
-        _memory_prompt(build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
-                       current_user, conversation, tools),
+        _memory_prompt(
+            with_mcp_servers(build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
+                             toolset.servers, toolset.unavailable()),
+            current_user, conversation, tools),
         history_builder.system_instructions(conversation_id))
-    return tools, history_builder, system_prompt, history_token_budget(config, system_prompt, tools)
+    return (tools, history_builder, system_prompt, history_token_budget(config, system_prompt, tools),
+            toolset.notices)
 
 
 async def _fold_into_summary(
@@ -1157,8 +1188,13 @@ async def stream_generate(
             return
 
         try:
-            tools, history_builder, system_prompt, token_budget = _answer_context(
+            tools, history_builder, system_prompt, token_budget, mcp_notices = await _answer_context(
                 current_user, request_body.conversationId, config)
+            # MCP servers of the agent that give no tools this time (unreachable, or not signed in)
+            for notice in mcp_notices:
+                now_ms = int(time.time() * 1000)
+                yield step_event(_step_to_dict(AgentStep(id=f"mcp-{notice.server_id}-{now_ms}", timestamp=now_ms,
+                                                         **notice_step(notice))))
 
             # Build conversation history with placeholders for previous attachments: the
             # summary of the oldest messages, then as many messages as fit the model's context window
@@ -1339,7 +1375,7 @@ async def summarize_conversation(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
 
     config = _resolve_model_or_503(current_user, conversation_id)
-    _, history_builder, _, token_budget = _answer_context(current_user, conversation_id, config)
+    _, history_builder, _, token_budget, _ = await _answer_context(current_user, conversation_id, config, mcp=False)
     summary = db.get_conversation_summary(conversation_id)
     # Placeholders for all attachments: the summary keeps their file names and ids
     entries, _ = await history_builder.build_entries(

@@ -101,7 +101,7 @@
               {{ 'catalog.admin.personas.toolUnavailable' | translate: { reason: tool.reason || ('catalog.admin.personas.toolUnavailableUnknown' | translate) } }}
             </p>
           } @else if (tool.optIn) {
-            <p class="tool-reason">{{ 'catalog.admin.personas.toolOptIn' | translate }}</p>
+            <p class="tool-reason">{{ (tool.id === 'user_mcp' ? 'catalog.admin.personas.toolOptInUserMcp' : 'catalog.admin.personas.toolOptIn') | translate }}</p>
           }
         </div>
       }
@@ -114,6 +114,40 @@
       <div class="own-memory">
         <mat-slide-toggle formControlName="ownMemory">{{ 'catalog.admin.personas.ownMemory' | translate }}</mat-slide-toggle>
         <p class="tool-reason">{{ 'catalog.admin.personas.ownMemoryHint' | translate }}</p>
+      </div>
+    }
+
+    <!-- MCP servers: always picked one by one, with either tool mode -->
+    <h3 class="form-section" id="persona-mcp-label">{{ 'catalog.admin.personas.mcpSection' | translate }}</h3>
+    @if (mcpLoadError) {
+      <p class="empty-hint">{{ 'catalog.admin.mcp.loadFailed' | translate: { error: mcpLoadError } }}</p>
+    }
+    @if (mcpOptions.length === 0) {
+      @if (!mcpLoadError) {
+        <p class="empty-hint">{{ 'catalog.admin.personas.mcpNone' | translate }}</p>
+      }
+    } @else {
+      <p class="empty-hint">{{ 'catalog.admin.personas.mcpPickHint' | translate }}</p>
+      <div class="tool-options" role="group" aria-labelledby="persona-mcp-label">
+        @for (option of mcpOptions; track option.slug) {
+          <div class="tool-option" [class.is-unavailable]="!isMcpUsable(option)">
+            <mat-checkbox color="primary"
+                          [checked]="isMcpChecked(option)"
+                          [disabled]="isMcpDisabled(option)"
+                          (change)="toggleMcp(option.slug, $event.checked)">
+              <span class="tool-option-label">
+                <mat-icon aria-hidden="true">extension</mat-icon>
+                {{ option.name }}
+                @if (option.server) {
+                  <span class="tool-option-slug">{{ option.slug }}</span>
+                }
+              </span>
+            </mat-checkbox>
+            @if (mcpNote(option); as note) {
+              <p class="tool-reason">{{ note }}</p>
+            }
+          </div>
+        }
       </div>
     }
 

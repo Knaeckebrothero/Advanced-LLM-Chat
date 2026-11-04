@@ -70,7 +70,9 @@ async def test_selection_filters_the_enabled_tools():
 
 
 async def test_knowledge_base_is_opt_in():
-    assert OPT_IN_GROUPS == {"knowledge_base"} and TOOL_GROUPS["knowledge_base"] == tuple(KB_TOOLS)
+    assert OPT_IN_GROUPS == {"knowledge_base", "user_mcp"} and TOOL_GROUPS["knowledge_base"] == tuple(KB_TOOLS)
+    # The users' own MCP servers: no static tools, backend/services/mcp/tools.py adds theirs per answer
+    assert TOOL_GROUPS["user_mcp"] == () and len(tools_for_groups(["user_mcp"], user_id=1)) == 0
     with configured(neo4j=True, tavily=True):
         # Never part of "every enabled tool"
         assert not set(KB_TOOLS) & set(default_tools(user_id=1).names())

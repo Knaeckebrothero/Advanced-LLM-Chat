@@ -113,6 +113,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.isChatPage = path === '/';
     this.pageTitleKey = path.startsWith('/knowledge-base') ? 'knowledgeBase.title'
       : path.startsWith('/agents') ? 'Agents'
+      : path === '/mcp' ? 'mcp.title'
       : path.startsWith('/settings') ? 'Settings'
       : null;
   }

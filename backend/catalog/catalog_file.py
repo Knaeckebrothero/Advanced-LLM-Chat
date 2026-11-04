@@ -39,6 +39,9 @@ from pydantic import ValidationError
 from backend.catalog import service
 from backend.catalog.service import CatalogError
 from backend.database import db
+from backend.models.mcp import McpServerCreate, McpServerUpdate
+from backend.services.mcp import servers as mcp_servers
+from backend.services.mcp import store as mcp_store
 from backend.models.catalog import (
     ImportCounts,
     ImportResult,
@@ -61,6 +64,14 @@ PROVIDER_KEYS = {column: field for field, column in service.PROVIDER_FIELDS.item
 MODEL_KEYS = {column: field for field, column in service.MODEL_FIELDS.items() if column != "provider_id"}
 MODEL_KEYS["provider"] = None  # Natural key, resolved to providerId
 PERSONA_KEYS = {column: field for field, column in service.PERSONA_FIELDS.items()}
+# The admins' MCP servers (docs/mcp.md); natural key slug. Never the encrypted columns.
+MCP_SERVER_KEYS = {
+    "name": "name", "slug": "slug", "description": "description", "transport": "transport", "url": "url",
+    "command": "command", "args": "args", "env": "env", "auth": "auth", "headers": "headers",
+    "oauth_client_id": "oauthClientId", "oauth_client_secret_env": "oauthClientSecretEnv",
+    "oauth_scopes": "oauthScopes", "tools": "tools", "available_to_guests": "availableToGuests",
+    "enabled": "enabled", "sort_order": "sortOrder",
+}
 
 # Column order in exported entries (natural keys first)
 PROVIDER_EXPORT_COLUMNS = [
@@ -76,8 +87,9 @@ MODEL_EXPORT_COLUMNS = [
 ]
 PERSONA_EXPORT_COLUMNS = [
     "name", "description", "system_prompt", "variables", "tools", "available_to_guests",
-    "enabled", "sort_order", "own_memory",
+    "enabled", "sort_order", "own_memory", "mcp_servers",
 ]
+MCP_SERVER_EXPORT_COLUMNS = list(MCP_SERVER_KEYS)
 NUMERIC_COLUMNS = {"temperature", "top_p", "input_price_per_mtok", "output_price_per_mtok"}
 
 # Reported once by an import whose file has provider entries
@@ -98,6 +110,7 @@ class SeedResult:
     providers: SeedCounts = field(default_factory=SeedCounts)
     models: SeedCounts = field(default_factory=SeedCounts)
     personas: SeedCounts = field(default_factory=SeedCounts)
+    mcp_servers: SeedCounts = field(default_factory=SeedCounts)
     errors: list[str] = field(default_factory=list)
 
 
@@ -136,12 +149,18 @@ def export_catalog() -> dict:
         entry["variables"] = entry["variables"] or []
         persona_entries.append(entry)
 
+    mcp_entries = []
+    for row in mcp_store.admin_servers():
+        entry = {column: row.get(column) for column in MCP_SERVER_EXPORT_COLUMNS}
+        mcp_entries.append({key: value for key, value in entry.items() if value is not None})
+
     log.info(f"Exported catalog: {len(provider_entries)} providers, {len(model_entries)} models, "
-             f"{len(persona_entries)} personas")
+             f"{len(persona_entries)} personas, {len(mcp_entries)} MCP servers")
     return {
         "version": CATALOG_FILE_VERSION,
         "providers": provider_entries,
         "models": model_entries,
+        "mcp_servers": mcp_entries,
         "personas": persona_entries,
     }
 
@@ -248,6 +267,31 @@ def _import_persona(entry: dict, label: str, errors: list, *, create_only: bool)
                  fields, {v: k for k, v in PERSONA_KEYS.items()}, create_only=create_only)
 
 
+def _import_mcp_server(entry: dict, label: str, errors: list, *, create_only: bool) -> str:
+    """Create or update (unless create_only) an admin MCP server, found by its slug."""
+    fields = _fields(entry, MCP_SERVER_KEYS, label, errors)
+    name = str(entry.get("name") or "").strip()
+    if not name:
+        raise CatalogError("name is required")
+    slug = str(entry.get("slug") or "").strip() or mcp_servers.make_slug(name)
+    fields["slug"] = slug
+    existing = mcp_store.admin_server_by_slug(slug)
+    if existing and create_only:
+        return "kept"
+    fields_to_keys = {v: k for k, v in MCP_SERVER_KEYS.items()}
+    try:
+        if existing:
+            fields.pop("slug")
+            mcp_servers.update_admin_server(existing["id"], McpServerUpdate(**fields))
+            return "updated"
+        mcp_servers.create_admin_server(McpServerCreate(**fields))
+        return "created"
+    except ValidationError as e:
+        raise CatalogError(_validation_message(e, fields_to_keys)) from e
+    except mcp_servers.McpError as e:
+        raise CatalogError(str(e)) from e
+
+
 def _check_file(data) -> list[str]:
     """
     Check the structure of a catalog file.
@@ -264,11 +308,11 @@ def _check_file(data) -> list[str]:
     version = data.get("version", CATALOG_FILE_VERSION)
     if version != CATALOG_FILE_VERSION:
         raise CatalogError(f"Unsupported catalog file version {version!r} (expected {CATALOG_FILE_VERSION})")
-    for section in ("providers", "models", "personas"):
+    for section in ("providers", "models", "mcp_servers", "personas"):
         if data.get(section) is not None and not isinstance(data[section], list):
             raise CatalogError(f"'{section}' must be a list")
     return [f"unknown top-level key '{key}' ignored" for key in data
-            if key not in ("version", "providers", "models", "personas")]
+            if key not in ("version", "providers", "models", "mcp_servers", "personas")]
 
 
 def _run_section(data: dict, section: str, importer, counts, errors: list, **options) -> None:
@@ -308,10 +352,13 @@ def import_catalog(data: dict) -> ImportResult:
         CatalogError: If the file itself is malformed (not an object, wrong
             version, sections that are not lists).
     """
-    result = ImportResult(models=ImportCounts(), personas=ImportCounts(), errors=_check_file(data))
+    result = ImportResult(models=ImportCounts(), personas=ImportCounts(), mcpServers=ImportCounts(),
+                          errors=_check_file(data))
     if data.get("providers"):
         result.errors.append(PROVIDERS_IGNORED)
     _run_section(data, "models", _import_model, result.models, result.errors, create_only=False)
+    # Before the personas, which name them
+    _run_section(data, "mcp_servers", _import_mcp_server, result.mcpServers, result.errors, create_only=False)
     _run_section(data, "personas", _import_persona, result.personas, result.errors, create_only=False)
 
     log.info(
@@ -408,11 +455,13 @@ def seed_catalog(data: dict) -> SeedResult:
     result = SeedResult(errors=_check_file(data))
     _run_section(data, "providers", _seed_provider, result.providers, result.errors)
     _run_section(data, "models", _import_model, result.models, result.errors, create_only=True)
+    _run_section(data, "mcp_servers", _import_mcp_server, result.mcp_servers, result.errors, create_only=True)
     _run_section(data, "personas", _import_persona, result.personas, result.errors, create_only=True)
 
     log.info(
         f"Seeded catalog: providers {result.providers.created} created / {result.providers.updated} updated, "
         f"models {result.models.created} created / {result.models.kept} kept, "
+        f"MCP servers {result.mcp_servers.created} / {result.mcp_servers.kept}, "
         f"personas {result.personas.created} / {result.personas.kept}, {len(result.errors)} error(s)"
     )
     return result

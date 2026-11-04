@@ -11,8 +11,13 @@ configuration, tools_for_groups() limits them to a persona's tool groups. Both
 are built per answer for the user it is for: the file tool only reads that
 user's uploads, the knowledge base tools only that user's notes (the shared
 knowledge base, or the agent's own one). Opt-in groups (the knowledge base,
-with the memory) are never part of "every enabled tool": an agent has to
-select them.
+with the memory, and the users' own MCP servers) are never part of "every
+enabled tool": an agent has to select them.
+
+Tools of MCP servers are not a static group: backend/services/mcp/tools.py
+connects to the servers of an answer and adds their tools to the registry
+(docs/mcp.md). The group user_mcp only marks that an agent wants the users'
+own servers; it has no tools of its own here.
 """
 import asyncio
 import functools
@@ -21,7 +26,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Iterable, Iterator, Optional
 
-from ..config import NEO4J_ENABLED
+from ..config import MCP_ENABLED, MCP_USER_SERVERS, NEO4J_ENABLED
 
 log = logging.getLogger(__name__)
 
@@ -50,14 +55,16 @@ TOOL_GROUPS = {
     "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
     "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
                        "memory_add", "memory_replace", "memory_remove"),
+    # The users' own MCP servers: their tools are added per answer (backend/services/mcp/tools.py)
+    "user_mcp": (),
 }
 
 # The memory tools, part of the knowledge base group
 MEMORY_TOOL_NAMES = ("memory_add", "memory_replace", "memory_remove")
 
 # Groups an agent only gets when it selects them: not part of "every enabled tool" (an agent
-# with tools null, or no agent). The knowledge base also needs a signed-in user, never a guest.
-OPT_IN_GROUPS = frozenset({"knowledge_base"})
+# with tools null, or no agent). Both also need a signed-in user, never a guest.
+OPT_IN_GROUPS = frozenset({"knowledge_base", "user_mcp"})
 
 # JSON schema types the argument check understands
 _JSON_TYPES = {
@@ -72,6 +79,10 @@ _JSON_TYPES = {
 
 class ToolInputError(ValueError):
     """The model sent arguments that don't match the tool's schema."""
+
+
+class ToolError(Exception):
+    """A tool failed and says why; the model gets the message as it is (e.g. an MCP server's error)."""
 
 
 class ToolText(str):
@@ -198,21 +209,38 @@ def _check_arguments(tool: Tool, arguments: Any) -> dict:
             continue
         if value is None:
             continue
-        expected = _JSON_TYPES.get(schema.get("type"))
-        # bool is an int subclass; don't accept true/false for numbers
-        if expected and (not isinstance(value, expected) or (isinstance(value, bool) and schema.get("type") != "boolean")):
+        if not isinstance(schema, dict):
+            kwargs[key] = value
+            continue
+        # A type may be a list (["string", "null"]) or missing (anyOf, $ref, ...: not checked here)
+        types = schema.get("type")
+        types = [types] if isinstance(types, str) else [t for t in types if isinstance(t, str)] if isinstance(types, list) else []
+        if types and not any(_type_matches(value, t) for t in types):
             # Models sometimes send numbers as strings
-            if schema.get("type") == "integer" and isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            if "integer" in types and isinstance(value, str) and value.strip().lstrip("-").isdigit():
                 value = int(value)
             else:
-                raise ToolInputError(f"Argument '{key}' for {tool.name} must be of type {schema.get('type')}")
-        if schema.get("type") == "array" and schema.get("items", {}).get("type") == "integer":
+                raise ToolInputError(f"Argument '{key}' for {tool.name} must be of type {' or '.join(types)}")
+        if schema.get("type") == "array" and isinstance(schema.get("items"), dict) and schema["items"].get("type") == "integer":
             try:
                 value = [int(item) for item in value]
             except (TypeError, ValueError):
                 raise ToolInputError(f"Argument '{key}' for {tool.name} must be a list of integers")
         kwargs[key] = value
     return kwargs
+
+
+def _type_matches(value: Any, json_type: str) -> bool:
+    """Whether a value has a JSON schema type; unknown types match anything."""
+    if json_type == "null":
+        return value is None
+    expected = _JSON_TYPES.get(json_type)
+    if expected is None:
+        return True
+    # bool is an int subclass; don't accept true/false for numbers
+    if isinstance(value, bool) and json_type != "boolean":
+        return False
+    return isinstance(value, expected)
 
 
 def format_tool_output(output: Any) -> str:
@@ -591,6 +619,11 @@ def tool_group_unavailable_reason(group: str) -> Optional[str]:
 
     if group == "knowledge_graph" and not NEO4J_ENABLED:
         return "NEO4J_ENABLED is off"
+    if group == "user_mcp":
+        if not MCP_ENABLED:
+            return "MCP_ENABLED is off"
+        if not MCP_USER_SERVERS:
+            return "MCP_USER_SERVERS is off"
     if group == "web_search" and not is_web_search_available():
         return "TAVILY_API_KEY is not set"
     return None
@@ -622,6 +655,8 @@ def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: 
             log.debug("No knowledge base without a signed-in user")
             return []
         return knowledge_base_tools(user_id, conversation, vault)
+    if group == "user_mcp":
+        return []  # Added per answer by backend/services/mcp/tools.py
     raise ValueError(f"Unknown tool group '{group}'")
 
 

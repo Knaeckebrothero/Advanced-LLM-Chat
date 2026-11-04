@@ -73,12 +73,23 @@ import { toolIcon } from './catalog-admin.utils';
                     <mat-icon aria-hidden="true">{{ toolIcon(tool) }}</mat-icon>
                     {{ ('catalog.tools.' + tool) | translate }}
                   </span>
-                } @empty {
+                }
+                @if (persona.tools.length === 0 && !persona.mcpServers?.length) {
                   <span class="tool-chip tool-chip--none" role="listitem">
                     <mat-icon aria-hidden="true">block</mat-icon>
                     {{ 'catalog.admin.personas.noTools' | translate }}
                   </span>
                 }
+              }
+              <!-- Its MCP servers, picked one by one with either tool mode -->
+              @for (slug of persona.mcpServers ?? []; track slug) {
+                <span class="tool-chip" role="listitem"
+                      [class.is-unavailable]="mcpHint(slug) !== null"
+                      [matTooltip]="mcpHint(slug) ?? ''"
+                      [matTooltipDisabled]="mcpHint(slug) === null">
+                  <mat-icon aria-hidden="true">extension</mat-icon>
+                  {{ mcpName(slug) }}
+                </span>
               }
             </div>
 
@@ -153,6 +164,22 @@ export class PersonasTabComponent {
     return this.translate.instant('catalog.admin.personas.toolUnavailable', {
       reason: reason || this.translate.instant('catalog.admin.personas.toolUnavailableUnknown')
     });
+  }
+
+  mcpName(slug: string): string {
+    return this.store.mcpServers.find(s => s.slug === slug)?.name ?? slug;
+  }
+
+  /** Why an MCP server of the agent gives it no tools, or null when it does. */
+  mcpHint(slug: string): string | null {
+    const server = this.store.mcpServers.find(s => s.slug === slug);
+    if (!server) {
+      // The list didn't load: nothing to say about the server
+      return this.store.mcpError$.value ? null : this.translate.instant('catalog.admin.personas.mcpUnknown');
+    }
+    if (!server.enabled) return this.translate.instant('catalog.admin.personas.mcpDisabled');
+    if (server.unavailableReason) return this.translate.instant('mcp.unavailable', { reason: server.unavailableReason });
+    return null;
   }
 
   /** What "All tools" currently means on this server (never the opt-in groups such as the knowledge base). */

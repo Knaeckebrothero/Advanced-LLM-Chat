@@ -19,6 +19,8 @@ import {
   IToolStatus,
   ToolGroup
 } from '../data/models/catalog.model';
+import { IMcpServerOut } from '../data/models/mcp.model';
+import { sortServers } from '../mcp/mcp-utils';
 import { CatalogAdminStore } from './catalog-admin.store';
 import { describeHttpError, DIALOG_ERROR, findPlaceholders, INVALID_FIELD, numberOrNull, revealInDialog, textOrNull, toolIcon } from './catalog-admin.utils';
 
@@ -29,6 +31,13 @@ export interface PersonaDialogData {
 
 /** "all": every tool the server has (tools = null); "pick": only the checked ones. */
 export type ToolMode = 'all' | 'pick';
+
+/** An MCP server the agent can pick; `server` is null for a slug the agent has that no server has (any more). */
+interface McpOption {
+  slug: string;
+  name: string;
+  server: IMcpServerOut | null;
+}
 
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -62,6 +71,9 @@ export class PersonaDialogComponent {
   isCopy: boolean;
   tools: IToolStatus[];
   pickedTools: Set<ToolGroup>;  // The explicit selection (tool mode "pick")
+  mcpOptions: McpOption[];
+  pickedMcp: Set<string>;  // Slugs of the picked MCP servers (tool mode "pick")
+  mcpLoadError: string | null;
   saving = false;
   error: string | null = null;
 
@@ -84,6 +96,15 @@ export class PersonaDialogComponent {
       ...store.tools,
       ...[...this.pickedTools].filter(id => !listed.has(id)).map(id => ({ id, available: false, reason: null }))
     ];
+    // The admin servers, plus picked slugs no server has (shown so they can be removed)
+    this.pickedMcp = new Set(p?.mcpServers ?? []);
+    const servers = sortServers(store.mcpServers);
+    const knownSlugs = new Set(servers.map(server => server.slug));
+    this.mcpOptions = [
+      ...servers.map(server => ({ slug: server.slug, name: server.name, server })),
+      ...[...this.pickedMcp].filter(slug => !knownSlugs.has(slug)).map(slug => ({ slug, name: slug, server: null }))
+    ];
+    this.mcpLoadError = store.mcpError$.value;
     this.form = fb.group({
       name: [name, Validators.required],
       description: [p?.description ?? ''],
@@ -134,6 +155,39 @@ export class PersonaDialogComponent {
   toggleTool(id: ToolGroup, checked: boolean): void {
     if (checked) this.pickedTools.add(id);
     else this.pickedTools.delete(id);
+    this.form.markAsDirty();
+  }
+
+  // MCP servers: picked one by one, with either tool mode ("all tools" never includes them)
+
+  isMcpChecked(option: McpOption): boolean {
+    return this.pickedMcp.has(option.slug);
+  }
+
+  /** A server that no longer exists can't be picked, but one that is picked already can be removed. */
+  isMcpDisabled(option: McpOption): boolean {
+    return option.server === null && !this.pickedMcp.has(option.slug);
+  }
+
+  isMcpUsable(option: McpOption): boolean {
+    return !!option.server && option.server.enabled && !option.server.unavailableReason;
+  }
+
+  /** Why the server won't give the agent tools, or a note about guests; null when there is nothing to say. */
+  mcpNote(option: McpOption): string | null {
+    const server = option.server;
+    if (!server) return this.translate.instant('catalog.admin.personas.mcpUnknown');
+    if (!server.enabled) return this.translate.instant('catalog.admin.personas.mcpDisabled');
+    if (server.unavailableReason) return this.translate.instant('mcp.unavailable', { reason: server.unavailableReason });
+    if (this.form.controls['availableToGuests'].value && !server.availableToGuests) {
+      return this.translate.instant('catalog.admin.personas.mcpNotForGuests');
+    }
+    return null;
+  }
+
+  toggleMcp(slug: string, checked: boolean): void {
+    if (checked) this.pickedMcp.add(slug);
+    else this.pickedMcp.delete(slug);
     this.form.markAsDirty();
   }
 
@@ -193,7 +247,9 @@ export class PersonaDialogComponent {
       availableToGuests: !!v.availableToGuests,
       enabled: !!v.enabled,
       sortOrder: numberOrNull(v.sortOrder) ?? 0,
-      ownMemory: !!v.ownMemory
+      ownMemory: !!v.ownMemory,
+      // [] for none: unambiguous for create and update
+      mcpServers: this.mcpOptions.map(o => o.slug).filter(slug => this.pickedMcp.has(slug))
     };
 
     this.saving = true;

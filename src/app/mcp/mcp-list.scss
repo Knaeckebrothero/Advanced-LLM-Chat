@@ -1,0 +1,105 @@
+// Rows of MCP servers (Agents page and MCP servers page), on top of catalog-admin-list.scss
+
+// Why a server can't be used right now
+.item-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--theme-tier-untrusted);
+  overflow-wrap: anywhere;
+
+  mat-icon {
+    flex-shrink: 0;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+  }
+}
+
+// Agents that use a server
+.item-usage {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+  overflow-wrap: anywhere;
+
+  mat-icon {
+    font-size: 15px;
+    width: 15px;
+    height: 15px;
+    vertical-align: -3px;
+    margin-right: 2px;
+  }
+}
+
+// Header names of a server; users' values stay on the server and show masked
+.header-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 2px;
+}
+
+.header-chip {
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--theme-hover);
+  color: var(--theme-text-secondary);
+}
+
+// OAuth: signed in or not
+.connect-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--theme-text-secondary);
+
+  mat-icon {
+    font-size: 15px;
+    width: 15px;
+    height: 15px;
+  }
+
+  &.connect-state--on {
+    color: var(--theme-tier-local);
+  }
+}
+
+// A notice about the server's configuration (MCP off, no encryption key)
+.config-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--theme-tier-untrusted-bg);
+  color: var(--theme-tier-untrusted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+
+  mat-icon {
+    flex-shrink: 0;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .config-reason {
+    display: block;
+    margin-top: 2px;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.item-controls .sign-in-button mat-spinner {
+  display: inline-block;
+  margin-right: 8px;
+}

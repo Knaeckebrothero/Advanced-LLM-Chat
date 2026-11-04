@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from backend.catalog.resolver import api_key_set, is_guest, model_usable, persona_usable
 from backend.database import db
 from backend.llm.tools import TOOL_GROUPS, tool_group_status
+from backend.services.mcp.servers import McpError, check_persona_servers
 from backend.models.catalog import (
     ModelCreate,
     ModelOut,
@@ -113,9 +114,10 @@ PERSONA_FIELDS = {
     "enabled": "enabled",
     "sortOrder": "sort_order",
     "ownMemory": "own_memory",
+    "mcpServers": "mcp_servers",
 }
-# tools: NULL = every enabled tool, so null in an update selects all tools again
-PERSONA_NULLABLE = {"description", "variables", "tools"}
+# tools: NULL = every enabled tool, so null in an update selects all tools again; mcp_servers: NULL = none
+PERSONA_NULLABLE = {"description", "variables", "tools", "mcp_servers"}
 
 # Columns that must not be empty strings
 REQUIRED_TEXT_COLUMNS = {"name", "display_name", "model_id", "system_prompt"}
@@ -196,6 +198,16 @@ def _normalize_tools(values: dict) -> None:
     """A persona's tool groups without duplicates, in TOOL_GROUPS order (None stays None)."""
     if values.get("tools") is not None:
         values["tools"] = [group for group in TOOL_GROUPS if group in values["tools"]]
+
+
+def _check_mcp_servers(values: dict) -> None:
+    """A persona's MCP servers: known admin server slugs without duplicates; [] is stored as NULL."""
+    if "mcp_servers" not in values:
+        return
+    try:
+        values["mcp_servers"] = check_persona_servers(values["mcp_servers"]) or None
+    except McpError as e:
+        raise CatalogError(str(e))
 
 
 def _write(operation, what: str):
@@ -337,6 +349,7 @@ def persona_out(row: dict) -> PersonaOut:
         enabled=row.get("enabled") is not False,
         sortOrder=row.get("sort_order") or 0,
         ownMemory=bool(row.get("own_memory")),
+        mcpServers=list(row["mcp_servers"]) if row.get("mcp_servers") else None,
     )
 
 
@@ -485,6 +498,7 @@ def create_persona(data: PersonaCreate) -> PersonaOut:
     values = _to_columns(data, PERSONA_FIELDS, PERSONA_NULLABLE, partial=False)
     _check_variables(values.get("variables"))
     _normalize_tools(values)
+    _check_mcp_servers(values)
 
     row = _write(lambda: db.create_persona(values), f"persona named '{values['name']}'")
     return persona_out(row)
@@ -508,6 +522,7 @@ def update_persona(persona_id: int, data: PersonaUpdate) -> PersonaOut:
         values["variables"] = values["variables"] or []
         _check_variables(values["variables"])
     _normalize_tools(values)
+    _check_mcp_servers(values)
 
     row = _write(lambda: db.update_persona(persona_id, values), f"persona named '{values.get('name')}'")
     return persona_out(row)

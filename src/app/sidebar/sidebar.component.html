@@ -40,6 +40,12 @@
       <mat-icon aria-hidden="true">menu_book</mat-icon>
       <span>{{ 'knowledgeBase.title' | translate }}</span>
     </button>
+    <button *ngIf="isMember$ | async" class="nav-button" (click)="navigateTo('/mcp')"
+      [class.selected]="isNavActive(view.path, '/mcp')"
+      [attr.aria-current]="isNavActive(view.path, '/mcp') ? 'page' : null">
+      <mat-icon aria-hidden="true">extension</mat-icon>
+      <span>{{ 'mcp.title' | translate }}</span>
+    </button>
     <button *ngIf="isAdmin$ | async" class="nav-button" (click)="navigateTo('/agents')"
       [class.selected]="isNavActive(view.path, '/agents')"
       [attr.aria-current]="isNavActive(view.path, '/agents') ? 'page' : null">
