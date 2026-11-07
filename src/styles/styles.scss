@@ -251,6 +251,11 @@ body.theme-initialized {
   white-space: pre-line;
 }
 
+// The input token indicator's breakdown: room for a line per part
+.context-meter-tooltip .mdc-tooltip__surface {
+  max-width: min(420px, calc(100vw - 32px));
+}
+
 // Custom backdrop style for the dialog
 .custom-backdrop {
   backdrop-filter: blur(4px);

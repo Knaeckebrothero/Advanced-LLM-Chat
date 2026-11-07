@@ -24,7 +24,7 @@ import {
   IToolStatus,
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
-import { IConversationSummary } from '../data/models/conversation.model';
+import { IContextSize, IConversationSummary } from '../data/models/conversation.model';
 import {
   IKBMemory,
   IKBNote,
@@ -583,6 +583,14 @@ export class ApiService {
   async summarizeConversation(conversationId: string): Promise<IConversationSummary> {
     return await lastValueFrom(
       this.http.post<IConversationSummary>(`${this.baseUrl}/api/message/summarize`, { conversationId }, this.getHttpOptions())
+    );
+  }
+
+  /** About how many input tokens the next answer sends, for the conversation's model or modelId. */
+  async getContextSize(conversationId: string, modelId?: number | null): Promise<IContextSize> {
+    return await lastValueFrom(
+      this.http.post<IContextSize>(
+        `${this.baseUrl}/api/message/context-size`, { conversationId, modelId: modelId ?? null }, this.getHttpOptions())
     );
   }
 

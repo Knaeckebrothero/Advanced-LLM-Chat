@@ -27,6 +27,15 @@
     "shareLocation": "Standort teilen",
     "send": "Nachricht senden",
     "stop": "Antwort abbrechen",
+    "generate": "Antwort generieren",
+    "context": {
+      "total": "Etwa {{count}} von {{window}} Eingabe-Tokens ({{percent}} %)",
+      "parts": "Systemprompt {{system}} · Tools {{tools}} · Verlauf {{history}} ({{messages}} Nachrichten)",
+      "draft": "Dein Entwurf kommt mit etwa {{count}} dazu.",
+      "leftOut": "Weggelassene Nachrichten, weil sie nicht mehr passen: {{count}}",
+      "summarizes": "Die nächste Antwort fasst zuerst die ältesten Nachrichten zusammen und sendet dann weniger.",
+      "estimate": "Eine Schätzung; die Tools der MCP-Server sind nicht mitgezählt."
+    },
     "record": "Sprachnachricht aufnehmen",
     "recording": "Aufnahme",
     "cancelRecording": "Aufnahme verwerfen",
@@ -447,7 +456,7 @@
     "guided": "Geführt",
     "manual": "Manuell",
     "guidedHint": "Du bearbeitest deine eigenen Nachrichten, und eine bearbeitete Nachricht wird neu beantwortet.",
-    "manualHint": "Du bearbeitest jede Nachricht, auch die Antworten, und fügst überall Nachrichten ein. Es wird nichts generiert."
+    "manualHint": "Du bearbeitest jede Nachricht, auch die Antworten, und fügst überall Nachrichten ein. Nichts wird von selbst beantwortet: „Antwort generieren“ im Eingabefeld beantwortet deine neueste Nachricht."
   },
   "conversationMenu": {
     "rename": "Umbenennen",

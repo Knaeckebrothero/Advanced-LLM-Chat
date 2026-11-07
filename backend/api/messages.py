@@ -20,6 +20,8 @@ from backend.models.message import (
     RegenerateMessageRequest,
     StreamGenerateRequest,
     SummarizeRequest,
+    ContextSizeRequest,
+    ContextSize,
     MessageStartEvent,
     ConversationSummary,
     AgentStep
@@ -44,7 +46,10 @@ from backend.catalog.resolver import (
 from backend.services import knowledge_base as kb
 from backend.services.mcp.tools import McpToolset, Notice, notice_step, tools_for_answer as mcp_tools_for_answer
 from backend.services.llm import generate_reply
-from backend.services.conversation_history import ConversationHistoryBuilder, HistoryEntry, history_token_budget
+from backend.services.conversation_history import (
+    ConversationHistoryBuilder, HistoryEntry, estimate_tokens, history_token_budget
+)
+from backend.config import DEFAULT_CONTEXT_WINDOW
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
 from backend.models.attachments import AttachmentType
 from backend.services.tts_handler import (
@@ -126,10 +131,10 @@ def _memory_prompt(system_prompt: str, current_user: dict, conversation: Optiona
     return with_memory(system_prompt, memory['content'] if memory else None)
 
 
-def _resolve_model_or_503(current_user: dict, conversation_id: str) -> ModelConfig:
+def _resolve_model_or_503(current_user: dict, conversation_id: str, model_id: Optional[int] = None) -> ModelConfig:
     """_resolve_model for the non-streaming endpoints: no model is a 503."""
     try:
-        return _resolve_model(current_user, conversation_id)
+        return _resolve_model(current_user, conversation_id, model_id)
     except NoModelAvailableError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
 
@@ -1401,6 +1406,57 @@ async def summarize_conversation(
                      f"{len(entries)} messages with {config.display_name}, "
                      f"tokens in/out: {usage.input_tokens}/{usage.output_tokens}")
     return ConversationSummary.from_row(stored)
+
+
+@router.post("/context-size",
+             response_model=ContextSize,
+             responses={
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                 status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse, "description": "No model configured"}
+             })
+async def context_size(
+    request_body: ContextSizeRequest,
+    current_user: dict = Depends(get_current_user)
+) -> ContextSize:
+    """
+    About how many input tokens the next answer in a conversation sends (the token
+    indicator of manual editing).
+
+    Counts what stream-generate would send now: the system prompt, the tool definitions
+    and the history (the summary, then the newest messages that fit the model's context
+    window, the latest user message with its attachments). Nothing is sent to a model,
+    and the agent's MCP servers are not asked for their tools.
+
+    :raises HTTPException: 403 without access to the conversation or the model, 503 without a model.
+    """
+    conversation_id = request_body.conversationId
+    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+
+    config = _resolve_model_or_503(current_user, conversation_id, request_body.modelId)
+    tools, history_builder, system_prompt, token_budget, _ = await _answer_context(
+        current_user, conversation_id, config, mcp=False)
+    summary = db.get_conversation_summary(conversation_id)
+    entries, _ = await history_builder.build_entries(
+        conversation_id, include_latest_attachments=True, supports_vision=config.supports_vision, summary=summary)
+    history = history_builder.assemble(conversation_id, entries, summary, token_budget)
+
+    system_tokens = estimate_tokens(system_prompt)
+    tool_tokens = estimate_tokens(json.dumps(tools.openai_schemas())) if tools else 0
+    history_tokens = sum(estimate_tokens(message["content"]) for message in history)
+    message_count = len(history) - (1 if summary else 0)
+    return ContextSize(
+        modelId=config.id,
+        contextWindow=config.context_window or DEFAULT_CONTEXT_WINDOW,
+        inputTokens=system_tokens + tool_tokens + history_tokens,
+        systemTokens=system_tokens,
+        toolTokens=tool_tokens,
+        historyTokens=history_tokens,
+        historyBudget=token_budget,
+        messageCount=message_count,
+        leftOutCount=len(entries) - message_count,
+        summarizes=messages_to_summarize(entries, summary, token_budget) > 0,
+    )
 
 
 @router.post("/tts/{conversation_id}/{message_id}",

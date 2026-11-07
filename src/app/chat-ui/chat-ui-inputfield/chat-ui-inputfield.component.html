@@ -147,6 +147,9 @@
 
     <!-- Right side buttons -->
     <div class="right-actions">
+      <!-- Input token indicator (manual editing): what the next answer sends, with the draft -->
+      <app-context-meter *ngIf="contextSize" [size]="contextSize" [draft]="messageText"></app-context-meter>
+
       <!-- Send button when there's content -->
       <button
         *ngIf="hasContent"
@@ -183,6 +186,17 @@
         [attr.aria-label]="'composer.record' | translate"
         [matTooltip]="'composer.record' | translate">
         <mat-icon>mic</mat-icon>
+      </button>
+
+      <!-- Generate button (manual editing): the newest message is the user's and has no answer yet -->
+      <button
+        *ngIf="!hasContent && !isStreaming && canGenerate"
+        mat-icon-button
+        class="action-button send-button generate-button"
+        (click)="generateRequested.emit()"
+        [attr.aria-label]="'composer.generate' | translate"
+        [matTooltip]="'composer.generate' | translate">
+        <mat-icon>auto_awesome</mat-icon>
       </button>
     </div>
   </div>

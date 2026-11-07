@@ -481,6 +481,48 @@ class SummarizeRequest(BaseModel):
     conversationId: str  # UUID
 
 
+class ContextSizeRequest(BaseModel):
+    """
+    Asks how large the input of the next answer in a conversation is (POST /api/message/context-size).
+
+    :ivar conversationId: UUID of the conversation.
+    :ivar modelId: Count for this catalog model instead of the conversation's model.
+    """
+    conversationId: str  # UUID
+    modelId: Optional[int] = None
+
+
+class ContextSize(BaseModel):
+    """
+    About how many input tokens the next answer in a conversation sends, as stream-generate
+    builds it. Estimates (about 3 characters per token, 2000 per image), without the tools of
+    the agent's MCP servers (counting them would connect to the servers).
+
+    :ivar modelId: The catalog model it was counted for (None for the model from the environment).
+    :ivar contextWindow: The model's context window (DEFAULT_CONTEXT_WINDOW for models without one).
+    :ivar inputTokens: All of it: systemTokens + toolTokens + historyTokens.
+    :ivar systemTokens: The system prompt (persona, tool notes, memory, the conversation's system messages).
+    :ivar toolTokens: The tool definitions.
+    :ivar historyTokens: The history: the summary, then the newest messages that fit.
+    :ivar historyBudget: How many tokens of history fit (the window minus room for the answer,
+        tool results, the system prompt and the tools).
+    :ivar messageCount: Messages in the history, without the summary.
+    :ivar leftOutCount: Messages after the summary that don't fit and are left out.
+    :ivar summarizes: The history is past 80 % of its budget: the next answer first folds the
+        oldest messages into the summary, so it sends fewer tokens than counted here.
+    """
+    modelId: Optional[int] = None
+    contextWindow: int
+    inputTokens: int
+    systemTokens: int
+    toolTokens: int
+    historyTokens: int
+    historyBudget: int
+    messageCount: int
+    leftOutCount: int
+    summarizes: bool
+
+
 class MessageStartEvent(BaseModel):
     """
     Metadata sent at the start of a streaming response.
