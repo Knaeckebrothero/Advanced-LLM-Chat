@@ -27,6 +27,15 @@
     "shareLocation": "Share location",
     "send": "Send message",
     "stop": "Stop answering",
+    "generate": "Generate an answer",
+    "context": {
+      "total": "About {{count}} of {{window}} input tokens ({{percent}} %)",
+      "parts": "System prompt {{system}} · tools {{tools}} · history {{history}} ({{messages}} messages)",
+      "draft": "Your draft adds about {{count}}.",
+      "leftOut": "Messages left out because they don't fit: {{count}}",
+      "summarizes": "The next answer first summarizes the oldest messages and then sends less.",
+      "estimate": "An estimate; the tools of MCP servers are not counted."
+    },
     "record": "Record voice message",
     "recording": "Recording",
     "cancelRecording": "Cancel recording",
@@ -447,7 +456,7 @@
     "guided": "Guided",
     "manual": "Manual",
     "guidedHint": "You edit your own messages, and an edited message is answered again.",
-    "manualHint": "You edit any message, the answers too, and insert messages anywhere. Nothing is generated."
+    "manualHint": "You edit any message, the answers too, and insert messages anywhere. Nothing is answered on its own: “Generate an answer” in the input field answers your newest message."
   },
   "conversationMenu": {
     "rename": "Rename",
