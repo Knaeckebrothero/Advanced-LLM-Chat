@@ -946,6 +946,22 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
+   * Answer the conversation as it is stored, without sending a new message (manual editing:
+   * Generate in the composer once the newest message is the user's and nothing has answered it).
+   */
+  async answerLatestMessage(): Promise<void> {
+    if (this.isStreaming$.getValue()) {
+      throw new Error('Wait until the answer is complete');
+    }
+    const conversationId = this.activeConversationId$.getValue();
+    if (!conversationId || conversationId === '0') {
+      return;
+    }
+    this.error$.next(null);
+    await this._streamResponse(conversationId);
+  }
+
+  /**
    * Regenerate a message using streaming.
    * Deletes the old AI message and streams a new response.
    * @param modelId - Answer with this catalog model instead of the conversation's model (once)

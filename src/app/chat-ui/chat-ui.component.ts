@@ -1,17 +1,19 @@
 import { Component, ViewChild, ViewChildren, ElementRef, QueryList, AfterViewChecked, AfterViewInit, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Message, AgentContent } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
-import { Subscription, Observable, combineLatest } from 'rxjs';
-import { map, filter, distinctUntilChanged } from 'rxjs/operators';
+import { Subscription, Observable, combineLatest, from, of } from 'rxjs';
+import { map, filter, distinctUntilChanged, debounceTime, switchMap, catchError, shareReplay } from 'rxjs/operators';
 import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
 import { RecordingResult } from '../data/objects/recording';
 import { ChatStateService } from '../services/chat-state.service';
 import { UIStateService } from '../services/ui-state.service';
 import { ThemeService } from '../services/theme.service';
+import { SettingsStateService } from '../services/settings-state.service';
 import { ChatUiInputfieldComponent } from './chat-ui-inputfield/chat-ui-inputfield.component';
 import { ChatUiMessageComponent } from './chat-ui-message/chat-ui-message.component';
 import { IPublicModel } from '../data/models/catalog.model';
-import { IConversationSummary } from '../data/models/conversation.model';
+import { IContextSize, IConversationSummary } from '../data/models/conversation.model';
+import { ApiService } from '../services/api.service';
 
 
 @Component({
@@ -99,6 +101,41 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     distinctUntilChanged()
   );
 
+  // Manual editing: the composer offers Generate while the newest message (system messages aside,
+  // they belong to the system prompt) is a stored message of the user that has no answer yet.
+  // After an answer it is not offered: a history that ends with the model's message would be
+  // continued (Anthropic prefill) or refused, not answered.
+  canGenerate$: Observable<boolean> = combineLatest([
+    this.settingsState.settings$,
+    this.messages$
+  ]).pipe(
+    map(([settings, messages]) => {
+      if (settings.editingMode !== 'manual') return false;
+      const newest = [...messages].reverse().find(m => m.roleName !== 'system');
+      return !!newest && newest.id > 0 && newest.roleName === 'user';
+    }),
+    distinctUntilChanged()
+  );
+
+  // Manual editing: about how many input tokens the next answer sends. The backend counts again
+  // whenever the messages, the summary, the model or the agent change (the effective model follows
+  // the selection); only with a session, since a 401 would open the login page. Null hides it.
+  contextSize$: Observable<IContextSize | null> = combineLatest([
+    this.settingsState.settings$.pipe(map(settings => settings.editingMode === 'manual'), distinctUntilChanged()),
+    this.authService.currentUser$.pipe(map(user => user !== null), distinctUntilChanged()),
+    this.chatState.activeConversation$,
+    this.chatState.messages$,
+    this.chatState.conversationSummary$,
+    this.chatState.effectiveModel$
+  ]).pipe(
+    debounceTime(300),
+    switchMap(([manual, signedIn, conversation, , , model]) => {
+      if (!manual || !signedIn || !conversation || conversation.id === '0') return of(null);
+      return from(this.apiService.getContextSize(conversation.id, model?.id)).pipe(catchError(() => of(null)));
+    }),
+    shareReplay({ bufferSize: 1, refCount: true })
+  );
+
   // Scrolled up far enough: a button jumps back to the newest message
   showScrollToBottom = false;
   private jumpingToBottom = false;
@@ -123,6 +160,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     private uiState: UIStateService,
     private authService: AuthService,
     private themeService: ThemeService,
+    private settingsState: SettingsStateService,
+    private apiService: ApiService,
     private cdr: ChangeDetectorRef
   ) { }
 
@@ -598,10 +637,17 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.chatState.cancelStreaming();
   }
 
-  // Generate a new message
-  async generateMessage(): Promise<void> {
+  // Generate in the composer (manual editing): answer the newest message, which is the user's
+  async generateAnswer(): Promise<void> {
+    // Like a regeneration: follow the bottom instead of anchoring the user message at the top
+    this.useAnchorMode = false;
+    this.anchorMessageIndex = null;
+    this.userIsAtBottom = true;
+    this.shouldScrollToBottom = true;
+    this.userScrolledDuringStreaming = false;
+
     try {
-      await this.chatState.generateMessage(this.aiName);
+      await this.chatState.answerLatestMessage();
     } catch (error) {
       console.error('Error generating AI response:', error);
     }

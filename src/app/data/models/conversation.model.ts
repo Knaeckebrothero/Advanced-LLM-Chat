@@ -39,6 +39,26 @@ export interface IConversationSummary {
   createdAt: number;     // unix seconds
 }
 
+/**
+ * About how many input tokens the next answer sends (POST /api/message/context-size): estimates
+ * of about 3 characters per token, without the tools of MCP servers.
+ */
+export interface IContextSize {
+  modelId?: number | null;
+  contextWindow: number;
+  inputTokens: number;     // systemTokens + toolTokens + historyTokens
+  systemTokens: number;
+  toolTokens: number;
+  historyTokens: number;   // the summary, then the newest messages that fit
+  historyBudget: number;
+  messageCount: number;    // messages in the history, without the summary
+  leftOutCount: number;    // messages that don't fit and are left out
+  summarizes: boolean;     // the next answer first folds the oldest messages into the summary
+}
+
+/** The token estimate of the backend (backend/services/conversation_history.py CHARS_PER_TOKEN). */
+export const CHARS_PER_TOKEN = 3;
+
 // For sync checking
 export interface IConversationState {
   id: string;
