@@ -18,6 +18,8 @@ import { environment } from '../../environments/environment';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { ImagePreviewDialogComponent, ImagePreviewDialogData } from './image-preview-dialog/image-preview-dialog.component';
 import { TranslateModule, TranslateService } from "@ngx-translate/core";
+import { ContextMeterComponent } from './context-meter/context-meter.component';
+import { IContextSize } from '../../data/models/conversation.model';
 
 
 /**
@@ -72,7 +74,8 @@ import { TranslateModule, TranslateService } from "@ngx-translate/core";
     MatTooltipModule,
     MatProgressBarModule,
     MatDialogModule,
-    TranslateModule
+    TranslateModule,
+    ContextMeterComponent
   ],
   templateUrl: './chat-ui-inputfield.component.html',
   styleUrls: ['./chat-ui-inputfield.component.scss']
@@ -118,9 +121,16 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   @Output() cameraRequested = new EventEmitter<void>();
   @Output() locationRequested = new EventEmitter<void>();
   @Output() stopRequested = new EventEmitter<void>();
+  @Output() generateRequested = new EventEmitter<void>();
 
   // Input property to track if AI is currently streaming
   @Input() isStreaming: boolean = false;
+
+  // Manual editing: the newest message is the user's and has no answer, so an empty field offers Generate
+  @Input() canGenerate: boolean = false;
+
+  // Manual editing: about how many input tokens the next answer sends (null hides the indicator)
+  @Input() contextSize: IContextSize | null = null;
 
   // Device capability flags
   hasCamera: boolean = false;
