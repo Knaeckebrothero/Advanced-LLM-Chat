@@ -388,10 +388,48 @@ export class ChatStateService implements OnDestroy {
 
     // Save user message to repository
     await this.messageRepository.save(userMessage);
+    if (userMessage.isLocal) {
+      this.reportNotSent(userMessage);
+      return;
+    }
     await this.conversationRepository.recordMessage(conversationId, userMessage.id);
 
     // Start streaming the AI response
     await this._streamResponse(conversationId);
+  }
+
+  /**
+   * Send a message again that the server didn't take (only this browser has it), and answer it.
+   * The server stores it now, so it moves to the end of the conversation.
+   */
+  async resendMessage(messageId: number): Promise<void> {
+    if (this.isStreaming$.getValue()) {
+      throw new Error('Wait until the answer is complete');
+    }
+    const message = (await firstValueFrom(this.messages$)).find(m => m.id === messageId);
+    if (!message || !message.isLocal || !message.isText()) {
+      return;
+    }
+    const conversationId = message.conversationId;
+    this.error$.next(null);
+    await this.conversationRepository.markMessageSent(conversationId);
+    try {
+      await this.messageRepository.resend(message);
+    } catch {
+      this.reportNotSent(message);
+      return;
+    }
+    await this.conversationRepository.recordMessage(conversationId, message.id);
+    await this._streamResponse(conversationId);
+  }
+
+  /**
+   * The server didn't take the user's message: nothing answers it (the server would answer the
+   * conversation without it). It stays in this browser, and the chat shows it as not sent, with
+   * a button to send it again (resendMessage()); it can also be deleted.
+   */
+  private reportNotSent(message: MessageWithSyncStatus): void {
+    message.syncStatus = 'failed';
   }
 
   /**
@@ -462,6 +500,10 @@ export class ChatStateService implements OnDestroy {
 
     // Save user message to repository
     await this.messageRepository.save(userMessage);
+    if (userMessage.isLocal) {
+      this.reportNotSent(userMessage);
+      return;
+    }
     await this.conversationRepository.recordMessage(conversationId, userMessage.id);
 
     // Start streaming the AI response (backend will extract file attachments)
@@ -550,7 +592,10 @@ export class ChatStateService implements OnDestroy {
       await this.conversationRepository.recordMessage(conversationId, messageToSync.id);
     } catch (error) {
       console.error('Failed to sync voice message with backend:', error);
-      // Continue anyway - message is saved locally
+    }
+    if (messageToSync.isLocal) {
+      this.reportNotSent(messageToSync);
+      return;
     }
 
     // Start streaming the AI response
