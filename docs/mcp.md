@@ -23,6 +23,7 @@ The client is the official `mcp` Python SDK (2.x, `mcp.Client`), which talks to 
 | `MCP_CONNECT_TIMEOUT` | `20` | Seconds to connect and list a server's tools |
 | `MCP_TOOL_TIMEOUT` | `120` | Seconds a tool call may take |
 | `MCP_IDLE_TIMEOUT` | `300` | Seconds a connection stays open without use |
+| `MCP_ELICITATION_TIMEOUT` | `300` | Seconds a server's question waits for the user's answer before it is cancelled |
 | `MCP_MAX_RESULT_CHARS` | `50000` | Longer tool results are cut |
 
 `${VAR}` in an admin server's URL, header values and stdio environment is filled from the backend's environment. The variable's name must end in `_KEY`, `_TOKEN`, `_SECRET` or `_API`, so a definition can't send other server settings (such as `POSTGRES_PASSWORD`) anywhere. An unset variable makes the server unavailable, with the reason.
@@ -32,6 +33,7 @@ The client is the official `mcp` Python SDK (2.x, `mcp.Client`), which talks to 
 - `mcp_servers`: both kinds. `user_id` NULL is an admin server, else the user's own. `slug` (unique per owner, fixed after creation) is the prefix of its tool names. Transport `http` (Streamable HTTP), `sse` (the older HTTP+SSE transport) or `stdio` (admin only). Auth `none`, `headers` or `oauth`. Admin servers keep header values as written (with `${VAR}`); users' header values are encrypted (`headers_encrypted`). `tools`: the MCP tool names offered to the model, NULL for all. `oauth_client_encrypted`: the client from dynamic client registration.
 - `mcp_tokens`: a user's OAuth sign-in to a server (`server_id`, `user_id`), encrypted, with the token endpoint and client needed to refresh it.
 - `mcp_oauth_flows`: sign-ins in progress (state, PKCE verifier encrypted, user, server), at most 15 minutes old.
+- `mcp_auto_accept`: the servers whose plain confirmations a user accepts without being asked (`server_id`, `user_id`, `conversation_id`: one conversation, NULL for every one). Deleting the server, the user or the conversation deletes it.
 - `personas.mcp_servers`: the slugs of the admin servers an agent uses (NULL or `[]` for none).
 
 Deleting a user deletes their servers and tokens (foreign keys); deleting an admin server removes its slug from the agents.
@@ -47,6 +49,23 @@ Deleting a user deletes their servers and tokens (foreign keys); deleting an adm
 5. The system prompt gets a section `## Tools from MCP servers:` listing each connected server, its tool prefix, its description and the instructions the server sends (cut at 2000 characters), and the servers that give no tools this time with the reason. Without that, a model that sees earlier answers with results from a server (as text: the history has no tool calls) but no tools for it now decided it had made those results up (DeepSeek V4.1 Flash, seen live).
 
 Tool results: text content goes to the model as it is; structured content as JSON when there is no text; images, audio and blobs become a short placeholder (`[image/png, 12 KB, not shown]`), resource links their name and URI. A result with `isError` becomes a failed step. Results are cut at `MCP_MAX_RESULT_CHARS`. Arguments are checked against the top level of the tool's schema like every other tool.
+
+## Questions from servers (elicitation)
+
+While one of its tools runs, a server may ask the user something: to confirm a paid run (Civitai's generation server asks "Spend 3 Buzz to run imageGen?" before every paid run), for input the tool needs, or to open a page. The client declares the `elicitation` capability (form and URL mode); servers must not ask clients that don't, but Civitai does anyway and fails every paid run without it (seen 2026-11-12).
+
+`backend/services/mcp/elicitation.py`:
+
+1. Every connection of the pool has the client's elicitation callback. An MCP tool call registers who answers its questions (`Asker`: the user, the server's name and the answer's step sink) for the time it runs, in its context and on the connection (the fallback for a callback outside the call's context). The SDK asks within the call: on 2026-07-28 as an `InputRequiredResult` it fulfils and retries, on older revisions as an `elicitation/create` request during the call.
+2. The question becomes a step of the answer: `observation`, id `elicitation-<id>`, title `Question: <server name>`, the server's message as its content, `metadata.elicitation = {id, server, mode: "form" | "url", status: "pending", schema (form) | url (url)}`. Tools reach the stream through the step sink of the agent loop (`backend/llm/tools.py`, `with_step_sink`), which passes their steps on while they run.
+3. The chat shows a pending question under the steps panel (`ElicitationCardComponent`): the message, the form's fields from the flat schema (text, number, yes/no, a choice, several choices), or in URL mode the page's host, and Decline next to Accept, Send or "Open <host>" (which opens the page in a new tab). The answer goes to `POST /api/mcp/elicitations/{id}`; the backend checks the values against the schema and wakes the waiting call.
+4. The step is replaced with the outcome: status `accept` (with `answer`, the values sent), `decline`, `cancel` or `timeout`, and its duration. The step list shows it ("Accepted (Guests: 3)").
+
+**Accepting without being asked.** A plain confirmation, a form whose required fields all have defaults (Civitai's has no fields at all), carries `confirmation: true` (and `conversation: true` within a conversation). The card then offers "Accept automatically for the rest of this chat" and "Always accept automatically from <server>"; ticked, the answer carries `remember: "conversation" | "always"`, stored in `mcp_auto_accept`. From then on such questions of that server aren't shown: the step is added already accepted (`status: "accept"`, `auto: "conversation" | "always"`, the defaults as `answer`), so every spend still shows in the chat. Questions that need input and pages to open always ask. "Always" is shown and turned off on the MCP servers page (a switch on the own and the agents' OAuth servers, and a section for the other agents' servers); "this chat" ends with the conversation.
+
+A question without an answer within `MCP_ELICITATION_TIMEOUT` is cancelled; so is one asked where no chat is watching (no answer stream), and a URL that isn't http(s) is declined without asking. On servers of older revisions the question arrives during the `tools/call` request, so the time to answer counts toward `MCP_TOOL_TIMEOUT`; on 2026-07-28 it doesn't (each round is a request of its own).
+
+Pending questions live in the backend process's memory, so the answer has to reach the process that runs the answer: fine with one backend replica (the chart's default), not across several.
 
 ## OAuth sign-in
 
@@ -67,7 +86,7 @@ All bodies are camelCase JSON; authentication and CSRF as for the other endpoint
 | Method and path | Body | Response |
 |---|---|---|
 | `GET /api/mcp/config` | | `McpConfig` |
-| `GET /api/mcp/servers` | | `McpServerList`: `own` (the user's servers) and `shared` (enabled admin servers with OAuth, to sign in to; for users who aren't admins without headers, environment, command and OAuth client) |
+| `GET /api/mcp/servers` | | `McpServerList`: `own` (the user's servers), `shared` (enabled admin servers with OAuth, to sign in to; for users who aren't admins without headers, environment, command and OAuth client) and `autoAccepted` (the other admin servers whose confirmations the user accepts without asking) |
 | `POST /api/mcp/servers` | `McpServerCreate` | `McpServerOut` (an own server; `http` or `sse`) |
 | `PUT /api/mcp/servers/{id}` | `McpServerUpdate` | `McpServerOut` (own servers only) |
 | `DELETE /api/mcp/servers/{id}` | | 204 (own servers only) |
@@ -75,6 +94,8 @@ All bodies are camelCase JSON; authentication and CSRF as for the other endpoint
 | `POST /api/mcp/servers/{id}/connect` | | `{"authorizationUrl": str}` (OAuth servers the user may sign in to) |
 | `DELETE /api/mcp/servers/{id}/connection` | | 204 |
 | `GET /api/mcp/oauth/callback` | | redirect to the frontend |
+| `POST /api/mcp/elicitations/{id}` | `McpElicitationAnswer` | 204: the answer to a server's question while its tool runs (also guests); 404 when it isn't open (answered, timed out, another user's), 400 for values that don't fit its form or `remember` for a question that isn't a plain confirmation |
+| `PUT /api/mcp/servers/{id}/auto-accept` | `{"enabled": bool}` | 204: accept the server's plain confirmations without asking in every conversation, or stop (own servers and admin servers; 404 for another user's) |
 
 ### Admin only
 
@@ -120,6 +141,7 @@ McpServerOut     id, shared (true for admin servers), name, slug, description, t
                  oauthClientId, oauthClientSecretEnv, oauthScopes, tools, availableToGuests, enabled,
                  sortOrder,
                  connected (OAuth: the current user has signed in; null for other auth),
+                 autoAccept (the current user accepts its plain confirmations without asking),
                  unavailableReason (e.g. "MCP_STDIO_ENABLED is off", "ENCRYPTION_KEY is not set",
                  "GITHUB_TOKEN is not set"; null when usable),
                  createdAt, updatedAt
@@ -129,6 +151,10 @@ McpToolInfo      name, title?, description?, readOnly?, destructive? (the server
 
 McpTestResult    ok, error?, authRequired, serverName?, serverVersion?, protocolVersion?, instructions?,
                  tools: McpToolInfo[]
+
+McpElicitationAnswer  action ("accept" | "decline" | "cancel"), content? (the form's values with accept),
+                      remember? ("conversation" | "always": with accept of a plain confirmation, accept the
+                      server's next ones without asking)
 ```
 
 ### Agents
@@ -139,10 +165,10 @@ McpTestResult    ok, error?, authRequired, serverName?, serverVersion?, protocol
 
 ## Tests
 
-`python backend/services/tests/mcp_test.py` (13 checks) runs against real MCP servers of the SDK on free local ports (Streamable HTTP, one that wants a header, the older SSE transport, one behind a small OAuth authorization server with dynamic client registration, PKCE and refresh tokens, and one over stdio) and a real Postgres, in a `<POSTGRES_DB>_mcp_test` database it creates itself. It covers the definitions and their rules, which servers an answer gets, the tools and their results, the pool, the address guard, the OAuth sign-in from start to refresh, the catalog file, the answer's tools in `messages.py` and the API.
+`python backend/services/tests/mcp_test.py` (15 checks) runs against real MCP servers of the SDK on free local ports (Streamable HTTP, one that wants a header, the older SSE transport, one that asks before a paid run, one behind a small OAuth authorization server with dynamic client registration, PKCE and refresh tokens, and one over stdio) and a real Postgres, in a `<POSTGRES_DB>_mcp_test` database it creates itself. It covers the definitions and their rules, which servers an answer gets, the tools and their results, the pool, the address guard, the OAuth sign-in from start to refresh, the questions of servers (accept, decline, no answer in time, nobody to ask, the form's values, URL mode, the agent loop passing them on, plain confirmations accepted without asking in one conversation or always), the catalog file, the answer's tools in `messages.py` and the API.
 
 ## Not built yet
 
-- **Asking before a tool runs.** Many MCP tools write or delete; the agent loop can't pause for the user's approval yet. Until then, offer only the tools an agent should run on its own (the server's tool selection), and mind the `destructive` hint in the tool list.
-- Images from tool results for vision models, resources and prompts of MCP servers, sampling and elicitation requests from servers.
+- **Asking before a tool runs.** Many MCP tools write or delete; the agent loop doesn't ask the user before it calls one (servers can ask themselves, see "Questions from servers", and the same step could ask for a tool marked `destructive`). Until then, offer only the tools an agent should run on its own (the server's tool selection), and mind the `destructive` hint in the tool list.
+- Images from tool results (shown in the chat, and for vision models), resources and prompts of MCP servers, sampling requests from servers.
 - Revoking tokens at the provider when signing out.

@@ -301,6 +301,13 @@
 
 // Live reasoning text under the collapsed panel: the newest lines stay visible,
 // older ones are clipped at the top
+.step-outcome {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--theme-text-secondary);
+}
+
 .live-thought {
   display: flex;
   flex-direction: column;

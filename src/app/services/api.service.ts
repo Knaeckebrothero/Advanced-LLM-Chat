@@ -40,6 +40,8 @@ import {
 import {
   IMcpConfig,
   IMcpConnectResult,
+  McpAutoAcceptScope,
+  McpElicitationAction,
   IMcpServerCreate,
   IMcpServerList,
   IMcpServerOut,
@@ -817,6 +819,24 @@ export class ApiService {
   /** Signs out of an OAuth server (deletes the user's tokens). */
   async disconnectMcpServer(id: number): Promise<void> {
     await lastValueFrom(this.http.delete(`${this.baseUrl}/api/mcp/servers/${id}/connection`, this.getHttpOptions()));
+  }
+
+  /**
+   * Answers a server's question to the user (elicitation) while its tool runs: the form's values
+   * with accept in form mode; `remember` with accept of a plain confirmation accepts the server's
+   * confirmations without asking from now on. 404 when the question is no longer open, 400 for
+   * values that don't fit.
+   */
+  async answerMcpElicitation(id: string, action: McpElicitationAction, content?: Record<string, unknown>,
+                             remember?: McpAutoAcceptScope | null): Promise<void> {
+    await lastValueFrom(this.http.post(`${this.baseUrl}/api/mcp/elicitations/${encodeURIComponent(id)}`,
+      { action, content: content ?? null, remember: remember ?? null }, this.getHttpOptions()));
+  }
+
+  /** Accept a server's confirmations without asking in every conversation, or stop (own and agents' servers). */
+  async setMcpAutoAccept(id: number, enabled: boolean): Promise<void> {
+    await lastValueFrom(this.http.put(`${this.baseUrl}/api/mcp/servers/${id}/auto-accept`, { enabled },
+      this.getHttpOptions()));
   }
 
   // MCP servers of the agents: admin endpoints (403 for everyone else)

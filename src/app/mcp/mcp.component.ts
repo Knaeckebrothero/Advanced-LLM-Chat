@@ -73,6 +73,8 @@ export class McpComponent implements OnInit {
   readonly config = signal<IMcpConfig | null>(null);
   readonly own = signal<IMcpServerOut[]>([]);
   readonly shared = signal<IMcpServerOut[]>([]);
+  /** Other agents' servers whose confirmations the user accepts without asking (to turn that off). */
+  readonly autoAccepted = signal<IMcpServerOut[]>([]);
 
   /** MCP is switched off on the server (MCP_ENABLED). */
   readonly mcpOff = computed(() => this.config()?.enabled === false);
@@ -143,6 +145,7 @@ export class McpComponent implements OnInit {
     const list = await this.api.getMcpServers();
     this.own.set(sortServers(list?.own ?? []));
     this.shared.set(sortServers(list?.shared ?? []));
+    this.autoAccepted.set(sortServers(list?.autoAccepted ?? []));
   }
 
   /** Reload the lists after a change; a failure only shows a message. */
@@ -239,6 +242,20 @@ export class McpComponent implements OnInit {
   async setEnabled(server: IMcpServerOut, change: MatSlideToggleChange): Promise<void> {
     try {
       this.replace(await this.api.updateMcpServer(server.id, { enabled: change.checked }));
+    } catch (error) {
+      change.source.checked = !change.checked;  // Flip the switch back
+      this.showError(error);
+    }
+  }
+
+  /**
+   * Accept the server's plain confirmations (e.g. "Spend 4 Buzz?") without asking, in every
+   * conversation (docs/mcp.md, "Questions from servers"). The chat's question card turns it on.
+   */
+  async setAutoAccept(server: IMcpServerOut, change: MatSlideToggleChange): Promise<void> {
+    try {
+      await this.api.setMcpAutoAccept(server.id, change.checked);
+      server.autoAccept = change.checked;
     } catch (error) {
       change.source.checked = !change.checked;  // Flip the switch back
       this.showError(error);

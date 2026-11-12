@@ -11,8 +11,11 @@ that keeps the stored one); agents' servers and users' own servers through user_
 and others; the tools of an answer (names, the tool selection, results: text, errors, images,
 cut-off text; a server that is down becomes a notice); the connection pool (reuse, a changed
 definition); the address guard of users' own servers; the OAuth sign-in from the start to the
-refresh and a refresh that fails; persona validation and deleting a server; the catalog file;
-the answer's tools in backend/api/messages.py; the API through FastAPI's test client.
+refresh and a refresh that fails; questions of a server to the user (elicitation: the step in
+the chat, accept, decline, no answer in time, nobody to ask, the form's values, URL mode, the
+agent loop passing the question on while the tool runs); persona validation and deleting a
+server; the catalog file; the answer's tools in backend/api/messages.py; the API through
+FastAPI's test client.
 
 It creates the database <POSTGRES_DB>_mcp_test if needed (or --database, whose name must contain
 "test") and deletes its own test users, so it never touches the real database:
@@ -37,6 +40,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
+from typing import Annotated, Literal
 from urllib.parse import parse_qs, urlencode, urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -49,8 +53,11 @@ os.environ["MCP_TEST_KEY"] = "secret-123"
 
 import httpx2  # noqa: E402
 import uvicorn  # noqa: E402
-from mcp.server.mcpserver import MCPServer  # noqa: E402
+from mcp.server.elicitation import ElicitationResult  # noqa: E402
+from mcp.server.mcpserver import Elicit, MCPServer, Resolve  # noqa: E402
 from mcp.server.mcpserver.utilities.types import Image  # noqa: E402
+from mcp_types import ElicitRequestFormParams, ElicitRequestURLParams  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
 from sqlalchemy import delete, insert, select  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse, RedirectResponse, Response  # noqa: E402
@@ -59,17 +66,20 @@ from backend import config  # noqa: E402
 from backend.catalog import catalog_file, resolver, service  # noqa: E402
 from backend.catalog.service import CatalogError  # noqa: E402
 from backend.database.db import Database  # noqa: E402
-from backend.database.tables import mcp_servers, mcp_tokens, personas, users  # noqa: E402
-from backend.llm.tools import Tool, ToolError, ToolInputError, ToolRegistry  # noqa: E402
+from backend.database.tables import conversations, mcp_servers, mcp_tokens, personas, users  # noqa: E402
+from backend.llm import agent_loop  # noqa: E402
+from backend.llm.common import ToolCall  # noqa: E402
+from backend.llm.tools import Tool, ToolError, ToolInputError, ToolRegistry, with_step_sink  # noqa: E402
 from backend.models.catalog import PersonaCreate, PersonaUpdate  # noqa: E402
 from backend.models.mcp import McpServerCreate, McpServerUpdate  # noqa: E402
-from backend.services.mcp import oauth, servers, store  # noqa: E402
+from backend.services.mcp import elicitation, oauth, servers, store  # noqa: E402
 from backend.services.mcp import tools as mcp_tools  # noqa: E402
 from backend.services.mcp.pool import pool  # noqa: E402
 
 TEST_EMAILS = ("mcp-test-1@example.com", "mcp-test-2@example.com", "mcp-test-admin@example.com")
 TEST_PERSONA_PREFIX = "MCP test agent"
 TEST_SLUG_PREFIX = "t_"
+TEST_CONVERSATION_PREFIX = "mcp-test-"
 
 db: Database = None
 user_ids: list[int] = []
@@ -116,6 +126,42 @@ def make_mcp(name: str) -> MCPServer:
     def big() -> str:
         """A long text."""
         return "y" * 5000
+
+    return server
+
+
+class Spend(BaseModel):
+    confirm: bool
+    size: Literal["512", "1024"] = "1024"
+
+
+def ask_spend() -> Elicit[Spend]:
+    return Elicit("Spend 3 Buzz?", Spend)
+
+
+class Go(BaseModel):
+    """A plain confirmation, no fields (as Civitai asks before a paid run)."""
+
+
+def ask_go() -> Elicit[Go]:
+    return Elicit("Spend 1 Buzz to run imageGen?", Go)
+
+
+def make_asking_mcp() -> MCPServer:
+    """A server that asks the user before a paid run, as Civitai's generation server does."""
+    server = MCPServer("asking")
+
+    @server.tool()
+    def paid(prompt: str, answer: Annotated[ElicitationResult[Spend], Resolve(ask_spend)]) -> str:
+        """A paid run that asks first."""
+        if answer.action == "accept":
+            return f"ran {prompt} at {answer.data.size}"
+        return f"not run: {answer.action}"
+
+    @server.tool()
+    def quick(prompt: str, answer: Annotated[ElicitationResult[Go], Resolve(ask_go)]) -> str:
+        """A paid run with a plain confirmation."""
+        return f"ran {prompt}" if answer.action == "accept" else f"not run: {answer.action}"
 
     return server
 
@@ -229,6 +275,7 @@ def start_servers() -> None:
     serve("plain", make_mcp("plain").streamable_http_app())
     serve("keyed", Gate(make_mcp("keyed").streamable_http_app(), key_check))
     serve("sse", make_mcp("sse").sse_app())
+    serve("asking", make_asking_mcp().streamable_http_app())
     auth_server = FakeAuthServer()
     serve("oauth", Gate(make_mcp("oauth").streamable_http_app(), auth_server))
     ports["closed"] = free_port()  # Nothing listens here
@@ -254,6 +301,7 @@ STDIO_SERVER = textwrap.dedent("""
 
 def cleanup(conn) -> None:
     conn.execute(delete(mcp_servers).where(mcp_servers.c.slug.startswith(TEST_SLUG_PREFIX)))
+    conn.execute(delete(conversations).where(conversations.c.id.startswith(TEST_CONVERSATION_PREFIX)))
     conn.execute(delete(users).where(users.c.email.in_(TEST_EMAILS)))
     conn.execute(delete(personas).where(personas.c.name.startswith(TEST_PERSONA_PREFIX)))
 
@@ -553,6 +601,174 @@ async def test_stdio():
         await pool.close(row["id"])
 
 
+class Chat:
+    """A step sink like an answer's stream: records the steps and answers the questions."""
+
+    def __init__(self, action: str | None = "accept", content: dict | None = None, user_index: int = 0,
+                 remember: str | None = None):
+        self.steps = []
+        self.action = action
+        self.content = content
+        self.user_index = user_index
+        self.remember = remember
+
+    def __call__(self, step) -> None:
+        self.steps.append(step)
+        info = step.metadata["elicitation"]
+        if info["status"] == "pending" and self.action:
+            asyncio.get_running_loop().call_soon(
+                elicitation.answer, info["id"], user_ids[self.user_index], self.action, self.content, self.remember)
+
+    def statuses(self) -> list:
+        return [(step.metadata["elicitation"]["status"], step.metadata["elicitation"].get("auto"))
+                for step in self.steps]
+
+
+async def in_chat(chat: Chat, coroutine):
+    """Run a tool call as the agent loop does, with the chat as its step sink."""
+    return await asyncio.create_task(coroutine, context=with_step_sink(chat))
+
+
+async def pending_question(steps: list) -> dict:
+    for _ in range(100):
+        if steps:
+            return steps[-1].metadata["elicitation"]
+        await asyncio.sleep(0.02)
+    raise AssertionError("no question")
+
+
+async def test_elicitation():
+    admin_server("t_ask", url=url("asking"))
+    _, registry = await answer_tools(agent("A", mcp=["t_ask"]))
+    # Nobody to ask (no answer stream): the question is cancelled
+    assert await registry.call("t_ask__paid", {"prompt": "dragon"}) == "not run: cancel"
+
+    # Accepted, with the form's values as the browser may send them
+    chat = Chat(content={"confirm": "true", "size": "512"})
+    assert await in_chat(chat, registry.call("t_ask__paid", {"prompt": "dragon"})) == "ran dragon at 512"
+    first, last = chat.steps
+    assert first.id == last.id and first.id.startswith("elicitation-") and first.title == "Question: T_Ask"
+    assert first.type == "observation" and first.content == "Spend 3 Buzz?"
+    assert first.metadata["elicitation"]["status"] == "pending" and first.duration is None
+    info = last.metadata["elicitation"]
+    assert info["status"] == "accept" and info["answer"] == {"confirm": True, "size": "512"}, info
+    assert info["mode"] == "form" and info["server"] == "T_Ask" and last.duration is not None
+    assert info["schema"]["required"] == ["confirm"] and "size" in info["schema"]["properties"], info["schema"]
+
+    # Declined, and no answer in time
+    assert await in_chat(Chat(action="decline"), registry.call("t_ask__paid", {"prompt": "x"})) == "not run: decline"
+    elicitation.MCP_ELICITATION_TIMEOUT = 0.3
+    try:
+        chat = Chat(action=None)
+        assert await in_chat(chat, registry.call("t_ask__paid", {"prompt": "x"})) == "not run: cancel"
+        assert [step.metadata["elicitation"]["status"] for step in chat.steps] == ["pending", "timeout"]
+    finally:
+        elicitation.MCP_ELICITATION_TIMEOUT = config.MCP_ELICITATION_TIMEOUT
+    assert elicitation._pending == {}
+
+    # The agent loop passes the question on while the tool runs, before its result
+    events, history = [], []
+    calls = [ToolCall(id="c1", name="t_ask__paid", arguments='{"prompt": "cat"}')]
+    async for event in agent_loop._run_tools(registry, calls, history):
+        events.append(event[1])
+        info = (event[1].metadata or {}).get("elicitation")
+        if info and info["status"] == "pending":
+            elicitation.answer(info["id"], user_ids[0], "accept", {"confirm": True})
+    kinds = [(step.type, (step.metadata or {}).get("elicitation", {}).get("status")) for step in events]
+    assert kinds == [("tool_call", None), ("observation", "pending"), ("observation", "accept"),
+                     ("tool_result", None)], kinds
+    assert history[0]["content"] == "ran cat at 1024", history
+
+    # The answers it takes (the connection's fallback: no asker in the context)
+    steps = []
+    asker = elicitation.Asker(user_ids[0], "Test", steps.append)
+    params = ElicitRequestFormParams(message="Pick", requested_schema={"type": "object", "properties": {
+        "count": {"type": "integer", "minimum": 1, "maximum": 4, "title": "Count"},
+        "tags": {"type": "array", "items": {"enum": ["a", "b"]}},
+        "color": {"type": "string", "oneOf": [{"const": "red", "title": "Red"}, {"const": "blue", "title": "Blue"}]},
+    }, "required": ["count"]})
+    task = asyncio.create_task(elicitation.handle([asker], params))
+    question = (await pending_question(steps))["id"]
+    assert "no longer open" in expect_sync(elicitation.AnswerError, elicitation.answer, question, user_ids[1], "accept")
+    for bad in ({}, {"count": "1.5"}, {"count": 9}, {"count": True}, {"count": 2, "tags": ["c"]},
+                {"count": 2, "color": "green"}, {"count": 2, "tags": "a"}):
+        expect_sync(elicitation.AnswerError, elicitation.answer, question, user_ids[0], "accept", bad)
+    elicitation.answer(question, user_ids[0], "accept", {"count": "2", "tags": ["b"], "color": "red", "extra": 1})
+    result = await task
+    assert result.action == "accept" and result.content == {"count": 2, "tags": ["b"], "color": "red"}, result
+    expect_sync(elicitation.AnswerError, elicitation.answer, question, user_ids[0], "accept", {"count": 2})
+
+    # URL mode: the user agrees to open the page; a URL that isn't http(s) is declined without asking
+    steps.clear()
+    task = asyncio.create_task(elicitation.handle([asker], ElicitRequestURLParams(
+        message="Pay here", url="https://pay.example.com/x")))
+    info = await pending_question(steps)
+    assert info["mode"] == "url" and info["url"] == "https://pay.example.com/x" and "schema" not in info
+    elicitation.answer(info["id"], user_ids[0], "accept", {"ignored": 1})
+    result = await task
+    assert result.action == "accept" and result.content is None, result
+    result = await elicitation.handle([asker], ElicitRequestURLParams(message="x", url="javascript:alert(1)"))
+    assert result.action == "decline" and len(steps) == 2
+    # Nobody running a call on the connection: cancelled
+    assert (await elicitation.handle([], params)).action == "cancel"
+    # Only plain confirmations can be accepted without asking
+    steps.clear()
+    task = asyncio.create_task(elicitation.handle([elicitation.Asker(user_ids[0], "Test", steps.append, 1, None)],
+                                                  params))
+    info = await pending_question(steps)
+    assert info["confirmation"] is False and "conversation" not in info
+    assert "plain confirmations" in expect_sync(elicitation.AnswerError, elicitation.answer, info["id"], user_ids[0],
+                                                "accept", {"count": 1}, "always")
+    elicitation.answer(info["id"], user_ids[0], "decline", None, "always")  # Ignored with decline
+    assert (await task).action == "decline"
+    assert elicitation.confirmation_defaults({"type": "object", "properties": {}}) == {}
+    assert elicitation.confirmation_defaults({"properties": {"n": {"type": "integer", "default": 2}},
+                                              "required": ["n"]}) == {"n": 2}
+    assert elicitation.confirmation_defaults({"properties": {"n": {"type": "integer"}}, "required": ["n"]}) is None
+
+
+async def test_auto_accept():
+    row = admin_server("t_ask", url=url("asking"))
+    with db.connection() as conn:
+        for name in ("one", "two"):
+            conn.execute(insert(conversations).values(id=TEST_CONVERSATION_PREFIX + name, userId=user_ids[0],
+                                                      name="MCP test"))
+    persona = agent("A", mcp=["t_ask"])
+    _, one = await answer_tools({**persona, "id": TEST_CONVERSATION_PREFIX + "one"})
+    _, two = await answer_tools({**persona, "id": TEST_CONVERSATION_PREFIX + "two"})
+
+    # A plain confirmation, accepted "for the rest of this chat": the next one there isn't asked
+    chat = Chat(remember="conversation")
+    assert await in_chat(chat, one.call("t_ask__quick", {"prompt": "a"})) == "ran a"
+    first = chat.steps[0].metadata["elicitation"]
+    assert first["confirmation"] is True and first["conversation"] is True and first["schema"]["properties"] == {}
+    assert chat.statuses() == [("pending", None), ("accept", None)]
+    assert chat.steps[-1].metadata["elicitation"]["remember"] == "conversation"
+    chat = Chat(action=None)  # Would never answer
+    assert await in_chat(chat, one.call("t_ask__quick", {"prompt": "b"})) == "ran b"
+    assert chat.statuses() == [("accept", "conversation")] and chat.steps[0].content == "Spend 1 Buzz to run imageGen?"
+    # Questions that need input still ask
+    assert await in_chat(Chat(content={"confirm": True}), one.call("t_ask__paid", {"prompt": "c"})) == "ran c at 1024"
+    # Another conversation asks again; "always" covers every one, until it is turned off
+    chat = Chat(remember="always")
+    assert await in_chat(chat, two.call("t_ask__quick", {"prompt": "d"})) == "ran d"
+    assert chat.statuses() == [("pending", None), ("accept", None)]
+    assert store.auto_accept_server_ids(user_ids[0]) == {row["id"]}
+    chat = Chat(action=None)
+    assert await in_chat(chat, two.call("t_ask__quick", {"prompt": "e"})) == "ran e"
+    assert chat.statuses() == [("accept", "always")]
+    assert store.auto_accept_scope(row["id"], user_ids[1], None) is None  # Only that user
+    store.set_auto_accept(row["id"], user_ids[0], False)
+    store.set_auto_accept(row["id"], user_ids[0], False)
+    chat = Chat(action="decline")
+    assert await in_chat(chat, two.call("t_ask__quick", {"prompt": "f"})) == "not run: decline"
+    assert store.auto_accept_scope(row["id"], user_ids[0], TEST_CONVERSATION_PREFIX + "one") == "conversation"
+    # Deleting the conversation ends its choice
+    with db.connection() as conn:
+        conn.execute(delete(conversations).where(conversations.c.id == TEST_CONVERSATION_PREFIX + "one"))
+    assert store.auto_accept_scope(row["id"], user_ids[0], TEST_CONVERSATION_PREFIX + "one") is None
+
+
 async def test_answer_context():
     from backend.api import messages
     from backend.llm.types import ModelConfig
@@ -647,9 +863,27 @@ async def test_api():
             assert client.get("/api/mcp/servers").json()["shared"][0]["connected"] is True
             assert client.delete(f"/api/mcp/servers/{shared_id}/connection").status_code == 204
 
+            # Accepting a server's confirmations without asking: own servers and the agents' servers
+            current["user"] = user(0)
+            assert client.put(f"/api/mcp/servers/{server_id}/auto-accept", json={"enabled": True}).status_code == 204
+            listing = client.get("/api/mcp/servers").json()
+            assert listing["own"][0]["autoAccept"] is True and listing["autoAccepted"] == [], listing
+            plain = admin_server("t_plain2", url=url("plain"))
+            assert client.put(f"/api/mcp/servers/{plain['id']}/auto-accept", json={"enabled": True}).status_code == 204
+            listing = client.get("/api/mcp/servers").json()
+            assert [s["slug"] for s in listing["autoAccepted"]] == ["t_plain2"] and listing["autoAccepted"][0]["headers"] is None
+            assert listing["shared"][0]["autoAccept"] is False
+            assert client.put(f"/api/mcp/servers/{plain['id']}/auto-accept", json={"enabled": False}).status_code == 204
+            assert client.get("/api/mcp/servers").json()["autoAccepted"] == []
+            current["user"] = user(1)
+            assert client.put(f"/api/mcp/servers/{server_id}/auto-accept", json={"enabled": True}).status_code == 404
+
             current["user"] = user(1, guest=True)
             assert client.get("/api/mcp/servers").status_code == 403
             assert client.get("/api/mcp/config").status_code == 200
+            # Guests may answer questions (of admin servers available to guests); this one isn't open
+            assert client.post("/api/mcp/elicitations/nope", json={"action": "accept"}).status_code == 404
+            assert client.post("/api/mcp/elicitations/nope", json={"action": "maybe"}).status_code == 422
             current["user"] = user(0)
             assert client.delete(f"/api/mcp/servers/{server_id}").status_code == 204
     finally:
@@ -670,6 +904,8 @@ TESTS = [
     test_sse_transport,
     test_private_addresses,
     test_oauth,
+    test_elicitation,
+    test_auto_accept,
     test_stdio,
     test_answer_context,
     test_catalog_file,

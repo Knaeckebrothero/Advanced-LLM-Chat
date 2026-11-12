@@ -275,6 +275,18 @@ CREATE TABLE IF NOT EXISTS mcp_oauth_flows (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- name: create_mcp_auto_accept_table
+-- Confirmations of an MCP server a user accepts without being asked (elicitation, docs/mcp.md):
+-- in one conversation, or in every one (conversation_id NULL)
+CREATE TABLE IF NOT EXISTS mcp_auto_accept (
+    id SERIAL PRIMARY KEY,
+    server_id INTEGER NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS mcp_auto_accept_key ON mcp_auto_accept(server_id, user_id, coalesce(conversation_id, ''));
+
 -- name: create_kb_note_revisions_table
 -- Every version of a note, written in the same transaction as the note: what it was, who wrote it and where
 CREATE TABLE IF NOT EXISTS kb_note_revisions (

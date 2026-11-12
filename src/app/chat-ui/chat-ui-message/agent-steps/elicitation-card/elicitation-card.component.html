@@ -1,0 +1,109 @@
+@if (question) {
+  <section class="question-card" [attr.aria-label]="'message.question.from' | translate: { server: question.server }">
+    <header class="question-head">
+      <mat-icon aria-hidden="true">help</mat-icon>
+      <span>{{ 'message.question.from' | translate: { server: question.server } }}</span>
+    </header>
+
+    <p class="question-message">{{ step.content }}</p>
+
+    @if (urlMode) {
+      <p class="question-url">
+        <mat-icon aria-hidden="true">open_in_new</mat-icon>
+        <span class="question-host">{{ host }}</span>
+        <span class="question-full-url">{{ question.url }}</span>
+      </p>
+    }
+
+    @if (fields.length) {
+      <form class="question-form" (ngSubmit)="answer('accept')">
+        @for (field of fields; track field.name) {
+          @switch (field.kind) {
+            @case ('boolean') {
+              <mat-checkbox [name]="field.name" [(ngModel)]="values[field.name]" [disabled]="sending">
+                {{ field.label }}
+              </mat-checkbox>
+              @if (field.description) {
+                <p class="question-hint">{{ field.description }}</p>
+              }
+            }
+            @case ('select') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>{{ field.label }}</mat-label>
+                <mat-select [name]="field.name" [(ngModel)]="values[field.name]" [required]="field.required"
+                            [disabled]="sending">
+                  @for (choice of field.choices; track choice.value) {
+                    <mat-option [value]="choice.value">{{ choice.label }}</mat-option>
+                  }
+                </mat-select>
+                @if (field.description) {
+                  <mat-hint>{{ field.description }}</mat-hint>
+                }
+              </mat-form-field>
+            }
+            @case ('multi') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>{{ field.label }}</mat-label>
+                <mat-select [name]="field.name" [(ngModel)]="values[field.name]" [required]="field.required"
+                            [disabled]="sending" multiple>
+                  @for (choice of field.choices; track choice.value) {
+                    <mat-option [value]="choice.value">{{ choice.label }}</mat-option>
+                  }
+                </mat-select>
+                @if (field.description) {
+                  <mat-hint>{{ field.description }}</mat-hint>
+                }
+              </mat-form-field>
+            }
+            @default {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>{{ field.label }}</mat-label>
+                <input matInput [name]="field.name" [type]="field.inputType" [(ngModel)]="values[field.name]"
+                       [required]="field.required" [disabled]="sending"
+                       [attr.min]="field.min ?? null" [attr.max]="field.max ?? null" [attr.step]="field.step ?? null"
+                       [attr.minlength]="field.minLength ?? null" [attr.maxlength]="field.maxLength ?? null">
+                @if (field.description) {
+                  <mat-hint>{{ field.description }}</mat-hint>
+                }
+              </mat-form-field>
+            }
+          }
+        }
+      </form>
+    }
+
+    @if (question.confirmation) {
+      <!-- A plain confirmation: accept the server's next ones without asking -->
+      <div class="question-remember">
+        @if (question.conversation) {
+          <mat-checkbox [checked]="rememberChat || rememberAlways" [disabled]="sending || rememberAlways"
+                        (change)="rememberChat = $event.checked">
+            {{ 'message.question.rememberChat' | translate }}
+          </mat-checkbox>
+        }
+        <mat-checkbox [(ngModel)]="rememberAlways" [disabled]="sending">
+          {{ 'message.question.rememberAlways' | translate: { server: question.server } }}
+        </mat-checkbox>
+      </div>
+    }
+
+    @if (error) {
+      <p class="question-error" role="alert">{{ error }}</p>
+    }
+
+    <div class="question-actions">
+      <button mat-button type="button" (click)="answer('decline')" [disabled]="sending">
+        {{ 'message.question.decline' | translate }}
+      </button>
+      <button mat-flat-button color="primary" type="button" (click)="answer('accept')" [disabled]="sending || !complete">
+        @if (urlMode) {
+          {{ 'message.question.open' | translate: { host: host } }}
+        } @else if (fields.length) {
+          {{ 'message.question.send' | translate }}
+        } @else {
+          {{ 'message.question.accept' | translate }}
+        }
+      </button>
+    </div>
+  </section>
+}
