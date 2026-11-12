@@ -422,9 +422,13 @@
     }
 
     // Tables - Modern design with clear borders, compact margin
-    // Scrollable on mobile for tables that exceed viewport width
+    // Scrollable on mobile for tables that exceed viewport width. A block (for the scrolling) is
+    // as wide as the answer, and its rows only as wide as their content: the frame hugs the table
+    // instead, up to the answer's width
     table {
       display: block;
+      width: max-content;
+      max-width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       margin: 0.35em 0;
