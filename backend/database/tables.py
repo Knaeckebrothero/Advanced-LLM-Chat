@@ -151,13 +151,24 @@ file_description_cache = Table(
     Column('created_at', DateTime, server_default=func.now()),
 )
 
-# Uploaded files: who uploaded which file. Only the owner can read it (API and agent tool)
+# The stored files (docs/files.md): uploads and what tools create. The owner reads a file through
+# the files API; the agent of the conversation it belongs to reads it through the file tools
 uploaded_files = Table(
     'uploaded_files',
     metadata,
     Column('file_id', Text, primary_key=True),  # file_<ms>_<hex>, the stored filename without extension
     Column('user_id', Integer, ForeignKey('users.id'), nullable=False),
     Column('created_at', DateTime, server_default=func.now()),
+    Column('conversation_id', Text, ForeignKey('conversations.id', ondelete='SET NULL')),  # NULL: in none (yet)
+    Column('message_id', BigInteger),  # The message it came with: the user's, or the answer a tool made it in
+    Column('name', Text),  # Tools' files have names that are unique in the conversation
+    Column('mime_type', Text),
+    Column('size_bytes', BigInteger),
+    Column('width', Integer),  # Images: pixels
+    Column('height', Integer),
+    Column('source', Text, nullable=False, server_default='upload'),  # 'upload' | 'tool'
+    Column('origin', Text),  # Tools' files: the tool's title
+    Column('details', Text),  # Tools' files: the call's arguments (JSON, cut)
 )
 
 # Model catalog: one row per API account, seeded from MODEL_CATALOG_FILE
@@ -365,6 +376,7 @@ idx_messages_agent_status = Index(
 # Index for file description cache - enables efficient deletion by file_id
 idx_cache_file_id = Index('idx_cache_file_id', file_description_cache.c.file_id)
 idx_uploaded_files_user = Index('idx_uploaded_files_user', uploaded_files.c.user_id)
+idx_uploaded_files_conversation = Index('idx_uploaded_files_conversation', uploaded_files.c.conversation_id)
 idx_llm_models_provider = Index('idx_llm_models_provider', llm_models.c.provider_id)
 idx_kb_notes_user_updated = Index('idx_kb_notes_user_updated', kb_notes.c.user_id, kb_notes.c.updated_at.desc())
 idx_kb_note_revisions_note = Index('idx_kb_note_revisions_note', kb_note_revisions.c.note_id)

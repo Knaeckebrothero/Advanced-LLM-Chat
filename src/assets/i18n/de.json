@@ -64,6 +64,11 @@
     "noTranscript": "Kein Transkript verfügbar",
     "transcriptFailed": "Das Transkript konnte nicht geladen werden"
   },
+  "files": {
+    "open": "{{name}} öffnen",
+    "shown": "Dateien dieser Antwort",
+    "created": "Weitere in dieser Antwort erstellte Dateien"
+  },
   "filePreview": {
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",

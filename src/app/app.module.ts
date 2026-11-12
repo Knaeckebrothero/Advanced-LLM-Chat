@@ -11,6 +11,8 @@ import { ChatUiInputfieldComponent } from './chat-ui/chat-ui-inputfield/chat-ui-
 import { AudioMessageComponent } from './components/audio-message/audio-message.component';
 import { AgentStepsComponent } from './chat-ui/chat-ui-message/agent-steps/agent-steps.component';
 import { ElicitationCardComponent } from './chat-ui/chat-ui-message/agent-steps/elicitation-card/elicitation-card.component';
+import { AnswerFilesComponent } from './chat-ui/chat-ui-message/answer-files/answer-files.component';
+import { FileTileComponent } from './components/file-tile/file-tile.component';
 import { ChatUiSummaryComponent } from './chat-ui/chat-ui-summary/chat-ui-summary.component';
 import { ModelPickerComponent } from './chat-ui/model-picker/model-picker.component';
 import { ModelSelectComponent } from './components/catalog/model-select.component';
@@ -117,6 +119,8 @@ export function HttpLoaderFactory(http: HttpClient) {
     CommonModule,
     ChatUiInputfieldComponent,
     ElicitationCardComponent,
+    AnswerFilesComponent,
+    FileTileComponent,
     RouterModule.forRoot(routes),
     ServiceWorkerModule.register(
       'ngsw-worker.js', {

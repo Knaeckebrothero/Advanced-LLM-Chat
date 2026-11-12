@@ -25,6 +25,7 @@ import {
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
 import { IContextSize, IConversationSummary } from '../data/models/conversation.model';
+import { FilePreviewSize } from '../data/models/file.model';
 import {
   IKBMemory,
   IKBNote,
@@ -618,6 +619,17 @@ export class ApiService {
       console.error('Error fetching file:', error);
       throw error;
     }
+  }
+
+  /** A preview of an image file (WebP, see FilePreviewSize); 404 for a file that is no image. */
+  async getFileThumbnail(fileId: string, size: FilePreviewSize): Promise<Blob> {
+    return await lastValueFrom(
+      this.http.get(`${this.baseUrl}/api/files/${encodeURIComponent(fileId)}/thumbnail`, {
+        ...this.getHttpOptions(),
+        params: { size },
+        responseType: 'blob'
+      })
+    );
   }
 
   // Fetch extracted text content for a document

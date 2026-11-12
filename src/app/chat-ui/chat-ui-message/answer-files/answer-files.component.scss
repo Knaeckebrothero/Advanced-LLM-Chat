@@ -1,0 +1,47 @@
+// The files of an answer: shown ones large, the other created ones as a row of small previews
+
+:host {
+  display: block;
+}
+
+// An answer without files: no box at all, so the message's spacing stays as it is
+:host(.is-empty) {
+  display: none;
+}
+
+.answer-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  & + & {
+    margin-top: 8px;
+  }
+}
+
+.answer-files--shown {
+  --file-tile-height: 200px;
+
+  &.is-single {
+    --file-tile-height: 320px;
+  }
+}
+
+.answer-files--created {
+  --file-tile-height: 72px;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .answer-files--shown {
+    --file-tile-height: 140px;
+
+    &.is-single {
+      --file-tile-height: 260px;
+    }
+  }
+
+  .answer-files--created {
+    --file-tile-height: 64px;
+  }
+}

@@ -67,6 +67,10 @@
         <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'"
           class="step-text">{{ step.content }}</p>
         <p *ngIf="questionOutcome(step) as outcome" class="step-outcome">{{ outcome }}</p>
+        <!-- The files a tool created, or the ones the agent shows -->
+        <div *ngIf="filesOf(step) as files" class="step-files">
+          <app-file-tile *ngFor="let file of files" [file]="file" size="small"></app-file-tile>
+        </div>
         <a *ngIf="mcpLink(step) as mcp" class="step-note-button" routerLink="/mcp">
           <mat-icon>{{ mcp.icon }}</mat-icon>
           {{ mcp.label | translate }}
@@ -77,7 +81,7 @@
           {{ 'knowledgeBase.openNote' | translate }}
         </a>
         <ng-template #metadataJson>
-          <div class="step-metadata" *ngIf="step.metadata && !isMcpStep(step)">
+          <div class="step-metadata" *ngIf="step.metadata && !isMcpStep(step) && !filesOf(step)">
             <pre class="metadata-json">{{ step.metadata | json }}</pre>
           </div>
         </ng-template>

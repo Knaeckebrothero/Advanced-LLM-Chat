@@ -14,6 +14,10 @@ import { TranslateService } from '@ngx-translate/core';
 import { Observable } from 'rxjs';
 import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 import { NOTE_ROUTE, noteMarkdown, noteSlugFromHref } from '../../knowledge-base/kb-markdown';
+import { FilePreviewsService } from '../../services/file-previews.service';
+
+// The IDs the server gives stored files (backend FILE_ID_PATTERN); a file not uploaded yet has another
+const SERVER_FILE_ID = /^file_\d+_[0-9a-f]+$/;
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -78,9 +82,33 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     private elementRef: ElementRef,
     private catalogService: CatalogService,
     private translate: TranslateService,
-    private router: Router
+    private router: Router,
+    private filePreviews: FilePreviewsService
   ) {
     this.catalogModels$ = this.catalogService.models$;
+  }
+
+  // The server's previews of this message's uploaded images, by file ID
+  private serverPreviews = new Map<string, string>();
+  private requestedPreviews = new Set<string>();
+
+  /**
+   * The server's preview of an attached image that has none in the browser: a message that
+   * came from the server (another device, or after the browser's data was cleared). Asked for
+   * once; null until it is there, and for a file the server has no preview of.
+   */
+  serverPreview(attachment: FilePreview): string | null {
+    if (attachment.type !== 'image' || attachment.preview || !SERVER_FILE_ID.test(attachment.id)) {
+      return null;
+    }
+    if (!this.requestedPreviews.has(attachment.id)) {
+      this.requestedPreviews.add(attachment.id);
+      this.filePreviews.url(attachment.id, 'small').then(
+        url => this.serverPreviews.set(attachment.id, url),
+        () => undefined
+      );
+    }
+    return this.serverPreviews.get(attachment.id) ?? null;
   }
 
   // TTS Audio Player reference

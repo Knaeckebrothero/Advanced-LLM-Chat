@@ -64,6 +64,11 @@
     "noTranscript": "No transcript available",
     "transcriptFailed": "The transcript could not be loaded"
   },
+  "files": {
+    "open": "Open {{name}}",
+    "shown": "Files of this answer",
+    "created": "More files created in this answer"
+  },
   "filePreview": {
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",

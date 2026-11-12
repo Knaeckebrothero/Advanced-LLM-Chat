@@ -35,5 +35,8 @@ tavily-python>=0.5.0
 pdfplumber>=0.10.0
 pdf2image>=1.16.0
 
+# Images: sizes, previews (WebP) and the scaled copy for vision models (backend/services/file_store.py)
+Pillow>=10.0.0
+
 # Audio Transcription
 openai-whisper>=20231117

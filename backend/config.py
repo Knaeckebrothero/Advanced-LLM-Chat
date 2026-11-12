@@ -62,7 +62,7 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # Image processing configuration for LLM
 # Whether the chat model gets images is decided per model (ModelConfig.supports_vision);
-# text-only models get placeholders and read files through the get_file_content tool.
+# text-only models get placeholders and read files through the read_file tool.
 # MODEL_RECEIVE_IMAGES is only the default of FileRetrievalService.get_content().
 MODEL_RECEIVE_IMAGES = os.getenv("MODEL_RECEIVE_IMAGES", "false").lower() == "true"
 

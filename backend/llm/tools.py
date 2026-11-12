@@ -8,9 +8,9 @@ tools), checks the arguments the model sends, and runs the function.
 The implementations live in backend/services/tools/; this module only describes
 them to the model. default_tools() returns the tools that are enabled by the
 configuration, tools_for_groups() limits them to a persona's tool groups. Both
-are built per answer for the user it is for: the file tool only reads that
-user's uploads, the knowledge base tools only that user's notes (the shared
-knowledge base, or the agent's own one). Opt-in groups (the knowledge base,
+are built per answer for the user it is for: the file tools only see the files
+of that user's conversation (docs/files.md), the knowledge base tools only
+that user's notes (the shared knowledge base, or the agent's own one). Opt-in groups (the knowledge base,
 with the memory, and the users' own MCP servers) are never part of "every
 enabled tool": an agent has to select them.
 
@@ -33,7 +33,9 @@ log = logging.getLogger(__name__)
 
 # English step titles per tool; the frontend translates them by these strings
 TOOL_TITLES = {
-    "get_file_content": "Retrieving File Content",
+    "list_files": "Listing Files",
+    "read_file": "Reading File",
+    "show_file": "Showing File",
     "web_search": "Searching the Web",
     "get_graph_schema": "Inspecting Knowledge Graph",
     "search_graph": "Searching Knowledge Graph",
@@ -51,7 +53,7 @@ TOOL_TITLES = {
 
 # Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
 TOOL_GROUPS = {
-    "files": ("get_file_content",),
+    "files": ("list_files", "read_file", "show_file"),
     "web_search": ("web_search",),
     "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
     "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
@@ -88,15 +90,20 @@ class ToolError(Exception):
 
 class ToolText(str):
     """
-    A tool's text result with metadata for the chat: the model gets the text, the result step
-    also carries the metadata (e.g. {"kbNote": slug}, so the chat can open the note).
+    A tool's text result with more than text:
+    - metadata for the chat: the model gets the text, the result step also carries the metadata
+      (e.g. {"kbNote": slug}, so the chat can open the note; {"files": [...]} for files a tool made).
+    - images for the model: image_url parts (OpenAI format) that go to the model with the text.
+      Only for models that take images; the adapters put them where their API accepts them.
     """
 
     metadata: Optional[dict]
+    images: tuple
 
-    def __new__(cls, text: str, metadata: Optional[dict] = None):
+    def __new__(cls, text: str, metadata: Optional[dict] = None, images: Iterable[dict] = ()):
         result = super().__new__(cls, text)
         result.metadata = metadata
+        result.images = tuple(images)
         return result
 
 
@@ -239,6 +246,9 @@ def _check_arguments(tool: Tool, arguments: Any) -> dict:
             # Models sometimes send numbers as strings
             if "integer" in types and isinstance(value, str) and value.strip().lstrip("-").isdigit():
                 value = int(value)
+            # ... and a list as its JSON text, or one string in place of a list of strings
+            elif "array" in types and isinstance(value, str) and _as_list(value, schema) is not None:
+                value = _as_list(value, schema)
             else:
                 raise ToolInputError(f"Argument '{key}' for {tool.name} must be of type {' or '.join(types)}")
         if schema.get("type") == "array" and isinstance(schema.get("items"), dict) and schema["items"].get("type") == "integer":
@@ -248,6 +258,22 @@ def _check_arguments(tool: Tool, arguments: Any) -> dict:
                 raise ToolInputError(f"Argument '{key}' for {tool.name} must be a list of integers")
         kwargs[key] = value
     return kwargs
+
+
+def _as_list(value: str, schema: dict) -> Optional[list]:
+    """The list a model meant by a string: its JSON text ('["a", "b"]'), or the one string of a list of strings."""
+    text = value.strip()
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return parsed
+        except ValueError:
+            pass
+    items = schema.get("items")
+    if isinstance(items, dict) and items.get("type") == "string":
+        return [value]
+    return None
 
 
 def _type_matches(value: Any, json_type: str) -> bool:
@@ -272,6 +298,18 @@ def format_tool_output(output: Any) -> str:
     return json.dumps(output, ensure_ascii=False, default=str)
 
 
+def tool_message_content(output: Any) -> Any:
+    """
+    The content of the tool message for a tool's return value: its text, or for a result with
+    images (ToolText.images) a list of parts, the text first.
+    """
+    text = format_tool_output(output)
+    images = getattr(output, "images", None)
+    if not images:
+        return text
+    return [{"type": "text", "text": text}, *images]
+
+
 def _in_thread(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
     """Wrap a blocking function (database, Neo4j, files) so it runs in a worker thread."""
     @functools.wraps(func)
@@ -284,47 +322,89 @@ def _in_thread(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
 # Tool definitions
 # =========================================================================
 
-def file_content_tool(user_id: Optional[int] = None) -> Tool:
+def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = None, vision: bool = False) -> list[Tool]:
     """
-    get_file_content: read files shared earlier in the conversation.
+    list_files, read_file, show_file: the files of the conversation (docs/files.md).
 
     Args:
-        user_id: The user the agent answers for. The tool only reads files this
-            user uploaded; the model can't choose another user (the argument is
-            not in the schema). None reads no file at all.
+        user_id: The user the agent answers for.
+        conversation_id: The conversation it answers in. The tools only see this user's files
+            of this conversation; the model can't choose another (the arguments are not in
+            the schemas). Without either, they see no files at all.
+        vision: The model takes images: read_file gives it an image itself instead of a description.
     """
-    from ..services.tools.file_tools import get_file_content
-    return Tool(
-        name="get_file_content",
-        description=(
-            "Retrieve content from a file shared earlier in this conversation. Call this when the user asks "
-            "about a file that appears as a placeholder like [Attachment: report.pdf (fileId: abc123) ...] "
-            "and its content is not in the current message. Always returns text: the content of text files, "
-            "a visual description of images, the extracted text plus page descriptions of PDFs, and the "
-            "transcript of audio files. Use 'query' to ask a specific question about an image or PDF; it is "
-            "answered by a vision model."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "The fileId shown in the attachment placeholder, e.g. \"abc123\"",
-                },
-                "query": {
-                    "type": "string",
-                    "description": "Optional question about the file, e.g. \"What is the total revenue?\"",
-                },
-                "pages": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "For PDFs: the pages to retrieve, starting at 1, e.g. [1, 3]",
-                },
-            },
-            "required": ["file_id"],
-        },
-        func=functools.partial(get_file_content, user_id=user_id),
+    from ..services.tools import file_tools as tools
+    scope = {"user_id": user_id, "conversation_id": conversation_id}
+    file_param = {
+        "type": "string",
+        "description": "The file's name as list_files or an attachment placeholder shows it, e.g. \"report.pdf\", "
+                       "or its fileId",
+    }
+    image_content = (
+        "An image you get to see yourself."
+        if vision else
+        "An image comes as a description written by a vision model; use 'query' to ask it something specific."
     )
+    query_subject = "a PDF's pages (a vision model answers it)" if vision else "an image or PDF"
+    return [
+        Tool(
+            name="list_files",
+            description=(
+                "List the files of this conversation, oldest first: what the user attached and what your tools "
+                "created (e.g. generated images), with name, type, size and where each comes from. Call it "
+                "when the user refers to a file you can't find in the conversation, or to get a file's name."
+            ),
+            parameters={"type": "object", "properties": {}},
+            func=_in_thread(functools.partial(tools.list_files, **scope)),
+        ),
+        Tool(
+            name="read_file",
+            description=(
+                "Get the content of a file of this conversation: the text of a text file, the extracted text "
+                "plus page descriptions of a PDF, the transcript of an audio file. " + image_content + " "
+                "Call it for a file that appears as a placeholder like [Attachment: report.pdf (fileId: abc123) "
+                "...], for one list_files shows, and to look at an image a tool created."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file": file_param,
+                    "query": {
+                        "type": "string",
+                        "description": f"Optional question about {query_subject}, e.g. \"What is the total revenue?\"",
+                    },
+                    "pages": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "For PDFs: the pages to read, starting at 1, e.g. [1, 3]",
+                    },
+                },
+                "required": ["file"],
+            },
+            func=functools.partial(tools.read_file, vision=vision, **scope),
+        ),
+        Tool(
+            name="show_file",
+            description=(
+                "Show files of this conversation to the user: they appear above the text of your answer, images "
+                "large, other files as a card to open. Use it for the images you want the user to look at (an "
+                "image a tool created is only a small preview for them until you show it) and when the user "
+                "asks to see a file again. Several files go in one call."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The names (or fileIds) of the files to show, e.g. [\"fox-1.png\", \"fox-2.png\"]",
+                    },
+                },
+                "required": ["files"],
+            },
+            func=_in_thread(functools.partial(tools.show_file, **scope)),
+        ),
+    ]
 
 
 def graph_tools() -> list[Tool]:
@@ -662,10 +742,10 @@ def tool_group_status() -> list[dict]:
 
 
 def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: Optional[dict],
-                 vault: int = 0) -> list[Tool]:
+                 vault: int = 0, vision: bool = False) -> list[Tool]:
     """The tool definitions of a group, for the user the agent answers for."""
     if group == "files":
-        return [file_content_tool(user_id)]
+        return file_tools(user_id, (conversation or {}).get("id"), vision)
     if group == "web_search":
         return [web_search_tool()]
     if group == "knowledge_graph":
@@ -681,7 +761,7 @@ def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: 
 
 
 def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = False,
-                   conversation: Optional[dict] = None, vault: int = 0) -> ToolRegistry:
+                   conversation: Optional[dict] = None, vault: int = 0, vision: bool = False) -> ToolRegistry:
     """The tools of these groups that the configuration enables, in TOOL_GROUPS order."""
     groups = set(groups)
     registry = ToolRegistry()
@@ -692,52 +772,58 @@ def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = 
         if reason:
             log.debug(f"Tool group {group} disabled: {reason}")
             continue
-        for tool in _group_tools(group, user_id, guest, conversation, vault):
+        for tool in _group_tools(group, user_id, guest, conversation, vault, vision):
             registry.add(tool)
     return registry
 
 
-def default_tools(user_id: Optional[int] = None) -> ToolRegistry:
+def default_tools(user_id: Optional[int] = None, *, conversation: Optional[dict] = None,
+                  vision: bool = False) -> ToolRegistry:
     """
     The tools enabled by the configuration (see tool_group_unavailable_reason()),
     without the opt-in groups (OPT_IN_GROUPS).
 
     Args:
-        user_id: The user the agent answers for; the file tool only reads this
-            user's uploads (None: none at all).
+        user_id: The user the agent answers for.
+        conversation: The conversation it answers in (id); the file tools only see
+            this user's files of this conversation (without either: none at all).
+        vision: The model takes images (read_file then gives it images themselves).
     """
-    registry = _enabled_tools((group for group in TOOL_GROUPS if group not in OPT_IN_GROUPS), user_id)
+    registry = _enabled_tools((group for group in TOOL_GROUPS if group not in OPT_IN_GROUPS), user_id,
+                              conversation=conversation, vision=vision)
     log.debug(f"Default tools: {', '.join(registry.names())}")
     return registry
 
 
 def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = None, *, guest: bool = False,
-                     conversation: Optional[dict] = None, vault: int = 0) -> ToolRegistry:
+                     conversation: Optional[dict] = None, vault: int = 0, vision: bool = False) -> ToolRegistry:
     """
     The enabled tools of the given tool groups, e.g. a persona's selection.
 
     Args:
         groups: Keys of TOOL_GROUPS; None for every enabled tool except the
             opt-in groups (default_tools()). Unknown groups are ignored.
-        user_id: The user the agent answers for; the file tool only reads this
-            user's uploads, the knowledge base tools only this user's notes
-            (None: no files and no knowledge base).
+        user_id: The user the agent answers for; the file tools only see this
+            user's files of the conversation, the knowledge base tools only this
+            user's notes (None: no files and no knowledge base).
         guest: The user is a guest: no knowledge base (a guest's data is
             deleted when the session ends).
-        conversation: The conversation the agent answers in (id, persona_id),
-            recorded with the knowledge base changes.
+        conversation: The conversation the agent answers in (id, persona_id):
+            the one the file tools see the files of, and recorded with the
+            knowledge base changes.
         vault: The knowledge base: 0 for the user's shared one, else the
             agent's own (backend.catalog.resolver.persona_vault()).
+        vision: The model takes images (read_file then gives it images themselves).
 
     Returns:
         The tools; empty for an empty selection.
     """
     if groups is None:
-        return default_tools(user_id)
+        return default_tools(user_id, conversation=conversation, vision=vision)
     groups = list(groups)
     unknown = [group for group in groups if group not in TOOL_GROUPS]
     if unknown:
         log.warning(f"Ignoring unknown tool group(s): {', '.join(map(str, unknown))}")
-    selected = _enabled_tools(groups, user_id, guest, conversation, vault)
+    selected = _enabled_tools(groups, user_id, guest, conversation, vault, vision)
     log.debug(f"Tools for groups {groups}: {', '.join(selected.names()) or 'none'}")
     return selected
