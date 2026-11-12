@@ -26,6 +26,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp_types import Implementation
 
 from backend.config import MCP_CONNECT_TIMEOUT, MCP_IDLE_TIMEOUT, MCP_TOOL_TIMEOUT
+from backend.services.mcp import elicitation
 from backend.services.mcp.servers import ServerSpec
 
 log = logging.getLogger(__name__)
@@ -177,6 +178,7 @@ class Connection:
     http_status: Optional[int] = None  # The last HTTP error status of the server
     last_used: float = field(default_factory=time.monotonic)
     fingerprint: str = ""
+    askers: list = field(default_factory=list)  # elicitation.Asker of the running tool calls
     _task: Optional[asyncio.Task] = None
     _ready: asyncio.Event = field(default_factory=asyncio.Event)
     _close: asyncio.Event = field(default_factory=asyncio.Event)
@@ -187,6 +189,10 @@ class Connection:
 
     def touch(self) -> None:
         self.last_used = time.monotonic()
+
+    async def _elicit(self, context, params):
+        """The server asks the user something while a tool runs (elicitation.py)."""
+        return await elicitation.handle(self.askers, params)
 
     def _transport(self):
         spec = self.spec
@@ -215,7 +221,7 @@ class Connection:
                                     on_response=self._record_status))
                     server = streamable_http_client(self.spec.url, http_client=client)
                 mcp_client = Client(server, read_timeout_seconds=MCP_TOOL_TIMEOUT, client_info=CLIENT_INFO,
-                                    cache=None)
+                                    cache=None, elicitation_callback=self._elicit)
                 await stack.enter_async_context(mcp_client)
                 self.tools = await _list_tools(mcp_client)
                 self.client = mcp_client

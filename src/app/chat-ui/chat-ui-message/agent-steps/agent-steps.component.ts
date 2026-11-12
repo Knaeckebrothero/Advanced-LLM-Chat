@@ -2,6 +2,7 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { IAgentStep, AgentStepType, AgentStatus } from '../../../data/models/message.model';
 import { AuthService } from '../../../auth/auth.service';
+import { elicitationOf } from './elicitation-card/elicitation-card.component';
 
 // Id prefix of the step that shows the oldest messages being summarized (backend/api/messages.py)
 const SUMMARY_STEP_PREFIX = 'summary-';
@@ -20,6 +21,9 @@ export interface McpStepLink {
   label: string;
   icon: string;
 }
+/** The title of a server's question (backend/services/mcp/elicitation.py); ": <server name>" follows. */
+const QUESTION_TITLE = 'Question';
+
 const MCP_SIGN_IN_LINK: McpStepLink = { label: 'message.steps.mcpSignInLink', icon: 'login' };
 const MCP_OPEN_LINK: McpStepLink = { label: 'message.steps.openMcp', icon: 'extension' };
 
@@ -43,6 +47,34 @@ export class AgentStepsComponent {
    */
   get currentStep(): IAgentStep | null {
     return this.steps.length > 0 ? this.steps[this.steps.length - 1] : null;
+  }
+
+  /**
+   * The questions of MCP servers waiting for the user's answer (elicitation), shown under the
+   * panel so they don't hide in a collapsed step. Only while the answer runs: the stream is the
+   * only way the answer gets back to the waiting tool call.
+   */
+  get openQuestions(): IAgentStep[] {
+    if (!this.isProcessing) return [];
+    return this.steps.filter(step => elicitationOf(step)?.status === 'pending');
+  }
+
+  /** How a question ended (or that it waits), with the values the user sent. */
+  questionOutcome(step: IAgentStep): string | null {
+    const question = elicitationOf(step);
+    if (!question) return null;
+    const status = question.status === 'accept' && question.mode === 'url' ? 'opened'
+      : question.auto ? 'auto'
+      : question.remember ? `remember.${question.remember}` : question.status;
+    const outcome = this.translate.instant(`message.question.status.${status}`);
+    const values = Object.entries(question.answer ?? {}).map(([name, value]) => {
+      const label = question.schema?.properties?.[name]?.title || name;
+      const text = typeof value === 'boolean'
+        ? this.translate.instant(value ? 'message.question.yes' : 'message.question.no')
+        : Array.isArray(value) ? value.join(', ') : String(value);
+      return `${label}: ${text}`;
+    });
+    return values.length ? `${outcome} (${values.join('; ')})` : outcome;
   }
 
   /**
@@ -121,6 +153,9 @@ export class AgentStepsComponent {
     if (step.id.startsWith(SUMMARY_STEP_PREFIX)) {
       return 'summarize';
     }
+    if (elicitationOf(step)) {
+      return 'help';
+    }
     const type: AgentStepType = step.type;
     const icons: Record<AgentStepType, string> = {
       thought: 'psychology',
@@ -148,6 +183,9 @@ export class AgentStepsComponent {
 
   /** The step's title; the ones about MCP servers in the user's language. */
   stepTitle(step: IAgentStep): string {
+    if (elicitationOf(step) && step.title.startsWith(QUESTION_TITLE)) {
+      return this.translate.instant('message.steps.question') + step.title.slice(QUESTION_TITLE.length);
+    }
     if (step.metadata?.['mcpServer'] == null) return step.title;
     for (const [english, key] of MCP_STEP_TITLES) {
       if (step.title.startsWith(english)) return this.translate.instant(key) + step.title.slice(english.length);
@@ -155,9 +193,12 @@ export class AgentStepsComponent {
     return step.title;
   }
 
-  /** A step about an MCP server the answer couldn't use (its metadata is shown as the link, not as JSON). */
+  /**
+   * A step about an MCP server the answer couldn't use (its metadata is shown as the link) or a
+   * server's question (shown as its outcome): no metadata as JSON.
+   */
   isMcpStep(step: IAgentStep): boolean {
-    return step.metadata?.['mcpServer'] != null;
+    return step.metadata?.['mcpServer'] != null || elicitationOf(step) != null;
   }
 
   /**

@@ -20,6 +20,7 @@ connects to the servers of an answer and adds their tools to the registry
 own servers; it has no tools of its own here.
 """
 import asyncio
+import contextvars
 import functools
 import json
 import logging
@@ -97,6 +98,25 @@ class ToolText(str):
         result = super().__new__(cls, text)
         result.metadata = metadata
         return result
+
+
+# Where a running tool sends steps for the chat (an AgentStep goes to the answer's stream right
+# away, a step with an earlier id replaces it). The agent loop sets it for each tool call; None
+# when nobody is watching (no answer stream), e.g. outside the agent loop.
+StepSink = Callable[[Any], None]
+_step_sink: contextvars.ContextVar[Optional[StepSink]] = contextvars.ContextVar("tool_step_sink", default=None)
+
+
+def step_sink() -> Optional[StepSink]:
+    """The step sink of the running tool call, or None (see _step_sink)."""
+    return _step_sink.get()
+
+
+def with_step_sink(sink: Optional[StepSink]) -> contextvars.Context:
+    """A copy of the current context in which tool calls send their steps to the sink (for asyncio tasks)."""
+    context = contextvars.copy_context()
+    context.run(_step_sink.set, sink)
+    return context
 
 
 @dataclass(frozen=True)

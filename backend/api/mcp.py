@@ -2,8 +2,9 @@
 MCP server API endpoints (docs/mcp.md): users' own servers and their OAuth sign-ins under
 /api/mcp, the admins' servers (the agents') under /api/admin/mcp-servers.
 
-Guests get 403 everywhere except GET /api/mcp/config: their data ends with their session, and
-they never use their own servers.
+Guests get 403 everywhere except GET /api/mcp/config and the answers to servers' questions
+(an admin server can be available to guests): their data ends with their session, and they
+never use their own servers.
 """
 import logging
 from typing import List, Optional
@@ -14,12 +15,12 @@ from fastapi.responses import RedirectResponse
 
 from backend.config import (FRONTEND_URL, MCP_ALLOW_PRIVATE_URLS, MCP_ENABLED, MCP_OAUTH_REDIRECT_URI,
                             MCP_STDIO_ENABLED)
-from backend.models.mcp import (McpConfig, McpConnectResult, McpServerCreate, McpServerList, McpServerOut,
-                                McpServerUpdate, McpTestResult)
+from backend.models.mcp import (McpAutoAccept, McpConfig, McpConnectResult, McpElicitationAnswer, McpServerCreate,
+                                McpServerList, McpServerOut, McpServerUpdate, McpTestResult)
 from backend.security.auth import get_current_user, get_current_user_optional, is_admin, require_admin
 from backend.security.logging import crud_logger
 from backend.security.secrets import encryption_available
-from backend.services.mcp import oauth, servers, store
+from backend.services.mcp import elicitation, oauth, servers, store
 from backend.services.mcp.pool import pool
 from backend.services.mcp.servers import McpError, config_reason, server_out, user_servers_reason
 from backend.services.mcp.tools import test_server
@@ -80,11 +81,15 @@ async def get_config(current_user: dict = Depends(get_current_user)):
             summary="The user's own servers and the agents' servers to sign in to")
 async def list_servers(user: dict = Depends(require_member)):
     connected = _connected(user)
-    own = [server_out(row, connected) for row in store.user_servers(user["user_id"])]
+    auto = store.auto_accept_server_ids(user["user_id"])
+    own = [server_out(row, connected, auto_accept=auto) for row in store.user_servers(user["user_id"])]
     full = is_admin(user)
-    shared = [server_out(row, connected, full=full) for row in store.admin_servers(enabled_only=True)
-              if row["auth"] == "oauth"]
-    return McpServerList(own=own, shared=shared)
+    admin_rows = store.admin_servers(enabled_only=True)
+    shared = [server_out(row, connected, full=full, auto_accept=auto) for row in admin_rows if row["auth"] == "oauth"]
+    # The other agents' servers the user accepts confirmations of without asking, to turn that off
+    others = [server_out(row, connected, full=False, auto_accept=auto) for row in admin_rows
+              if row["auth"] != "oauth" and row["id"] in auto]
+    return McpServerList(own=own, shared=shared, autoAccepted=others)
 
 
 @router.post("/api/mcp/servers", response_model=McpServerOut, status_code=201, operation_id="createMcpServer",
@@ -161,6 +166,28 @@ async def mcp_oauth_callback(state: Optional[str] = None, code: Optional[str] = 
             params["server"] = e.server_id
         return RedirectResponse(f"{FRONTEND_URL}/mcp?{urlencode(params)}", status_code=302)
     return RedirectResponse(f"{FRONTEND_URL}/mcp?{urlencode({'connected': server_id})}", status_code=302)
+
+
+@router.post("/api/mcp/elicitations/{question_id}", status_code=204, operation_id="answerMcpElicitation",
+             summary="Answer a server's question to the user (elicitation) while its tool runs")
+async def answer_elicitation(question_id: str, req: McpElicitationAnswer, user: dict = Depends(get_current_user)):
+    try:
+        elicitation.answer(question_id, user["user_id"], req.action, req.content, req.remember)
+    except elicitation.AnswerError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    return Response(status_code=204)
+
+
+@router.put("/api/mcp/servers/{server_id}/auto-accept", status_code=204, operation_id="setMcpAutoAccept",
+            summary="Accept a server's confirmations without asking, in every conversation (or stop)")
+async def set_auto_accept(server_id: int, req: McpAutoAccept, user: dict = Depends(require_member)):
+    row = store.get_server(server_id)
+    if row is None or (row["user_id"] is not None and row["user_id"] != user["user_id"]):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"MCP server {server_id} not found")
+    store.set_auto_accept(server_id, user["user_id"], req.enabled)
+    crud_logger.info(f"MCP server {server_id}: user {user['user_id']} "
+                     f"{'accepts' if req.enabled else 'no longer accepts'} its confirmations without asking")
+    return Response(status_code=204)
 
 
 async def _after_change(old: dict, row: dict) -> None:

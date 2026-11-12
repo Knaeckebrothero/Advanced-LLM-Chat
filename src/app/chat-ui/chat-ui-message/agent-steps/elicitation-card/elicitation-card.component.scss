@@ -1,0 +1,112 @@
+// A server's question while its tool runs: under the steps panel, in the same frame as the panel
+
+:host {
+  display: block;
+  margin-top: 8px;
+}
+
+.question-card {
+  padding: 12px 16px;
+  border: 1px solid var(--theme-primary);
+  border-radius: 12px;
+  background-color: var(--theme-surface);
+}
+
+.question-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--theme-text-secondary);
+
+  mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    color: var(--theme-primary);
+  }
+}
+
+.question-message {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--theme-text);
+}
+
+.question-url {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background-color: var(--theme-code-bg);
+
+  mat-icon {
+    align-self: center;
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.question-host {
+  font-weight: 600;
+  color: var(--theme-text);
+}
+
+.question-full-url {
+  min-width: 0;
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.question-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+
+  mat-form-field {
+    width: 100%;
+  }
+
+  // As wide as its label, not the whole form
+  mat-checkbox {
+    align-self: flex-start;
+  }
+}
+
+.question-hint {
+  margin: -8px 0 0 40px;
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+}
+
+.question-remember {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 8px 0 0 -8px;  // The checkboxes' touch area, aligned with the text
+  font-size: 0.875rem;
+  color: var(--theme-text-secondary);
+}
+
+.question-error {
+  margin: 10px 0 0;
+  font-size: 0.8125rem;
+  color: var(--theme-error, #ef4444);
+}
+
+.question-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

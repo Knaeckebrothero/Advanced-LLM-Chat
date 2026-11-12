@@ -66,6 +66,7 @@
           class="step-code">{{ step.content }}</pre>
         <p *ngIf="step.type !== 'tool_call' && step.type !== 'tool_result'"
           class="step-text">{{ step.content }}</p>
+        <p *ngIf="questionOutcome(step) as outcome" class="step-outcome">{{ outcome }}</p>
         <a *ngIf="mcpLink(step) as mcp" class="step-note-button" routerLink="/mcp">
           <mat-icon>{{ mcp.icon }}</mat-icon>
           {{ mcp.label | translate }}
@@ -84,6 +85,9 @@
     </mat-expansion-panel>
   </mat-accordion>
 </mat-expansion-panel>
+
+<!-- Questions of MCP servers waiting for the user's answer (elicitation) -->
+<app-elicitation-card *ngFor="let step of openQuestions; trackBy: trackStep" [step]="step"></app-elicitation-card>
 
 <!-- Live reasoning text while the model thinks (panel collapsed) -->
 <div class="live-thought" *ngIf="liveThought as thought" aria-live="off"><p>{{ thought }}</p></div>

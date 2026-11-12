@@ -429,7 +429,8 @@ def resolve(row: dict) -> ServerSpec:
 # API view
 # =========================================================================
 
-def server_out(row: dict, connected: Optional[set] = None, *, full: bool = True) -> McpServerOut:
+def server_out(row: dict, connected: Optional[set] = None, *, full: bool = True,
+               auto_accept: Optional[set] = None) -> McpServerOut:
     """
     The API view of a server.
 
@@ -437,7 +438,9 @@ def server_out(row: dict, connected: Optional[set] = None, *, full: bool = True)
         connected: The server ids the current user has signed in to (for OAuth servers).
         full: False for an admin server shown to a user who isn't an admin (to sign in to it):
             without headers, environment, command and OAuth client.
+        auto_accept: The server ids whose confirmations the current user accepts without asking.
     """
+    auto = (row["id"] in auto_accept) if auto_accept is not None else None
     admin_server = row["user_id"] is None
     header_names = list((row.get("headers") or {}).keys()) if admin_server else list(stored_headers(row).keys())
     if not full:
@@ -446,6 +449,7 @@ def server_out(row: dict, connected: Optional[set] = None, *, full: bool = True)
             description=row.get("description"), transport=row["transport"], url=row.get("url"), auth=row["auth"],
             enabled=row.get("enabled") is not False,
             connected=(row["id"] in connected) if row["auth"] == "oauth" and connected is not None else None,
+            autoAccept=auto,
             unavailableReason=unavailable_reason(row), createdAt=row.get("created_at"), updatedAt=row.get("updated_at"),
         )
     return McpServerOut(
@@ -470,6 +474,7 @@ def server_out(row: dict, connected: Optional[set] = None, *, full: bool = True)
         enabled=row.get("enabled") is not False,
         sortOrder=row.get("sort_order") or 0,
         connected=(row["id"] in connected) if row["auth"] == "oauth" and connected is not None else None,
+        autoAccept=auto,
         unavailableReason=unavailable_reason(row),
         createdAt=row.get("created_at"),
         updatedAt=row.get("updated_at"),
