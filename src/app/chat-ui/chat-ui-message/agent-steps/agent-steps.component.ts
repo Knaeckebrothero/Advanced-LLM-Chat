@@ -87,16 +87,17 @@ export class AgentStepsComponent {
   }
 
   /**
-   * The end of the reasoning text while it streams in (step_delta events), shown under the
-   * collapsed panel so the thinking is visible without opening it. Once the answer is being
-   * written it goes, so the answer doesn't jump up when it is done.
+   * The end of the reasoning text while it streams in (step_delta events), shown in the
+   * collapsed panel under its header, so the thinking is visible without opening it. Once the
+   * answer is being written, or a tool runs, it goes. Blank lines are dropped: the panel shows
+   * only the last few lines.
    */
   get liveThought(): string | null {
     const step = this.currentStep;
     if (this.status !== 'thinking' || this.isExpanded || !step || step.type !== 'thought' || !step.content) {
       return null;
     }
-    const text = step.content.trim();
+    const text = step.content.trim().replace(/\s*\n\s*/g, '\n');
     if (text.length <= 280) return text;
     const tail = text.slice(-280);
     const wordStart = tail.indexOf(' ');

@@ -45,6 +45,43 @@
     }
   }
 
+  // The panel's own title: the header row, and under it the live reasoning
+  ::ng-deep .mat-expansion-panel-header-title.panel-title {
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  // While the reasoning shows, the step count and the arrow stay level with the header row
+  ::ng-deep .mat-expansion-panel-header:has(.live-thought) {
+    align-items: flex-start;
+
+    .mat-content {
+      align-items: flex-start;
+    }
+  }
+
+  // Live reasoning in the collapsed panel: the newest lines stay visible, older ones are
+  // clipped at the top
+  .live-thought {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    max-height: calc(3 * 1.45em);
+    margin-top: 8px;
+    overflow: hidden;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--theme-text-secondary);
+
+    p {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+  }
+
   .steps-header {
     display: flex;
     align-items: center;
@@ -314,26 +351,6 @@
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--theme-text-secondary);
-}
-
-// Live reasoning text under the collapsed panel: the newest lines stay visible,
-// older ones are clipped at the top
-.live-thought {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  max-height: calc(3 * 1.45em);
-  margin: 6px 4px 0;
-  overflow: hidden;
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  font-style: italic;
-  color: var(--theme-text-secondary);
-
-  p {
-    margin: 0;
-    white-space: pre-wrap;
-  }
 }
 
 // Phones: a slimmer header, the message below keeps the space
