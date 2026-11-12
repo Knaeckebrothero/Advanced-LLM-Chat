@@ -327,8 +327,9 @@ Updated on 2026-10-30 (evening). Resolved since PR #137: the LangChain dependenc
 **Frontend:**
 
 - **Unit tests:** 57 of 89 fail, mostly `NullInjectorError: No provider for HttpClient` in component specs. `projects/ngx-agent-chat/tsconfig.spec.json` also errors with "No inputs were found".
-- **Unsent messages after a reload:** the sync status (`pending`, `failed`) only lives in memory; IndexedDB doesn't store it. After a reload the next sync treats an unsent message as obsolete and drops it. There's no outbox that retries unsent messages either.
-- **Error notice of a failed answer:** if an answer fails before the server starts it, the error notice exists only in the browser and sorts last. If the user sends another message instead of regenerating, the notice stays below the newer messages until the next sync drops it.
+- **Unsent messages:** a message of the user's that the server didn't take (it wasn't reachable, or refused it) stays in the browser only, with its negative local id, below the stored messages. Nothing answers it (the server would answer the conversation without it) and nothing sends it later (no outbox): the chat marks it "Not sent" with **Send again** (`ChatStateService.resendMessage()`: stored now, so it moves to the end, then answered), and it can be deleted. The sync never drops it. Before 2026-11-12 the answer started anyway, and a regenerated error notice answered without the message, which then sat below the newer answers unmarked.
+- **Notifications aren't shown:** nothing displays `NotificationService` messages or the chat's `error$`, so their error texts ("Failed to regenerate message", ...) never reach the user.
+- **Error notice of a failed answer:** if an answer fails before the server starts it, the error notice exists only in the browser and sorts last. If the user sends another message instead of regenerating, the notice stays below the newer messages until it is deleted (the sync keeps messages only the browser has).
 - **Console errors:**
   - `ExpressionChangedAfterItHasBeenCheckedError` (NG0100) in the chat input field;
   - `assets/env.js` 404 in development.

@@ -202,6 +202,15 @@
       </ng-container>
     </div>
 
+    <!-- Your message the server didn't take: nothing answered it -->
+    <div class="not-sent" *ngIf="notSent">
+      <mat-icon aria-hidden="true">error_outline</mat-icon>
+      <span>{{ 'message.notSent' | translate }}</span>
+      <button *ngIf="canResend" type="button" class="not-sent-retry" (click)="resendMessage($event)">
+        {{ 'message.sendAgain' | translate }}
+      </button>
+    </div>
+
     <p class="message-action-error" *ngIf="editError" role="alert">{{ editError }}</p>
 
     <!-- TTS Audio Player (expandable) -->

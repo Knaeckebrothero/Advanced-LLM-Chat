@@ -167,6 +167,8 @@
     "badResponse": "Schlechte Antwort",
     "delete": "Löschen",
     "openAttachment": "Öffnen",
+    "notSent": "Nicht gesendet",
+    "sendAgain": "Erneut senden",
     "loadingOlder": "Ältere Nachrichten werden geladen…",
     "scrollToBottom": "Zur neuesten Nachricht springen",
     "emptyTitle": "Wie kann ich helfen?",

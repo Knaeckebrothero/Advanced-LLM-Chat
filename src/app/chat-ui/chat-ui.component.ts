@@ -792,6 +792,16 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     return this.chatState.isCurrentlyStreaming();
   }
 
+  // Send a message again that the server didn't take; its answer follows at the bottom
+  resendMessage(messageId: number): Promise<void> {
+    this.useAnchorMode = false;
+    this.anchorMessageIndex = null;
+    this.userIsAtBottom = true;
+    this.shouldScrollToBottom = true;
+
+    return this.chatState.resendMessage(messageId);
+  }
+
   // Method to regenerate a message (optionally once with another catalog model)
   regenerateMessage(message: Message, modelId?: number) {
     // Disable anchor mode for regeneration - just follow the bottom

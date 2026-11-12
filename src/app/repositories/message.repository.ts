@@ -70,6 +70,12 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    */
   async save(message: MessageWithSyncStatus, skipSync: boolean = false): Promise<MessageWithSyncStatus> {
     try {
+      // Being sent from the start: the chat shows a message of the user's that only this browser
+      // has, and isn't being sent, as not sent
+      if (!skipSync && !message.isAgent()) {
+        message.syncStatus = 'pending';
+      }
+
       // Handle file uploads if message has attachments
       if (message.isText() && message.attachments?.length) {
         await this.handleFileAttachments(message);
@@ -96,7 +102,9 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       // Mark as pending sync
       message.syncStatus = 'pending';
 
-      // Attempt to sync with backend if online
+      // Attempt to sync with backend if online. Nothing sends it later (no outbox): a message
+      // the server didn't take is 'failed' and stays in this browser until it is sent again
+      // (resend()) or deleted.
       if (await this.isOnline()) {
         try {
           await this.syncMessage(message);
@@ -105,6 +113,9 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           message.syncStatus = 'failed';
           message.syncError = error instanceof Error ? error.message : 'Unknown error';
         }
+      } else {
+        message.syncStatus = 'failed';
+        message.syncError = 'The server is not reachable';
       }
 
       return message;
@@ -182,6 +193,23 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       console.error('Failed to delete message:', error);
       throw error;
     }
+  }
+
+  /**
+   * Send a message that only this browser has (its sending failed) to the server again. It takes
+   * the id and time the server gives it, so it moves to the end of the stored messages.
+   * Throws if the server doesn't take it; the message stays as it was ('failed').
+   */
+  async resend(message: MessageWithSyncStatus): Promise<MessageWithSyncStatus> {
+    if (!message.isLocal) {
+      return message;
+    }
+    if (message.isText() && message.attachments?.length) {
+      await this.handleFileAttachments(message);
+    }
+    message.syncStatus = 'pending';
+    await this.syncMessage(message);
+    return message;
   }
 
   /**
