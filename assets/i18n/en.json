@@ -182,7 +182,34 @@
       "mcpUnavailable": "MCP server unavailable",
       "mcpSignIn": "Sign-in needed",
       "openMcp": "Open MCP servers",
-      "mcpSignInLink": "Sign in on the MCP servers page"
+      "mcpSignInLink": "Sign in on the MCP servers page",
+      "question": "Question"
+    },
+    "question": {
+      "from": "{{server}} asks",
+      "accept": "Accept",
+      "send": "Send",
+      "decline": "Decline",
+      "open": "Open {{host}}",
+      "closed": "This question is no longer open.",
+      "failed": "The answer could not be sent.",
+      "yes": "yes",
+      "no": "no",
+      "status": {
+        "pending": "Waiting for your answer",
+        "accept": "Accepted",
+        "opened": "Opened",
+        "decline": "Declined",
+        "cancel": "Cancelled",
+        "timeout": "No answer in time",
+        "auto": "Accepted automatically",
+        "remember": {
+          "conversation": "Accepted, from now on automatically in this chat",
+          "always": "Accepted, from now on always automatically"
+        }
+      },
+      "rememberChat": "Accept automatically for the rest of this chat",
+      "rememberAlways": "Always accept automatically from {{server}}"
     }
   },
   "catalog": {
@@ -757,6 +784,12 @@
       "oauthScopesHint": "Space-separated; empty: what the server asks for",
       "enabledHintUser": "Off: agents don't use it",
       "guestsHint": "Agents with this server use it in guests' chats too"
+    },
+    "autoAccept": "Confirm automatically",
+    "autoAcceptHint": "Accept this server's confirmations (e.g. \"Spend 4 Buzz?\") without being asked. Questions that need your input still ask.",
+    "autoAccepted": {
+      "title": "Confirmed automatically",
+      "intro": "Agents' servers whose confirmations you accept without being asked."
     }
   }
 }

@@ -182,7 +182,34 @@
       "mcpUnavailable": "MCP-Server nicht verfügbar",
       "mcpSignIn": "Anmeldung nötig",
       "openMcp": "MCP-Server öffnen",
-      "mcpSignInLink": "Auf der Seite MCP-Server anmelden"
+      "mcpSignInLink": "Auf der Seite MCP-Server anmelden",
+      "question": "Frage"
+    },
+    "question": {
+      "from": "{{server}} fragt",
+      "accept": "Zustimmen",
+      "send": "Senden",
+      "decline": "Ablehnen",
+      "open": "{{host}} öffnen",
+      "closed": "Diese Frage ist nicht mehr offen.",
+      "failed": "Die Antwort konnte nicht gesendet werden.",
+      "yes": "ja",
+      "no": "nein",
+      "status": {
+        "pending": "Wartet auf deine Antwort",
+        "accept": "Zugestimmt",
+        "opened": "Geöffnet",
+        "decline": "Abgelehnt",
+        "cancel": "Abgebrochen",
+        "timeout": "Keine Antwort rechtzeitig",
+        "auto": "Automatisch zugestimmt",
+        "remember": {
+          "conversation": "Zugestimmt, ab jetzt automatisch in diesem Chat",
+          "always": "Zugestimmt, ab jetzt immer automatisch"
+        }
+      },
+      "rememberChat": "Für den Rest dieses Chats automatisch zustimmen",
+      "rememberAlways": "Bei {{server}} immer automatisch zustimmen"
     }
   },
   "catalog": {
@@ -757,6 +784,12 @@
       "oauthScopesHint": "Durch Leerzeichen getrennt; leer: was der Server verlangt",
       "enabledHintUser": "Aus: Agenten nutzen ihn nicht",
       "guestsHint": "Agenten mit diesem Server nutzen ihn auch in Chats von Gästen"
+    },
+    "autoAccept": "Automatisch bestätigen",
+    "autoAcceptHint": "Bestätigungen dieses Servers (z. B. \"Spend 4 Buzz?\") ohne Nachfrage annehmen. Fragen, die deine Eingabe brauchen, kommen weiter.",
+    "autoAccepted": {
+      "title": "Automatisch bestätigt",
+      "intro": "Server der Agenten, deren Bestätigungen du ohne Nachfrage annimmst."
     }
   }
 }
