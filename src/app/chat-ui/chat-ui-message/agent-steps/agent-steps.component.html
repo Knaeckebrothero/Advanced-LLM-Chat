@@ -9,7 +9,7 @@
 
   <!-- Header: Spinner/Icon + Current Action -->
   <mat-expansion-panel-header>
-    <mat-panel-title>
+    <mat-panel-title class="panel-title">
       <div class="steps-header">
         <!-- Spinner when processing -->
         <mat-spinner *ngIf="isProcessing" diameter="18" class="header-spinner"></mat-spinner>
@@ -20,6 +20,8 @@
 
         <span class="header-text">{{ headerText }}</span>
       </div>
+      <!-- The newest reasoning while the model thinks (panel collapsed); the full text is in the step -->
+      <div class="live-thought" *ngIf="liveThought as thought" aria-hidden="true"><p>{{ thought }}</p></div>
     </mat-panel-title>
     <mat-panel-description>
       <span class="step-count" [title]="stepCountLabel" [attr.aria-label]="stepCountLabel">{{ steps.length }}</span>
@@ -92,6 +94,3 @@
 
 <!-- Questions of MCP servers waiting for the user's answer (elicitation) -->
 <app-elicitation-card *ngFor="let step of openQuestions; trackBy: trackStep" [step]="step"></app-elicitation-card>
-
-<!-- Live reasoning text while the model thinks (panel collapsed) -->
-<div class="live-thought" *ngIf="liveThought as thought" aria-live="off"><p>{{ thought }}</p></div>
