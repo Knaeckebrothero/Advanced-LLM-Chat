@@ -15,6 +15,14 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
+# How the helper's answer starts when the vision model could not be asked (no credit, timeout, ...)
+ERROR_PREFIX = "[Error"
+
+
+def is_error(answer: str) -> bool:
+    """Whether an answer of the helper is its error message rather than a description."""
+    return isinstance(answer, str) and answer.startswith(ERROR_PREFIX)
+
 # Lazy-loaded singleton
 _vision_helper: Optional["VisionHelper"] = None
 
@@ -116,7 +124,7 @@ class VisionHelper:
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Error in describe_image: {e}", exc_info=True)
-            return f"[Error analyzing image: {str(e)}]"
+            return f"{ERROR_PREFIX} analyzing image: {str(e)}]"
 
     async def analyze_document_page(
         self,
@@ -172,4 +180,4 @@ class VisionHelper:
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Error in analyze_document_page: {e}", exc_info=True)
-            return f"[Error analyzing document page: {str(e)}]"
+            return f"{ERROR_PREFIX} analyzing document page: {str(e)}]"

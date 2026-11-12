@@ -107,9 +107,10 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
     """
     The tools for an answer: the tools the server enables, limited to the tool
     groups of the conversation's persona (if it has a selection; the knowledge
-    base only comes with a selection). The file tool only reads the current
-    user's uploads, the knowledge base tools only their notes (never a guest's):
-    the shared knowledge base, or the persona's own one (persona_vault()).
+    base only comes with a selection). The file tools only see the current
+    user's files of this conversation (a vision model gets images themselves),
+    the knowledge base tools only their notes (never a guest's): the shared
+    knowledge base, or the persona's own one (persona_vault()).
 
     :return: The tools, or None for none (the model doesn't support tools, or
         the persona selected no enabled tool group).
@@ -118,7 +119,7 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
         return None
     tools = tools_for_groups(persona_tool_groups(current_user, conversation), user_id=current_user['user_id'],
                              guest=bool(current_user.get('is_guest')), conversation=conversation,
-                             vault=persona_vault(current_user, conversation))
+                             vault=persona_vault(current_user, conversation), vision=config.supports_vision)
     return tools if len(tools) else None
 
 
@@ -148,16 +149,18 @@ def _step_to_dict(step) -> dict:
 
 
 async def _mcp_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig,
-                     tools: Optional[ToolRegistry]) -> Tuple[Optional[ToolRegistry], McpToolset]:
+                     tools: Optional[ToolRegistry], answer_id: Optional[int] = None
+                     ) -> Tuple[Optional[ToolRegistry], McpToolset]:
     """
     The tools of the agent's MCP servers added to an answer's tools (docs/mcp.md). A failure
-    here never fails the answer: it goes on without MCP tools.
+    here never fails the answer: it goes on without MCP tools. The files their results bring
+    (e.g. generated images) are recorded with answer_id, the id of the message being written.
     """
     if not config.supports_tools:
         return tools, McpToolset()
     registry = tools if tools is not None else ToolRegistry()
     try:
-        toolset = await mcp_tools_for_answer(current_user, conversation, set(registry.names()))
+        toolset = await mcp_tools_for_answer(current_user, conversation, set(registry.names()), answer_id)
     except Exception as e:
         crud_logger.error(f"MCP tools of conversation {(conversation or {}).get('id')} failed: {e}", exc_info=True)
         return tools, McpToolset()
@@ -171,7 +174,8 @@ async def _answer_context(
     conversation_id: str,
     config: ModelConfig,
     *,
-    mcp: bool = True
+    mcp: bool = True,
+    answer_id: Optional[int] = None
 ) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int, List[Notice]]:
     """
     What an answer in this conversation is built from: the tools, the history builder,
@@ -180,7 +184,8 @@ async def _answer_context(
 
     The persona decides the prompt and which tools the model gets; the prompt only
     describes the tools it really has. The tools of the agent's MCP servers come next
-    (not with mcp=False, which doesn't connect to them). With the knowledge base, the
+    (not with mcp=False, which doesn't connect to them); answer_id is the id of the message
+    being written, recorded with the files those tools create. With the knowledge base, the
     agent's memory follows (read for every answer, so a change shows in the next one).
     The conversation's system messages are instructions to the model and come last.
     """
@@ -188,7 +193,7 @@ async def _answer_context(
     tools = _agent_tools(current_user, conversation, config)
     toolset = McpToolset()
     if mcp:
-        tools, toolset = await _mcp_tools(current_user, conversation, config, tools)
+        tools, toolset = await _mcp_tools(current_user, conversation, config, tools, answer_id)
     history_builder = ConversationHistoryBuilder(db)
     system_prompt = with_instructions(
         _memory_prompt(
@@ -1119,8 +1124,8 @@ async def stream_generate(
     - done: Signals completion with the message ID, the model and the token usage
     - error: An error occurred during processing
 
-    The agent loop (backend/llm) runs the model with its tools (file retrieval,
-    web search and the optional Neo4j knowledge graph), limited to the tool
+    The agent loop (backend/llm) runs the model with its tools (the conversation's
+    files, web search and the optional Neo4j knowledge graph), limited to the tool
     groups of the conversation's persona.
     """
     crud_logger.info(
@@ -1194,7 +1199,7 @@ async def stream_generate(
 
         try:
             tools, history_builder, system_prompt, token_budget, mcp_notices = await _answer_context(
-                current_user, request_body.conversationId, config)
+                current_user, request_body.conversationId, config, answer_id=message_id)
             # MCP servers of the agent that give no tools this time (unreachable, or not signed in)
             for notice in mcp_notices:
                 now_ms = int(time.time() * 1000)

@@ -1,0 +1,21 @@
+<button type="button" class="file-tile" (click)="open()"
+        [attr.aria-label]="'files.open' | translate: { name: file.name }"
+        [matTooltip]="isPicture ? file.name : ''" matTooltipShowDelay="600">
+  @if (isPicture) {
+    @if (url) {
+      <img [src]="url" [alt]="file.name" draggable="false">
+    } @else {
+      <span class="file-tile-loading" aria-hidden="true"></span>
+    }
+  } @else {
+    <mat-icon aria-hidden="true">{{ icon }}</mat-icon>
+    @if (!isSmall) {
+      <span class="file-tile-text">
+        <span class="file-tile-name">{{ file.name }}</span>
+        @if (sizeText) {
+          <span class="file-tile-size">{{ sizeText }}</span>
+        }
+      </span>
+    }
+  }
+</button>

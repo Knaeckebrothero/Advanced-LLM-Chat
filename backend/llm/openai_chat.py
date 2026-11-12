@@ -31,6 +31,9 @@ log = logging.getLogger(__name__)
 # Delta and message fields that carry reasoning text, in order of preference
 REASONING_FIELDS = ("reasoning_content", "reasoning")
 
+# Heads the user message that carries the images of tool results (prepare_messages())
+TOOL_IMAGES_NOTE = "[The images of the tool results above, in their order. This message is not from the user.]"
+
 _STOP_REASONS = {
     "stop": STOP_END,
     "tool_calls": STOP_TOOL_CALLS,
@@ -76,19 +79,44 @@ def apply_extra_body(config: ModelConfig, kwargs: dict) -> dict:
     return kwargs
 
 
+def _split_tool_content(content: list) -> tuple[str, list[dict]]:
+    """The text and the image parts of a tool result with images."""
+    texts = [part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"]
+    images = [part for part in content if isinstance(part, dict) and part.get("type") == "image_url"]
+    return "\n".join(text for text in texts if text), images
+
+
 def prepare_messages(config: ModelConfig, messages: list[dict], system_prompt: Optional[str]) -> list[dict]:
     """
     The messages as sent: system prompt first, runtime-only keys removed, and
     reasoning_content only when the model wants it passed back.
+
+    A tool message takes only text in this API. The images of a tool result (a
+    content list, see tools.tool_message_content()) go into a user message
+    right after the tool results of that model call.
     """
     prepared = []
     if system_prompt:
         prepared.append({"role": "system", "content": system_prompt})
+    pending_images: list[dict] = []  # Of the tool results since the last assistant message
+
+    def flush_images():
+        if pending_images:
+            prepared.append({"role": "user", "content": [{"type": "text", "text": TOOL_IMAGES_NOTE}, *pending_images]})
+            pending_images.clear()
+
     for message in messages:
         clean = {key: value for key, value in message.items() if not key.startswith("_")}
         if not config.reasoning_passback:
             clean.pop("reasoning_content", None)
+        if clean.get("role") == "tool":
+            if isinstance(clean.get("content"), list):
+                clean["content"], images = _split_tool_content(clean["content"])
+                pending_images.extend(images)
+        else:
+            flush_images()
         prepared.append(clean)
+    flush_images()
     return prepared
 
 

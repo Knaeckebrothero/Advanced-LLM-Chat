@@ -1,0 +1,113 @@
+// One stored file: a picture as high as its parent says, or a card with the file's name
+
+:host {
+  display: block;
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--file-tile-height, 64px);
+}
+
+// A card is as wide as its text needs; a small one is a square with the icon
+:host(:not(.is-picture)) {
+  height: auto;
+  min-height: 56px;
+  max-width: min(100%, 280px);
+}
+
+:host(.is-small:not(.is-picture)) {
+  width: var(--file-tile-height, 64px);
+  height: var(--file-tile-height, 64px);
+  min-height: 0;
+}
+
+.file-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background-color: var(--theme-hover);
+  color: var(--theme-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover {
+    border-color: var(--theme-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+  }
+
+  :host(.is-picture) & {
+    cursor: zoom-in;
+  }
+
+  :host(.is-small) & {
+    border-radius: 8px;
+  }
+
+  :host(:not(.is-picture):not(.is-small)) & {
+    justify-content: flex-start;
+    padding: 10px 14px;
+  }
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  mat-icon {
+    flex: none;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.file-tile-loading {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent 30%, var(--theme-active) 50%, transparent 70%) 0 0 / 200% 100%;
+  animation: file-tile-loading 1.4s linear infinite;
+}
+
+@keyframes file-tile-loading {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-tile-loading {
+    animation: none;
+  }
+}
+
+.file-tile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.file-tile-name {
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tile-size {
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+}

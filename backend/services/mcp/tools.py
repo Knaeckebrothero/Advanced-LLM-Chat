@@ -5,6 +5,12 @@ tools_for_answer() connects to the servers of the conversation's agent (its admi
 the user's own if the agent selects the tool group user_mcp), lists their tools and wraps each in
 a Tool for the agent loop. A server that fails gives no tools but a notice, which the answer shows
 as a step.
+
+Images, audio and other binary content in a tool's result become files of the conversation
+(docs/files.md): the model gets their names, the chat shows them, and the agent's file tools
+read and show them like the user's uploads. That goes for content in the result itself and for
+media the result links to (resource_link), which backend/services/mcp/media.py fetches:
+Civitai, for one, returns a generated image as a link.
 """
 import asyncio
 import json
@@ -16,9 +22,11 @@ from typing import Any, Optional
 from backend.catalog.resolver import persona_usable
 from backend.config import MCP_ENABLED, MCP_MAX_RESULT_CHARS, MCP_TOOL_TIMEOUT
 from backend.database import db
-from backend.llm.tools import Tool, ToolError, step_sink
+from backend.llm.tools import Tool, ToolError, ToolText, step_sink
 from backend.models.mcp import McpTestResult, McpToolInfo
-from backend.services.mcp import store
+from backend.services import file_store
+from backend.services.file_store import FileStoreError
+from backend.services.mcp import media, store
 from backend.services.mcp.elicitation import Asker, asking
 from backend.services.mcp.oauth import TokenAuth, guarded, has_tokens
 from backend.services.mcp.pool import Connection, McpAuthRequired, McpConnectError, describe_error, pool, root_cause
@@ -29,6 +37,9 @@ log = logging.getLogger(__name__)
 # OpenAI and Anthropic accept tool names of letters, digits, _ and -, up to 64 characters
 TOOL_NAME_MAX = 64
 DESCRIPTION_MAX = 4000
+
+# Most files kept from one tool result; further binary content is only mentioned
+MAX_FILES_PER_RESULT = 20
 
 # Step titles of the notices (the frontend translates them by these strings)
 UNAVAILABLE_TITLE = "MCP server unavailable"
@@ -141,23 +152,66 @@ def _parameters(schema: Any) -> dict:
     return schema
 
 
-def _size(data: Optional[str]) -> str:
-    if not data:
-        return "0 KB"
-    size = len(data) * 3 // 4
-    return f"{size / 1024:.0f} KB" if size < 1024 * 1024 else f"{size / 1024 / 1024:.1f} MB"
+def _keep(mime_type: Optional[str], data: Optional[bytes], save, saved: list) -> str:
+    """
+    Binary content of a result for the model: saved as a file of the conversation, its name;
+    without a place to save it (or when it can't be kept), only what it is.
+
+    Args:
+        data: The content; None for content that could not be decoded.
+    """
+    mime_type = mime_type or "application/octet-stream"
+    if data is None:
+        return f"[{mime_type}, not kept: its data can't be read]"
+    size = file_store.format_size(len(data))
+    if save is None:
+        return f"[{mime_type}, {size}, not shown]"
+    if len(saved) >= MAX_FILES_PER_RESULT:
+        return f"[{mime_type}, {size}, not kept: more than {MAX_FILES_PER_RESULT} files in one result]"
+    try:
+        row = save(data, mime_type)
+    except FileStoreError as e:
+        return f"[{mime_type}, {size}, not kept: {e}]"
+    except Exception as e:
+        # Never fails the call: the tool ran (and may have cost something), only its file is lost
+        log.warning(f"Could not keep {mime_type} content of an MCP result: {type(e).__name__}: {e}")
+        return f"[{mime_type}, {size}, not kept: it could not be saved]"
+    saved.append(row)
+    kind = "Image" if mime_type.startswith("image/") else "Audio" if mime_type.startswith("audio/") else "File"
+    facts = [f"{row['width']}×{row['height']} px"] if row.get("width") and row.get("height") else []
+    facts.append(file_store.format_size(file_store.file_size(row)))
+    return f"[{kind} saved as file \"{file_store.file_name(row)}\" ({', '.join(facts)})]"
 
 
-def format_result(result) -> str:
-    """The text the model gets from an MCP tool result."""
+def render_result(result, save=None, linked: Optional[dict[int, list]] = None) -> tuple[str, list[dict]]:
+    """
+    The text the model gets from an MCP tool result, and the files kept from it.
+
+    Args:
+        result: The CallToolResult.
+        save: Called as save(data, mime_type) for each image, audio and binary resource of the
+            result; stores it as a file of the conversation and returns its row
+            (file_store.save_tool_file()). None: nothing is kept, the model is only told
+            what was there.
+        linked: The media the result links to (media.read_links()): {index of the resource_link
+            block: [(MIME type, data), ...]}, kept like the content of the result itself.
+
+    Returns:
+        (the text, the rows of the saved files in the result's order)
+    """
     parts = []
-    for block in result.content or []:
+    saved: list[dict] = []
+    for index, block in enumerate(result.content or []):
         kind = getattr(block, "type", None)
         if kind == "text":
             parts.append(block.text)
         elif kind in ("image", "audio"):
-            parts.append(f"[{block.mime_type}, {_size(block.data)}, not shown]")
+            parts.append(_keep(block.mime_type, media.decode(block.data), save, saved))
         elif kind == "resource_link":
+            found = (linked or {}).get(index)
+            if found:
+                parts.extend(_keep(mime_type, data, save, saved) for mime_type, data in found)
+                continue
             label = block.title or block.name
             parts.append(f"[Resource: {label} <{block.uri}>]" + (f" {block.description}" if block.description else ""))
         elif kind == "resource":
@@ -166,8 +220,8 @@ def format_result(result) -> str:
             if text is not None:
                 parts.append(f"[Resource {resource.uri}]\n{text}")
             else:
-                parts.append(f"[Resource {resource.uri}: {resource.mime_type or 'binary'}, "
-                             f"{_size(getattr(resource, 'blob', None))}, not shown]")
+                parts.append(f"[Resource {resource.uri}] "
+                             + _keep(resource.mime_type, media.decode(getattr(resource, "blob", None)), save, saved))
         else:
             parts.append(json.dumps(block.model_dump(mode="json", exclude_none=True), ensure_ascii=False))
     if not parts and result.structured_content is not None:
@@ -175,11 +229,35 @@ def format_result(result) -> str:
     text = "\n\n".join(part for part in parts if part)
     if len(text) > MCP_MAX_RESULT_CHARS:
         text = text[:MCP_MAX_RESULT_CHARS] + f"\n\n[... cut off: the result had {len(text)} characters]"
-    return text
+    return text, saved
+
+
+def format_result(result) -> str:
+    """The text the model gets from an MCP tool result when nothing of it is kept."""
+    return render_result(result)[0]
+
+
+def _files_note(saved: list[dict], file_tools: bool) -> str:
+    """What the model is told about the files kept from a result: where the user sees them."""
+    names = ", ".join(file_store.file_name(row) for row in saved)
+    if file_tools:
+        return (f"[Saved to this conversation: {names}. The user sees only a small preview so far. Call show_file "
+                f"to show the ones worth looking at in your answer, and read_file to look at one yourself.]")
+    return f"[Saved to this conversation and shown to the user with your answer: {names}.]"
+
+
+@dataclass
+class AnswerScope:
+    """Where the files of an answer's tool results go, and what its agent can do with them."""
+    conversation_id: Optional[str] = None
+    answer_id: Optional[int] = None     # The id of the message being written
+    file_tools: bool = False            # The agent has show_file and read_file
 
 
 def _make_tool(row: dict, spec: ServerSpec, mcp_tool, name: str, user: dict,
-               conversation_id: Optional[str] = None) -> Tool:
+               scope: Optional[AnswerScope] = None) -> Tool:
+    scope = scope or AnswerScope()
+    conversation_id = scope.conversation_id
     title = (mcp_tool.title or (mcp_tool.annotations.title if mcp_tool.annotations else None)
              or mcp_tool.name)
     description = (mcp_tool.description or title).strip()
@@ -207,10 +285,24 @@ def _make_tool(row: dict, spec: ServerSpec, mcp_tool, name: str, user: dict,
                 raise ToolError(connection.auth.failed)
             log.warning(f"MCP tool {spec.slug}/{mcp_tool.name} failed: {describe_error(e)}")
             raise ToolError(f"{spec.name}: {describe_error(e)}")
-        text = format_result(result)
         if result.is_error:
-            raise ToolError(text or "The tool reported an error")
-        return text
+            raise ToolError(format_result(result) or "The tool reported an error")
+
+        def save(data: bytes, mime_type: str) -> dict:
+            return file_store.save_tool_file(
+                data, user_id=user["user_id"], conversation_id=conversation_id, mime_type=mime_type,
+                stem=spec.slug, origin=f"{spec.name}: {title}", message_id=scope.answer_id, arguments=arguments)
+
+        # Images and other binary content become files of the conversation; the chat shows them
+        linked = await media.read_links(connection.client, result) if conversation_id else None
+        text, saved = await asyncio.to_thread(render_result, result, save if conversation_id else None, linked)
+        if not saved:
+            return text
+        refs = [file_store.file_ref(row) for row in saved]
+        metadata = {"files": refs}
+        if not scope.file_tools:
+            metadata["shownFiles"] = refs  # An agent that can't show them itself: all are shown
+        return ToolText(f"{text}\n\n{_files_note(saved, scope.file_tools)}", metadata)
 
     return Tool(name=name, description=description, parameters=_parameters(mcp_tool.input_schema), func=call,
                 title=f"{spec.name}: {title}")
@@ -231,7 +323,8 @@ async def _server_tools(row: dict, user: dict):
     return spec, connection, offered
 
 
-async def tools_for_answer(user: dict, conversation: Optional[dict], taken: set) -> McpToolset:
+async def tools_for_answer(user: dict, conversation: Optional[dict], taken: set,
+                           answer_id: Optional[int] = None) -> McpToolset:
     """
     The MCP tools of an answer.
 
@@ -239,8 +332,10 @@ async def tools_for_answer(user: dict, conversation: Optional[dict], taken: set)
         user: The current user.
         conversation: The conversation row (persona_id).
         taken: Tool names the answer has already; the new ones are added to it.
+        answer_id: The id of the message being written; recorded with the files its tools create.
     """
     toolset = McpToolset()
+    scope = AnswerScope((conversation or {}).get("id"), answer_id, file_tools="show_file" in taken)
     rows = await asyncio.to_thread(answer_servers, user, conversation)
     if not rows:
         return toolset
@@ -261,7 +356,7 @@ async def tools_for_answer(user: dict, conversation: Optional[dict], taken: set)
         prefixes.add(prefix)
         for mcp_tool in offered:
             toolset.tools.append(_make_tool(row, spec, mcp_tool, tool_name(prefix, mcp_tool.name, taken), user,
-                                            (conversation or {}).get("id")))
+                                            scope))
         toolset.servers.append({"name": spec.name, "prefix": prefix, "description": spec.description,
                                 "instructions": connection.instructions})
     return toolset

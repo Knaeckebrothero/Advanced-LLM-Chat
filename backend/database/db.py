@@ -162,6 +162,85 @@ def backfill_uploaded_files(conn: Connection) -> tuple[int, int]:
     return added, len(stored_file_ids() - owned)
 
 
+def _link_message_files(conn: Connection, conversation_id: str, message_id: int, content: str) -> int:
+    """
+    The files a stored message attaches now belong to its conversation (docs/files.md).
+
+    Only files of the conversation's owner that are in no conversation yet: a file belongs to
+    one conversation, the first whose message attaches it. The attachment's name, type and size
+    fill what the file's row doesn't have.
+
+    Returns:
+        Number of files linked.
+    """
+    from backend.services.file_utils import is_file_id
+
+    owner = select(conversations.c.userId).where(conversations.c.id == conversation_id).scalar_subquery()
+    linked = 0
+    for attachment in _message_attachments(content):
+        file_id = attachment.get('fileId', attachment.get('id'))
+        if not is_file_id(file_id):
+            continue
+        name = attachment.get('name') or attachment.get('fileName')
+        mime_type = attachment.get('mimeType')
+        size = attachment.get('fileSize', attachment.get('size'))
+        linked += conn.execute(
+            update(uploaded_files)
+            .where(uploaded_files.c.file_id == file_id, uploaded_files.c.conversation_id.is_(None),
+                   uploaded_files.c.user_id == owner)
+            .values(
+                conversation_id=conversation_id,
+                message_id=message_id,
+                name=func.coalesce(uploaded_files.c.name, name if isinstance(name, str) else None),
+                mime_type=func.coalesce(uploaded_files.c.mime_type, mime_type if isinstance(mime_type, str) else None),
+                size_bytes=func.coalesce(uploaded_files.c.size_bytes,
+                                         size if isinstance(size, int) and not isinstance(size, bool) else None),
+            )
+        ).rowcount
+    return linked
+
+
+def _unlink_message_files(conn: Connection, conversation_id: str, condition=None) -> int:
+    """
+    Files of deleted messages leave the conversation: its agent no longer sees them. The files
+    themselves stay (their owner can still open them).
+
+    Args:
+        condition: Which of the conversation's files (on uploaded_files.c.message_id); None for all.
+    """
+    stmt = update(uploaded_files).where(uploaded_files.c.conversation_id == conversation_id)
+    if condition is not None:
+        stmt = stmt.where(condition)
+    return conn.execute(stmt.values(conversation_id=None)).rowcount
+
+
+def files_lack_conversations(engine: Engine) -> bool:
+    """Whether uploaded_files has no conversation_id yet: this run of the schema adds it (or the table)."""
+    inspector = inspect(engine)
+    if not inspector.has_table("uploaded_files"):
+        return True
+    return "conversation_id" not in {column["name"] for column in inspector.get_columns("uploaded_files")}
+
+
+def backfill_file_conversations(conn: Connection) -> int:
+    """
+    Give the files uploaded before files belonged to a conversation theirs: the conversation
+    of the oldest message that attaches them, with the name, type and size that message has.
+    Files no message attaches stay in no conversation. Runs once, in the transaction that adds
+    uploaded_files.conversation_id (init_tables() or db_init).
+
+    Returns:
+        Number of files that got a conversation.
+    """
+    referencing = (
+        select(messages.c.id, messages.c.conversationId, messages.c.content)
+        .where(messages.c.content.like('%attachments%'))
+        .order_by(messages.c.id)
+    )
+    return sum(_link_message_files(conn, conversation_id, message_id, content)
+               for message_id, conversation_id, content in conn.execute(referencing).fetchall())
+
+
 def prepare_database(engine: Engine) -> None:
     """
     Get the database ready for the schema: enable pgvector, and on the first start on the pgvector
@@ -443,8 +522,10 @@ class Database:
         pattern = r"--\s*name:\s*\w+\s*\n"
         blocks = re.split(pattern, schema_sql)
 
-        # The run that creates uploaded_files gives the existing files their owner
+        # The run that creates uploaded_files gives the existing files their owner; the one
+        # that adds its conversation_id links them to their conversations
         backfill_file_owners = not inspect(self.engine).has_table("uploaded_files")
+        link_files = files_lack_conversations(self.engine)
 
         with self.connection() as conn:
             for block in blocks:
@@ -462,6 +543,10 @@ class Database:
                 added, unowned = backfill_uploaded_files(conn)
                 log.info(f"Created uploaded_files: {added} existing file(s) got the owner of the conversation "
                          f"that references them, {unowned} without owner can't be read any more")
+            if link_files:
+                linked = backfill_file_conversations(conn)
+                log.info(f"Files belong to conversations now: {linked} existing file(s) got the conversation "
+                         f"whose message attaches them")
 
         log.info("Database tables initialized successfully")
 
@@ -786,6 +871,8 @@ class Database:
                         break
                     message_id += 1
                 previous_id = message_id
+                # Attachments in no conversation yet (the file's first conversation keeps it)
+                _link_message_files(conn, conversation_id, message_id, values.get('content') or '')
 
             if previous_id:
                 _note_new_message(conn, conversation_id, previous_id)
@@ -1218,6 +1305,7 @@ class Database:
             ).returning(messages)
             result = conn.execute(stmt).fetchone()
             _note_new_message(conn, conversation_id, message_id)
+            _link_message_files(conn, conversation_id, message_id, content)
             log.debug(f"Created message: {message_id} in conversation {conversation_id}")
             return self._row_to_dict(result)
 
@@ -1273,6 +1361,7 @@ class Database:
                     deleted = conn.execute(delete(messages).where(
                         (messages.c.conversationId == conversation_id) & (messages.c.id > message_id)
                     )).rowcount
+                    _unlink_message_files(conn, conversation_id, uploaded_files.c.message_id > message_id)
                     log.info(f"Deleted {deleted} message(s) after edited message {message_id}")
             else:
                 log.warning(f"Message update failed (version mismatch or not found): {message_id}")
@@ -1407,6 +1496,7 @@ class Database:
             deleted = role_name is not None
             if deleted:
                 log.info(f"Deleted message: {message_id}")
+                _unlink_message_files(conn, conversation_id, uploaded_files.c.message_id == message_id)
                 if role_name != 'system':
                     self._drop_summary_covering(conn, conversation_id, message_id)
             else:
@@ -1430,6 +1520,7 @@ class Database:
             count = result.rowcount
             conn.execute(delete(conversation_summaries).where(
                 conversation_summaries.c.conversation_id == conversation_id))
+            _unlink_message_files(conn, conversation_id)
             if count > 0:
                 log.info(f"Deleted {count} messages from conversation {conversation_id}")
             return count
@@ -2084,17 +2175,43 @@ class Database:
     # Uploaded File Operations
     # =========================================================================
 
-    def register_uploaded_file(self, file_id: str, user_id: int) -> None:
+    def register_uploaded_file(self, file_id: str, user_id: int, **values) -> None:
         """
-        Record who uploaded a file; only that user can read it.
+        Record a stored file and its owner; only that user can read it.
 
         Args:
             file_id: The file ID (stored filename without extension).
-            user_id: The uploader's user ID.
+            user_id: The owner: the uploader, or the user a tool made it for.
+            values: Further columns of uploaded_files: name, mime_type, size_bytes, width, height,
+                and for a tool's file conversation_id, message_id, source, origin, details. An
+                upload gets its conversation when its message is stored (_link_message_files()).
         """
         with self.connection() as conn:
-            conn.execute(insert(uploaded_files).values(file_id=file_id, user_id=user_id))
+            conn.execute(insert(uploaded_files).values(file_id=file_id, user_id=user_id, **values))
             log.debug(f"Registered file {file_id} for user {user_id}")
+
+    def get_file(self, file_id: str) -> Optional[dict]:
+        """A stored file's row (uploaded_files), or None."""
+        with self.connection() as conn:
+            row = conn.execute(select(uploaded_files).where(uploaded_files.c.file_id == file_id)).fetchone()
+            return self._row_to_dict(row)
+
+    def get_conversation_files(self, conversation_id: str, user_id: int) -> list[dict]:
+        """
+        The files of a conversation, oldest first: what its messages attach and what tools
+        created in it. Only the user's own files.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            user_id: The conversation's owner.
+        """
+        with self.connection() as conn:
+            stmt = (
+                select(uploaded_files)
+                .where(uploaded_files.c.conversation_id == conversation_id, uploaded_files.c.user_id == user_id)
+                .order_by(uploaded_files.c.created_at, uploaded_files.c.file_id)
+            )
+            return [self._row_to_dict(row) for row in conn.execute(stmt)]
 
     def get_file_owner(self, file_id: str) -> Optional[int]:
         """

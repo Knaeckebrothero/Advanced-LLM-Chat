@@ -8,7 +8,8 @@ tool_result blocks, history that starts with an assistant message), the request
 settings (adaptive thinking with summarized display, output_config.effort, no
 temperature/top_p, max_tokens default, no forced tool_choice), thinking blocks
 with signatures passed back unchanged, all tool results in one user message,
-the step limit, refusals, usage with cache reads, and complete().
+the image of a tool result inside its tool_result block, the step limit,
+refusals, usage with cache reads, and complete().
 """
 import asyncio
 import json
@@ -21,7 +22,7 @@ import httpx2
 
 from backend.llm.agent_loop import REFUSAL_NOTE, STEP_LIMIT_NOTE, complete, run_agent
 from backend.llm.anthropic_chat import DEFAULT_MAX_TOKENS_STREAMING, HISTORY_START_PLACEHOLDER, to_anthropic_messages
-from backend.llm.tools import Tool, ToolRegistry
+from backend.llm.tools import Tool, ToolRegistry, ToolText
 from backend.llm.types import KIND_ANTHROPIC, ModelConfig
 
 PNG_DATA = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg=="
@@ -230,6 +231,34 @@ async def test_tool_loop_with_thinking_passback():
     print(f"      (anthropic-version sent: {version})")
 
 
+async def test_tool_result_with_image():
+    async def look() -> ToolText:
+        return ToolText("fox-1.png. The image follows.",
+                        images=[{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{PNG_DATA}"}}])
+
+    tools = ToolRegistry([Tool(name="look", description="Look at the fox", func=look,
+                               parameters={"type": "object", "properties": {}})])
+
+    def turn1(body):
+        return message_events([{"type": "tool_use", "id": "toolu_i", "name": "look", "input": {}}], "tool_use")
+
+    def turn2(body):
+        # Claude takes the image inside the tool result
+        result = body["messages"][2]["content"][0]
+        assert result["type"] == "tool_result" and result["tool_use_id"] == "toolu_i", result
+        assert result["content"] == [
+            {"type": "text", "text": "fox-1.png. The image follows."},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": PNG_DATA}},
+        ], result["content"]
+        return message_events([{"type": "text", "pieces": ["A fox."]}], "end_turn")
+
+    api = MockMessagesAPI(turn1, turn2)
+    events = await collect(make_config(reasoning="none"), [{"role": "user", "content": "Look"}], api, tools=tools)
+    assert tokens_of(events) == "A fox."
+    results = [data.content for kind, data in events if kind == "step" and data.type == "tool_result"]
+    assert results == ["fox-1.png. The image follows."], results
+
+
 async def test_effort_mapping_and_no_thinking():
     def check(body):
         assert body["output_config"] == {"effort": "low"}, body.get("output_config")
@@ -286,6 +315,7 @@ async def test_complete():
 TESTS = [
     test_conversion,
     test_tool_loop_with_thinking_passback,
+    test_tool_result_with_image,
     test_effort_mapping_and_no_thinking,
     test_step_limit_uses_tool_choice_none,
     test_refusal,

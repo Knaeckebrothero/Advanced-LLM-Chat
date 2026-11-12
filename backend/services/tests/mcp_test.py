@@ -13,9 +13,14 @@ cut-off text; a server that is down becomes a notice); the connection pool (reus
 definition); the address guard of users' own servers; the OAuth sign-in from the start to the
 refresh and a refresh that fails; questions of a server to the user (elicitation: the step in
 the chat, accept, decline, no answer in time, nobody to ask, the form's values, URL mode, the
-agent loop passing the question on while the tool runs); persona validation and deleting a
-server; the catalog file; the answer's tools in backend/api/messages.py; the API through
-FastAPI's test client.
+agent loop passing the question on while the tool runs); the files of conversations
+(docs/files.md: the images of a tool result saved as files with unique names, what the chat and
+the model get, the agent's file tools on them, uploads linked to their conversation when their
+message is stored and unlinked when it is deleted, previews, the files API); the media a result
+links to (read from the server, else downloaded from the web address the result names: only
+https, only media, only up to the size limit); persona validation
+and deleting a server; the catalog file; the answer's tools in backend/api/messages.py; the API
+through FastAPI's test client.
 
 It creates the database <POSTGRES_DB>_mcp_test if needed (or --database, whose name must contain
 "test") and deletes its own test users, so it never touches the real database:
@@ -29,6 +34,8 @@ import asyncio
 import base64
 import dataclasses
 import hashlib
+import io
+import json
 import logging
 import os
 import secrets
@@ -56,7 +63,7 @@ import uvicorn  # noqa: E402
 from mcp.server.elicitation import ElicitationResult  # noqa: E402
 from mcp.server.mcpserver import Elicit, MCPServer, Resolve  # noqa: E402
 from mcp.server.mcpserver.utilities.types import Image  # noqa: E402
-from mcp_types import ElicitRequestFormParams, ElicitRequestURLParams  # noqa: E402
+from mcp_types import ElicitRequestFormParams, ElicitRequestURLParams, ResourceLink  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 from sqlalchemy import delete, insert, select  # noqa: E402
 from starlette.requests import Request  # noqa: E402
@@ -66,13 +73,16 @@ from backend import config  # noqa: E402
 from backend.catalog import catalog_file, resolver, service  # noqa: E402
 from backend.catalog.service import CatalogError  # noqa: E402
 from backend.database.db import Database  # noqa: E402
-from backend.database.tables import conversations, mcp_servers, mcp_tokens, personas, users  # noqa: E402
+from backend.database.tables import (conversations, mcp_servers, mcp_tokens, messages, personas, uploaded_files,  # noqa: E402
+                                     users)
 from backend.llm import agent_loop  # noqa: E402
 from backend.llm.common import ToolCall  # noqa: E402
-from backend.llm.tools import Tool, ToolError, ToolInputError, ToolRegistry, with_step_sink  # noqa: E402
+from backend.llm.tools import (Tool, ToolError, ToolInputError, ToolRegistry, ToolText, tools_for_groups,  # noqa: E402
+                               with_step_sink)
 from backend.models.catalog import PersonaCreate, PersonaUpdate  # noqa: E402
 from backend.models.mcp import McpServerCreate, McpServerUpdate  # noqa: E402
-from backend.services.mcp import elicitation, oauth, servers, store  # noqa: E402
+from backend.services import file_store, file_utils  # noqa: E402
+from backend.services.mcp import elicitation, media, oauth, servers, store  # noqa: E402
 from backend.services.mcp import tools as mcp_tools  # noqa: E402
 from backend.services.mcp.pool import pool  # noqa: E402
 
@@ -126,6 +136,38 @@ def make_mcp(name: str) -> MCPServer:
     def big() -> str:
         """A long text."""
         return "y" * 5000
+
+    return server
+
+
+def png(width: int, height: int) -> bytes:
+    from PIL import Image as PillowImage
+    output = io.BytesIO()
+    PillowImage.new("RGB", (width, height), (200, 120, 40)).save(output, "PNG")
+    return output.getvalue()
+
+
+def make_painting_mcp() -> MCPServer:
+    server = MCPServer("painter")
+
+    @server.tool(title="Paint it")
+    def paint(prompt: str, count: int = 1) -> list:
+        """Paint pictures."""
+        return [f"Painted {prompt}.", *(Image(data=png(64, 48), format="png") for _ in range(count))]
+
+    @server.tool()
+    def sketch() -> list:
+        """A picture as a link to a resource (as Civitai returns them), a missing one, and a web page."""
+        return [ResourceLink(type="resource_link", uri="spine://blobs/sketch-0.png", name="$0 images sketch-0.png"),
+                ResourceLink(type="resource_link", uri="spine://blobs/gone.png", name="gone.png"),
+                ResourceLink(type="resource_link", uri="https://example.com/guide", name="Guide", mime_type="text/html"),
+                'Workflow done. [{"url":"https://cdn.example.com/blobs/gone.png?sig=1\\u0026exp=2"}]']
+
+    @server.resource("spine://blobs/{name}", mime_type="image/png")
+    def blob(name: str) -> bytes:
+        if name != "sketch-0.png":
+            raise ValueError("no such blob")
+        return png(40, 30)
 
     return server
 
@@ -276,6 +318,7 @@ def start_servers() -> None:
     serve("keyed", Gate(make_mcp("keyed").streamable_http_app(), key_check))
     serve("sse", make_mcp("sse").sse_app())
     serve("asking", make_asking_mcp().streamable_http_app())
+    serve("painter", make_painting_mcp().streamable_http_app())
     auth_server = FakeAuthServer()
     serve("oauth", Gate(make_mcp("oauth").streamable_http_app(), auth_server))
     ports["closed"] = free_port()  # Nothing listens here
@@ -300,6 +343,8 @@ STDIO_SERVER = textwrap.dedent("""
 # =========================================================================
 
 def cleanup(conn) -> None:
+    test_users = select(users.c.id).where(users.c.email.in_(TEST_EMAILS))
+    conn.execute(delete(uploaded_files).where(uploaded_files.c.user_id.in_(test_users)))
     conn.execute(delete(mcp_servers).where(mcp_servers.c.slug.startswith(TEST_SLUG_PREFIX)))
     conn.execute(delete(conversations).where(conversations.c.id.startswith(TEST_CONVERSATION_PREFIX)))
     conn.execute(delete(users).where(users.c.email.in_(TEST_EMAILS)))
@@ -461,7 +506,8 @@ async def test_answer_tools():
     assert await registry.call("t_plain__add", {"a": 2, "b": "3"}) == "5"
     assert await registry.call("t_plain__echo", {"text": "hi", "suffix": None}) == "hi"
     assert "fail" in await expect(ToolError, registry.call("t_plain__fail", {}))
-    assert await registry.call("t_plain__picture", {}) == "[image/png, 2 KB, not shown]"
+    # No conversation to keep the image in (this one is not stored): the call still succeeds
+    assert await registry.call("t_plain__picture", {}) == "[image/png, 2 KB, not kept: it could not be saved]"
     mcp_tools.MCP_MAX_RESULT_CHARS = 100
     assert (await registry.call("t_plain__big", {})).startswith("y" * 100 + "\n\n[... cut off")
     mcp_tools.MCP_MAX_RESULT_CHARS = config.MCP_MAX_RESULT_CHARS
@@ -769,6 +815,286 @@ async def test_auto_accept():
     assert store.auto_accept_scope(row["id"], user_ids[0], TEST_CONVERSATION_PREFIX + "one") is None
 
 
+async def test_files():
+    """The files of conversations: tools' images, the agent's file tools, uploads, previews, the API."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.api import files as files_api
+    from backend.security import auth
+    from backend.security.auth import get_current_user
+
+    admin_server("t_paint", name="Painter", url=url("painter"))
+    one, two = TEST_CONVERSATION_PREFIX + "files-1", TEST_CONVERSATION_PREFIX + "files-2"
+    with db.connection() as conn:
+        for conversation_id in (one, two):
+            conn.execute(insert(conversations).values(id=conversation_id, userId=user_ids[0], name="MCP test"))
+    persona = agent("A", mcp=["t_paint"])
+    me, other = user_ids[0], user_ids[1]
+
+    # An agent with the file tools: the image is saved, the chat gets it as a preview, the model its name
+    toolset = await mcp_tools.tools_for_answer(user(0), {**persona, "id": one}, {"show_file"}, answer_id=5000)
+    painter = ToolRegistry(toolset.tools)
+    result = await painter.call("t_paint__paint", {"prompt": "a fox"})
+    assert isinstance(result, ToolText) and result.startswith(
+        'Painted a fox.\n\n[Image saved as file "t_paint-1.png" (64×48 px, '), result
+    assert "Call show_file" in result and "read_file" in result, result
+    (ref,) = result.metadata["files"]
+    assert "shownFiles" not in result.metadata, "the agent shows them itself"
+    assert (ref["name"], ref["mimeType"], ref["width"], ref["height"]) == ("t_paint-1.png", "image/png", 64, 48), ref
+    stored = db.get_file(ref["fileId"])
+    assert (stored["user_id"], stored["conversation_id"], stored["message_id"]) == (me, one, 5000), stored
+    assert (stored["source"], stored["origin"], stored["details"]) == ("tool", "Painter: Paint it", '{"prompt": "a fox"}')
+    assert file_utils.get_file_path(ref["fileId"]).read_bytes() == png(64, 48)
+    # Names are unique in the conversation, also for several images of one result
+    result = await painter.call("t_paint__paint", {"prompt": "two wolves", "count": 2})
+    assert [ref["name"] for ref in result.metadata["files"]] == ["t_paint-2.png", "t_paint-3.png"], result.metadata
+    # An agent without the file tools can't show them itself: all are shown
+    toolset = await mcp_tools.tools_for_answer(user(0), {**persona, "id": two}, set(), answer_id=6000)
+    result = await ToolRegistry(toolset.tools).call("t_paint__paint", {"prompt": "a cat"})
+    assert result.metadata["shownFiles"] == result.metadata["files"] and len(result.metadata["files"]) == 1
+    assert result.endswith("[Saved to this conversation and shown to the user with your answer: t_paint-1.png.]"), result
+    # More files than one result may keep, and a file that is too large
+    saved_limits = mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_FILE_SIZE
+    mcp_tools.MAX_FILES_PER_RESULT = 1
+    result = await painter.call("t_paint__paint", {"prompt": "many", "count": 2})
+    assert len(result.metadata["files"]) == 1 and "not kept: more than 1 files in one result" in result, result
+    mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_FILE_SIZE = saved_limits[0], 50
+    result = await painter.call("t_paint__paint", {"prompt": "big"})
+    assert not isinstance(result, ToolText) and "not kept: larger than 50 B" in result, result
+    mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_FILE_SIZE = saved_limits
+
+    # A picture the result only links to is read from the server and kept the same way. One the
+    # server can't deliver is downloaded from the web address the result names for it; if that
+    # fails too it stays a link, like a link to a page
+    asked = []
+    saved_download = media.download
+
+    async def no_download(address):
+        asked.append(address)
+        return None
+
+    async def a_download(address):
+        return png(20, 10), "image/png"
+
+    try:
+        media.download = no_download
+        result = await painter.call("t_paint__sketch", {})
+        assert [ref["name"] for ref in result.metadata["files"]] == ["t_paint-5.png"], result.metadata
+        assert result.metadata["files"][0]["width"] == 40 and '[Image saved as file "t_paint-5.png" (40×30 px, ' in result
+        assert "[Resource: gone.png <spine://blobs/gone.png>]" in result, result
+        assert "[Resource: Guide <https://example.com/guide>]" in result and "sketch-0.png" not in result, result
+        assert asked == ["https://cdn.example.com/blobs/gone.png?sig=1&exp=2"], asked
+        db.delete_uploaded_file(result.metadata["files"][0]["fileId"])
+        media.download = a_download
+        result = await painter.call("t_paint__sketch", {})
+        assert [(ref["name"], ref["width"]) for ref in result.metadata["files"]] == \
+            [("t_paint-5.png", 40), ("t_paint-6.png", 20)], result.metadata
+        assert "gone.png <spine" not in result and "[Resource: Guide <https://example.com/guide>]" in result, result
+        for ref in result.metadata["files"]:
+            db.delete_uploaded_file(ref["fileId"])
+    finally:
+        media.download = saved_download
+
+    # The agent's file tools see the conversation's files, and only those
+    files = tools_for_groups(["files"], user_id=me, conversation={"id": one}, vision=True)
+    listing = await files.call("list_files", {})
+    assert listing.startswith("4 files in this conversation") and "created by Painter: Paint it" in listing, listing
+    seen = await files.call("read_file", {"file": "t_paint-1.png"})
+    assert len(seen.images) == 1 and '[Made with these arguments: {"prompt": "a fox"}]' in seen, seen
+    shown = await files.call("show_file", {"files": ["t_paint-2.png"]})
+    assert [ref["name"] for ref in shown.metadata["shownFiles"]] == ["t_paint-2.png"]
+    elsewhere = tools_for_groups(["files"], user_id=me, conversation={"id": two})
+    assert (await elsewhere.call("list_files", {})).startswith("1 file in this conversation")
+    assert "No file" in await expect(ToolInputError, elsewhere.call("read_file", {"file": "t_paint-2.png"}))
+    stranger = tools_for_groups(["files"], user_id=other, conversation={"id": one})
+    assert await stranger.call("list_files", {}) == "This conversation has no files."
+
+    # An upload belongs to nobody's conversation until a message attaches it
+    notes = file_store.store(b"My notes", me, name="notes.txt", mime_type="text/plain; charset=utf-8")
+    theirs = file_store.store(b"Their notes", other, name="theirs.txt", mime_type="text/plain")
+    assert notes["conversation_id"] is None and notes["mime_type"] == "text/plain" and notes["source"] == "upload"
+    assert "No file" in await expect(ToolInputError, files.call("read_file", {"file": "notes.txt"}))
+    attachments = [{"fileId": notes["file_id"], "fileName": "notes.txt", "mimeType": "text/plain", "fileSize": 8},
+                   {"fileId": theirs["file_id"], "fileName": "theirs.txt"}]
+    db.create_message(7000, one, "user", json.dumps({"content": "Read this", "attachments": attachments}), 7)
+    linked = db.get_file(notes["file_id"])
+    assert (linked["conversation_id"], linked["message_id"]) == (one, 7000), linked
+    assert db.get_file(theirs["file_id"])["conversation_id"] is None, "another user's file is never linked"
+    assert await files.call("read_file", {"file": "notes.txt"}) == "My notes"
+    assert "uploaded by the user" in await files.call("list_files", {})
+    # It stays in its first conversation
+    db.create_message(7001, two, "user", json.dumps({"content": "Again", "attachments": attachments}), 7)
+    assert db.get_file(notes["file_id"])["conversation_id"] == one
+
+    # Files of deleted messages leave the conversation (the files stay)
+    assert db.delete_message(7000, one)
+    assert db.get_file(notes["file_id"])["conversation_id"] is None
+    assert file_utils.get_file_path(notes["file_id"]) is not None
+    assert (await files.call("list_files", {})).startswith("4 files")
+    db.create_message(4000, one, "user", "Paint", 4)
+    updated = db.update_message(4000, one, "Paint again", version=1, delete_following=True)
+    assert updated is not None and await files.call("list_files", {}) == "This conversation has no files.", \
+        "the answer 5000 that painted them came after the edited message"
+    assert (await elsewhere.call("list_files", {})).startswith("1 file"), "the other conversation keeps its file"
+
+    # The backfill for databases from before files had a conversation: the oldest message wins
+    with db.connection() as conn:
+        from backend.database.db import backfill_file_conversations
+        conn.execute(insert(conversations).values(id=TEST_CONVERSATION_PREFIX + "old", userId=me, name="MCP test"))
+        for message_id, conversation_id in ((3001, TEST_CONVERSATION_PREFIX + "old"), (3002, two)):
+            conn.execute(insert(messages).values(
+                id=message_id, conversationId=conversation_id, roleName="user", time=3, type="text",
+                content=json.dumps({"content": "Old", "attachments": attachments[:1]})))
+        assert backfill_file_conversations(conn) == 1
+    again = db.get_file(notes["file_id"])
+    assert (again["conversation_id"], again["message_id"]) == (TEST_CONVERSATION_PREFIX + "old", 3001), again
+
+    # Previews: WebP, made once; none of a file that is no image
+    picture = db.get_conversation_files(two, me)[0]["file_id"]
+    preview = file_store.thumbnail(picture, "small")
+    assert preview.name == f"{picture}_thumb_small.webp" and preview.read_bytes()[:4] == b"RIFF"
+    assert file_store.thumbnail(picture, "small") == preview and file_store.thumbnail(notes["file_id"], "small") is None
+    data, mime_type = file_store.image_for_model(picture)
+    assert mime_type == "image/jpeg" and data[:2] == b"\xff\xd8"
+
+    # The files API: the owner gets a tool's file and its preview, others a 404
+    current = {"user": user(0)}
+    app = FastAPI()
+    app.include_router(files_api.router)
+    app.dependency_overrides[get_current_user] = lambda: current["user"]
+    saved_db = files_api.db, auth.db
+    files_api.db = auth.db = db
+    try:
+        with TestClient(app) as client:
+            assert client.get(f"/api/files/{picture}").content == png(64, 48)
+            response = client.get(f"/api/files/{picture}/thumbnail", params={"size": "large"})
+            assert response.status_code == 200 and response.headers["content-type"] == "image/webp", response.text
+            assert "immutable" in response.headers["cache-control"]
+            assert client.get(f"/api/files/{picture}/thumbnail", params={"size": "huge"}).status_code == 422
+            assert client.get(f"/api/files/{notes['file_id']}/thumbnail").status_code == 404
+            uploaded = client.post("/api/files/upload", files=[("files", ("shot.png", png(30, 20), "image/png"))])
+            assert uploaded.status_code == 201, uploaded.text
+            row = db.get_file(uploaded.json()[0]["fileId"])
+            assert (row["name"], row["mime_type"], row["width"], row["height"], row["conversation_id"]) == \
+                ("shot.png", "image/png", 30, 20, None), row
+            current["user"] = user(1)
+            assert client.get(f"/api/files/{picture}").status_code == 404
+            assert client.get(f"/api/files/{picture}/thumbnail").status_code == 404
+            # Deleting a file deletes its previews too
+            current["user"] = user(0)
+            assert client.delete(f"/api/files/{picture}").status_code == 204
+            assert not preview.exists() and db.get_file(picture) is None
+    finally:
+        files_api.db, auth.db = saved_db
+
+
+async def test_media():
+    """The media a result links to: decoding, which links and addresses count, the download's limits."""
+    from types import SimpleNamespace as Namespace
+
+    # Base64 (also wrapped, also URL-safe); bytes sent as text, as Civitai's resources/read does, are no data
+    assert media.decode(base64.b64encode(b"abc").decode()) == b"abc" and media.decode("YW\nJj") == b"abc"
+    assert media.decode("_-8=") == b"\xff\xef"
+    for broken in ("\ufffd\ufffd\ufffdExif", "", None, "not base64!"):
+        assert media.decode(broken) is None, broken
+
+    def link(uri, name=None, mime_type=None):
+        return ResourceLink(type="resource_link", uri=uri, name=name or uri, mime_type=mime_type)
+
+    # Images, audio and PDFs are fetched, by the link's type or its name; pages and videos are not
+    assert media.link_type(link("spine://blobs/a-0.jpg")) == "image/jpeg"
+    assert media.link_type(link("spine://tracks/1", "song.mp3")) == "audio/mpeg"
+    assert media.link_type(link("spine://docs/1", mime_type="application/pdf; x=1")) == "application/pdf"
+    for other in (link("https://example.com/guide", mime_type="text/html"), link("spine://blobs/clip.mp4"),
+                  link("spine://blobs/unknown")):
+        assert media.link_type(other) is None, other
+
+    # The web addresses a result names: structured content first, then its text (JSON escapes undone)
+    large, small = "https://cdn.example.com/blobs/a-0.jpg?sig=9&exp=2", "https://cdn.example.com/blobs/a-0.jpg?sig=1&exp=2"
+    text = ('Workflow done.\n[{"previewUrl":"https://cdn.example.com/blobs/a-0.jpg?sig=1\\u0026exp=2",'
+            '"url":"https://cdn.example.com/blobs/a-0.jpg?sig=9\\u0026exp=2"}] See https://example.com/docs. '
+            'Not http://example.com/a-0.jpg')
+    result = Namespace(content=[link("spine://blobs/a-0.jpg"), Namespace(type="text", text=text)],
+                       structured_content={"steps": [{"images": [{"url": large, "note": "a b https://x.example"}]}]})
+    assert media.web_addresses(result) == [large, small, "https://example.com/docs"], media.web_addresses(result)
+
+    class Client:
+        def __init__(self, contents):
+            self.contents = contents
+
+        async def read_resource(self, uri):
+            if self.contents is None:
+                raise RuntimeError("no such resource")
+            return Namespace(contents=self.contents)
+
+    fetched = []
+    sizes = {large: 100, small: 10}
+
+    async def fake_download(address):
+        fetched.append(address)
+        return (b"x" * sizes[address], "image/jpeg") if address in sizes else None
+
+    saved = media.download, media.http_client, media.MCP_ALLOW_PRIVATE_URLS, file_store.MAX_FILE_SIZE
+    media.download = fake_download
+    try:
+        # What the server delivers is taken; no download
+        good = Client([Namespace(blob=base64.b64encode(b"JPEG").decode(), mime_type=None)])
+        assert await media.read_links(good, result) == {0: [("image/jpeg", b"JPEG")]} and not fetched
+        # Destroyed data, or no data at all: the file's addresses in the result, the largest download
+        for client in (Client([Namespace(blob="\ufffd\ufffdExif", mime_type="image/jpeg")]), Client(None), Client([])):
+            fetched.clear()
+            assert await media.read_links(client, result) == {0: [("image/jpeg", b"x" * 100)]}
+            assert fetched == [large, small], fetched
+        # No address for the file, or none that delivers: it stays a link
+        sizes.clear()
+        assert await media.read_links(Client(None), result) == {}
+        elsewhere = Namespace(content=[link("spine://blobs/b-1.jpg"), Namespace(type="text", text=text)], structured_content=None)
+        fetched.clear()
+        assert await media.read_links(Client(None), elsewhere) == {} and not fetched
+        assert await media.read_links(Client(None), Namespace(content=[Namespace(type="text", text=text)])) == {}
+    finally:
+        media.download = saved[0]
+
+    # The download itself: https only (also after a redirect), media only, up to the size limit
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        path = request.url.path
+        assert "authorization" not in request.headers
+        if path == "/moved":
+            return httpx2.Response(302, headers={"location": "https://files.example.com/a.jpg?sig=3"})
+        if path == "/a.jpg":
+            return httpx2.Response(200, headers={"content-type": "image/jpeg; q=1"}, content=b"JPEGDATA")
+        if path == "/page":
+            return httpx2.Response(200, headers={"content-type": "text/html"}, content=b"<html>")
+        if path == "/down":
+            return httpx2.Response(301, headers={"location": "http://files.example.com/a.jpg"})
+        if path == "/loop":
+            return httpx2.Response(302, headers={"location": "/loop"})
+        return httpx2.Response(404)
+
+    clients = []
+
+    def fake_client(**kwargs):
+        clients.append(kwargs)
+        return httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+
+    media.http_client = fake_client
+    media.MCP_ALLOW_PRIVATE_URLS = False
+    try:
+        assert await media.download("https://cdn.example.com/moved") == (b"JPEGDATA", "image/jpeg")
+        assert clients[-1]["guarded"] is True, "only public addresses"
+        for refused in ("https://cdn.example.com/page", "http://cdn.example.com/a.jpg", "https://cdn.example.com/down",
+                        "https://cdn.example.com/loop", "https://cdn.example.com/missing", "spine://blobs/a.jpg"):
+            assert await media.download(refused) is None, refused
+        file_store.MAX_FILE_SIZE = 4
+        assert await media.download("https://cdn.example.com/a.jpg") is None, "larger than the limit"
+        file_store.MAX_FILE_SIZE = saved[3]
+        # The real client refuses private addresses
+        media.http_client = saved[1]
+        assert await media.download(f"https://127.0.0.1:{ports['closed']}/a.jpg") is None
+    finally:
+        media.download, media.http_client, media.MCP_ALLOW_PRIVATE_URLS, file_store.MAX_FILE_SIZE = saved
+
+
 async def test_answer_context():
     from backend.api import messages
     from backend.llm.types import ModelConfig
@@ -907,6 +1233,8 @@ TESTS = [
     test_elicitation,
     test_auto_accept,
     test_stdio,
+    test_files,
+    test_media,
     test_answer_context,
     test_catalog_file,
     test_api,
@@ -952,8 +1280,9 @@ def main() -> int:
     db = Database(database=args.database)
     migrate_schema(db.engine, logging.getLogger("mcp-test"))
     db.init_tables()
-    for module in (store, mcp_tools, service, resolver, catalog_file):
+    for module in (store, mcp_tools, service, resolver, catalog_file, file_store):
         module.db = db
+    file_utils.FILES_DIR = tempfile.mkdtemp(prefix="mcp-test-files-")
     servers.MCP_STDIO_ENABLED = True
     start_servers()
     try:

@@ -1,6 +1,8 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { IAgentStep, AgentStepType, AgentStatus } from '../../../data/models/message.model';
+import { IFileRef } from '../../../data/models/file.model';
+import { stepFiles } from '../answer-files/answer-files.component';
 import { AuthService } from '../../../auth/auth.service';
 import { elicitationOf } from './elicitation-card/elicitation-card.component';
 
@@ -179,6 +181,18 @@ export class AgentStepsComponent {
   noteVault(step: IAgentStep): Record<string, number> | null {
     const vault = step.metadata?.['kbVault'];
     return typeof vault === 'number' && vault > 0 ? { vault } : null;
+  }
+
+  /**
+   * The files of a tool's result (docs/files.md): the ones it created, or the ones show_file
+   * shows; shown in the step in place of the metadata. The arrays are the metadata's own, so
+   * the template gets the same ones at every check.
+   */
+  filesOf(step: IAgentStep): IFileRef[] | null {
+    const created = stepFiles(step, 'files');
+    if (created.length) return created;
+    const shown = stepFiles(step, 'shownFiles');
+    return shown.length ? shown : null;
   }
 
   /** The step's title; the ones about MCP servers in the user's language. */

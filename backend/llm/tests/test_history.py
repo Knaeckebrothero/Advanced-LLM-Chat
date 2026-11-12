@@ -5,7 +5,7 @@ Offline test of the conversation history builder (OpenAI message format).
 
 Uses a fake database and a temporary FILES_DIR: images go to vision models as
 image_url parts, text-only models get the attachment placeholder (so they can
-call get_file_content), earlier attachments become placeholders, empty
+call read_file), earlier attachments become placeholders, empty
 assistant messages are skipped, regenerating cuts the history at the
 message being regenerated, also within the same second, the history is
 cut to the newest messages that fit the model's context window,
