@@ -74,7 +74,7 @@ The contract for the runtime, the catalog, agents, tools and the history budget 
 
 | Provider | Models | Context | Effort | Notes |
 |---|---|---|---|---|
-| Cortecs (EU router, Vienna; account settings to use: Sovereign Cloud and ZDR on, Nebius excluded) | DeepSeek V4.1 Flash, DeepSeek V4 Pro, Mistral Large 4, Kimi K3 | 512k | high | Prices in EUR from `api.cortecs.ai/v1/models` |
+| Cortecs (EU router, Vienna; account settings to use: Sovereign Cloud and ZDR on, Nebius excluded) | DeepSeek V4.1 Flash, DeepSeek V4 Pro, Mistral Large 4, Kimi K3, GLM-5.3 (added 2026-11-12 for conversation, `docs/model_provider_strategy.md`) | 512k | high | Prices in EUR from `api.cortecs.ai/v1/models` |
 | Homelab router (`${MODEL_ROUTER_API}`) | Gemma 4 MoE (`gemma-4-26b-a4b`) | 128k | – | Auxiliary model (titles, speech preprocessing) and the guest model |
 | Anthropic | Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 | 512k | xhigh | Disabled until `ANTHROPIC_API_KEY` is set |
 | OpenAI | GPT-6 Astra (replaced GPT-5.2 in `25144bf`; databases seeded before keep GPT-5.2) | 512k (of 1.05M) | xhigh | Without tools (see "Model test results"); $10/$50 per million tokens, above 272k input twice the input and 1.5 times the output price |
