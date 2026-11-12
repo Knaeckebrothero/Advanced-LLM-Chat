@@ -55,6 +55,14 @@ For each model, use the first column that works. Fall back when the model isn't 
 
 GLM and other coding-focused models are left out: they are better tested in the separate agent framework.
 
+**Update 2026-11-12 (models for conversation).** The app is mostly used for conversation, roleplay and philosophizing, so models are now judged on those, not on coding benchmarks:
+- **Kimi K3 stays.** It is the first open model in every Arena text category we checked (overall, creative writing and multi-turn), and #4 of 32 on EQ-Bench 4.
+- **Kimi K3.1 Pro is left out.** Cortecs serves it as `kimi-k3.1-pro` (€1.83 / €9.16), and it ranks #2 on EQ-Bench Creative Writing v3. But it is no better than K3 in Arena's human votes. Against K3 it lost warmth (93 → 58) and imagination (88 → 54) on AA-PersonalityBench, and it writes more headings and lists. It also thinks longer, so its answers cost more than K3's.
+- **GLM-5.3 added** (Cortecs, €0.46 / €1.84). It is close to K3 in Arena (open ranks 3 / 2 / 2), #7 on Creative Writing v3 and the best open model on Longform (81.8). AA-PersonalityBench rates it the warmest and most expressive open model. It costs about a fifth of K3 per answer.
+- **Mistral Large 4** is weak at conversation (Arena open ranks 41 / 57 / 33) and stays for being served by Mistral in the EU.
+
+The smoke test passed with and without passback.
+
 Accounts:
 
 - **Cortecs**: turn on Sovereign Cloud and ZDR, and exclude Nebius (`eu`).
