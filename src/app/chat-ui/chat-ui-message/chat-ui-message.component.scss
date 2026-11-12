@@ -999,6 +999,39 @@
   color: #ef4444;
 }
 
+// Your message the server didn't take, with the button that sends it again
+.not-sent {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: var(--theme-error, #ef4444);
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .not-sent-retry {
+    padding: 2px 6px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--theme-primary);
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--theme-hover);
+    }
+  }
+}
+
 // ============================================
 // INSERT A MESSAGE (manual editing)
 // ============================================

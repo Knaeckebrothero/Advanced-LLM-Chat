@@ -15,6 +15,7 @@ import { Observable } from 'rxjs';
 import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 import { NOTE_ROUTE, noteMarkdown, noteSlugFromHref } from '../../knowledge-base/kb-markdown';
 import { FilePreviewsService } from '../../services/file-previews.service';
+import { MessageWithSyncStatus } from '../../repositories/message.repository';
 
 // The IDs the server gives stored files (backend FILE_ID_PATTERN); a file not uploaded yet has another
 const SERVER_FILE_ID = /^file_\d+_[0-9a-f]+$/;
@@ -279,6 +280,27 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Delete message button
   deleteMessage() {
     this.chatUI.deleteMessage(this.message.id!);
+  }
+
+  /**
+   * Your message the server didn't take: only this browser has it, it isn't being sent, and
+   * nothing answered it. (A voice message waiting for its transcript isn't sent yet either, but
+   * counts as 'synced' until then.)
+   */
+  get notSent(): boolean {
+    const status = (this.message as MessageWithSyncStatus).syncStatus;
+    return this.message.isLocal && this.message.isText() && this.message.roleName === 'user'
+      && status !== 'pending' && status !== 'synced';
+  }
+
+  /** Sending it again answers it, so not while another answer streams. */
+  get canResend(): boolean {
+    return this.notSent && !this.chatUI.isStreaming;
+  }
+
+  resendMessage(event: Event) {
+    event.stopPropagation();
+    this.chatUI.resendMessage(this.message.id!).catch(error => console.error('Error resending message:', error));
   }
 
   /*
