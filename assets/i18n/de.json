@@ -64,6 +64,11 @@
     "noTranscript": "Kein Transkript verfügbar",
     "transcriptFailed": "Das Transkript konnte nicht geladen werden"
   },
+  "files": {
+    "open": "{{name}} öffnen",
+    "shown": "Dateien dieser Antwort",
+    "created": "Weitere in dieser Antwort erstellte Dateien"
+  },
   "filePreview": {
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",
@@ -162,6 +167,8 @@
     "badResponse": "Schlechte Antwort",
     "delete": "Löschen",
     "openAttachment": "Öffnen",
+    "notSent": "Nicht gesendet",
+    "sendAgain": "Erneut senden",
     "loadingOlder": "Ältere Nachrichten werden geladen…",
     "scrollToBottom": "Zur neuesten Nachricht springen",
     "emptyTitle": "Wie kann ich helfen?",
