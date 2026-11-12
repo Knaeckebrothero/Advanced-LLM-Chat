@@ -12,7 +12,7 @@ from sqlalchemy import delete, func, insert, null, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from backend.database import db
-from backend.database.tables import mcp_oauth_flows, mcp_servers, mcp_tokens, personas
+from backend.database.tables import mcp_auto_accept, mcp_oauth_flows, mcp_servers, mcp_tokens, personas
 from backend.security.secrets import decrypt_json, encrypt_json
 
 log = logging.getLogger(__name__)
@@ -175,6 +175,42 @@ def connected_server_ids(user_id: int) -> set[int]:
     with db.connection() as conn:
         return {row.server_id for row in conn.execute(
             select(mcp_tokens.c.server_id).where(mcp_tokens.c.user_id == user_id))}
+
+
+# ----- Confirmations accepted without asking (elicitation) -----
+
+def auto_accept_scope(server_id: int, user_id: int, conversation_id: Optional[str]) -> Optional[str]:
+    """Whether the user accepts the server's confirmations without being asked: "always", "conversation" or None."""
+    with db.connection() as conn:
+        rows = conn.execute(select(mcp_auto_accept.c.conversation_id).where(
+            mcp_auto_accept.c.server_id == server_id, mcp_auto_accept.c.user_id == user_id)).all()
+    scopes = {row.conversation_id for row in rows}
+    if None in scopes:
+        return "always"
+    if conversation_id is not None and conversation_id in scopes:
+        return "conversation"
+    return None
+
+
+def set_auto_accept(server_id: int, user_id: int, enabled: bool, conversation_id: Optional[str] = None) -> None:
+    """Accept the server's confirmations without asking, in one conversation or (None) in every one; or stop."""
+    where = [mcp_auto_accept.c.server_id == server_id, mcp_auto_accept.c.user_id == user_id,
+             mcp_auto_accept.c.conversation_id.is_(None) if conversation_id is None
+             else mcp_auto_accept.c.conversation_id == conversation_id]
+    with db.connection() as conn:
+        exists = conn.execute(select(mcp_auto_accept.c.id).where(*where)).first() is not None
+        if enabled and not exists:
+            conn.execute(insert(mcp_auto_accept).values(server_id=server_id, user_id=user_id,
+                                                        conversation_id=conversation_id))
+        elif not enabled and exists:
+            conn.execute(delete(mcp_auto_accept).where(*where))
+
+
+def auto_accept_server_ids(user_id: int) -> set[int]:
+    """The servers whose confirmations the user accepts in every conversation."""
+    with db.connection() as conn:
+        return {row.server_id for row in conn.execute(select(mcp_auto_accept.c.server_id).where(
+            mcp_auto_accept.c.user_id == user_id, mcp_auto_accept.c.conversation_id.is_(None)))}
 
 
 # ----- OAuth sign-ins in progress -----

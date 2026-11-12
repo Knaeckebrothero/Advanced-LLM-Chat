@@ -74,6 +74,7 @@ export interface IMcpServerOut {
   enabled: boolean;
   sortOrder: number;
   connected?: boolean | null;  // OAuth: the current user has signed in; null for other auth
+  autoAccept?: boolean | null;  // The current user accepts its confirmations without asking (elicitation)
   unavailableReason?: string | null;  // null when usable
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -83,6 +84,7 @@ export interface IMcpServerOut {
 export interface IMcpServerList {
   own: IMcpServerOut[];  // The user's own servers
   shared: IMcpServerOut[];  // Enabled admin servers with OAuth, to sign in to
+  autoAccepted?: IMcpServerOut[];  // Other agents' servers whose confirmations the user accepts without asking
 }
 
 export interface IMcpToolInfo {
@@ -109,4 +111,50 @@ export interface IMcpTestResult {
 /** POST /api/mcp/servers/{id}/connect */
 export interface IMcpConnectResult {
   authorizationUrl: string;
+}
+
+/**
+ * A server's question to the user while one of its tools runs (elicitation, docs/mcp.md
+ * "Questions from servers"): the `elicitation` metadata of an answer's step (an observation
+ * with the id `elicitation-<id>`, the question as its content). While it is `pending`, the chat
+ * shows it with its fields and buttons and answers with POST /api/mcp/elicitations/{id}; the
+ * stream then replaces the step with the outcome.
+ */
+export type McpElicitationStatus = 'pending' | 'accept' | 'decline' | 'cancel' | 'timeout';
+export type McpElicitationAction = 'accept' | 'decline' | 'cancel';
+/** How long a plain confirmation is accepted without asking: in this conversation, or in every one. */
+export type McpAutoAcceptScope = 'conversation' | 'always';
+
+/** One field of a form question: a flat JSON schema property (strings, numbers, booleans, enums). */
+export interface IMcpElicitationProperty {
+  type?: 'string' | 'number' | 'integer' | 'boolean' | 'array';
+  title?: string;
+  description?: string;
+  default?: unknown;
+  enum?: string[];
+  enumNames?: string[];  // Labels of `enum` (older servers)
+  oneOf?: Array<{ const: string; title?: string }>;  // Choices with labels
+  anyOf?: Array<{ const: string; title?: string }>;
+  items?: { type?: string; enum?: string[]; anyOf?: Array<{ const: string; title?: string }> };
+  format?: 'email' | 'uri' | 'date' | 'date-time';
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  minItems?: number;
+  maxItems?: number;
+}
+
+export interface IMcpElicitation {
+  id: string;
+  server: string;  // The name of the server that asks
+  mode: 'form' | 'url';
+  status: McpElicitationStatus;
+  schema?: { properties?: Record<string, IMcpElicitationProperty>; required?: string[] };  // Form mode
+  url?: string;  // URL mode: the page the server wants the user to open
+  answer?: Record<string, unknown>;  // The values the user sent (form mode, accepted)
+  confirmation?: boolean;  // A plain confirmation (no input needed): may be accepted without asking from now on
+  conversation?: boolean;  // Asked within a conversation ("for the rest of this chat" is possible)
+  auto?: McpAutoAcceptScope;  // Accepted without asking, by the user's earlier choice
+  remember?: McpAutoAcceptScope;  // Accepted, and from now on without asking
 }

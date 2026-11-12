@@ -339,6 +339,18 @@ mcp_oauth_flows = Table(
     Column('created_at', DateTime, server_default=func.now()),
 )
 
+# Confirmations of an MCP server a user accepts without being asked (elicitation): in one
+# conversation, or in every one (conversation_id NULL)
+mcp_auto_accept = Table(
+    'mcp_auto_accept',
+    metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('server_id', Integer, ForeignKey('mcp_servers.id', ondelete='CASCADE'), nullable=False),
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+    Column('conversation_id', Text, ForeignKey('conversations.id', ondelete='CASCADE')),
+    Column('created_at', DateTime, server_default=func.now()),
+)
+
 # Define indexes
 idx_conversation_time = Index('idx_conversation_time', messages.c.conversationId, messages.c.time)
 idx_conversations_user = Index('idx_conversations_user', conversations.c.userId)

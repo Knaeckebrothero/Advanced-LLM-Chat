@@ -123,6 +123,12 @@
                                     (change)="setEnabled(server, $event)">
                     {{ 'catalog.admin.fields.enabled' | translate }}
                   </mat-slide-toggle>
+                  <mat-slide-toggle [checked]="!!server.autoAccept"
+                                    [matTooltip]="'mcp.autoAcceptHint' | translate"
+                                    [aria-label]="('mcp.autoAccept' | translate) + ': ' + server.name"
+                                    (change)="setAutoAccept(server, $event)">
+                    {{ 'mcp.autoAccept' | translate }}
+                  </mat-slide-toggle>
                 </div>
                 @if (server.auth === 'oauth') {
                   @if (server.connected) {
@@ -223,6 +229,14 @@
               </div>
 
               <div class="item-controls">
+                <div class="item-toggles">
+                  <mat-slide-toggle [checked]="!!server.autoAccept"
+                                    [matTooltip]="'mcp.autoAcceptHint' | translate"
+                                    [aria-label]="('mcp.autoAccept' | translate) + ': ' + server.name"
+                                    (change)="setAutoAccept(server, $event)">
+                    {{ 'mcp.autoAccept' | translate }}
+                  </mat-slide-toggle>
+                </div>
                 @if (server.connected) {
                   <button mat-stroked-button type="button" class="sign-in-button" (click)="signOut(server)"
                           [disabled]="stateOf(server).signingOut">
@@ -270,6 +284,43 @@
           }
         </div>
       </section>
+
+      <!-- Other agents' servers whose confirmations are accepted without asking -->
+      @if (autoAccepted().length) {
+        <section class="page-section" aria-labelledby="mcp-auto-title">
+          <div class="section-header">
+            <div class="section-heading">
+              <h2 class="section-title" id="mcp-auto-title">{{ 'mcp.autoAccepted.title' | translate }}</h2>
+              <p class="section-intro">{{ 'mcp.autoAccepted.intro' | translate }}</p>
+            </div>
+          </div>
+
+          <div class="item-list">
+            @for (server of autoAccepted(); track server.id) {
+              <div class="item-card">
+                <div class="item-main">
+                  <div class="item-title-row">
+                    <span class="item-title">{{ server.name }}</span>
+                  </div>
+                  @if (server.description) {
+                    <p class="item-description">{{ server.description }}</p>
+                  }
+                </div>
+                <div class="item-controls">
+                  <div class="item-toggles">
+                    <mat-slide-toggle [checked]="!!server.autoAccept"
+                                    [matTooltip]="'mcp.autoAcceptHint' | translate"
+                                    [aria-label]="('mcp.autoAccept' | translate) + ': ' + server.name"
+                                    (change)="setAutoAccept(server, $event)">
+                    {{ 'mcp.autoAccept' | translate }}
+                  </mat-slide-toggle>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        </section>
+      }
     }
   }
 </div>

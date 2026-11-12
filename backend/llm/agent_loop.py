@@ -27,7 +27,7 @@ from ..models.message import AgentStep
 from . import anthropic_chat, openai_chat
 from .client import get_client
 from .common import STOP_MAX_TOKENS, STOP_REFUSAL, TOOL_ERROR_KEY, ModelTurn, ToolCall
-from .tools import ToolError, ToolInputError, ToolRegistry, ToolText, format_tool_output
+from .tools import ToolError, ToolInputError, ToolRegistry, ToolText, format_tool_output, with_step_sink
 from .types import KIND_ANTHROPIC, ModelConfig, Usage
 
 log = logging.getLogger(__name__)
@@ -149,32 +149,48 @@ async def _run_tools(
         arguments, error = parsed[index]
         return index, await _run_tool(registry, calls[index], arguments, error)
 
+    # Steps the tools send while they run (e.g. an MCP server's question to the user)
+    live_steps: asyncio.Queue = asyncio.Queue()
     results: list[Optional[tuple[Any, bool]]] = [None] * len(calls)
-    tasks = [asyncio.create_task(run(index)) for index in range(len(calls))]
+    tasks = {asyncio.create_task(run(index), context=with_step_sink(live_steps.put_nowait))
+             for index in range(len(calls))}
+    next_step: Optional[asyncio.Task] = None
     try:
-        for next_done in asyncio.as_completed(tasks):
-            index, (output, is_error, duration) = await next_done
-            results[index] = (output, is_error)
-            call = calls[index]
-            if isinstance(output, (dict, list)):
-                content = json.dumps(output, indent=2, ensure_ascii=False, default=str)
-            else:
-                content = str(output)
-            if len(content) > MAX_RESULT_STEP_LENGTH:
-                content = content[:MAX_RESULT_STEP_LENGTH] + "..."
-            yield ("step", AgentStep(
-                id=str(uuid.uuid4()),
-                type="tool_result",
-                title=f"Result: {registry.title(call.name)}",
-                content=content,
-                timestamp=_now_ms(),
-                duration=duration,
-                metadata=_step_metadata(output),
-                callId=call.id,
-            ))
+        while tasks:
+            if next_step is None:
+                next_step = asyncio.create_task(live_steps.get())
+            done, _ = await asyncio.wait(tasks | {next_step}, return_when=asyncio.FIRST_COMPLETED)
+            if next_step in done:
+                yield ("step", next_step.result())
+                next_step = None
+            while not live_steps.empty():
+                yield ("step", live_steps.get_nowait())
+            for task in done - {next_step}:
+                if task not in tasks:
+                    continue
+                tasks.discard(task)
+                index, (output, is_error, duration) = task.result()
+                results[index] = (output, is_error)
+                call = calls[index]
+                if isinstance(output, (dict, list)):
+                    content = json.dumps(output, indent=2, ensure_ascii=False, default=str)
+                else:
+                    content = str(output)
+                if len(content) > MAX_RESULT_STEP_LENGTH:
+                    content = content[:MAX_RESULT_STEP_LENGTH] + "..."
+                yield ("step", AgentStep(
+                    id=str(uuid.uuid4()),
+                    type="tool_result",
+                    title=f"Result: {registry.title(call.name)}",
+                    content=content,
+                    timestamp=_now_ms(),
+                    duration=duration,
+                    metadata=_step_metadata(output),
+                    callId=call.id,
+                ))
     finally:
-        for task in tasks:
-            if not task.done():
+        for task in [*tasks, next_step]:
+            if task is not None and not task.done():
                 task.cancel()
 
     for call, (output, is_error) in zip(calls, results):

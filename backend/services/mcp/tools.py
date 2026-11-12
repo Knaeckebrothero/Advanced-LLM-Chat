@@ -16,9 +16,10 @@ from typing import Any, Optional
 from backend.catalog.resolver import persona_usable
 from backend.config import MCP_ENABLED, MCP_MAX_RESULT_CHARS, MCP_TOOL_TIMEOUT
 from backend.database import db
-from backend.llm.tools import Tool, ToolError
+from backend.llm.tools import Tool, ToolError, step_sink
 from backend.models.mcp import McpTestResult, McpToolInfo
 from backend.services.mcp import store
+from backend.services.mcp.elicitation import Asker, asking
 from backend.services.mcp.oauth import TokenAuth, guarded, has_tokens
 from backend.services.mcp.pool import Connection, McpAuthRequired, McpConnectError, describe_error, pool, root_cause
 from backend.services.mcp.servers import McpUnavailable, ServerSpec, resolve, unavailable_reason, user_servers_reason
@@ -177,7 +178,8 @@ def format_result(result) -> str:
     return text
 
 
-def _make_tool(row: dict, spec: ServerSpec, mcp_tool, name: str, user: dict) -> Tool:
+def _make_tool(row: dict, spec: ServerSpec, mcp_tool, name: str, user: dict,
+               conversation_id: Optional[str] = None) -> Tool:
     title = (mcp_tool.title or (mcp_tool.annotations.title if mcp_tool.annotations else None)
              or mcp_tool.name)
     description = (mcp_tool.description or title).strip()
@@ -188,7 +190,11 @@ def _make_tool(row: dict, spec: ServerSpec, mcp_tool, name: str, user: dict) -> 
         connection = None
         try:
             _, connection = await connect(row, user)
-            result = await connection.client.call_tool(mcp_tool.name, arguments, read_timeout_seconds=MCP_TOOL_TIMEOUT)
+            # The server's questions during the call go to this answer's chat
+            asker = Asker(user["user_id"], spec.name, step_sink(), spec.id, conversation_id)
+            with asking(asker, connection.askers):
+                result = await connection.client.call_tool(mcp_tool.name, arguments,
+                                                           read_timeout_seconds=MCP_TOOL_TIMEOUT)
         except McpAuthRequired as e:
             raise ToolError(str(e))
         except (McpConnectError, McpUnavailable) as e:
@@ -254,7 +260,8 @@ async def tools_for_answer(user: dict, conversation: Optional[dict], taken: set)
             prefix, number = f"{spec.slug}{number}", number + 1
         prefixes.add(prefix)
         for mcp_tool in offered:
-            toolset.tools.append(_make_tool(row, spec, mcp_tool, tool_name(prefix, mcp_tool.name, taken), user))
+            toolset.tools.append(_make_tool(row, spec, mcp_tool, tool_name(prefix, mcp_tool.name, taken), user,
+                                            (conversation or {}).get("id")))
         toolset.servers.append({"name": spec.name, "prefix": prefix, "description": spec.description,
                                 "instructions": connection.instructions})
     return toolset

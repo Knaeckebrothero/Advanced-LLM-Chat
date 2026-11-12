@@ -209,4 +209,6 @@ MCP_OAUTH_CLIENT_NAME = os.getenv("MCP_OAUTH_CLIENT_NAME", "").strip() or "LLM C
 MCP_CONNECT_TIMEOUT = float(os.getenv("MCP_CONNECT_TIMEOUT", "20"))  # Connect and list the tools
 MCP_TOOL_TIMEOUT = float(os.getenv("MCP_TOOL_TIMEOUT", "120"))  # One tool call
 MCP_IDLE_TIMEOUT = float(os.getenv("MCP_IDLE_TIMEOUT", "300"))  # An unused connection is closed
+# How long a server's question to the user (elicitation) waits for an answer before it is cancelled
+MCP_ELICITATION_TIMEOUT = float(os.getenv("MCP_ELICITATION_TIMEOUT", "300"))
 MCP_MAX_RESULT_CHARS = int(os.getenv("MCP_MAX_RESULT_CHARS", "50000"))  # Longer tool results are cut

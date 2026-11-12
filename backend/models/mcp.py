@@ -1,7 +1,7 @@
 """
 MCP server API models (docs/mcp.md): the admins' servers, which agents pick, and users' own.
 """
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -84,6 +84,7 @@ class McpServerOut(BaseModel):
     enabled: bool = True
     sortOrder: int = 0
     connected: Optional[bool] = None  # OAuth: the current user has signed in; None for other auth
+    autoAccept: Optional[bool] = None  # The current user accepts its confirmations without asking (elicitation)
     unavailableReason: Optional[str] = None
     createdAt: Optional[UtcDatetime] = None
     updatedAt: Optional[UtcDatetime] = None
@@ -93,6 +94,7 @@ class McpServerList(BaseModel):
     """GET /api/mcp/servers."""
     own: List[McpServerOut]  # The user's own servers
     shared: List[McpServerOut]  # Enabled admin servers with OAuth, to sign in to
+    autoAccepted: List[McpServerOut] = []  # Other admin servers whose confirmations the user accepts without asking
 
 
 class McpToolInfo(BaseModel):
@@ -119,3 +121,16 @@ class McpTestResult(BaseModel):
 class McpConnectResult(BaseModel):
     """POST /api/mcp/servers/{id}/connect."""
     authorizationUrl: str
+
+
+class McpElicitationAnswer(BaseModel):
+    """POST /api/mcp/elicitations/{id}: the user's answer to a server's question (elicitation)."""
+    action: Literal["accept", "decline", "cancel"]
+    content: Optional[Dict[str, Any]] = None  # The form's values (form mode with accept)
+    # With accept of a plain confirmation: accept the server's confirmations without asking from now on
+    remember: Optional[Literal["conversation", "always"]] = None
+
+
+class McpAutoAccept(BaseModel):
+    """PUT /api/mcp/servers/{id}/auto-accept: accept a server's confirmations without asking, in every conversation."""
+    enabled: bool
