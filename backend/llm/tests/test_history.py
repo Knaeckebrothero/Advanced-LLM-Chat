@@ -10,7 +10,9 @@ assistant messages are skipped, regenerating cuts the history at the
 message being regenerated, also within the same second, the history is
 cut to the newest messages that fit the model's context window,
 attachments of files the conversation's owner didn't upload are left out,
-and system messages become instructions in the system prompt instead.
+system messages become instructions in the system prompt instead, and an
+answer that called tools goes back with its tool calls and their results
+(its tool record): whole or not at all, with long results cut.
 """
 import asyncio
 import json
@@ -19,6 +21,7 @@ import sys
 import tempfile
 import traceback
 
+from backend import config as settings
 from backend.config import DEFAULT_CONTEXT_WINDOW
 from backend.llm.prompts import INSTRUCTIONS_HEADING, with_instructions
 from backend.llm.smoke_test import _png
@@ -28,6 +31,9 @@ from backend.services.conversation_history import (
     CHARS_PER_TOKEN,
     ConversationHistoryBuilder,
     OUTPUT_RESERVE,
+    RESULT_CUT_NOTE,
+    TOOL_RECORD_KEY,
+    entry_tokens,
     estimate_tokens,
     history_token_budget,
 )
@@ -45,11 +51,15 @@ class FakeDB:
     """
     get_messages_by_conversation, with the real query's filters (ties in time come
     back unordered), get_system_messages, the owner lookups for conversations and
-    files, and no summary.
+    files, the tool records of answers ({message id: record}), and no summary.
     """
 
-    def __init__(self, rows):
+    def __init__(self, rows, tool_records=None):
         self.rows = rows
+        self.tool_records = tool_records or {}
+
+    def get_tool_records(self, conversation_id):
+        return self.tool_records
 
     def get_messages_by_conversation(self, conversation_id, before_timestamp=None, limit=30):
         rows = [r for r in self.rows if before_timestamp is None or r["time"] < before_timestamp]
@@ -191,9 +201,85 @@ async def test_budget_from_context_window():
         DEFAULT_CONTEXT_WINDOW - DEFAULT_CONTEXT_WINDOW // 4 - int(DEFAULT_CONTEXT_WINDOW * 0.1)
 
 
+def tool_call(call_id, name, arguments="{}"):
+    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}
+
+
+# An answer that looked at an image, as the agent loop records it (Kimi's ids)
+LOOKED = [
+    {"role": "assistant", "content": "Let me look.", "reasoning_content": "The user wants the picture described.",
+     "tool_calls": [tool_call("read_file:0", "read_file", '{"file": "fox.png"}')]},
+    {"role": "tool", "tool_call_id": "read_file:0", "content": "fox.png (image/png). The image follows."},
+    {"role": "assistant", "content": "A fox in the snow."},
+]
+TOOL_ROWS = [
+    user(3000_000, 3000, "What is in fox.png?"),
+    assistant(3000_500, 3000, "Let me look.\n\nA fox in the snow."),
+    user(3001_000, 3001, "Did you really look at it?"),
+]
+
+
+async def test_answer_goes_back_with_its_tool_calls():
+    builder = ConversationHistoryBuilder(FakeDB(TOOL_ROWS, {3000_500: LOOKED}))
+    messages, _ = await builder.build_history("c")
+    assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant", "user"], messages
+    assert messages[1:4] == LOOKED, messages[1:4]
+    assert all(TOOL_RECORD_KEY not in m for m in messages)
+    # Code that reads entries gets the answer's whole text, and its size with the calls and results
+    entries, _ = await builder.build_entries("c")
+    answer = entries[1][1]
+    assert answer["content"] == "Let me look.\n\nA fox in the snow." and answer[TOOL_RECORD_KEY] == LOOKED
+    assert entry_tokens(answer) > estimate_tokens(answer["content"]) + estimate_tokens(LOOKED[1]["content"])
+
+    # Switched off: the answer's text only
+    settings.HISTORY_TOOL_CALLS = False
+    try:
+        messages, _ = await builder.build_history("c")
+    finally:
+        settings.HISTORY_TOOL_CALLS = True
+    assert [m["role"] for m in messages] == ["user", "assistant", "user"], messages
+    assert messages[1] == {"role": "assistant", "content": "Let me look.\n\nA fox in the snow."}
+
+
+async def test_answer_with_tool_calls_fits_whole_or_not():
+    big = [{**LOOKED[0]}, {**LOOKED[1], "content": "r" * 3000}, LOOKED[2]]  # about 1000 tokens
+    rows = [*TOOL_ROWS, assistant(3001_500, 3001, "Yes."), user(3002_000, 3002, "Thanks")]
+    builder = ConversationHistoryBuilder(FakeDB(rows, {3000_500: big}))
+    everything, _ = await builder.build_history("c", token_budget=5000)
+    assert [m["role"] for m in everything] == ["user", "assistant", "tool", "assistant", "user", "assistant", "user"]
+    # Too small for the answer with its result: it is left out whole, never a result without its call
+    messages, _ = await builder.build_history("c", token_budget=500)
+    assert [m["role"] for m in messages] == ["user", "assistant", "user"], messages
+    assert messages[0]["content"] == "Did you really look at it?"
+
+
+async def test_long_tool_results_are_cut_in_later_turns():
+    long = [LOOKED[0], {**LOOKED[1], "content": "r" * 50_000}, LOOKED[2]]
+    builder = ConversationHistoryBuilder(FakeDB(TOOL_ROWS, {3000_500: long}))
+    messages, _ = await builder.build_history("c")
+    limit = settings.HISTORY_TOOL_RESULT_CHARS
+    assert messages[2]["content"] == "r" * limit + RESULT_CUT_NOTE.format(count=50_000 - limit), messages[2]["content"][-200:]
+    assert long[1]["content"] == "r" * 50_000, "the stored record is not changed"
+    settings.HISTORY_TOOL_RESULT_CHARS = 0
+    try:
+        messages, _ = await builder.build_history("c")
+    finally:
+        settings.HISTORY_TOOL_RESULT_CHARS = limit
+    assert messages[2]["content"] == "r" * 50_000
+
+
+async def test_failed_answer_keeps_its_tool_calls():
+    # The answer failed after its tool ran: no text, but the model should know the tool ran
+    rows = [TOOL_ROWS[0], assistant(3000_500, 3000, ""), TOOL_ROWS[2]]
+    messages, _ = await ConversationHistoryBuilder(FakeDB(rows, {3000_500: LOOKED[:2]})).build_history("c")
+    assert [m["role"] for m in messages] == ["user", "assistant", "tool", "user"], messages
+
+
 TESTS = [test_vision_model_gets_image, test_text_model_gets_placeholder, test_regenerate_cuts_at_message,
          test_other_users_files_are_left_out, test_system_messages_become_instructions, test_history_fits_token_budget,
-         test_latest_question_survives_tiny_budget, test_budget_from_context_window]
+         test_latest_question_survives_tiny_budget, test_budget_from_context_window,
+         test_answer_goes_back_with_its_tool_calls, test_answer_with_tool_calls_fits_whole_or_not,
+         test_long_tool_results_are_cut_in_later_turns, test_failed_answer_keeps_its_tool_calls]
 
 
 async def main() -> int:

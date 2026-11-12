@@ -85,6 +85,16 @@ messages = Table(
     Column('usage', JSONB),  # inputTokens, outputTokens, reasoningTokens, cachedInputTokens, cost, currency
 )
 
+# The tool record of an answer: its tool calls and their results as the model got them
+# (backend/llm/tool_record.py). Only answers that called tools have one.
+message_tool_records = Table(
+    'message_tool_records',
+    metadata,
+    Column('message_id', BigInteger, ForeignKey('messages.id', ondelete='CASCADE'), primary_key=True),
+    Column('conversation_id', Text, ForeignKey('conversations.id', ondelete='CASCADE'), nullable=False),
+    Column('record', JSONB, nullable=False),  # Messages in the OpenAI format
+)
+
 # The summary the model gets instead of a conversation's oldest messages (one per conversation)
 conversation_summaries = Table(
     'conversation_summaries',
@@ -364,6 +374,8 @@ mcp_auto_accept = Table(
 
 # Define indexes
 idx_conversation_time = Index('idx_conversation_time', messages.c.conversationId, messages.c.time)
+idx_message_tool_records_conversation = Index(
+    'idx_message_tool_records_conversation', message_tool_records.c.conversation_id)
 idx_conversations_user = Index('idx_conversations_user', conversations.c.userId)
 idx_sessions_expires = Index('idx_sessions_expires', sessions.c.expires_at)
 idx_sessions_user = Index('idx_sessions_user', sessions.c.user_id)

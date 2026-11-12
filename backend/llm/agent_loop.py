@@ -5,6 +5,8 @@ run_agent() streams one answer as events for the SSE endpoint:
 - ("step", AgentStep): a new step, or a replacement for a step with the same id
 - ("step_delta", {"id": str, "delta": str}): text appended to an earlier step (live reasoning)
 - ("token", str): text of the answer
+- ("tool_record", list[dict]): once, before the usage: the answer's tool calls and their results
+  as the model got them (tool_record.py), to store with the answer; [] when it called no tool
 - ("usage", Usage): exactly once, last, summed over all model calls
 
 Reasoning becomes a "Thinking" step: sent once empty when it starts, grown
@@ -27,6 +29,7 @@ from ..models.message import AgentStep
 from . import anthropic_chat, openai_chat
 from .client import get_client
 from .common import STOP_MAX_TOKENS, STOP_REFUSAL, TOOL_ERROR_KEY, ModelTurn, ToolCall
+from .tool_record import record as tool_record
 from .tools import ToolError, ToolInputError, ToolRegistry, ToolText, tool_message_content, with_step_sink
 from .types import KIND_ANTHROPIC, ModelConfig, Usage
 
@@ -223,9 +226,9 @@ async def run_agent(
         client: An SDK client to use instead of the shared one (tests, smoke test).
 
     Yields:
-        ("step", AgentStep), ("step_delta", dict), ("token", str), and ("usage", Usage)
-        exactly once at the end. If a model call fails, the usage so far is yielded
-        and then the exception propagates.
+        ("step", AgentStep), ("step_delta", dict), ("token", str), then ("tool_record", list)
+        and ("usage", Usage) exactly once at the end. If a model call fails, the record and
+        the usage so far are yielded and then the exception propagates.
     """
     client = client or get_client(config)
     registry = tools if tools and config.supports_tools else None
@@ -237,6 +240,7 @@ async def run_agent(
     total = Usage()
     answered = False            # any answer text streamed yet
     separate_next_text = False  # put a blank line before the next answer text (text before and after tools)
+    call_text: list[str] = []   # the answer text of the current model call
 
     log.info(f"Agent run: model={config.model_id} ({config.provider_name}), messages={len(history)}, "
              f"tools={registry.names() if registry else []}, max_steps={max_steps}")
@@ -250,6 +254,7 @@ async def run_agent(
 
             reasoning: Optional[_ReasoningStep] = None
             turn: Optional[ModelTurn] = None
+            call_text = []
             async for kind, data in _stream_turn(
                 client, config, history,
                 system_prompt=system_prompt,
@@ -270,6 +275,7 @@ async def run_agent(
                         yield ("token", "\n\n")
                         separate_next_text = False
                     answered = True
+                    call_text.append(data)
                     yield ("token", data)
                 elif kind == "reasoning_end":
                     if reasoning is not None:
@@ -288,11 +294,13 @@ async def run_agent(
 
             if turn.stop_reason == STOP_REFUSAL:
                 if not answered:
+                    call_text.append(REFUSAL_NOTE)
                     yield ("token", REFUSAL_NOTE)
                 break
             if turn.stop_reason == STOP_MAX_TOKENS:
                 # A tool call cut off at the limit has incomplete arguments; don't run it
                 log.warning(f"{config.model_id} hit the output token limit")
+                call_text.append(TRUNCATED_NOTE)
                 yield ("token", TRUNCATED_NOTE)
                 break
             if not turn.tool_calls or registry is None:
@@ -306,10 +314,12 @@ async def run_agent(
                 yield event
             separate_next_text = answered
     except Exception:
+        yield ("tool_record", tool_record(history[len(messages):], "".join(call_text)))
         yield ("usage", total)
         raise
 
     log.info(f"Agent run finished: input={total.input_tokens}, output={total.output_tokens} tokens")
+    yield ("tool_record", tool_record(history[len(messages):], "".join(call_text)))
     yield ("usage", total)
 
 

@@ -22,6 +22,7 @@ import httpx2
 
 from backend.llm.agent_loop import REFUSAL_NOTE, STEP_LIMIT_NOTE, complete, run_agent
 from backend.llm.anthropic_chat import DEFAULT_MAX_TOKENS_STREAMING, HISTORY_START_PLACEHOLDER, to_anthropic_messages
+from backend.llm.tool_record import images_note
 from backend.llm.tools import Tool, ToolRegistry, ToolText
 from backend.llm.types import KIND_ANTHROPIC, ModelConfig
 
@@ -179,6 +180,16 @@ async def test_conversion():
     assert [b["type"] for b in messages[4]["content"]] == ["tool_result", "tool_result", "text"]
     assert messages[4]["content"][1]["is_error"] is True and "is_error" not in messages[4]["content"][0]
 
+    # Tool call ids of other models (Kimi's "read_file:0") are cleaned, the same way on both sides
+    _, messages = to_anthropic_messages([
+        {"role": "user", "content": "Look"},
+        {"role": "assistant", "content": "", "reasoning_content": "Thinking of another model", "tool_calls": [
+            {"id": "read_file:0", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "read_file:0", "content": "a fox"},
+    ])
+    assert messages[1]["content"] == [{"type": "tool_use", "id": "read_file_0", "name": "read_file", "input": {}}]
+    assert messages[2]["content"][0]["tool_use_id"] == "read_file_0", messages[2]
+
 
 async def test_tool_loop_with_thinking_passback():
     def turn1(body):
@@ -227,6 +238,19 @@ async def test_tool_loop_with_thinking_passback():
     assert events[-1][0] == "usage"
     # input = uncached input + cache reads; reasoning from output_tokens_details
     assert (usage.input_tokens, usage.output_tokens, usage.cached_input_tokens, usage.reasoning_tokens) == (290, 60, 150, 12), usage
+
+    # The tool record goes back in a later turn without the thinking blocks (they are only
+    # passed back within one answer), as tool_use and tool_result blocks
+    assert [kind for kind, _ in events][-2:] == ["tool_record", "usage"]
+    tool_record = events[-2][1]
+    assert all("_anthropic_content" not in m for m in tool_record), tool_record
+    _, later = to_anthropic_messages([{"role": "user", "content": "Look up a and b"}, *tool_record,
+                                      {"role": "user", "content": "Which tools did you use?"}])
+    assert [m["role"] for m in later] == ["user", "assistant", "user", "assistant", "user"], later
+    assert [b["type"] for b in later[1]["content"]] == ["tool_use", "tool_use"]
+    assert [b["tool_use_id"] for b in later[2]["content"]] == ["toolu_a", "toolu_b"]
+    assert later[2]["content"][1]["is_error"] is True
+    assert later[3]["content"] == [{"type": "text", "text": "The value is A."}]
     version = api.headers[0].get("anthropic-version")
     print(f"      (anthropic-version sent: {version})")
 
@@ -257,6 +281,10 @@ async def test_tool_result_with_image():
     assert tokens_of(events) == "A fox."
     results = [data.content for kind, data in events if kind == "step" and data.type == "tool_result"]
     assert results == ["fox-1.png. The image follows."], results
+    # In a later turn the result is its text and a note: the image is not sent again
+    tool_record = events[-2][1]
+    assert tool_record[1]["content"] == f"fox-1.png. The image follows.\n\n{images_note(1)}", tool_record[1]
+    assert PNG_DATA not in json.dumps(tool_record)
 
 
 async def test_effort_mapping_and_no_thinking():

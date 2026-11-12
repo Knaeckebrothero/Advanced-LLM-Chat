@@ -35,7 +35,9 @@ from typing import List, Optional, Tuple
 
 from ..config import DEFAULT_CONTEXT_WINDOW
 from ..llm import ModelConfig, Usage, complete
-from .conversation_history import CHARS_PER_TOKEN, OUTPUT_RESERVE, HistoryEntry, estimate_tokens, summary_message
+from .conversation_history import (
+    CHARS_PER_TOKEN, OUTPUT_RESERVE, TOOL_RECORD_KEY, HistoryEntry, entry_tokens, estimate_tokens, summary_message
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,10 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (2.0, 5.0)
 # Status codes of requests that fail the same way every time (e.g. too long for the window)
 _NO_RETRY_STATUS = {400, 401, 403, 404, 413, 422}
+
+# A tool result in the transcript the summarizer reads is cut to this many characters: what
+# mattered of it is in the answer that followed
+TOOL_RESULT_CHARS = 2000
 
 # Repetition thresholds; higher than for an answer, since empty sections legitimately repeat "- (none)"
 _MAX_LINE_REPEATS = 20
@@ -85,6 +91,7 @@ Output exactly these sections, in this order, as Markdown. Keep every section; w
 - Answers given, conclusions reached and decisions made, and why.
 - Details needed to continue: names, numbers, dates, code, commands, URLs and exact wording that matters.
 - Attachments, with their file name and fileId exactly as written, and what they contain.
+- What the assistant did with its tools and what came of it, when it matters later; files that tools created, with their names.
 - Suggestions the user rejected, and why.
 
 ## Open Threads
@@ -149,7 +156,7 @@ def messages_to_summarize(entries: List[HistoryEntry], summary: Optional[dict], 
         summary: The stored summary, if any.
         token_budget: The history budget of the model that answers (history_token_budget()).
     """
-    costs = [estimate_tokens(message["content"]) for _, message in entries]
+    costs = [entry_tokens(message) for _, message in entries]
     summary_tokens = estimate_tokens(summary_message(summary['content'])["content"]) if summary else 0
     if summary_tokens + sum(costs) <= token_budget * SUMMARY_TRIGGER:
         return 0
@@ -179,18 +186,41 @@ def _content_text(content) -> str:
     return ""
 
 
+def _tool_record_parts(tool_record: List[dict]) -> List[str]:
+    """The transcript parts of an answer that called tools: its text, its calls and their (cut) results."""
+    parts = []
+    for message in tool_record:
+        text = _content_text(message.get("content")).strip()
+        if message.get("role") == "assistant":
+            if text:
+                parts.append(f"[Assistant]: {text}")
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") or {}
+                parts.append(f"[Assistant called the tool {function.get('name')}]: {function.get('arguments') or '{}'}")
+        elif message.get("role") == "tool":
+            if len(text) > TOOL_RESULT_CHARS:
+                text = text[:TOOL_RESULT_CHARS] + " […]"
+            parts.append(f"[Tool result]: {text}")
+    return parts
+
+
 def transcript_parts(entries: List[HistoryEntry]) -> List[str]:
     """
-    One transcript part per message, with a bracketed role tag.
+    One transcript part per message, with a bracketed role tag; an answer that called
+    tools as its calls, their results and its text.
 
     The tags keep the summarizer from reading the transcript as a conversation
     to continue.
     """
     tags = {"user": "[User]", "assistant": "[Assistant]"}
-    return [
-        f"{tags.get(message['role'], '[' + message['role'] + ']')}: {_content_text(message['content']).strip()}"
-        for _, message in entries
-    ]
+    parts = []
+    for _, message in entries:
+        if message.get(TOOL_RECORD_KEY):
+            parts.extend(_tool_record_parts(message[TOOL_RECORD_KEY]))
+        else:
+            tag = tags.get(message['role'], '[' + message['role'] + ']')
+            parts.append(f"{tag}: {_content_text(message['content']).strip()}")
+    return parts
 
 
 def chunk_budget(config: ModelConfig, target_tokens: int) -> int:
@@ -361,7 +391,7 @@ async def summarize(
     """
     if not entries:
         raise SummaryFailed("nothing_to_summarize")
-    original_tokens = sum(estimate_tokens(message["content"]) for _, message in entries)
+    original_tokens = sum(entry_tokens(message) for _, message in entries)
     original_tokens += estimate_tokens(prior_summary or "")
     if original_tokens < MIN_SUMMARY_TOKENS:
         # A summary with its sections would hardly be shorter; no need to ask the model (only
