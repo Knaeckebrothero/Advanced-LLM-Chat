@@ -7,8 +7,10 @@ Covers: tool calls assembled from streamed fragments (two in parallel),
 reasoning from reasoning_content, reasoning and <think> tags, reasoning
 passback on and off, Thinking steps (start, deltas, completion with the same
 id), callId linking, tool errors, the step limit, request settings and
-extra_body, models without tools, usage summing, complete(), and the images of
-a tool result, which follow the tool messages in a user message.
+extra_body, models without tools, usage summing, complete(), the images of
+a tool result, which follow the tool messages in a user message, and the tool
+record of an answer (tool_record.py): what it holds, and that the next turn's
+request starts with the last one word for word when the record goes back.
 """
 import asyncio
 import json
@@ -22,6 +24,7 @@ from backend.llm.tests.fake_openai_server import (
     FakeOpenAIServer, chunk, completion, tool_call_delta, usage_chunk,
 )
 from backend.llm.openai_chat import TOOL_IMAGES_NOTE
+from backend.llm.tool_record import images_note, record, with_text
 from backend.llm.tools import Tool, ToolRegistry, ToolText
 from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
 
@@ -71,6 +74,13 @@ def tokens_of(events):
 
 def assistant_messages(body):
     return [m for m in body["messages"] if m["role"] == "assistant"]
+
+
+def record_of(events):
+    """The answer's tool record: reported once, right before the usage."""
+    kinds = [kind for kind, _ in events]
+    assert kinds.count("tool_record") == 1 and kinds[-2:] == ["tool_record", "usage"], kinds
+    return events[-2][1]
 
 
 # ---------------------------------------------------------------------------
@@ -175,12 +185,44 @@ async def test_three_step_chain_with_passback(server):
     assert tokens_of(events) == "Alpha, beta and gamma."
     assert len(server.requests) == 3
 
+    # The tool record: both rounds as the model had them, then the answer's text
+    tool_record = record_of(events)
+    assert [m["role"] for m in tool_record] == ["assistant", "tool", "tool", "assistant", "tool", "assistant"]
+    assert [c["id"] for c in tool_record[0]["tool_calls"]] == ["call_a", "call_b"]
+    assert tool_record[0]["reasoning_content"] == "I need two keys."
+    assert json.loads(tool_record[2]["content"]) == {"key": "beta", "value": "value-of-beta"}
+    assert tool_record[-1] == {"role": "assistant", "content": "Alpha, beta and gamma."}
+
 
 async def test_three_step_chain_without_passback(server):
     server.script(turn1_two_tools, make_turn2(False), make_turn3(False))
     config = make_config(server.base_url, reasoning_passback=False)
     events = await collect(config, [{"role": "user", "content": "Find alpha, beta, gamma"}], server, tools=TOOLS)
     assert tokens_of(events) == "Alpha, beta and gamma."
+    assert all("reasoning_content" not in m for m in record_of(events))
+
+
+async def test_next_turn_starts_with_the_last_request(server):
+    """With the record in the history, the next answer's request continues the last one word for word."""
+    question = {"role": "user", "content": "Find alpha, beta, gamma"}
+    follow_up = {"role": "user", "content": "Did you look them up?"}
+    for passback in (True, False):
+        server.reset()
+        server.script(turn1_two_tools, make_turn2(passback), make_turn3(passback))
+        config = make_config(server.base_url, reasoning_passback=passback)
+        tool_record = record_of(await collect(config, [question], server, tools=TOOLS))
+        last_request = server.requests[-1]["messages"]
+
+        def next_turn(body):
+            assert body["messages"][:len(last_request)] == last_request, body["messages"]
+            assert body["messages"][len(last_request):] == [
+                {"role": "assistant", "content": "Alpha, beta and gamma."}, follow_up], body["messages"]
+            return [chunk(content="Yes."), chunk(finish_reason="stop"), usage_chunk(10, 1)]
+
+        server.script(next_turn)
+        events = await collect(config, [question, *tool_record, follow_up], server, tools=TOOLS)
+        assert tokens_of(events) == "Yes."
+        assert record_of(events) == [], "an answer without tool calls has no record"
 
 
 async def test_tool_error_continues(server):
@@ -205,6 +247,14 @@ async def test_tool_error_continues(server):
     assert len(results) == 3 and all(r.content.startswith("Error:") for r in results), results
     # Text before and after the tool round is kept apart
     assert tokens_of(events) == "Let me check.\n\nIt failed."
+    # The record keeps each round's own text and which results were errors
+    tool_record = record_of(events)
+    assert tool_record[0]["content"] == "Let me check." and tool_record[-1]["content"] == "It failed."
+    assert [m.get("_is_error") for m in tool_record if m["role"] == "tool"] == [True, True, True]
+    # After the answer's text was edited: the calls and results stay, the new text is its only text
+    edited = with_text(tool_record, "It broke.")
+    assert [m["content"] for m in edited if m["role"] == "assistant"] == ["", "It broke."], edited
+    assert [m for m in edited if m["role"] == "tool"] == [m for m in tool_record if m["role"] == "tool"]
 
 
 async def test_tool_result_images_follow_in_a_user_message(server):
@@ -238,6 +288,11 @@ async def test_tool_result_images_follow_in_a_user_message(server):
     # The chat's step shows the text, not the image data
     results = {s.callId: s.content for s in steps_of(events) if s.type == "tool_result"}
     assert results["call_i"] == "fox-1.png. The image follows.", results
+    # The record holds a note in place of the image: it is not sent again in later turns
+    tool_record = record_of(events)
+    assert tool_record[1] == {"role": "tool", "tool_call_id": "call_i",
+                              "content": f"fox-1.png. The image follows.\n\n{images_note(1)}"}, tool_record[1]
+    assert "Rk9Y" not in json.dumps(tool_record)
 
 
 async def test_step_limit(server):
@@ -256,6 +311,10 @@ async def test_step_limit(server):
     events = await collect(config, [{"role": "user", "content": "Loop"}], server, tools=TOOLS, max_steps=3)
     assert tokens_of(events) == "Answer without more tools."
     assert len(server.requests) == 3
+    # The note before the last call is part of what the model was sent, so it is in the record
+    tool_record = record_of(events)
+    assert [m["role"] for m in tool_record] == ["assistant", "tool", "assistant", "tool", "user", "assistant"]
+    assert tool_record[4]["content"] == STEP_LIMIT_NOTE
 
 
 async def test_request_settings(server):
@@ -323,12 +382,31 @@ async def test_api_error_yields_usage_then_raises(server):
     except Exception as e:
         assert "500" in str(e) or "scripted" in str(e), e
     assert events[-1][0] == "usage" and events[-1][1].input_tokens == 10
+    # The tool that ran before the error is on record
+    assert [m["role"] for m in record_of(events)] == ["assistant", "tool"], events[-2]
     server.errors.clear()
+
+
+async def test_record_holds_complete_rounds_only(server):
+    call = {"role": "assistant", "content": "", "_anthropic_content": [{"type": "thinking"}], "tool_calls": [
+        {"id": "a", "type": "function", "function": {"name": "lookup", "arguments": "{}"}},
+        {"id": "b", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}
+    results = [{"role": "tool", "tool_call_id": "a", "content": "A"}, {"role": "tool", "tool_call_id": "b", "content": "B"}]
+    second = {"role": "assistant", "content": "One more.", "tool_calls": [
+        {"id": "c", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}
+    # The run broke off while the second round's tool ran: only the first round, and the text so far
+    tool_record = record([call, *results, second], "One more.")
+    assert [m["role"] for m in tool_record] == ["assistant", "tool", "tool", "assistant"], tool_record
+    assert "_anthropic_content" not in tool_record[0] and tool_record[-1]["content"] == "One more."
+    # A call without all of its results is no round; without a round there is no record
+    assert record([call, results[0]], "") == []
+    assert record([], "Just text.") == []
 
 
 TESTS = [
     test_three_step_chain_with_passback,
     test_three_step_chain_without_passback,
+    test_next_turn_starts_with_the_last_request,
     test_tool_error_continues,
     test_tool_result_images_follow_in_a_user_message,
     test_step_limit,
@@ -336,6 +414,7 @@ TESTS = [
     test_max_completion_tokens_for_openai,
     test_complete,
     test_api_error_yields_usage_then_raises,
+    test_record_holds_complete_rounds_only,
 ]
 
 

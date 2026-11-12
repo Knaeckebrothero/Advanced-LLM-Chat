@@ -28,7 +28,7 @@ The tool group `files` (`TOOL_GROUPS` in `backend/llm/tools.py`). The tools are 
 
 A file is named by its name (case doesn't matter) or by its file ID; when several files have the same name, `list_files` shows their IDs and the name alone is refused.
 
-What the model sees without calling a tool is unchanged: the attachments of the latest user message are in the message (images only for models that take them), earlier ones are placeholders (`[Attachment: report.pdf (fileId: …)]`). Earlier answers appear in the history as their text only, so in a later turn the agent finds an earlier image with `list_files`.
+What the model sees without calling a tool is unchanged: the attachments of the latest user message are in the message (images only for models that take them), earlier ones are placeholders (`[Attachment: report.pdf (fileId: …)]`). Earlier answers go back with their tool calls and results (`docs/model_catalog_api.md`, "Tool calls of earlier answers"), so the model sees that a tool saved `civitai-1.png` and that it read it; the image itself is not sent again (below), and `list_files` finds it in any later turn.
 
 ### Images in tool results (`ToolText.images`)
 
@@ -36,6 +36,8 @@ A tool returns an image to the model as `ToolText(text, images=[image_url part])
 
 - **Anthropic:** inside the `tool_result` block.
 - **OpenAI-compatible:** a tool message only takes text, so the images of a model call's tool results follow them in one user message (`prepare_messages()` in `backend/llm/openai_chat.py`), marked as not from the user.
+
+The image goes to the model once, in the answer the tool ran in. In later turns the result's text ends with a note in its place (`images_note()` in `backend/llm/tool_record.py`): the model saw the image then, and calls `read_file` again to look once more.
 
 ## Files from MCP servers
 

@@ -1095,6 +1095,66 @@ async def test_media():
         media.download, media.http_client, media.MCP_ALLOW_PRIVATE_URLS, file_store.MAX_FILE_SIZE = saved
 
 
+async def test_tool_records():
+    """
+    The tool records of answers (backend/llm/tool_record.py) in the database: stored with the
+    answer, sent back with the history, kept through an edit of its text, gone with a new
+    answer text and with the message.
+    """
+    from backend.llm.tool_record import with_text
+    from backend.services.conversation_history import ConversationHistoryBuilder
+
+    conversation_id = TEST_CONVERSATION_PREFIX + "records"
+    with db.connection() as conn:
+        conn.execute(insert(conversations).values(id=conversation_id, userId=user_ids[0], name="MCP test"))
+    looked = [
+        {"role": "assistant", "content": "Let me look.", "tool_calls": [
+            {"id": "read_file:0", "type": "function", "function": {"name": "read_file", "arguments": '{"file": "fox.png"}'}}]},
+        {"role": "tool", "tool_call_id": "read_file:0", "content": "fox.png (image/png)", "_is_error": True},
+        {"role": "assistant", "content": "A fox."},
+    ]
+    base = 8_800_000_000_000
+
+    def answer(offset: int, text: str, tool_record=None) -> int:
+        db.create_agent_message(message_id=base + offset, conversation_id=conversation_id, role_name="Assistant",
+                                time=8800 + offset, content=text, steps=[], tool_record=tool_record)
+        return base + offset
+
+    db.create_message(base + 1, conversation_id, "user", "What is in fox.png?", 8801)
+    first = answer(2, "Let me look.\n\nA fox.", looked)
+    db.create_message(base + 3, conversation_id, "user", "Thanks", 8803)
+    plain = answer(4, "You're welcome.", [])
+    assert db.get_tool_records(conversation_id) == {first: looked}, db.get_tool_records(conversation_id)
+    assert db.get_tool_record(first) == looked and db.get_tool_record(plain) is None
+    # A message list never carries them
+    assert all("record" not in row and "tool_record" not in row
+               for row in db.get_messages_by_conversation(conversation_id, limit=None))
+
+    # The history of the next answer: the call and its result as messages
+    history, _ = await ConversationHistoryBuilder(db).build_history(conversation_id)
+    assert [m["role"] for m in history] == ["user", "assistant", "tool", "assistant", "user", "assistant"], history
+    assert history[1:4] == looked, history[1:4]
+
+    # Editing the answer's text keeps the call and its result; the new text is its only text
+    version = db.get_message_by_id(first, conversation_id)["version"]
+    edited = db.update_message(first, conversation_id, "A red fox.", version, tool_record=with_text(looked, "A red fox."))
+    assert db.get_tool_record(first) == [{**looked[0], "content": ""}, looked[1],
+                                         {"role": "assistant", "content": "A red fox."}], db.get_tool_record(first)
+    # A new answer text without a record (the non-streaming regenerate): the old calls are not its own
+    db.update_message(first, conversation_id, "Something else.", edited["version"])
+    assert db.get_tool_record(first) is None
+
+    # Gone with the message: deleted alone, or with the messages after an edited one
+    second = answer(5, "Once more.", looked)
+    third = answer(6, "And again.", looked)
+    assert set(db.get_tool_records(conversation_id)) == {second, third}
+    db.delete_message(third, conversation_id)
+    assert set(db.get_tool_records(conversation_id)) == {second}
+    version = db.get_message_by_id(base + 3, conversation_id)["version"]
+    db.update_message(base + 3, conversation_id, "Thank you", version, delete_following=True)
+    assert db.get_tool_records(conversation_id) == {}
+
+
 async def test_answer_context():
     from backend.api import messages
     from backend.llm.types import ModelConfig
@@ -1235,6 +1295,7 @@ TESTS = [
     test_stdio,
     test_files,
     test_media,
+    test_tool_records,
     test_answer_context,
     test_catalog_file,
     test_api,

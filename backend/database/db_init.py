@@ -56,6 +56,7 @@ EXPECTED_TABLES = [
     "users",
     "conversations",
     "messages",
+    "message_tool_records",
     "conversation_summaries",
     "sessions",
     "guest_usage",

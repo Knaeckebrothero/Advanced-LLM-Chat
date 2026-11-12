@@ -50,6 +50,7 @@ from backend.database.tables import (
     conversations,
     messages,
     conversation_summaries,
+    message_tool_records,
     sessions,
     guest_usage,
     user_settings,
@@ -1316,7 +1317,8 @@ class Database:
         content: str,
         version: int,
         last_modified: int = None,
-        delete_following: bool = False
+        delete_following: bool = False,
+        tool_record: list = None
     ) -> Optional[dict]:
         """
         Update a message's content with optimistic locking.
@@ -1329,6 +1331,8 @@ class Database:
             last_modified: Unix timestamp (optional).
             delete_following: Also delete the conversation's later messages (higher ids),
                 in the same transaction.
+            tool_record: An answer's tool record for the new text (tool_record.with_text()).
+                Without it the answer's record is deleted: it belongs to the text it had.
 
         Returns:
             Updated message dictionary or None if version mismatch/not found.
@@ -1357,6 +1361,12 @@ class Database:
                 log.debug(f"Updated message: {message_id}")
                 if result.roleName != 'system':
                     self._drop_summary_covering(conn, conversation_id, message_id)
+                if tool_record:
+                    conn.execute(update(message_tool_records).where(
+                        message_tool_records.c.message_id == message_id).values(record=tool_record))
+                else:
+                    conn.execute(delete(message_tool_records).where(
+                        message_tool_records.c.message_id == message_id))
                 if delete_following:
                     deleted = conn.execute(delete(messages).where(
                         (messages.c.conversationId == conversation_id) & (messages.c.id > message_id)
@@ -1589,7 +1599,8 @@ class Database:
         steps: list = None,
         model_id: int = None,
         model_name: str = None,
-        usage: dict = None
+        usage: dict = None,
+        tool_record: list = None
     ) -> dict:
         """
         Create an agent message with steps stored as JSONB.
@@ -1606,6 +1617,8 @@ class Database:
             model_id: Catalog model that wrote the message (None for the environment model).
             model_name: Copy of the model's display name, kept if the model is deleted.
             usage: Token usage as built by Usage.to_api() (camelCase dict, stored as JSONB).
+            tool_record: The answer's tool calls and their results as the model got them
+                (backend/llm/tool_record.py); stored with it when not empty.
 
         Returns:
             The created message dictionary.
@@ -1628,9 +1641,34 @@ class Database:
                 usage=_jsonb(usage)
             ).returning(messages)
             result = conn.execute(stmt).fetchone()
+            if tool_record:
+                conn.execute(insert(message_tool_records).values(
+                    message_id=message_id, conversation_id=conversation_id, record=tool_record))
             _note_new_message(conn, conversation_id, message_id)
             log.debug(f"Created agent message: {message_id} in conversation {conversation_id}")
             return self._row_to_dict(result)
+
+    def get_tool_records(self, conversation_id: str) -> dict:
+        """
+        The tool records of a conversation's answers (backend/llm/tool_record.py).
+
+        Args:
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            {message id: record} for the answers that called tools.
+        """
+        with self.connection() as conn:
+            rows = conn.execute(select(message_tool_records.c.message_id, message_tool_records.c.record).where(
+                message_tool_records.c.conversation_id == conversation_id)).fetchall()
+            return {row.message_id: row.record for row in rows}
+
+    def get_tool_record(self, message_id: int) -> Optional[list]:
+        """The tool record of one answer, or None if it called no tools."""
+        with self.connection() as conn:
+            row = conn.execute(select(message_tool_records.c.record).where(
+                message_tool_records.c.message_id == message_id)).fetchone()
+            return row.record if row else None
 
     def update_agent_message(
         self,

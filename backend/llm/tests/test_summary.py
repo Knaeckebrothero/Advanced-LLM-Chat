@@ -24,13 +24,17 @@ from dataclasses import replace
 
 import httpx
 
-from backend.llm.tests.fake_openai_server import FakeOpenAIServer, chunk, completion, usage_chunk
+from backend.llm.tests.fake_openai_server import (
+    FakeOpenAIServer, chunk, completion, tool_call_delta, usage_chunk,
+)
 from backend.llm.tests.test_history import LONG_ROWS, FakeDB, assistant, user
+from backend.llm.tools import Tool, ToolRegistry
 from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
 from backend.services import conversation_summary
 from backend.services.conversation_history import (
     SUMMARY_CONTINUE,
     SUMMARY_LEAD_IN,
+    TOOL_RECORD_KEY,
     ConversationHistoryBuilder,
     estimate_tokens,
 )
@@ -38,11 +42,13 @@ from backend.services.conversation_summary import (
     SUMMARY_KEEP,
     SUMMARY_PROMPT,
     SUMMARY_TRIGGER,
+    TOOL_RESULT_CHARS,
     SummaryFailed,
     messages_to_summarize,
     plan_chunks,
     summarize,
     summary_target_tokens,
+    transcript_parts,
 )
 
 # No waiting between the attempts of a pass
@@ -387,11 +393,116 @@ async def test_summarize_on_request(server):
     assert not server.requests
 
 
+async def test_tool_calls_are_summarized_with_the_answer(server):
+    tool_record = [
+        {"role": "assistant", "content": "Let me look.", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": '{"file": "fox.png"}'}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "fox.png: " + "pixels " * 1000},
+        {"role": "assistant", "content": "A fox in the snow."},
+    ]
+    entries = [(1, {"role": "user", "content": "What is in fox.png?"}),
+               (2, {"role": "assistant", "content": "Let me look.\n\nA fox in the snow.", TOOL_RECORD_KEY: tool_record})]
+    parts = transcript_parts(entries)
+    assert parts[:3] == ["[User]: What is in fox.png?", "[Assistant]: Let me look.",
+                         '[Assistant called the tool read_file]: {"file": "fox.png"}'], parts[:3]
+    # A long result is cut: what mattered of it is in the answer
+    assert parts[3].startswith("[Tool result]: fox.png: pixels") and parts[3].endswith(" […]"), parts[3][-40:]
+    assert len(parts[3]) < TOOL_RESULT_CHARS + 30 and parts[4] == "[Assistant]: A fox in the snow."
+    # The answer counts with its calls and results when deciding what to fold
+    budget = 3000
+    rows = [(n, {"role": role, "content": "x" * 300}) for n, role in enumerate(["user", "assistant"] * 3, start=10)]
+    assert messages_to_summarize([*entries, *rows], None, budget) > 0
+    plain = [entries[0], (2, {"role": "assistant", "content": entries[1][1]["content"]})]
+    assert messages_to_summarize([*plain, *rows], None, budget) == 0
+
+
+class StoringDB(EndpointDB):
+    """Keeps the answers the endpoint saves as rows, with their tool records, for the next answer."""
+
+    def create_agent_message(self, **message):
+        super().create_agent_message(**message)
+        self.rows.append({"id": message["message_id"], "time": message["time"], "roleName": message["role_name"],
+                          "content": message["content"], "type": "agent"})
+        if message.get("tool_record"):
+            self.tool_records[message["message_id"]] = message["tool_record"]
+
+
+async def test_stream_generate_keeps_and_replays_tool_calls(server):
+    from backend.api import messages
+    from backend.services.mcp.tools import McpToolset
+
+    async def lookup(key: str) -> dict:
+        return {"key": key, "value": f"value-of-{key}"}
+
+    tools = ToolRegistry([Tool(name="lookup", description="Look up a key", func=lookup, parameters={
+        "type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]})])
+
+    async def no_mcp(current_user, conversation, config, tools, answer_id=None):
+        return tools, McpToolset()
+
+    def calls_the_tool(body):
+        return [chunk(content="Let me look."),
+                chunk(tool_calls=[tool_call_delta(0, id="lookup:0", name="lookup", arguments='{"key": "alpha"}')]),
+                chunk(finish_reason="tool_calls"), usage_chunk(50, 5)]
+
+    def answers(body):
+        return [chunk(content="Alpha is value-of-alpha."), chunk(finish_reason="stop"), usage_chunk(80, 6)]
+
+    question = user(1000_000, 1000, "What is alpha?")
+    fake_db = StoringDB([question])
+    config = make_config(server.base_url, context_window=100000, supports_tools=True)
+    saved = messages._agent_tools, messages._mcp_tools
+    messages._agent_tools = lambda current_user, conversation, config: tools
+    messages._mcp_tools = no_mcp
+    try:
+        server.script(calls_the_tool, answers)
+        with message_api(fake_db, config) as client:
+            response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+            assert response.status_code == 200 and "event: done" in response.text, response.text
+            stored = fake_db.answers[0]
+            assert stored["content"] == "Let me look.\n\nAlpha is value-of-alpha.", stored["content"]
+            tool_record = stored["tool_record"]
+            assert [m["role"] for m in tool_record] == ["assistant", "tool", "assistant"], tool_record
+            assert tool_record[0]["content"] == "Let me look." and tool_record[0]["tool_calls"][0]["id"] == "lookup:0"
+            assert json.loads(tool_record[1]["content"]) == {"key": "alpha", "value": "value-of-alpha"}
+            assert tool_record[2] == {"role": "assistant", "content": "Alpha is value-of-alpha."}
+            last_request = server.requests[-1]["messages"]
+
+            # The next answer gets the call and its result back, and its request starts with the last one
+            follow_up = {"id": stored["message_id"] + 1000, "time": stored["time"] + 1, "roleName": "user",
+                         "content": "Did you look it up?", "type": "text"}
+            fake_db.rows.append(follow_up)
+
+            def next_answer(body):
+                assert body["messages"][:len(last_request)] == last_request, body["messages"]
+                assert body["messages"][len(last_request):] == [
+                    {"role": "assistant", "content": "Alpha is value-of-alpha."},
+                    {"role": "user", "content": "Did you look it up?"}], body["messages"][len(last_request):]
+                return [chunk(content="Yes, with lookup."), chunk(finish_reason="stop"), usage_chunk(120, 5)]
+
+            server.script(next_answer)
+            response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+            assert response.status_code == 200 and "event: done" in response.text, response.text
+            assert not server.errors, server.errors
+            assert fake_db.answers[1]["content"] == "Yes, with lookup." and not fake_db.answers[1]["tool_record"]
+
+            # The token indicator counts the calls and results too
+            sized = await client.post("/api/message/context-size", json={"conversationId": "c"})
+            assert sized.status_code == 200, sized.text
+            size = sized.json()
+            assert size["messageCount"] == 4 and size["leftOutCount"] == 0, size
+            texts = sum(estimate_tokens(row["content"]) for row in fake_db.rows)
+            assert size["historyTokens"] > texts + estimate_tokens(tool_record[1]["content"]), (size, texts)
+    finally:
+        messages._agent_tools, messages._mcp_tools = saved
+
+
 TESTS = [test_summarizes_only_past_the_trigger, test_latest_question_is_never_summarized,
          test_fold_in_chunks_merges_prior_summary, test_bad_reply_is_retried, test_failure_keeps_usage,
          test_summary_must_be_smaller, test_on_request_scales_the_length, test_oversized_message_is_split,
          test_history_starts_with_summary, test_stream_generate_summarizes_past_the_trigger,
-         test_summarize_on_request]
+         test_summarize_on_request, test_tool_calls_are_summarized_with_the_answer,
+         test_stream_generate_keeps_and_replays_tool_calls]
 
 
 async def main() -> int:

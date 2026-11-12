@@ -20,6 +20,8 @@ Claude specifics, as documented for the current models:
 - Tool choice: forced tool use is rejected by current models; only "none" is
   sent (for the final call of the agent loop), otherwise the default auto.
 - max_tokens is required: the model's max_output_tokens, else a default.
+- Tool call ids may only hold letters, digits, "_" and "-". Earlier answers of other models go
+  back with their own ids (Kimi's look like "read_file:0"), so every id is cleaned on the way in.
 """
 import json
 import logging
@@ -55,6 +57,7 @@ EFFORT_ALIASES = {"none": "low", "minimal": "low"}
 HISTORY_START_PLACEHOLDER = "[Earlier messages of this conversation are not included.]"
 
 _DATA_URL = re.compile(r"^data:(?P<media_type>[^;,]+)(?P<base64>;base64)?,(?P<data>.*)$", re.DOTALL)
+_TOOL_ID_OTHER = re.compile(r"[^a-zA-Z0-9_-]")
 
 _STOP_REASONS = {
     "end_turn": STOP_END,
@@ -158,6 +161,11 @@ def _user_blocks(content: Any) -> list[dict]:
     return blocks
 
 
+def _tool_id(call_id: Any) -> str:
+    """A tool call id Claude accepts; its own ids stay as they are."""
+    return _TOOL_ID_OTHER.sub("_", str(call_id or "")) or "call"
+
+
 def _assistant_blocks(message: dict) -> list[dict]:
     """Claude blocks of an assistant message: the original response blocks if kept, else rebuilt."""
     original = message.get(ANTHROPIC_CONTENT_KEY)
@@ -175,7 +183,7 @@ def _assistant_blocks(message: dict) -> list[dict]:
         function = call.get("function", {})
         blocks.append({
             "type": "tool_use",
-            "id": call.get("id"),
+            "id": _tool_id(call.get("id")),
             "name": function.get("name"),
             "input": _parse_arguments(function.get("arguments")),
         })
@@ -202,7 +210,7 @@ def _tool_result_block(message: dict) -> dict:
         content = _user_blocks(content)
     elif not content:
         content = "(empty result)"
-    block = {"type": "tool_result", "tool_use_id": message.get("tool_call_id"), "content": content}
+    block = {"type": "tool_result", "tool_use_id": _tool_id(message.get("tool_call_id")), "content": content}
     if message.get(TOOL_ERROR_KEY):
         block["is_error"] = True
     return block
