@@ -93,7 +93,7 @@ def prepare_image_for_llm(file_id: str, mime_type: Optional[str] = None) -> Opti
     Prepare an image for inclusion in LLM messages.
 
     Only call this for models that support vision (ModelConfig.supports_vision);
-    text-only models get a placeholder and the get_file_content tool instead.
+    text-only models get a placeholder and the read_file tool instead.
 
     Args:
         file_id: The file ID of the image.

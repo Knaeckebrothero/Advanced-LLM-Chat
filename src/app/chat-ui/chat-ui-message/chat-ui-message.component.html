@@ -102,18 +102,21 @@
             <!-- Non-audio attachments -->
             <div *ngIf="attachment.type !== 'audio'" (click)="onAttachmentClick($event, attachment)"
               class="attachment-item" [class.is-image]="attachment.type === 'image'"
-              [class.is-synced]="!attachment.file && !attachment.preview" [class.has-error]="attachment.error">
+              [class.is-synced]="!attachment.file && !attachment.preview && !serverPreview(attachment)"
+              [class.has-error]="attachment.error">
 
-              <!-- Image with local preview -->
-              <div class="attachment-thumbnail" *ngIf="attachment.type === 'image' && attachment.preview">
-                <img [src]="attachment.preview" [alt]="attachment.name">
+              <!-- Image with a preview: the browser's own of a file just attached, else the server's -->
+              <div class="attachment-thumbnail"
+                *ngIf="attachment.type === 'image' && (attachment.preview || serverPreview(attachment)) as preview">
+                <img [src]="preview" [alt]="attachment.name">
                 <div class="attachment-info-overlay">
                   {{ attachment.name }}
                 </div>
               </div>
 
-              <!-- Image without preview (synced from server) -->
-              <div class="attachment-placeholder" *ngIf="attachment.type === 'image' && !attachment.preview">
+              <!-- Image without preview (synced from the server, and it has none either) -->
+              <div class="attachment-placeholder"
+                *ngIf="attachment.type === 'image' && !attachment.preview && !serverPreview(attachment)">
                 <mat-icon class="placeholder-icon">image</mat-icon>
                 <span class="placeholder-text">{{ attachment.name }}</span>
                 <span class="placeholder-hint">{{ 'message.openAttachment' | translate }}</span>
@@ -171,6 +174,9 @@
             [status]="message.content.status"
             (expandedChange)="onStepsExpandedChange($event)">
           </app-agent-steps>
+
+          <!-- The files of the answer: what the agent shows, and what its tools created -->
+          <app-answer-files *ngIf="message.content.steps.length > 0" [steps]="message.content.steps"></app-answer-files>
 
           <!-- Final response with streaming cursor -->
           <div class="agent-response" *ngIf="!editing && (message.content.content || message.content.status === 'responding')">

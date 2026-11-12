@@ -42,3 +42,20 @@ export interface IFilePreview {
   transcript?: string;  // For audio files - transcript from backend transcription
   base64Data?: string;  // For audio files - base64 encoded audio data for offline playback
 }
+
+/**
+ * A stored file as a step's metadata names it (backend/services/file_store.py file_ref(),
+ * docs/files.md): a file a tool created in the answer (`files`) or one the agent shows
+ * (`shownFiles`).
+ */
+export interface IFileRef {
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size?: number;    // Bytes
+  width?: number;   // Images: pixels
+  height?: number;
+}
+
+/** The size of a file's preview image: at most 256 or 1024 pixels on its longer edge. */
+export type FilePreviewSize = 'small' | 'large';

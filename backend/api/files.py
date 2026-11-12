@@ -1,13 +1,13 @@
 """
 File upload and retrieval API endpoints.
 
-Every upload belongs to the user who uploaded it (table uploaded_files); the
-other endpoints answer 404 for files of other users, as for missing files.
+Every stored file belongs to a user (table uploaded_files): the one who uploaded
+it, or the one a tool created it for (docs/files.md). The other endpoints answer
+404 for files of other users, as for missing files.
 """
+import asyncio
 import logging
-import secrets
-import time
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -17,14 +17,11 @@ from backend.database import db
 from backend.security.auth import get_current_user, verify_file_ownership
 from backend.services.document_handler import process_pdf, get_extracted_text
 from backend.services.audio_handler import is_audio, process_audio, get_transcript
+from backend.services import file_store
 from backend.services.file_utils import get_file_path, delete_stored_file
-from backend.config import FILES_DIR as FILES_DIR_STR
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
 logger = logging.getLogger(__name__)
-
-# Directory where files are stored (from config, converted to Path)
-FILES_DIR = Path(FILES_DIR_STR)
 
 # MIME types that trigger document processing
 PDF_MIME_TYPES = {'application/pdf'}
@@ -74,36 +71,19 @@ async def upload_files(
             raise HTTPException(status_code=400, detail="No files provided")
 
         uploaded_files = []
-        max_file_size = 10 * 1024 * 1024  # 10MB limit per file
-
-        # Ensure files directory exists (including parent directories)
-        FILES_DIR.mkdir(parents=True, exist_ok=True)
 
         for file in files:
             # Read file to check size and content
             contents = await file.read()
-            if len(contents) > max_file_size:
+            if len(contents) > file_store.MAX_FILE_SIZE:
                 raise HTTPException(status_code=413, detail=f"File {file.filename} exceeds maximum size of 10MB")
 
-            # Generate a unique file ID and preserve original extension
-            timestamp = int(time.time() * 1000)
-            random_suffix = secrets.token_hex(8)
-            file_id = f"file_{timestamp}_{random_suffix}"
-
-            # Preserve file extension if present
-            if file.filename and "." in file.filename:
-                original_ext = Path(file.filename).suffix
-                stored_filename = f"{file_id}{original_ext}"
-            else:
-                stored_filename = file_id
-
-            # Record the owner before the file exists: only the uploader can read it
-            db.register_uploaded_file(file_id, current_user['user_id'])
-
-            # Save file to disk
-            file_path = FILES_DIR / stored_filename
-            with open(file_path, "wb") as f:
-                f.write(contents)
+            # Stored under a new file ID with the original extension, recorded for the uploader. It
+            # gets its conversation when the message that attaches it is stored
+            stored = await asyncio.to_thread(
+                file_store.store, contents, current_user['user_id'],
+                name=Path(file.filename).name if file.filename else None, mime_type=file.content_type)
+            file_id, file_path = stored['file_id'], stored['path']
 
             logger.info(f"Uploaded file: {file.filename} -> {file_id} (size: {len(contents)} bytes) saved to {file_path}")
 
@@ -228,6 +208,31 @@ async def get_file(
         media_type=media_type,
         filename=file_path.name
     )
+
+
+@router.get("/{file_id}/thumbnail",
+            responses={
+                status.HTTP_200_OK: {"description": "A preview of the image (WebP)"},
+                status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "Not authenticated"},
+                status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "File not found, or no image"}
+            })
+async def get_file_thumbnail(
+        file_id: str,
+        size: Literal["small", "large"] = "small",
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    A preview of an image for the chat: at most 256 (small) or 1024 (large) pixels
+    on its longer edge, as WebP. Made on the first request and kept with the file.
+    Only the file's owner gets it; a file that is no image is a 404.
+    """
+    _own_file_path(file_id, current_user)
+    preview = await asyncio.to_thread(file_store.thumbnail, file_id, size)
+    if preview is None:
+        raise HTTPException(status_code=404, detail="No preview for this file")
+    # A file's content never changes, so neither does its preview
+    return FileResponse(path=preview, media_type="image/webp",
+                        headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @router.get("/{file_id}/text",

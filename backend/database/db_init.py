@@ -9,7 +9,9 @@ with test data. It supports multiple modes:
 3. Production mode: Migrates schema by adding missing columns (preserves data)
 
 New tables are created in every mode. The run that creates uploaded_files gives
-the files uploaded before it existed their owner (backfill_uploaded_files).
+the files uploaded before it existed their owner (backfill_uploaded_files); the
+run that adds its conversation_id links them to the conversations whose messages
+attach them (backfill_file_conversations).
 
 Usage:
     # Default: Create tables if missing, preserve data
@@ -297,7 +299,8 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
     logger.info("  ✓ All tables dropped")
 
 
-def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfill_file_owners: bool = False) -> bool:
+def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfill_file_owners: bool = False,
+                       link_files: bool = False) -> bool:
     """
     Execute the schema SQL file to create tables, indexes, and triggers.
 
@@ -309,6 +312,8 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
         logger: Logger instance.
         backfill_file_owners: Give existing files their owner in the same
             transaction (when this run creates uploaded_files).
+        link_files: Give existing files their conversation in the same transaction
+            (when this run adds uploaded_files.conversation_id).
 
     Returns:
         True if successful, False otherwise.
@@ -330,6 +335,9 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
             if backfill_file_owners:
                 from backend.database.db import backfill_uploaded_files
                 added, unowned = backfill_uploaded_files(conn)
+            if link_files:
+                from backend.database.db import backfill_file_conversations
+                linked = backfill_file_conversations(conn)
             conn.commit()
 
         logger.info(f"  ✓ Executed schema from {schema_path.name}")
@@ -339,6 +347,9 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
             if unowned:
                 logger.warning(f"  ⚠ {unowned} uploaded file(s) in FILES_DIR are referenced by no message: "
                                f"they have no owner and can't be read any more")
+        if link_files:
+            logger.info(f"  ✓ Files belong to conversations now: {linked} existing file(s) got the "
+                        f"conversation whose message attaches them")
         return True
 
     except Exception as e:
@@ -623,8 +634,11 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     engine = get_engine(args.host, args.port, args.user, args.password, args.database)
 
     # Rebuild the indexes once after the switch from the Alpine image, enable pgvector
-    from backend.database.db import prepare_database
+    from backend.database.db import files_lack_conversations, prepare_database
     prepare_database(engine)
+
+    # Before the migration adds the column: this run links the existing files to their conversations
+    link_files = files_lack_conversations(engine)
 
     # Step 2: Production migration (runs FIRST if --prod is set)
     if prod_mode:
@@ -653,7 +667,7 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     logger.info("")
     logger.info(f"[{current_step}/{total_steps}] Creating/updating tables from schema...")
     backfill_file_owners = not inspect(engine).has_table("uploaded_files")
-    if not execute_schema_sql(engine, SCHEMA_FILE, logger, backfill_file_owners):
+    if not execute_schema_sql(engine, SCHEMA_FILE, logger, backfill_file_owners, link_files):
         return False
 
     # Step 5: Insert seed data if requested (runs LAST)

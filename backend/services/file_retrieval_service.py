@@ -209,7 +209,7 @@ class FileRetrievalService:
 
         # Use Vision Helper LLM to analyze the image
         try:
-            from .vision_helper import get_vision_helper
+            from .vision_helper import get_vision_helper, is_error
             vision_helper = get_vision_helper()
             image_data = file_path.read_bytes()
             description = await vision_helper.describe_image(
@@ -218,8 +218,8 @@ class FileRetrievalService:
                 prompt=query
             )
 
-            # Store in cache
-            if self.description_cache:
+            # Store in cache (not the helper's error message: the next call asks again)
+            if self.description_cache and not is_error(description):
                 await self.description_cache.set(file_id, description, query)
 
             return description
@@ -284,7 +284,7 @@ class FileRetrievalService:
             return ""
 
         try:
-            from .vision_helper import get_vision_helper
+            from .vision_helper import get_vision_helper, is_error
             vision_helper = get_vision_helper()
             descriptions = []
 
@@ -302,8 +302,8 @@ class FileRetrievalService:
                     page_image=page_image
                 )
 
-                # Store in cache
-                if self.description_cache:
+                # Store in cache (not the helper's error message)
+                if self.description_cache and not is_error(description):
                     await self.description_cache.set(file_id, description, cache_key_query)
 
                 descriptions.append(f"--- Page {page_num} ---\n{description}")

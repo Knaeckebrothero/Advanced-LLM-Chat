@@ -7,7 +7,8 @@ Covers: tool calls assembled from streamed fragments (two in parallel),
 reasoning from reasoning_content, reasoning and <think> tags, reasoning
 passback on and off, Thinking steps (start, deltas, completion with the same
 id), callId linking, tool errors, the step limit, request settings and
-extra_body, models without tools, usage summing, and complete().
+extra_body, models without tools, usage summing, complete(), and the images of
+a tool result, which follow the tool messages in a user message.
 """
 import asyncio
 import json
@@ -20,7 +21,8 @@ from backend.llm.client import create_openai_client
 from backend.llm.tests.fake_openai_server import (
     FakeOpenAIServer, chunk, completion, tool_call_delta, usage_chunk,
 )
-from backend.llm.tools import Tool, ToolRegistry
+from backend.llm.openai_chat import TOOL_IMAGES_NOTE
+from backend.llm.tools import Tool, ToolRegistry, ToolText
 from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
 
 
@@ -205,6 +207,39 @@ async def test_tool_error_continues(server):
     assert tokens_of(events) == "Let me check.\n\nIt failed."
 
 
+async def test_tool_result_images_follow_in_a_user_message(server):
+    fox = {"type": "image_url", "image_url": {"url": "data:image/png;base64,Rk9Y"}}
+
+    async def look() -> ToolText:
+        return ToolText("fox-1.png. The image follows.", images=[fox])
+
+    tools = ToolRegistry([*TOOLS, Tool(name="look", description="Look at the fox", func=look,
+                                       parameters={"type": "object", "properties": {}})])
+
+    def turn1(body):
+        return [chunk(tool_calls=[tool_call_delta(0, id="call_i", name="look", arguments="{}")]),
+                chunk(tool_calls=[tool_call_delta(1, id="call_k", name="lookup", arguments='{"key": "k"}')]),
+                chunk(finish_reason="tool_calls"), usage_chunk(10, 5)]
+
+    def turn2(body):
+        # A tool message only takes text: the image follows both tool results, in a user message
+        roles = [m["role"] for m in body["messages"]]
+        assert roles == ["system", "user", "assistant", "tool", "tool", "user"], roles
+        look_result, lookup_result, images = body["messages"][3:]
+        assert look_result == {"role": "tool", "tool_call_id": "call_i", "content": "fox-1.png. The image follows."}
+        assert json.loads(lookup_result["content"]) == {"key": "k", "value": "value-of-k"}
+        assert images["content"] == [{"type": "text", "text": TOOL_IMAGES_NOTE}, fox], images
+        return [chunk(content="A fox."), chunk(finish_reason="stop"), usage_chunk(20, 3)]
+
+    server.script(turn1, turn2)
+    config = make_config(server.base_url, reasoning="none")
+    events = await collect(config, [{"role": "user", "content": "Look"}], server, tools=tools)
+    assert tokens_of(events) == "A fox."
+    # The chat's step shows the text, not the image data
+    results = {s.callId: s.content for s in steps_of(events) if s.type == "tool_result"}
+    assert results["call_i"] == "fox-1.png. The image follows.", results
+
+
 async def test_step_limit(server):
     def wants_tool(body):
         return [chunk(tool_calls=[tool_call_delta(0, id=f"call_{len(server.requests)}", name="lookup",
@@ -295,6 +330,7 @@ TESTS = [
     test_three_step_chain_with_passback,
     test_three_step_chain_without_passback,
     test_tool_error_continues,
+    test_tool_result_images_follow_in_a_user_message,
     test_step_limit,
     test_request_settings,
     test_max_completion_tokens_for_openai,

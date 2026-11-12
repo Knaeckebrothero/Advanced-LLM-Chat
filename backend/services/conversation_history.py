@@ -205,7 +205,7 @@ class ConversationHistoryBuilder:
         Documents and audio transcripts are added as text. Images (and PDF page
         images with MODEL_RECEIVE_IMAGES_PDF) become image_url parts for vision
         models; text-only models get the attachment placeholder instead, so they
-        can call get_file_content. Returns a string when there are no images.
+        can call read_file. Returns a string when there are no images.
         """
         logger.debug(f"Building multimodal content with {len(attachments)} attachments (vision={supports_vision})")
         image_parts = []
@@ -247,7 +247,7 @@ class ConversationHistoryBuilder:
                     loaded = True
 
             if not loaded:
-                # Not sent as content: the placeholder tells the model to use get_file_content
+                # Not sent as content: the placeholder tells the model to use read_file
                 text_parts.append(f"\n\n{self._create_placeholder(att).to_placeholder_string()}")
                 logger.debug(f"Attachment {name} ({file_id}) sent as placeholder")
 

@@ -114,11 +114,23 @@ CREATE TABLE IF NOT EXISTS file_description_cache (
 );
 
 -- name: create_uploaded_files_table
--- Who uploaded which file. Only the owner can read it, through the files API and the agent's file tool
+-- The stored files (docs/files.md): what users upload and what tools create (e.g. the images of an MCP
+-- server). A file has an owner, who reads it through the files API, and belongs to one conversation,
+-- whose agent reads it through the file tools
 CREATE TABLE IF NOT EXISTS uploaded_files (
     file_id TEXT PRIMARY KEY,                -- file_<ms>_<hex>, the stored filename without extension
     user_id INTEGER NOT NULL REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,  -- NULL: in no conversation (yet)
+    message_id BIGINT,                       -- the message it came with: the user's, or the answer a tool made it in
+    name TEXT,                               -- "report.pdf" (a name a tool gives is unique in the conversation)
+    mime_type TEXT,
+    size_bytes BIGINT,
+    width INTEGER,                           -- images: pixels
+    height INTEGER,
+    source TEXT NOT NULL DEFAULT 'upload',   -- 'upload' | 'tool'
+    origin TEXT,                             -- a file of a tool: the title of the tool, "Civitai: Run step"
+    details TEXT                             -- a file of a tool: the arguments of the call (JSON, cut), e.g. the prompt
 );
 
 -- name: create_llm_providers_table
@@ -223,6 +235,20 @@ ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS memory_model_id INTEGER;
 -- name: add_mcp_columns
 -- Databases from before MCP servers (the CREATE TABLE above has it)
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS mcp_servers JSONB;
+
+-- name: add_file_columns
+-- Databases from before files belonged to a conversation (the CREATE TABLE above has the columns). The run
+-- that adds conversation_id links the existing uploads to their conversations (backfill_file_conversations)
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS message_id BIGINT;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS mime_type TEXT;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS size_bytes BIGINT;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS width INTEGER;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS height INTEGER;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'upload';
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS origin TEXT;
+ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS details TEXT;
 
 -- name: create_mcp_servers_table
 -- MCP servers (docs/mcp.md): the admins' servers, which agents pick (user_id NULL), and users' own
@@ -332,6 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_agent_status ON messages(agent_status) WHERE type = 'agent';
 CREATE INDEX IF NOT EXISTS idx_cache_file_id ON file_description_cache(file_id);
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_user ON uploaded_files(user_id);
+CREATE INDEX IF NOT EXISTS idx_uploaded_files_conversation ON uploaded_files(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_llm_models_provider ON llm_models(provider_id);
 CREATE INDEX IF NOT EXISTS idx_kb_notes_user_updated ON kb_notes(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_kb_note_revisions_note ON kb_note_revisions(note_id);

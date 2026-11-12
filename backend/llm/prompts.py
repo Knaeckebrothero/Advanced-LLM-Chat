@@ -29,16 +29,16 @@ TOOLS_PROMPT = "Use your tools when they help you give a better answer."
 # Added when web search is enabled
 WEB_SEARCH_PROMPT = "Use web search for current events or facts you are unsure about."
 
-# Added when get_file_content is enabled
-FILE_ACCESS_PROMPT = """## File Access:
-When users share files (images, PDFs, documents), you see full content in the current message.
-In follow-up messages, files appear as placeholders like:
-[Attachment: report.pdf (fileId: abc123) - 5 pages, PDF document]
+# Added when the file tools are enabled (docs/files.md)
+FILE_ACCESS_PROMPT = """## Files:
+This conversation has its own files: what the user attached, and what your tools created in it (e.g. generated images). You only see the files of this conversation.
+- What the user attaches to their latest message is in that message. In later messages it appears as a placeholder like [Attachment: report.pdf (fileId: abc123) - 5 pages, PDF document].
+- list_files() lists the conversation's files. Use it when the user refers to a file you can't find, e.g. an image from an earlier answer.
+- read_file(file="report.pdf") gives you a file's content; for an image, the image itself or a description of it. read_file(file="report.pdf", query="What is the revenue?") asks a question about a file you can't see yourself, read_file(file="report.pdf", pages=[1, 3]) reads some pages of a PDF.
+- show_file(files=["fox-1.png"]) shows files to the user above the text of your answer, images large. An image a tool created is only a small preview for the user until you show it: show the ones worth looking at, and never say you showed a file unless show_file confirmed it.
+Name a file by its name, or by its fileId when several have the same name. The chat can't display images from web addresses: don't put image links or Markdown images into your answer, show the file instead."""
 
-To access previously shared files, use the get_file_content tool:
-- get_file_content(file_id="abc123") - retrieve full content
-- get_file_content(file_id="abc123", query="What is the revenue?") - ask specific question
-- get_file_content(file_id="abc123", pages=[1, 3]) - retrieve specific pages"""
+FILE_TOOL_NAMES = set(TOOL_GROUPS["files"])
 
 # Added when the Neo4j knowledge graph tools are enabled
 GRAPH_PROMPT = """## Knowledge Graph:
@@ -126,7 +126,7 @@ def build_system_prompt(
         if "web_search" in names:
             tool_paragraph += " " + WEB_SEARCH_PROMPT
         sections.append(tool_paragraph)
-    if "get_file_content" in names:
+    if names & FILE_TOOL_NAMES:
         sections.append(FILE_ACCESS_PROMPT)
     if names & GRAPH_TOOL_NAMES:
         sections.append(GRAPH_PROMPT)

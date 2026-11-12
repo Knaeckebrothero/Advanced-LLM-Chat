@@ -27,7 +27,7 @@ from ..models.message import AgentStep
 from . import anthropic_chat, openai_chat
 from .client import get_client
 from .common import STOP_MAX_TOKENS, STOP_REFUSAL, TOOL_ERROR_KEY, ModelTurn, ToolCall
-from .tools import ToolError, ToolInputError, ToolRegistry, ToolText, format_tool_output, with_step_sink
+from .tools import ToolError, ToolInputError, ToolRegistry, ToolText, tool_message_content, with_step_sink
 from .types import KIND_ANTHROPIC, ModelConfig, Usage
 
 log = logging.getLogger(__name__)
@@ -194,7 +194,8 @@ async def _run_tools(
                 task.cancel()
 
     for call, (output, is_error) in zip(calls, results):
-        message = {"role": "tool", "tool_call_id": call.id, "content": format_tool_output(output)}
+        # Text, or text and image parts for a result with images (the adapters place them)
+        message = {"role": "tool", "tool_call_id": call.id, "content": tool_message_content(output)}
         if is_error:
             message[TOOL_ERROR_KEY] = True
         history.append(message)

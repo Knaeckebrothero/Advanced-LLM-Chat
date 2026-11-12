@@ -1,0 +1,11 @@
+@if (shown.length) {
+  <div class="answer-files answer-files--shown" [class.is-single]="shown.length === 1" role="group"
+       [attr.aria-label]="'files.shown' | translate">
+    <app-file-tile *ngFor="let file of shown; trackBy: trackFile" [file]="file" size="large"></app-file-tile>
+  </div>
+}
+@if (created.length) {
+  <div class="answer-files answer-files--created" role="group" [attr.aria-label]="'files.created' | translate">
+    <app-file-tile *ngFor="let file of created; trackBy: trackFile" [file]="file" size="small"></app-file-tile>
+  </div>
+}
