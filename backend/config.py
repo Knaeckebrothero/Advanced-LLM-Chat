@@ -113,6 +113,11 @@ LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 # DEFAULT_CONTEXT_WINDOW for models without one), at most HISTORY_MAX_MESSAGES
 DEFAULT_CONTEXT_WINDOW = int(os.getenv("DEFAULT_CONTEXT_WINDOW", "32768"))
 HISTORY_MAX_MESSAGES = int(os.getenv("HISTORY_MAX_MESSAGES", "1000"))
+# Earlier answers go back to the model with their tool calls and the results (backend/llm/tool_record.py),
+# so it knows what it did. Off: only their text, as before. A result longer than
+# HISTORY_TOOL_RESULT_CHARS is cut in later turns (0: never); the model can call the tool again.
+HISTORY_TOOL_CALLS = os.getenv("HISTORY_TOOL_CALLS", "true").lower() == "true"
+HISTORY_TOOL_RESULT_CHARS = int(os.getenv("HISTORY_TOOL_RESULT_CHARS", "20000"))
 
 # Memory review (backend/services/memory_review.py): once a conversation with a knowledge base
 # agent has had no new message for MEMORY_REVIEW_IDLE_MINUTES, a model reads what was said since

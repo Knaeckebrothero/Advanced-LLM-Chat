@@ -54,6 +54,17 @@ CREATE TABLE IF NOT EXISTS messages (
     usage JSONB                  -- {"inputTokens", "outputTokens", "reasoningTokens", "cachedInputTokens", "cost", "currency"}
 );
 
+-- name: create_message_tool_records_table
+-- The tool record of an answer: the model's tool calls and their results as the model got them,
+-- which later answers get back as part of the history (backend/llm/tool_record.py). Only answers
+-- that called tools have one. Kept apart from messages, so it never travels with a message list.
+CREATE TABLE IF NOT EXISTS message_tool_records (
+    message_id BIGINT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    record JSONB NOT NULL        -- messages in the OpenAI format
+);
+CREATE INDEX IF NOT EXISTS idx_message_tool_records_conversation ON message_tool_records(conversation_id);
+
 -- name: create_conversation_summaries_table
 -- The summary the model gets instead of a conversation's oldest messages, when they no longer
 -- fit its context window (backend/services/conversation_summary.py). Deleted when a message it

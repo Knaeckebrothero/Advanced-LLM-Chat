@@ -14,12 +14,18 @@ conversation's owner didn't upload are left out, so a message can't make the
 model read another user's file. System messages are not part of the history:
 they are instructions to the model and go into the system prompt
 (system_instructions()), so they are never cut or summarized.
+
+An earlier answer that called tools goes back with its tool record (backend/llm/tool_record.py):
+the tool calls and their results as real messages, then its text. Its entry carries them under
+TOOL_RECORD_KEY, and assemble() puts them in place of the entry; entry_messages() and
+entry_tokens() are for code that reads entries. With HISTORY_TOOL_CALLS off, only the text.
 """
 
 import json
 import logging
 from typing import List, Optional, Tuple, Union
 
+from .. import config as settings
 from ..config import DEFAULT_CONTEXT_WINDOW, HISTORY_MAX_MESSAGES
 from ..llm.tools import ToolRegistry
 from ..llm.types import ModelConfig
@@ -41,6 +47,14 @@ logger = logging.getLogger(__name__)
 
 # One message of the history: its id (the order of the conversation) and the message in the OpenAI format
 HistoryEntry = Tuple[int, dict]
+
+# On the entry of an answer that called tools: the messages it stands for (its tool record,
+# long results cut). The entry's own content is the answer's whole text, as for other answers.
+TOOL_RECORD_KEY = "_tool_record"
+RESULT_CUT_NOTE = (
+    "\n\n[The rest of this result ({count} more characters) is not kept in later turns. "
+    "Call the tool again to see it.]"
+)
 
 # The summary goes back as a user message, ahead of the messages that follow it word for word
 SUMMARY_LEAD_IN = (
@@ -68,6 +82,43 @@ def estimate_tokens(content: Union[str, List[dict], None]) -> int:
             for part in content
         )
     return 0
+
+
+def message_tokens(message: dict) -> int:
+    """Rough token count of one message: its content, its tool calls and reasoning passed back."""
+    tokens = estimate_tokens(message.get("content"))
+    if message.get("tool_calls"):
+        tokens += estimate_tokens(json.dumps(message["tool_calls"], ensure_ascii=False))
+    if message.get("reasoning_content"):
+        tokens += estimate_tokens(message["reasoning_content"])
+    return tokens
+
+
+def entry_messages(message: dict) -> List[dict]:
+    """The messages an entry's message stands for: an answer's tool record, else the message itself."""
+    return message.get(TOOL_RECORD_KEY) or [message]
+
+
+def entry_tokens(message: dict) -> int:
+    """Rough token count of an entry's message as it is sent (entry_messages())."""
+    return sum(message_tokens(part) for part in entry_messages(message))
+
+
+def replayed_record(tool_record: List[dict], max_result_chars: Optional[int] = None) -> List[dict]:
+    """
+    A stored tool record as it goes back to the model: results longer than max_result_chars
+    (HISTORY_TOOL_RESULT_CHARS; 0: no limit) are cut, with a note of how much is missing.
+    """
+    limit = settings.HISTORY_TOOL_RESULT_CHARS if max_result_chars is None else max_result_chars
+    if limit <= 0:
+        return tool_record
+    replayed = []
+    for message in tool_record:
+        content = message.get("content")
+        if message.get("role") == "tool" and isinstance(content, str) and len(content) > limit:
+            message = {**message, "content": content[:limit] + RESULT_CUT_NOTE.format(count=len(content) - limit)}
+        replayed.append(message)
+    return replayed
 
 
 def summary_message(summary: str) -> dict:
@@ -102,6 +153,7 @@ class ConversationHistoryBuilder:
     - Latest user message: full file content included (images only for vision models)
     - Previous messages: file content replaced with placeholders
     - Files the conversation's owner didn't upload: left out
+    - Answers that called tools: with their tool calls and the results (their tool record)
     """
 
     def __init__(self, db):
@@ -342,6 +394,7 @@ class ConversationHistoryBuilder:
         available_attachments = []
         latest_user_idx = self._find_latest_user_message_idx(raw_messages)
         readable_file_ids = self._readable_file_ids(conversation_id, raw_messages)
+        tool_records = self.db.get_tool_records(conversation_id) if settings.HISTORY_TOOL_CALLS else {}
 
         for idx, msg in enumerate(raw_messages):
             is_latest_user = (idx == latest_user_idx)
@@ -359,9 +412,14 @@ class ConversationHistoryBuilder:
                 # Instructions to the model: they go into the system prompt (system_instructions())
                 continue
             else:
-                # AI/assistant message - extract text only; skip empty ones (failed answers)
+                # AI/assistant message: its text, and the tool calls it made with their results.
+                # Skip empty ones (failed answers), unless tools ran: the model should know they did
                 text = self._extract_text(msg)
-                if text and text.strip():
+                tool_record = tool_records.get(msg['id'])
+                if tool_record:
+                    entries.append((msg['id'], {"role": "assistant", "content": text or "",
+                                                TOOL_RECORD_KEY: replayed_record(tool_record)}))
+                elif text and text.strip():
                     entries.append((msg['id'], {"role": "assistant", "content": text}))
 
         logger.debug(f"Built history: {len(entries)} messages, {len(available_attachments)} attachments")
@@ -382,6 +440,29 @@ class ConversationHistoryBuilder:
             conversation_id, before_id=before_message['id'] if before_message is not None else None)
         return [text for text in (self._extract_text(row).strip() for row in rows) if text]
 
+    def fit(
+        self,
+        conversation_id: str,
+        entries: List[HistoryEntry],
+        summary: Optional[dict] = None,
+        token_budget: Optional[int] = None
+    ) -> List[dict]:
+        """
+        The messages of the newest entries that fit token_budget next to the summary (if any),
+        one per entry: an answer with a tool record stays whole, or is left out whole.
+
+        The entries must be the ones after the summary (build_entries() with it).
+        """
+        messages = [message for _, message in entries]
+        if token_budget is None:
+            return messages
+        summary_tokens = estimate_tokens(summary_message(summary['content'])["content"]) if summary else 0
+        fitting = self._fit_to_budget(messages, token_budget - summary_tokens)
+        if len(fitting) < len(messages):
+            logger.info(f"History of {conversation_id} trimmed to the newest {len(fitting)} of "
+                        f"{len(messages)} messages (budget {token_budget} tokens)")
+        return fitting
+
     def assemble(
         self,
         conversation_id: str,
@@ -390,27 +471,24 @@ class ConversationHistoryBuilder:
         token_budget: Optional[int] = None
     ) -> List[dict]:
         """
-        The history to send: the summary (if any) and the newest entries that fit token_budget.
+        The history to send: the summary (if any) and the newest entries that fit token_budget,
+        an answer that called tools as its tool calls, their results and its text.
 
         The entries must be the ones after the summary (build_entries() with it).
         """
-        messages = [message for _, message in entries]
         prefix = [summary_message(summary['content'])] if summary else []
-        if token_budget is not None:
-            fitting = self._fit_to_budget(messages, token_budget - sum(estimate_tokens(m["content"]) for m in prefix))
-            if len(fitting) < len(messages):
-                logger.info(f"History of {conversation_id} trimmed to the newest {len(fitting)} of "
-                            f"{len(messages)} messages (budget {token_budget} tokens)")
-            messages = fitting
-        return prefix + messages
+        fitting = self.fit(conversation_id, entries, summary, token_budget)
+        return prefix + [part for message in fitting for part in entry_messages(message)]
 
     @staticmethod
     def _fit_to_budget(messages: List[dict], token_budget: int) -> List[dict]:
-        """The newest messages that fit token_budget; the latest user message and any after it always stay."""
+        """
+        The newest entry messages that fit token_budget; the latest user message and any after it always stay.
+        """
         start = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=len(messages))
-        total = sum(estimate_tokens(m["content"]) for m in messages[start:])
+        total = sum(entry_tokens(m) for m in messages[start:])
         while start > 0:
-            cost = estimate_tokens(messages[start - 1]["content"])
+            cost = entry_tokens(messages[start - 1])
             if total + cost > token_budget:
                 break
             total += cost

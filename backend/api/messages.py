@@ -46,8 +46,9 @@ from backend.catalog.resolver import (
 from backend.services import knowledge_base as kb
 from backend.services.mcp.tools import McpToolset, Notice, notice_step, tools_for_answer as mcp_tools_for_answer
 from backend.services.llm import generate_reply
+from backend.llm.tool_record import with_text as record_with_text
 from backend.services.conversation_history import (
-    ConversationHistoryBuilder, HistoryEntry, estimate_tokens, history_token_budget
+    ConversationHistoryBuilder, HistoryEntry, entry_tokens, estimate_tokens, history_token_budget, summary_message
 )
 from backend.config import DEFAULT_CONTEXT_WINDOW
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
@@ -531,7 +532,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
     Handles the patching of a message within a conversation.
 
     The content is the message's text: a text message keeps its attachments, an
-    agent message keeps its steps (only the answer text changes). With
+    agent message keeps its steps and its tool record (only the answer text changes). With
     deleteFollowing, the later messages are deleted too, so the edited message
     can be answered again (stream-generate).
     """
@@ -577,6 +578,9 @@ async def patch_message(request_body: MessagePatch, response: Response,
             if isinstance(stored, dict) and stored.get('attachments'):
                 content = json.dumps({**stored, 'content': request_body.content})
 
+        # An answer keeps its tool calls and their results; the new text is its only text
+        stored_record = db.get_tool_record(request_body.id) if current.get('type') == 'agent' else None
+
         # Update with version increment
         updated_message = db.update_message(
             message_id=request_body.id,
@@ -584,7 +588,8 @@ async def patch_message(request_body: MessagePatch, response: Response,
             content=content,
             version=request_body.version,
             last_modified=int(time.time()),
-            delete_following=request_body.deleteFollowing
+            delete_following=request_body.deleteFollowing,
+            tool_record=record_with_text(stored_record, request_body.content) if stored_record else None
         )
 
         if not updated_message:
@@ -1152,6 +1157,7 @@ async def stream_generate(
         steps = []  # Step dicts in order of first appearance (not models)
         step_positions: dict[str, int] = {}  # Step id -> index in steps, for replaced steps
         final_response = ""
+        answer_record: list = []  # The answer's tool calls and results as the model got them
         usage: Optional[Usage] = None
         summary_usage: Optional[Usage] = None
 
@@ -1289,6 +1295,8 @@ async def stream_generate(
                         "event": "token",
                         "data": event_data
                     }
+                elif event_type == "tool_record":
+                    answer_record = event_data
                 elif event_type == "usage":
                     usage = event_data
 
@@ -1304,7 +1312,8 @@ async def stream_generate(
                 steps=steps,  # Stored as JSONB array
                 model_id=config.id,
                 model_name=config.display_name,
-                usage=usage_data
+                usage=usage_data,
+                tool_record=answer_record
             )
 
             # Signal completion
@@ -1338,7 +1347,8 @@ async def stream_generate(
                 steps=steps,
                 model_id=config.id,
                 model_name=config.display_name,
-                usage=total_usage().to_api(config) if total_usage() else None
+                usage=total_usage().to_api(config) if total_usage() else None,
+                tool_record=answer_record  # The tools that ran before the error did run
             )
 
             yield {
@@ -1429,8 +1439,9 @@ async def context_size(
 
     Counts what stream-generate would send now: the system prompt, the tool definitions
     and the history (the summary, then the newest messages that fit the model's context
-    window, the latest user message with its attachments). Nothing is sent to a model,
-    and the agent's MCP servers are not asked for their tools.
+    window, the latest user message with its attachments, earlier answers with their tool
+    calls and the results). Nothing is sent to a model, and the agent's MCP servers are not
+    asked for their tools.
 
     :raises HTTPException: 403 without access to the conversation or the model, 503 without a model.
     """
@@ -1444,12 +1455,14 @@ async def context_size(
     summary = db.get_conversation_summary(conversation_id)
     entries, _ = await history_builder.build_entries(
         conversation_id, include_latest_attachments=True, supports_vision=config.supports_vision, summary=summary)
-    history = history_builder.assemble(conversation_id, entries, summary, token_budget)
+    kept = history_builder.fit(conversation_id, entries, summary, token_budget)
 
     system_tokens = estimate_tokens(system_prompt)
     tool_tokens = estimate_tokens(json.dumps(tools.openai_schemas())) if tools else 0
-    history_tokens = sum(estimate_tokens(message["content"]) for message in history)
-    message_count = len(history) - (1 if summary else 0)
+    history_tokens = sum(entry_tokens(message) for message in kept)
+    if summary:
+        history_tokens += estimate_tokens(summary_message(summary['content'])["content"])
+    message_count = len(kept)
     return ContextSize(
         modelId=config.id,
         contextWindow=config.context_window or DEFAULT_CONTEXT_WINDOW,
