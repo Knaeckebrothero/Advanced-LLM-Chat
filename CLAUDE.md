@@ -53,6 +53,8 @@ python backend/app_init.py --prod            # Production migration (add missing
 - `python backend/services/tests/mcp_test.py`: MCP servers against real MCP servers of the SDK (HTTP, SSE, stdio, headers, a fake OAuth authorization server) and a real Postgres, in a `<POSTGRES_DB>_mcp_test` database it creates itself; also the files of conversations (tools' images, uploads, previews, the files API)
 - `python backend/services/tests/knowledge_base_test.py`: the knowledge base and memory tools, agents' own knowledge bases, the memory review (fake model server), the Obsidian export and the `/api/kb` endpoints against a real Postgres, in a `<POSTGRES_DB>_kb_test` database it creates itself
 - `backend/catalog/tests/catalog_api_test.py`: catalog end-to-end test against a backend on its own `*_test` database (see its docstring)
+- `python backend/services/tests/upload_safety_test.py`: the limits of what reading a file may cost (`docs/files.md`, "Limits"), offline, with files it builds itself: PDFs with huge pages or that take minutes or gigabytes, images that claim millions of pixels, the local Whisper model as a fake
+- `python backend/security/tests/guest_limits_test.py`: what guests may use (the counters per client address and every limited endpoint), the error texts for guests, logins and logout from another site's page, the largest request; through the real app and a real Postgres, in a `<POSTGRES_DB>_guest_test` database it creates itself
 - `backend/security/tests/oidc_test.py`: login through Keycloak end-to-end, against the bundled Keycloak and a backend in `AUTH_MODE=oidc` on a `*_test` database (see its docstring)
 - `python -m backend.llm.smoke_test --model <id>`: real API calls against one catalog model
 
@@ -68,7 +70,7 @@ POSTGRES_USER=llm_chat
 POSTGRES_PASSWORD=llm_chat_dev_password
 ```
 
-Login: `AUTH_MODE` is `oidc` (an OpenID Connect provider such as Keycloak, the `OIDC_*` settings), `mock` (any email, no password: development only, set in the dev `.env`) or `none` (the default: guests only). Guests can always chat. See `docs/authentication.md`, also for the optional bundled Keycloak (`docker/docker-compose.keycloak.yml`).
+Login: `AUTH_MODE` is `oidc` (an OpenID Connect provider such as Keycloak, the `OIDC_*` settings), `mock` (any email, no password: development only, set in the dev `.env`) or `none` (the default: guests only). Guests can always chat; what they use is counted per client address (`backend/security/guest_limits.py`, the `GUEST_*` settings: answers, titles, speech, uploads, stored messages, logins), so every endpoint a guest can reach that costs a model call or stores data needs one of these limits. See `docs/authentication.md`, also for the optional bundled Keycloak (`docker/docker-compose.keycloak.yml`).
 
 Model catalog: providers are defined in `catalog/models.json` (`MODEL_CATALOG_FILE`, the default) and their keys are read only from the env vars they name (`CORTECS_API_KEY`, `ANTHROPIC_API_KEY`, `MODEL_ROUTER_API`/`MODEL_ROUTER_KEY`, ...). Admins (who may edit models and agents on the Agents page, `/agents`) are users with `OIDC_ADMIN_ROLE`, or listed in `ADMIN_EMAILS` (with `oidc` only if the email is verified). Restart the backend after changing `.env`.
 
@@ -148,13 +150,14 @@ backend/
 │   ├── memory_dream.py   # Nightly consolidation: weekly journal, tidied memory, patterns (CronJob; python -m)
 │   ├── knowledge_base_export.py # The notes as a zip that opens as an Obsidian vault
 │   ├── file_store.py     # The stored files (docs/files.md): uploads and tools' files per conversation, previews, the scaled image for a vision model
+│   ├── document_handler.py  # PDFs: text and page images, made in a process of its own with limits (pdf_worker.py), since a PDF comes from anybody
 │   ├── vision_helper.py  # Image analysis for text-only models
 │   ├── audio_handler.py  # Whisper transcription (API or local)
 │   ├── tts_handler.py    # Text-to-speech generation
 │   ├── tts_preprocessor.py  # Converts markdown/code to speech-friendly text
 │   ├── mcp/              # MCP servers (docs/mcp.md): store, servers (validation, ${VAR}), pool (connections per server and user), oauth (sign-in, token refresh), tools (an answer's MCP tools), media (the images, audio and PDFs of a tool result, kept as files)
 │   └── tools/            # Tool implementations (files, web search, read-only knowledge graph, knowledge base)
-├── security/         # Sessions, login through an OIDC provider (oidc.py), CSRF, logging, secrets.py (ENCRYPTION_KEY)
+├── security/         # Sessions, login through an OIDC provider (oidc.py), CSRF, the guests' limits (guest_limits.py), error texts for clients (errors.py), logging, secrets.py (ENCRYPTION_KEY)
 └── utils/            # Certificates, hashing
 ```
 
