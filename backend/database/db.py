@@ -242,10 +242,49 @@ def backfill_file_conversations(conn: Connection) -> int:
                for message_id, conversation_id, content in conn.execute(referencing).fetchall())
 
 
+def messages_lack_memory(engine: Engine) -> bool:
+    """Whether messages has no memory_vault yet: this run of the schema adds it (docs/past_chats.md)."""
+    inspector = inspect(engine)
+    if not inspector.has_table("messages"):
+        return False  # A new database: no messages to fill in
+    return "memory_vault" not in {column["name"] for column in inspector.get_columns("messages")}
+
+
+def backfill_message_memory(conn: Connection) -> int:
+    """
+    Give the messages stored before messages belonged to a memory (docs/past_chats.md) the one their
+    conversation's agent has now, the best there is. For an agent that was deleted already: its own
+    knowledge base if the user has notes in it, else the shared one if a note was written to it from
+    the conversation, else none. Runs once, in the transaction that adds messages.memory_vault
+    (init_tables() or db_init), after the schema created conversation_memory_vault().
+
+    Returns:
+        Number of messages that got a memory.
+    """
+    return conn.execute(text("""
+        UPDATE messages m
+        SET memory_vault = found.vault
+        FROM (
+            SELECT c.id, CASE
+                WHEN p.id IS NOT NULL THEN conversation_memory_vault(c.id)
+                WHEN EXISTS (SELECT 1 FROM kb_notes n WHERE n.user_id = c."userId" AND n.vault = c.persona_id)
+                    THEN c.persona_id
+                WHEN EXISTS (SELECT 1 FROM kb_note_revisions r JOIN kb_notes n ON n.id = r.note_id
+                             WHERE r.conversation_id = c.id AND n.vault = 0)
+                    THEN 0
+            END AS vault
+            FROM conversations c
+            LEFT JOIN personas p ON p.id = c.persona_id
+            WHERE c.persona_id IS NOT NULL
+        ) AS found
+        WHERE found.id = m."conversationId" AND found.vault IS NOT NULL AND m.memory_vault IS NULL
+    """)).rowcount
+
+
 def prepare_database(engine: Engine) -> None:
     """
     Get the database ready for the schema: enable pgvector, and on the first start on the pgvector
-    image rebuild the indexes of a database that was created under Alpine.
+    image rebuild the indexes of a database that was created under Alpine; enable pg_trgm.
 
     The bundled Postgres moved from postgres:16-alpine (musl) to pgvector/pgvector:pg16 (Debian,
     glibc). glibc sorts text differently, so the indexes on text columns of a database created under
@@ -257,30 +296,52 @@ def prepare_database(engine: Engine) -> None:
     owner), it is logged and tried again on the next start.
 
     Nothing uses the vector extension yet (embeddings for the knowledge base are planned,
-    docs/knowledge_base.md); a server without pgvector is only logged.
+    docs/knowledge_base.md); a server without pgvector is only logged. pg_trgm is the index of the
+    search over past chats (docs/past_chats.md); without it the search scans the messages.
     """
     with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
-        try:
-            if conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")).first():
-                return
-            if not conn.execute(text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")).first():
-                log.info("This Postgres server has no pgvector (image pgvector/pgvector:pg16 has it); "
-                         "nothing needs it yet")
-                return
-            name, recorded, actual = conn.execute(text(
-                "SELECT datname, datcollversion, pg_database_collation_actual_version(oid) "
-                "FROM pg_database WHERE datname = current_database()"
-            )).one()
-            if recorded is None and actual is not None:
-                log.warning(f"Database {name} has no collation version but the server reports {actual}, as after "
-                            f"the switch from postgres:16-alpine: rebuilding its indexes")
-                conn.execute(text(f"REINDEX DATABASE {conn.dialect.identifier_preparer.quote(name)}"))
-                log.info(f"Rebuilt the indexes of database {name}")
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            log.info(f"Created the vector extension in database {name}")
-        except Exception as e:
-            log.error(f"Could not prepare the database (index rebuild after the switch from postgres:16-alpine, "
-                      f"vector extension); trying again on the next start: {e}")
+        _prepare_vector(conn)
+        _create_trigram_extension(conn)
+
+
+def _prepare_vector(conn: Connection) -> None:
+    """The vector extension, with the index rebuild after the switch from Alpine (prepare_database())."""
+    try:
+        if conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")).first():
+            return
+        if not conn.execute(text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")).first():
+            log.info("This Postgres server has no pgvector (image pgvector/pgvector:pg16 has it); "
+                     "nothing needs it yet")
+            return
+        name, recorded, actual = conn.execute(text(
+            "SELECT datname, datcollversion, pg_database_collation_actual_version(oid) "
+            "FROM pg_database WHERE datname = current_database()"
+        )).one()
+        if recorded is None and actual is not None:
+            log.warning(f"Database {name} has no collation version but the server reports {actual}, as after "
+                        f"the switch from postgres:16-alpine: rebuilding its indexes")
+            conn.execute(text(f"REINDEX DATABASE {conn.dialect.identifier_preparer.quote(name)}"))
+            log.info(f"Rebuilt the indexes of database {name}")
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        log.info(f"Created the vector extension in database {name}")
+    except Exception as e:
+        log.error(f"Could not prepare the database (index rebuild after the switch from postgres:16-alpine, "
+                  f"vector extension); trying again on the next start: {e}")
+
+
+def _create_trigram_extension(conn: Connection) -> None:
+    """pg_trgm for the index of the search over past chats (prepare_database())."""
+    try:
+        if conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'")).first():
+            return
+        if not conn.execute(text("SELECT 1 FROM pg_available_extensions WHERE name = 'pg_trgm'")).first():
+            log.info("This Postgres server has no pg_trgm: the search over past chats scans the messages")
+            return
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        log.info("Created the pg_trgm extension (the index of the search over past chats)")
+    except Exception as e:
+        log.error(f"Could not create the pg_trgm extension, the search over past chats scans the messages; "
+                  f"trying again on the next start: {e}")
 
 
 class Database:
@@ -527,6 +588,7 @@ class Database:
         # that adds its conversation_id links them to their conversations
         backfill_file_owners = not inspect(self.engine).has_table("uploaded_files")
         link_files = files_lack_conversations(self.engine)
+        fill_memory = messages_lack_memory(self.engine)
 
         with self.connection() as conn:
             for block in blocks:
@@ -548,6 +610,10 @@ class Database:
                 linked = backfill_file_conversations(conn)
                 log.info(f"Files belong to conversations now: {linked} existing file(s) got the conversation "
                          f"whose message attaches them")
+            if fill_memory:
+                filled = backfill_message_memory(conn)
+                log.info(f"Messages belong to a memory now: {filled} existing message(s) got the one of their "
+                         f"conversation's agent")
 
         log.info("Database tables initialized successfully")
 
@@ -1166,10 +1232,15 @@ class Database:
                 set_={**values, "updated_at": func.now()}))
 
     def set_memory_review(self, conversation_id: str, reviewed_until: Optional[int] = None,
-                          failed: bool = False) -> None:
+                          failed: bool = False, vault: Optional[int] = None) -> None:
         """
         Record a memory review: the newest message id it read (None keeps the stored one), and
         whether it failed (the time, so the next try waits) or not (clears a failure).
+
+        Args:
+            vault: The memory the review saved to. After a review that read up to reviewed_until,
+                the messages up to there that belong to no memory join this one, so its agents can
+                search them (docs/past_chats.md); messages with a memory keep theirs.
         """
         values = {"memory_review_failed_at": datetime.now(timezone.utc).replace(tzinfo=None) if failed else None,
                   "updatedAt": conversations.c.updatedAt}  # No onupdate now(); the trigger skips these columns
@@ -1177,6 +1248,15 @@ class Database:
             values["memory_reviewed_until"] = reviewed_until
         with self.connection() as conn:
             conn.execute(update(conversations).where(conversations.c.id == conversation_id).values(**values))
+            if vault is not None and reviewed_until is not None and not failed:
+                claimed = conn.execute(update(messages).where(
+                    messages.c.conversationId == conversation_id,
+                    messages.c.id <= reviewed_until,
+                    messages.c.memory_vault.is_(None),
+                ).values(memory_vault=vault, updated_at=messages.c.updated_at)).rowcount  # Not a change of the message
+                if claimed:
+                    log.info(f"Memory review of conversation {conversation_id}: {claimed} message(s) joined "
+                             f"memory {vault}")
 
     def get_message_count(self, conversation_id: str) -> int:
         """

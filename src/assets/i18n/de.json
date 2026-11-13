@@ -249,6 +249,7 @@
       "web_search": "Websuche",
       "knowledge_graph": "Wissensgraph",
       "knowledge_base": "Wissensdatenbank",
+      "past_chats": "Frühere Chats",
       "user_mcp": "Eigene MCP-Server der Nutzer"
     },
     "untrustedNotice": "Dieser Anbieter speichert deine Nachrichten möglicherweise oder trainiert damit. Teile keine persönlichen Daten.",
@@ -413,6 +414,7 @@
         "toolUnavailableUnknown": "kein Grund angegeben",
         "toolOptIn": "Nur wenn hier ausgewählt, und nur für angemeldete Nutzer: Jeder hat eigene Notizen",
         "toolOptInUserMcp": "Nur wenn hier ausgewählt, und nur für angemeldete Nutzer: die Server, die jeder Nutzer auf der Seite MCP-Server hinzufügt",
+        "toolOptInPastChats": "Nur wenn hier ausgewählt, zusammen mit der Wissensdatenbank: Der Agent durchsucht und liest die früheren Chats des Nutzers aus seinem Gedächtnis",
         "ownMemory": "Eigenes Gedächtnis",
         "ownMemoryHint": "Aus: Der Agent nutzt die gemeinsame Wissensdatenbank und das Gedächtnis des Nutzers, wie die anderen Agenten. An: Er führt für jeden Nutzer eigene, die andere Agenten nicht sehen (z. B. für persönliche Themen).",
         "noToolsHint": "Ohne Werkzeuge antwortet der Agent nur aus dem Gespräch heraus.",
@@ -570,6 +572,7 @@
     "noteFailed": "Die Notiz konnte nicht geladen werden.",
     "back": "Zurück zur Liste",
     "openNote": "Notiz öffnen",
+    "openChat": "Chat öffnen",
     "note": {
       "edit": "Bearbeiten",
       "history": "Verlauf",

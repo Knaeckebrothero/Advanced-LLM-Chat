@@ -4,6 +4,7 @@ import { IAgentStep, AgentStepType, AgentStatus } from '../../../data/models/mes
 import { IFileRef } from '../../../data/models/file.model';
 import { stepFiles } from '../answer-files/answer-files.component';
 import { AuthService } from '../../../auth/auth.service';
+import { ChatStateService } from '../../../services/chat-state.service';
 import { elicitationOf } from './elicitation-card/elicitation-card.component';
 
 // Id prefix of the step that shows the oldest messages being summarized (backend/api/messages.py)
@@ -42,7 +43,20 @@ export class AgentStepsComponent {
 
   isExpanded = false;
 
-  constructor(private translate: TranslateService, private auth: AuthService) {}
+  constructor(private translate: TranslateService, private auth: AuthService, private chatState: ChatStateService) {}
+
+  /** The past chat a tool's result read (chat_read, docs/past_chats.md), to open it. */
+  chatOf(step: IAgentStep): string | null {
+    const chat = step.type === 'tool_result' ? step.metadata?.['chat'] : null;
+    return typeof chat === 'string' && chat ? chat : null;
+  }
+
+  /** Open that chat in the chat view (as the Knowledge base page opens the chat a note came from). */
+  openChat(conversationId: string, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();  // In the step's header: don't toggle the step
+    void this.chatState.loadConversation(conversationId);
+  }
 
   /**
    * Get the current (most recent) step
