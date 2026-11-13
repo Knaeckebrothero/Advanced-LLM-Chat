@@ -98,8 +98,11 @@ services:
     environment:
       # SSL/TLS
       - USE_DEV_CERTS=True
-      # Reverse proxy whose X-Forwarded-For header is trusted (guest rate limit by IP)
+      # Reverse proxy whose X-Forwarded-For header is trusted (guests are limited per client address)
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      # What a guest's address may use (docs/authentication.md has the other limits, GUEST_MAX_...)
+      - GUEST_LIMIT_HOURS=${GUEST_LIMIT_HOURS:-3}
+      - GUEST_MAX_ANSWERS=${GUEST_MAX_ANSWERS:-5}
       # Uploaded files, the TTS cache and logs, on the volume below
       - FILESYSTEM_PATH=/app/.filesystem
       - FILES_DIR=/app/.filesystem/files
@@ -153,6 +156,8 @@ services:
       - VISION_MODEL=${VISION_MODEL:-gpt-4o-mini}
       # Audio Transcription
       - USE_LOCAL_WHISPER=${USE_LOCAL_WHISPER:-false}
+      # false: a failed API transcription fails instead of loading the local model (public servers)
+      - WHISPER_LOCAL_FALLBACK=${WHISPER_LOCAL_FALLBACK:-true}
       - LOCAL_WHISPER_MODEL=${LOCAL_WHISPER_MODEL:-base}
       - WHISPER_BASE_URL=${WHISPER_BASE_URL:-}
       - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}

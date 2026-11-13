@@ -1,17 +1,73 @@
 """
-HTTP middleware for logging, CSRF protection, and security headers.
+HTTP middleware for logging, CSRF protection, security headers and the size of requests.
 """
 import logging
 import os
 import time
 import secrets
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from backend.security.csrf import validate_csrf_token
 from backend.security.logging import crud_logger
 from backend.config import CORS_ORIGINS
 
 log = logging.getLogger(__name__)
+
+
+class RequestSizeLimit:
+    """
+    Refuses requests whose body is larger than the server takes, with 413.
+
+    Without it, FastAPI reads any body it is sent: JSON into memory and uploads onto the
+    disk, before an endpoint gets to check a size. A body that declares its size
+    (Content-Length) is refused before it is read; one sent in chunks is refused as soon
+    as it has grown too large.
+
+    :param app: The ASGI app to wrap.
+    :param max_bytes: The largest body of a request.
+    :param upload_path: The path of the file upload, which has its own limit.
+    :param upload_max_bytes: The largest body of an upload.
+    """
+
+    def __init__(self, app, max_bytes: int, upload_path: str, upload_max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+        self.upload_path = upload_path
+        self.upload_max_bytes = upload_max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] in ("GET", "HEAD", "OPTIONS"):
+            await self.app(scope, receive, send)
+            return
+
+        limit = self.upload_max_bytes if scope["path"] == self.upload_path else self.max_bytes
+        declared = next((value for name, value in scope["headers"] if name == b"content-length"), None)
+        if declared is not None:
+            try:
+                too_large = int(declared) > limit
+            except ValueError:
+                too_large = True
+            if too_large:
+                log.warning(f"Refused {scope['method']} {scope['path']}: a body of {declared.decode('latin-1')} "
+                            f"bytes, over the limit of {limit}")
+                response = JSONResponse({"detail": "Request too large"}, status_code=413)
+                await response(scope, receive, send)
+                return
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    log.warning(f"Refused {scope['method']} {scope['path']}: its body grew over the limit of {limit}")
+                    # Raised where the endpoint reads the body, so it becomes a normal 413 response
+                    raise HTTPException(status_code=413, detail="Request too large")
+            return message
+
+        await self.app(scope, limited_receive, send)
 
 
 async def logging_middleware(request: Request, call_next):

@@ -7,13 +7,14 @@ from datetime import datetime, timedelta, UTC
 from typing import Optional
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from fastapi.responses import RedirectResponse
-from backend.config import (AUTH_MODE, FRONTEND_URL, GUEST_SESSION_TIMEOUT_HOURS, OIDC_DISPLAY_NAME,
-                            OIDC_REDIRECT_URI, SESSION_TIMEOUT_HOURS)
+from backend.config import (AUTH_MODE, FRONTEND_URL, GUEST_MAX_HOURS, GUEST_SESSION_TIMEOUT_HOURS,
+                            OIDC_DISPLAY_NAME, OIDC_REDIRECT_URI, SESSION_TIMEOUT_HOURS)
 from backend.models.auth import MockLoginRequest, LoginResponse
 from backend.security import oidc
 from backend.security.auth import (
     client_ip, create_session, validate_session, delete_session, get_current_user, is_admin
 )
+from backend.security.guest_limits import count_request
 from backend.security.logging import log_security_event
 from backend.database import db
 
@@ -79,49 +80,22 @@ async def guest_login(req: Request, response: Response):
 
     The IP address comes from the connection (client_ip); a body sent by older
     clients ({"ip_address": ...}) is ignored, so it can't be used to dodge the limit.
+    Guest logins have their own limit (backend/security/guest_limits.py); how many
+    answers the address has used doesn't matter here, the chat tells the guest.
 
     :param req: The incoming HTTP request object used to access request-related data.
     :type req: Request
     :param response: The HTTP response object for setting cookies and headers.
     :type response: Response
-    :return: An object containing guest user information, a success message, and the session token.
+    :return: An object containing guest user information and a success message.
     :rtype: LoginResponse
     :raises HTTPException: If the rate limit is exceeded based on the guest's IP address.
     """
     ip_address = client_ip(req)
     logger.debug(f"Guest login attempt from IP: {ip_address}")
 
-    # If the server doesn't know the address, use a fallback
-    if not ip_address:
-        ip_address = f"guest_{secrets.token_hex(4)}"
-        logger.debug(f"Unknown IP, generated fallback identifier: {ip_address}")
-
-    now = datetime.now(UTC)
-    limit_duration = timedelta(hours=3)
-    max_requests = 5
-
-    usage = db.get_guest_usage(ip_address)
-
-    if usage:
-        last_request_at = usage["last_request_at"]
-        if isinstance(last_request_at, str):
-            last_request_at = datetime.fromisoformat(last_request_at)
-
-        # Ensure timezone awareness
-        if last_request_at.tzinfo is None:
-            last_request_at = last_request_at.replace(tzinfo=UTC)
-
-        if now - last_request_at > limit_duration:
-            # Reset counter
-            logger.debug(f"Rate limit window expired for {ip_address}, resetting counter")
-            db.reset_guest_usage(ip_address)
-        elif usage["request_count"] >= max_requests:
-            reset_time = last_request_at + limit_duration
-            logger.warning(f"Rate limit exceeded for guest IP {ip_address}, count: {usage['request_count']}")
-            raise HTTPException(status_code=429,
-                                detail=f"Rate limit exceeded. Please try again after {reset_time.isoformat()}.")
-    else:
-        db.increment_guest_usage(ip_address)
+    # Every guest login creates a user, so an address can only start so many
+    count_request(req, "logins")
 
     # Get existing session to regenerate from
     old_session_key = req.cookies.get("session")
@@ -152,8 +126,7 @@ async def guest_login(req: Request, response: Response):
 
     return LoginResponse(
         user=guest_user,
-        message="Guest login successful",
-        token=session_key
+        message="Guest login successful"
     )
 
 
@@ -398,7 +371,8 @@ async def refresh_session(request: Request, response: Response, current_user: di
     """
     Refreshes the user session and updates session cookies and CSRF tokens. If the
     session is far from expiry (greater than 1 hour), it does not create a new
-    session but instead provides a message indicating no refresh is required. If the
+    session but instead provides a message indicating no refresh is required. A guest's
+    session is not renewed once the guest is older than GUEST_MAX_HOURS. If the
     session is close to expiring or expired, a new session is created with a duration
     that depends on the user's type (guest or regular user), and updated session
     details are returned.
@@ -433,6 +407,18 @@ async def refresh_session(request: Request, response: Response, current_user: di
     user_id = current_user["user_id"]
     email = current_user["email"]
     is_guest = current_user.get("is_guest", False)
+
+    # A guest's session is renewed only for GUEST_MAX_HOURS. After that it runs out, and with it
+    # go the guest's user, conversations and files, which a guest could otherwise keep for ever
+    if is_guest:
+        guest = db.get_user_by_id(user_id)
+        created_at = guest.get("created_at") if guest else None
+        if created_at and datetime.now(UTC).replace(tzinfo=None) - created_at > timedelta(hours=GUEST_MAX_HOURS):
+            logger.debug(f"Guest session of user_id {user_id} is not renewed any more")
+            return {
+                "message": "Guest sessions are not renewed any longer",
+                "expires_in": expires_in
+            }
 
     # Determine session duration based on user type
     session_hours = GUEST_SESSION_TIMEOUT_HOURS if is_guest else SESSION_TIMEOUT_HOURS

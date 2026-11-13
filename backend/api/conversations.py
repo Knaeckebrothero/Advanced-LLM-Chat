@@ -25,6 +25,7 @@ from backend.catalog.resolver import resolve_auxiliary_model
 from backend.database import db
 from backend.database.db import UNSET
 from backend.security.auth import get_current_user, verify_conversation_ownership
+from backend.security.guest_limits import guest_limit, guest_write
 from backend.security.logging import crud_logger
 from backend.utils.hash import generate_hash, generate_sha256_hash
 from backend.services.llm import generate_conversation_id
@@ -126,7 +127,7 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
     except Exception as e:
         logger.error(f"Error fetching conversations for user_id {user_id}: {str(e)}", exc_info=True)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=str(e))
+        return ErrorResponse(error="Could not load the conversations")
 
 
 @router.get("/conversation/{conversation_id}",
@@ -211,12 +212,13 @@ async def get_conversation(conversation_id: str, response: Response, current_use
     except Exception as e:
         logger.error(f"Error fetching conversation {conversation_id}: {str(e)}", exc_info=True)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return ErrorResponse(error=str(e))
+        return ErrorResponse(error="Could not load the conversation")
 
 
 @router.post("/conversation/create",
              response_model=Conversation,
-             status_code=status.HTTP_201_CREATED)
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(guest_write)])
 async def create_conversation(req: ConversationCreateRequest, current_user: dict = Depends(get_current_user)):
     """
     Creates a new conversation and saves it into the database. The user must be authenticated
@@ -234,7 +236,7 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     :rtype: Conversation
     """
     user_id = current_user['user_id']
-    logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name}, "
+    logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name[:100]}, "
                  f"model: {req.modelId}, persona: {req.personaId}")
 
     _check_catalog_choice(current_user, req.modelId, req.personaId)
@@ -252,7 +254,7 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
         persona_values=req.personaValues
     )
 
-    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name}, "
+    crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name[:100]}, "
                      f"model_id: {req.modelId}, persona_id: {req.personaId}")
 
     return Conversation.from_row(new_conv)
@@ -353,7 +355,8 @@ class GenerateTitleRequest(BaseModel):
 
 
 @router.post("/conversation/{conversation_id}/generate-title",
-             response_model=Conversation)
+             response_model=Conversation,
+             dependencies=[Depends(guest_limit("titles"))])
 async def generate_title(
         conversation_id: str,
         req: GenerateTitleRequest,
@@ -401,7 +404,8 @@ async def generate_title(
 
 
 @router.patch("/conversation/{conversation_id}",
-              response_model=Conversation)
+              response_model=Conversation,
+              dependencies=[Depends(guest_write)])
 async def update_conversation(
         conversation_id: str,
         req: ConversationUpdateRequest,
@@ -462,7 +466,7 @@ async def update_conversation(
     )
 
     if req.name is not None:
-        crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name}' by user {user_id}")
+        crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name[:100]}' by user {user_id}")
     if sent & {"modelId", "personaId", "personaValues"}:
         crud_logger.info(f"Conversation {conversation_id} catalog selection updated by user {user_id} - "
                          f"model_id: {updated_conv.get('model_id')}, persona_id: {updated_conv.get('persona_id')}")

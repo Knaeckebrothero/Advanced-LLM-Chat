@@ -9,7 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import configuration
-from backend.config import CORS_ORIGINS, USE_DEV_CERTS, SSL_CERTFILE, SSL_KEYFILE, HOST, PORT
+from backend.config import (CORS_ORIGINS, USE_DEV_CERTS, SSL_CERTFILE, SSL_KEYFILE, HOST, PORT, MAX_REQUEST_MB,
+                            MAX_UPLOAD_FILES)
 
 # Import logging module to initialize centralized logging
 # This must happen before other backend imports that use logging
@@ -33,10 +34,12 @@ from backend.api import auth, docs, conversations, settings, files, messages, ca
 
 # Import middleware
 from backend.middleware.middleware import (
+    RequestSizeLimit,
     logging_middleware,
     csrf_protection_middleware,
     add_security_headers
 )
+from backend.services.file_store import MAX_FILE_SIZE
 
 
 @asynccontextmanager
@@ -82,6 +85,16 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/openapi.json",
     lifespan=lifespan
+)
+
+# No request body larger than the server takes; an upload is MAX_UPLOAD_FILES files with some
+# room for the form around them. Added first, so it runs inside the CORS middleware and a
+# refused request still gets its CORS headers
+app.add_middleware(
+    RequestSizeLimit,
+    max_bytes=MAX_REQUEST_MB * 1024 * 1024,
+    upload_path="/api/files/upload",
+    upload_max_bytes=MAX_UPLOAD_FILES * MAX_FILE_SIZE + 1024 * 1024
 )
 
 # Add CORS middleware

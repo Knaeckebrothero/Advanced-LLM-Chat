@@ -147,6 +147,9 @@ class ToolRegistry:
 
     def __init__(self, tools: Iterable[Tool] = ()):
         self._tools: dict[str, Tool] = {}
+        # An unexpected failure of a tool is reported without its text (set for guests: the text
+        # of e.g. a connection error can name internal addresses, and the chat shows it as a step)
+        self.hide_errors = False
         for tool in tools:
             self.add(tool)
 

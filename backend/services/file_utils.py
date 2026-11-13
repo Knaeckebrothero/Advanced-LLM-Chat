@@ -4,6 +4,7 @@ Shared file handling utilities used across multiple service modules.
 """
 
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -71,6 +72,30 @@ def stored_file_ids() -> set[str]:
     if not files_dir.is_dir():
         return set()
     return {path.stem for path in files_dir.iterdir() if path.is_file() and is_file_id(path.stem)}
+
+
+def stored_bytes(file_ids) -> int:
+    """
+    What files take in the files directory, with everything derived from them (the
+    text and page images of a PDF, previews, transcripts).
+
+    Args:
+        file_ids: The file IDs to add up.
+
+    Returns:
+        The size in bytes; 0 if the directory does not exist.
+    """
+    wanted = set(file_ids)
+    files_dir = Path(FILES_DIR)
+    if not wanted or not files_dir.is_dir():
+        return 0
+    total = 0
+    with os.scandir(files_dir) as entries:
+        for entry in entries:
+            match = FILE_ID_PATTERN.match(entry.name)
+            if match and match.group(0) in wanted and entry.is_file():
+                total += entry.stat().st_size
+    return total
 
 
 def delete_stored_file(file_id: str) -> int:

@@ -4,9 +4,15 @@ CSRF (Cross-Site Request Forgery) protection.
 import logging
 import secrets
 from fastapi import Request
+from backend.config import CORS_ORIGINS, FRONTEND_URL
 from backend.security.logging import log_security_event
 
 log = logging.getLogger(__name__)
+
+# Logins, logout and the session refresh carry no CSRF token: a browser may have no session
+# and so no token yet. They are checked by where the request comes from instead (from_own_page)
+TOKENLESS_PATHS = {"/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout",
+                   "/api/auth/refresh-session"}
 
 
 def generate_csrf_token() -> str:
@@ -24,14 +30,34 @@ def generate_csrf_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def from_own_page(request: Request) -> bool:
+    """
+    Whether a request comes from the app's own pages and not from a page of another site.
+
+    Browsers name the page a request comes from in the Origin header of every POST across
+    sites, also for a plain form. Another site's page could otherwise log a visitor out, or
+    swap their session for a guest's, by posting a form to the logout or the guest login.
+    Requests without the header come from scripts and tools, which have no visitor's
+    cookies to abuse.
+
+    :param request: The incoming HTTP request.
+    :return: True without an Origin header or with the frontend's origin (FRONTEND_URL, CORS_ORIGINS).
+    """
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    return origin.rstrip("/") in {FRONTEND_URL, *(allowed.rstrip("/") for allowed in CORS_ORIGINS)}
+
+
 async def validate_csrf_token(request: Request) -> bool:
     """
     Validates the CSRF token submitted via the HTTP request. This function
     implements CSRF protection using the double-submit pattern, ensuring requests
     are authorized and preventing cross-site request forgery attacks. Specifically,
     it checks if the CSRF token provided in the request header matches the CSRF
-    token stored in the cookie. Additionally, it bypasses CSRF validation for
-    certain safe HTTP methods and specific authentication endpoints.
+    token stored in the cookie. Safe HTTP methods pass without a check. The
+    authentication endpoints that can't carry a token (TOKENLESS_PATHS) are
+    checked by the page the request comes from instead (from_own_page).
 
     :param request: The incoming HTTP request object containing data related to
         headers, method, URL, and cookies.
@@ -46,10 +72,14 @@ async def validate_csrf_token(request: Request) -> bool:
         log.debug(f"CSRF skipped for safe method: {request.method} {request.url.path}")
         return True
 
-    # Skip CSRF validation for authentication endpoints
-    if request.url.path in ["/api/auth/mock-login", "/api/auth/guest-login", "/api/auth/logout",
-                            "/api/auth/refresh-session"]:
-        log.debug(f"CSRF skipped for auth endpoint: {request.url.path}")
+    # Authentication endpoints: no token, but only from the app's own pages
+    if request.url.path in TOKENLESS_PATHS:
+        if not from_own_page(request):
+            log_security_event("csrf_validation_failed", {
+                "reason": "foreign_origin",
+                "origin": request.headers.get("origin", "")[:200]
+            }, request)
+            return False
         return True
 
     # Get CSRF token from cookie
