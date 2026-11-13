@@ -657,10 +657,11 @@
     transform: translateY(-1px);
   }
 
-  // An image is shown whole: scaled down to fit a square of --attachment-box, never cropped
-  // and never enlarged, and the tile is as large as the image then is
+  // An image is shown whole: scaled down to fit --attachment-width by --attachment-height,
+  // never cropped and never enlarged, and the tile is as large as the image then is
   &.is-image {
-    --attachment-box: 160px;
+    --attachment-width: 160px;
+    --attachment-height: 160px;
     flex: none;
     padding: 0;
     max-width: none;
@@ -684,8 +685,8 @@
   .attachment-image {
     position: relative;
     display: block;
-    max-width: var(--attachment-box);
-    max-height: var(--attachment-box);
+    max-width: var(--attachment-width);
+    max-height: var(--attachment-height);
   }
 
   .attachment-backdrop {
@@ -723,8 +724,8 @@
 }
 
 .attachment-placeholder {
-  width: var(--attachment-box);
-  height: var(--attachment-box);
+  width: min(var(--attachment-width), 160px);
+  height: min(var(--attachment-height), 160px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -822,6 +823,46 @@
 
 .attachment-item.is-synced {
   border-style: dashed;
+}
+
+// ============================================
+// A MESSAGE WITH ONE PHOTO
+// ============================================
+// The message's only attachment is an image: it is shown large, as in a messenger. The bubble
+// is as wide as the image, and the text wraps under it
+.message-body--photo:not(.message-body--editing) {
+  .message-attachments {
+    margin-bottom: 0;
+  }
+
+  .attachment-item.is-image {
+    --attachment-width: min(320px, 68vw);
+    --attachment-height: 420px;
+    border: 0;
+    border-radius: 12px;
+    background: none;
+
+    &:hover {
+      transform: none;
+    }
+  }
+
+  .attachment-thumbnail {
+    border-radius: 12px;
+  }
+
+  // Under the photo, with a little room to the bubble's edge
+  .message-text {
+    display: block;
+    padding: 6px 8px 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+// As wide as the photo (the widest thing in it that can't wrap), but wide enough for a line of text
+.message-row--user .message-body--photo:not(.message-body--editing) {
+  width: min-content;
+  min-width: min(200px, 100%);
 }
 
 // ============================================
@@ -1364,6 +1405,11 @@ em {
     border-radius: 16px 16px 4px 16px;
     background: color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface));
   }
+
+  // One photo: it reaches almost to the bubble's edge
+  .message-row--user .message-body--photo:not(.message-body--editing) {
+    padding: 4px 4px 8px;
+  }
 }
 
 // ============================================
@@ -1441,7 +1487,18 @@ em {
   }
 
   .attachment-item.is-image {
-    --attachment-box: 120px;
+    --attachment-width: 120px;
+    --attachment-height: 120px;
+  }
+
+  // One photo: the bubble (the whole message here) hugs it
+  .message-row--user .message-content-wrapper:has(.message-body--photo:not(.message-body--editing)) {
+    padding: 4px 4px 2px;
+  }
+
+  .message-body--photo:not(.message-body--editing) .attachment-item.is-image {
+    --attachment-width: min(300px, 68vw);
+    --attachment-height: 380px;
   }
 
   .placed-files {
