@@ -18,6 +18,7 @@ summarizes every message on request (409, 422 and 502 included).
 import asyncio
 import json
 import sys
+import time
 import traceback
 from contextlib import contextmanager
 from dataclasses import replace
@@ -425,7 +426,8 @@ class StoringDB(EndpointDB):
         self.rows.append({"id": message["message_id"], "time": message["time"], "roleName": message["role_name"],
                           "content": message["content"], "type": "agent"})
         if message.get("tool_record"):
-            self.tool_records[message["message_id"]] = message["tool_record"]
+            # Through JSON, as the database keeps it (a JSONB column)
+            self.tool_records[message["message_id"]] = json.loads(json.dumps(message["tool_record"]))
 
 
 async def test_stream_generate_keeps_and_replays_tool_calls(server):
@@ -499,12 +501,124 @@ async def test_stream_generate_keeps_and_replays_tool_calls(server):
         messages._agent_tools, messages._mcp_tools, messages.auto_hide_definition = saved
 
 
+def continued(previous: dict, body: dict) -> list:
+    """
+    The messages a request adds to an earlier one, after checking that it starts like it word for
+    word: the same tools and settings, and all of the earlier one's messages first. A provider's
+    prompt cache only hits on such a start.
+    """
+    settings_of = lambda request: {key: value for key, value in request.items() if key != "messages"}
+    assert settings_of(body) == settings_of(previous), (settings_of(previous), settings_of(body))
+    count = len(previous["messages"])
+    assert body["messages"][:count] == previous["messages"], (previous["messages"], body["messages"])
+    return body["messages"][count:]
+
+
+async def test_every_request_continues_the_one_before(server):
+    """
+    How Kimi K3 answers (its reasoning passed back, two rounds of tools, the memory in the system
+    prompt), through stream-generate: every model call of an answer, and the first one of the
+    next answer, continues the request before it, so the provider's prompt cache can hit.
+    """
+    from backend.api import messages
+    from backend.services.mcp.tools import McpToolset
+
+    async def lookup(key: str) -> dict:
+        return {"key": key, "value": f"value-of-{key}"}
+
+    async def memory_add(line: str) -> str:
+        return "Saved."
+
+    tools = ToolRegistry([
+        Tool(name="lookup", description="Look up a key", func=lookup, parameters={
+            "type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]}),
+        Tool(name="memory_add", description="Add a line to the memory", func=memory_add, parameters={
+            "type": "object", "properties": {"line": {"type": "string"}}, "required": ["line"]}),
+    ])
+
+    class Memory:
+        def get_memory(self, user_id, vault, family_mode=False):
+            return {"content": "## About the user\n- Likes foxes."}
+
+    async def no_mcp(current_user, conversation, config, tools, answer_id=None):
+        return tools, McpToolset()
+
+    def looks_up(key, call_id):
+        def turn(body):
+            return [chunk(reasoning_content=f"I need {key}."), chunk(content=f"Looking up {key}."),
+                    chunk(tool_calls=[tool_call_delta(0, id=call_id, name="lookup",
+                                                      arguments=json.dumps({"key": key}))]),
+                    chunk(finish_reason="tool_calls"), usage_chunk(100, 10)]
+        return turn
+
+    def answers(text):
+        def turn(body):
+            return [chunk(reasoning_content="I have it."), chunk(content=text), chunk(finish_reason="stop"),
+                    usage_chunk(100, 10)]
+        return turn
+
+    async def asks(text):
+        # Ids are the server's clock in milliseconds: the question's now, the answer's a little later
+        now = max(fake_db.rows[-1]["id"] + 1, int(time.time() * 1000))
+        fake_db.rows.append({"id": now, "time": now, "roleName": "user", "content": text, "type": "text"})
+        await asyncio.sleep(0.01)
+
+    fake_db = StoringDB([user(1000_000, 1000, "What are alpha and beta?")])
+    config = make_config(server.base_url, context_window=100000, supports_tools=True,
+                         reasoning="always", reasoning_passback=True)
+    saved = (messages._agent_tools, messages._mcp_tools, messages.auto_hide_definition, messages.kb,
+             messages.persona_vault)
+    messages._agent_tools = lambda current_user, conversation, config, *rest: tools
+    messages._mcp_tools = no_mcp
+    messages.auto_hide_definition = lambda user_id: ""  # No database here
+    messages.kb = Memory()
+    messages.persona_vault = lambda current_user, conversation: None
+    try:
+        with message_api(fake_db, config) as client:
+            # An answer with two rounds of tools: three model calls
+            server.script(looks_up("alpha", "lookup:0"), looks_up("beta", "lookup:1"),
+                          answers("Alpha and beta are found."))
+            response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+            assert response.status_code == 200 and "event: done" in response.text, response.text
+            first = list(server.requests)
+            assert len(first) == 3, len(first)
+            assert "Likes foxes." in first[0]["messages"][0]["content"], first[0]["messages"][0]
+            assert [tool["function"]["name"] for tool in first[0]["tools"]] == ["lookup", "memory_add"]
+            for previous, body in zip(first, first[1:]):
+                added = continued(previous, body)
+                assert [m["role"] for m in added] == ["assistant", "tool"], added
+                assert added[0].get("reasoning_content"), added  # passed back within the answer
+
+            # The next answer continues the last request with the answer's text and the new question
+            await asks("And gamma?")
+            server.script(answers("Gamma is unknown."))
+            response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+            assert response.status_code == 200 and "event: done" in response.text, response.text
+            second = server.requests[-1]
+            assert continued(first[-1], second) == [
+                {"role": "assistant", "content": "Alpha and beta are found."},
+                {"role": "user", "content": "And gamma?"}], second["messages"]
+
+            # And so does the one after an answer without tools
+            await asks("Thanks.")
+            server.script(answers("You're welcome."))
+            response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+            assert response.status_code == 200 and "event: done" in response.text, response.text
+            assert continued(second, server.requests[-1]) == [
+                {"role": "assistant", "content": "Gamma is unknown."},
+                {"role": "user", "content": "Thanks."}], server.requests[-1]["messages"]
+            assert not server.errors, server.errors
+    finally:
+        (messages._agent_tools, messages._mcp_tools, messages.auto_hide_definition, messages.kb,
+         messages.persona_vault) = saved
+
+
 TESTS = [test_summarizes_only_past_the_trigger, test_latest_question_is_never_summarized,
          test_fold_in_chunks_merges_prior_summary, test_bad_reply_is_retried, test_failure_keeps_usage,
          test_summary_must_be_smaller, test_on_request_scales_the_length, test_oversized_message_is_split,
          test_history_starts_with_summary, test_stream_generate_summarizes_past_the_trigger,
          test_summarize_on_request, test_tool_calls_are_summarized_with_the_answer,
-         test_stream_generate_keeps_and_replays_tool_calls]
+         test_stream_generate_keeps_and_replays_tool_calls, test_every_request_continues_the_one_before]
 
 
 async def main() -> int:
