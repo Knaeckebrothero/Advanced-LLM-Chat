@@ -77,7 +77,7 @@
         <p *ngIf="questionOutcome(step) as outcome" class="step-outcome">{{ outcome }}</p>
         <!-- The files a tool created, or the ones the agent shows -->
         <div *ngIf="filesOf(step) as files" class="step-files">
-          <app-file-tile *ngFor="let file of files" [file]="file" size="small"></app-file-tile>
+          <app-file-tile *ngFor="let file of files" [file]="file" size="small" [gallery]="gallery"></app-file-tile>
         </div>
         <a *ngIf="mcpLink(step) as mcp" class="step-note-button" routerLink="/mcp">
           <mat-icon>{{ mcp.icon }}</mat-icon>
