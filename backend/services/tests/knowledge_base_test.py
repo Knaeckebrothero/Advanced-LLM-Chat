@@ -790,7 +790,8 @@ async def test_memory_dream():
             result = results[0]
             assert (result.status, result.vault, result.conversations, result.days) == \
                 ("done", 0, 1, [day.isoformat()]), result
-            assert [change["tool"] for change in result.changes] == ["kb_write", "memory_add"], result.changes
+            # Both calls come in one turn and run side by side: either may finish first
+            assert sorted(change["tool"] for change in result.changes) == ["kb_write", "memory_add"], result.changes
             assert "Launched the boat" in knowledge_base.get_note(user_ids[0], slug)["content"]
             assert knowledge_base.list_revisions(user_ids[0], slug)[0]["author"] == "dream"
             assert f"[[{slug}]]" in memory_text()
