@@ -105,7 +105,8 @@
     </div>
 
     <!-- Message Body (links to knowledge base notes open in the app) -->
-    <div class="message-body" [class.message-body--editing]="editing" (click)="onBodyClick($event)">
+    <div class="message-body" [class.message-body--editing]="editing" [class.message-body--photo]="singlePhoto"
+      (click)="onBodyClick($event)">
       <!-- == TEXT MESSAGE == -->
       <ng-container *ngIf="message.isText()">
         <!-- Attachments -->
