@@ -5,17 +5,18 @@ This directory contains the Docker configuration for containerizing both the Ang
 ## Files
 
 - **Dockerfile**: Multi-stage build configuration for the Angular frontend app
-- **backend.Dockerfile**: Python FastAPI backend with SQLite database
+- **backend.Dockerfile**: Python FastAPI backend (the database is the Postgres container of the compose files)
 - **backend-entrypoint.sh**: The backend image's entrypoint: gives the data directories to the user `app` and drops root (see [The backend's user](#the-backends-user))
 - **nginx.conf**: Nginx configuration optimized for serving Angular SPA
-- **docker-compose.yml**: Docker Compose configuration for running both services
+- **docker-compose.yml**: Docker Compose configuration that builds the images and runs Postgres, the database setup (`db-init`), the backend and the frontend
+- **docker-compose.prod.yml**: The same with the published images from ghcr.io
 - **docker-compose.keycloak.yml**: Optional Keycloak for logging in, added to either compose file (see [Login](#login))
   (the realm it imports on its first start is shared with the Helm chart: `helm/advanced-llm-chat/files/llm-chat-realm.json`)
 
 ## Prerequisites
 
 1. Docker and Docker Compose installed
-2. A Replicate API token for the LLM functionality (get one at https://replicate.com)
+2. A key for at least one model provider (e.g. `CORTECS_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`; the providers are in `catalog/models.json`)
 
 ## Quick Start
 
@@ -62,14 +63,17 @@ From the repository root:
 # Build the backend image
 docker build -f docker/backend.Dockerfile -t llm-chat-backend:latest .
 
-# Run the backend container
+# Run the backend container (it needs a Postgres: POSTGRES_HOST and the other POSTGRES_* settings)
 docker run -d \
   -p 8443:8443 \
-  -v $(pwd)/docker/data:/app/data \
-  -e REPLICATE_API_TOKEN=your_token_here \
+  -v llm-chat-files:/app/.filesystem \
+  -e POSTGRES_HOST=... -e POSTGRES_PASSWORD=... \
+  -e CORTECS_API_KEY=your_key_here \
   --name llm-chat-backend \
   llm-chat-backend:latest
 ```
+
+The compose files are the easier way: they also create the database (`db-init`, `app_init --seed`).
 
 ## Accessing the Application
 
@@ -103,6 +107,8 @@ The frontend container supports runtime environment variable injection. This all
 1. At container startup, `envsubst` substitutes `${API_URL}` in `/assets/env.template.js`
 2. The result is written to `/assets/env.js`
 3. Angular loads this config before bootstrapping
+
+nginx serves `env.js` with `Cache-Control: no-cache`, so browsers (and a CDN in front) always ask for the current address; images before 0.1.210 let them keep it for a year. The app also remembers the address in the browser, for starts without a connection.
 
 ### Deploying to a remote server
 
@@ -164,23 +170,25 @@ The backend runs as the user `app` (uid and gid 10001), not as root. The contain
 - **Base Image**: python:3.11-slim
 - **User**: `app` (uid 10001); starts as root only to hand over the data directories
 - **Exposed Port**: 8443 (HTTPS)
-- **Database**: SQLite (persisted in volume)
+- **Database**: Postgres (the `postgres` container, image `pgvector/pgvector:pg16`)
 - **Features**:
   - Auto-generated SSL certificates
   - FastAPI with automatic API documentation
-  - Session-based authentication
-  - Replicate AI integration
+  - Session-based authentication (guests, and logins through an OIDC provider)
+  - Models of OpenAI-compatible providers and Anthropic (`catalog/models.json`)
 
 ## Data Persistence
 
-- SQLite database is stored in `./data` directory (mounted as volume)
-- Sessions and messages are persisted across container restarts
-- Backup the `./data` directory to preserve chat history
+- Conversations, users, settings and the knowledge base are in Postgres, on the volume `postgres_data`. Back it up with `docker compose exec postgres pg_dump -U llm_chat -Fc llm_chat > backup.dump`.
+- Uploaded files, the TTS cache and logs are on `/app/.filesystem`: `./data` with `docker-compose.yml`, the volume `filesystem_data` with `docker-compose.prod.yml`.
 
 ## Environment Variables
 
 ### Backend
-- `REPLICATE_API_TOKEN`: Your Replicate API token (required for AI responses)
+All settings are described in `.env.example` (here) and the repository's `.env.example`. The main ones:
+- The model providers' keys, e.g. `CORTECS_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+- `POSTGRES_PASSWORD` and the other `POSTGRES_*` settings
+- `AUTH_MODE` and the `OIDC_*` settings (see [Login](#login))
 - `USE_DEV_CERTS`: Set to "True" to auto-generate SSL certificates
 - `HOST`: Host to bind to (default: 0.0.0.0)
 - `PORT`: Port to run on (default: 8443)
@@ -196,8 +204,8 @@ For production deployment:
 1. Use proper SSL certificates instead of self-signed ones
 2. Set up a reverse proxy (nginx/traefik) for both services
 3. Use environment-specific configuration files
-4. Consider using a more robust database than SQLite for high traffic
-5. Implement proper backup strategies for the database
+4. Back up the Postgres volume and the files volume
+5. On a server anyone can reach, set `FORWARDED_ALLOW_IPS` to the reverse proxy's address (never `*`), check the guests' limits (`GUEST_MAX_*`, `docs/authentication.md`, "Guests"), set `WHISPER_LOCAL_FALLBACK=false`, and give the model keys spending limits at the providers
 
 ## Troubleshooting
 
@@ -208,10 +216,10 @@ If you get SSL errors:
 3. Ensure you've accepted the certificate at https://localhost:8443
 
 ### Database Issues
-If the database isn't persisting:
-1. Check that the `./data` directory exists and has proper permissions
-2. Ensure the volume mount is correct in docker-compose.yml
-3. Check container logs for any SQLite errors
+If the backend can't reach the database or data isn't kept:
+1. Check that the `postgres` container is healthy (`docker compose ps`) and `POSTGRES_PASSWORD` is the same for it and the backend
+2. Check the logs of `db-init`, which creates the tables (`docker compose logs db-init`)
+3. Uploads missing after a restart: check that `/app/.filesystem` is on a volume (see [Data Persistence](#data-persistence))
 
 ### API Connection Issues
 If frontend can't reach backend:
