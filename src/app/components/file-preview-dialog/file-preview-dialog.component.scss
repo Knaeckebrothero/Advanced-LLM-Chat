@@ -307,34 +307,43 @@
   opacity: 0.8;
 }
 
-// Previous and next file, at the screen's edges beside the picture
+// Previous and next file, at the screen's edges beside the picture: always in the same place,
+// whatever shape the picture has, so they can be clicked again and again. Dark with a light
+// ring, to stand out from the dark backdrop as well as from a light picture under them (phones)
 .step-button {
   position: fixed;
   top: 50%;
   z-index: 1;
-  width: 44px;
-  height: 44px;
-  padding: 10px;
+  width: 48px;
+  height: 48px;
+  padding: 12px;
   transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
   color: white;
   cursor: pointer;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
 
   &--previous {
-    left: 12px;
+    left: 16px;
   }
 
   &--next {
-    right: 12px;
+    right: 16px;
   }
 
-  &:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.8);
+  &:hover:not(.is-end) {
+    background: rgba(48, 48, 48, 0.95);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
   }
 
-  &:disabled {
-    opacity: 0.25;
-    color: white;
+  &:focus-visible {
+    box-shadow: 0 0 0 2px white;
+  }
+
+  // The first or the last file: nothing further that way
+  &.is-end {
+    opacity: 0.3;
     cursor: default;
   }
 }

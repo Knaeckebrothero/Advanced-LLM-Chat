@@ -59,6 +59,9 @@ export function openFilePreview(dialog: MatDialog, file: IFileRef, gallery?: IFi
   return dialog.open(FilePreviewDialogComponent, {
     data,
     panelClass: 'file-preview-dialog-panel',
+    // The dialog itself has the focus, not its first button (zoom out): the zoom buttons come and
+    // go with every file that loads, and the focus would go with them
+    autoFocus: 'dialog',
     hasBackdrop: false,  // The dialog has its own
     maxWidth: '100vw',
     maxHeight: '100vh',
@@ -187,7 +190,9 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
       return;
     }
 
-    if (this.data.localFile) {
+    // A message that came from the server has an empty file in the place of each attachment
+    // (Message.fromAPI()): that is nothing to show, the file is fetched below
+    if (this.data.localFile?.size) {
       this.contentUrl = URL.createObjectURL(this.data.localFile);
       this.state = 'loaded';
       return;

@@ -38,6 +38,8 @@ const MCP_OPEN_LINK: McpStepLink = { label: 'message.steps.openMcp', icon: 'exte
 })
 export class AgentStepsComponent {
   @Input() steps: IAgentStep[] = [];
+  /** The message's images, which the preview steps through from a step's image that is opened. */
+  @Input() gallery?: IFileRef[];
   @Input() status: AgentStatus = 'thinking';
   @Output() expandedChange = new EventEmitter<boolean>();
 

@@ -14,6 +14,23 @@ export function stepFiles(step: IAgentStep, key: 'files' | 'shownFiles'): IFileR
 }
 
 /**
+ * The files of an answer's steps that its text doesn't place: the ones that are shown anyway
+ * (`shownFiles`), and the other ones its tools created, each once and in the steps' order.
+ */
+export function unplacedFiles(steps: IAgentStep[], placed: ReadonlySet<string>): { shown: IFileRef[]; created: IFileRef[] } {
+  const shown = new Map<string, IFileRef>();
+  const created = new Map<string, IFileRef>();
+  for (const step of steps) {
+    for (const file of stepFiles(step, 'shownFiles')) shown.set(file.fileId, file);
+    for (const file of stepFiles(step, 'files')) created.set(file.fileId, file);
+  }
+  return {
+    shown: [...shown.values()].filter(file => !placed.has(file.fileId)),
+    created: [...created.values()].filter(file => !shown.has(file.fileId) && !placed.has(file.fileId))
+  };
+}
+
+/**
  * The files of an answer that it doesn't place in its text (docs/files.md), between its steps
  * and its text: the ones that are shown anyway (the files of an agent that isn't told how to
  * place them, and what show_file showed in older answers), large, and under them the other
@@ -32,6 +49,8 @@ export class AnswerFilesComponent implements DoCheck {
   @Input() steps: IAgentStep[] = [];
   /** The files the answer places in its text (their IDs): those are not shown here again. */
   @Input() placed: ReadonlySet<string> = new Set<string>();
+  /** The message's images, which the preview steps through from the one that is opened. */
+  @Input() gallery?: IFileRef[];
 
   shown: IFileRef[] = [];
   created: IFileRef[] = [];  // Created in the answer, not shown
@@ -47,14 +66,7 @@ export class AnswerFilesComponent implements DoCheck {
     const state = `${this.steps.length}:${this.steps[this.steps.length - 1]?.id ?? ''}:${[...this.placed].join()}`;
     if (state === this.seen) return;
     this.seen = state;
-    const shown = new Map<string, IFileRef>();
-    const created = new Map<string, IFileRef>();
-    for (const step of this.steps) {
-      for (const file of stepFiles(step, 'shownFiles')) shown.set(file.fileId, file);
-      for (const file of stepFiles(step, 'files')) created.set(file.fileId, file);
-    }
-    this.shown = [...shown.values()].filter(file => !this.placed.has(file.fileId));
-    this.created = [...created.values()].filter(file => !shown.has(file.fileId) && !this.placed.has(file.fileId));
+    ({ shown: this.shown, created: this.created } = unplacedFiles(this.steps, this.placed));
   }
 
   trackFile(index: number, file: IFileRef): string {
