@@ -325,7 +325,7 @@ Checks that passed:
 
 ## Known issues and findings (backlog)
 
-Updated on 2026-11-13. Resolved in 0.1.210: the session token in the guest login's body, the barely limited guest logins, and the other findings of the security audit of 2026-11-12 (item 11). Resolved since PR #137: the LangChain dependency (gone with the new runtime), the Placeholder Component and `/metrics` page (removed), the guest and file access problems, and the mock login (development only since `3e32e58`; see "Status").
+Updated on 2026-11-13. Resolved in 0.1.210: the session token in the guest login's body, the barely limited guest logins, and the other findings of the security audit of 2026-11-12 (item 11). Resolved after it (2026-11-13, `66ee14f`): the Content Security Policy allowed inline scripts and `eval`; it is `script-src 'self'` now (the theme script is `assets/theme-init.js`, Angular's inline loader of the stylesheet is off: `inlineCritical: false`). Inline styles stay allowed, since Angular adds them. Resolved since PR #137: the LangChain dependency (gone with the new runtime), the Placeholder Component and `/metrics` page (removed), the guest and file access problems, and the mock login (development only since `3e32e58`; see "Status").
 
 **Security and privacy:**
 
@@ -334,7 +334,6 @@ Updated on 2026-11-13. Resolved in 0.1.210: the session token in the guest login
 - The guest isolation and file ownership end-to-end checks from 2026-10-30 only existed as scratch scripts. They are worth adding to the backend tests.
 - **Tool calls per answer aren't limited:** an answer has at most `AGENT_MAX_STEPS` (10) model calls, but each can ask for any number of tool calls at once, and an answer counts once against the guests' limit. A guest's answer can run many web searches (Tavily) or image readings (vision model).
 - **Guests read the agents' prompts:** `/api/personas` returns the system prompts of the agents available to guests.
-- **Content Security Policy:** the frontend's nginx and the meta tag in `index.html` allow `'unsafe-inline' 'unsafe-eval'` for scripts.
 - **Session keys** (and CSRF tokens) are stored unhashed in `sessions`.
 - **The PDF worker is limited, not locked in:** it runs as the server's user, can read `FILES_DIR` and reach the network. It gets none of the server's settings since 0.1.210.
 - **Local Whisper** (when the fallback is on): no time limit, `ffmpeg` runs on the uploaded file in the server, and an empty API transcript (silence) also starts it.
