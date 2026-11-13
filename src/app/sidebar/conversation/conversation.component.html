@@ -41,6 +41,10 @@
       <mat-icon>download</mat-icon>
       <span>{{ 'conversationMenu.export' | translate }}</span>
     </button>
+    <button mat-menu-item (click)="showFiles()">
+      <mat-icon>perm_media</mat-icon>
+      <span>{{ 'conversationMenu.files' | translate }}</span>
+    </button>
     <button mat-menu-item [disabled]="summarizing" (click)="summarizeConversation()"
             [title]="'conversationMenu.summarizeHint' | translate">
       <mat-icon>summarize</mat-icon>

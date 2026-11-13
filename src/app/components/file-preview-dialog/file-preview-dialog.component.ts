@@ -1,13 +1,17 @@
-import { Component, Inject, OnInit, OnDestroy } from '@angular/core';
+import { Component, HostListener, Inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MAT_DIALOG_DATA, MatDialogRef, MatDialogModule } from '@angular/material/dialog';
+import { HttpErrorResponse } from '@angular/common/http';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogRef, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { FileType } from '../../data/models';
+import { IFileRef } from '../../data/models/file.model';
+import { FilePreviewUtil } from '../../data/objects/message';
 import { ApiService } from '../../services/api.service';
+import { saveBlob, saveUrl } from '../../utils/download.util';
 import { DBService } from '../../data/db.service';
 import { MessageRepository } from '../../repositories/message.repository';
 
@@ -25,6 +29,42 @@ export interface FilePreviewDialogData {
   // For updating message with regenerated preview
   messageId?: number;
   conversationId?: string;
+  /** The files to step through from this one, in their order; this file is one of them. */
+  gallery?: FilePreviewDialogData[];
+}
+
+// A swipe across the picture this far steps to the next or the previous file
+const SWIPE_MIN_PX = 60;
+
+/** A stored file as the preview dialog takes it. */
+export function filePreviewData(file: IFileRef): FilePreviewDialogData {
+  return {
+    fileId: file.fileId,
+    fileName: file.name,
+    fileSize: file.size ? FilePreviewUtil.formatFileSize(file.size) : undefined,
+    fileType: FilePreviewUtil.getFileType(file.mimeType),
+    mimeType: file.mimeType
+  };
+}
+
+/**
+ * Open a stored file in the preview dialog (zoom, download).
+ * @param gallery The files to step through from it (previous, next), in their order.
+ */
+export function openFilePreview(dialog: MatDialog, file: IFileRef, gallery?: IFileRef[]): MatDialogRef<FilePreviewDialogComponent> {
+  const data = filePreviewData(file);
+  if (gallery && gallery.length > 1 && gallery.some(other => other.fileId === file.fileId)) {
+    data.gallery = gallery.map(other => other.fileId === file.fileId ? data : filePreviewData(other));
+  }
+  return dialog.open(FilePreviewDialogComponent, {
+    data,
+    panelClass: 'file-preview-dialog-panel',
+    hasBackdrop: false,  // The dialog has its own
+    maxWidth: '100vw',
+    maxHeight: '100vh',
+    width: '100vw',
+    height: '100vh'
+  });
 }
 
 @Component({
@@ -52,6 +92,13 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
   private minZoom: number = 0.5;
   private maxZoom: number = 4;
   private zoomStep: number = 0.25;
+  // The files to step through (data.gallery) and which of them is shown
+  private gallery: FilePreviewDialogData[];
+  index: number;
+  // Counts up with every file shown: what a slower request brings for an earlier one is dropped
+  private shown = 0;
+  private swipeStart: { x: number; y: number } | null = null;
+  downloading = false;
 
   constructor(
     public dialogRef: MatDialogRef<FilePreviewDialogComponent>,
@@ -60,20 +107,79 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
     private dbService: DBService,
     private messageRepository: MessageRepository,
     private translate: TranslateService
-  ) {}
+  ) {
+    this.gallery = data.gallery ?? [];
+    this.index = Math.max(0, this.gallery.findIndex(file => file.fileId === data.fileId));
+  }
 
   ngOnInit(): void {
     this.loadContent();
   }
 
   ngOnDestroy(): void {
-    // Revoke object URL to free memory
+    this.shown++;
+    this.releaseContent();
+  }
+
+  /** Revoke the object URL of the file shown, to free its memory. */
+  private releaseContent(): void {
     if (this.contentUrl && !this.data.localUrl) {
       URL.revokeObjectURL(this.contentUrl);
     }
+    this.contentUrl = null;
+  }
+
+  /** How many files can be stepped through; 0 for a file opened alone. */
+  get galleryCount(): number {
+    return this.gallery.length > 1 ? this.gallery.length : 0;
+  }
+
+  get hasPrevious(): boolean {
+    return this.galleryCount > 0 && this.index > 0;
+  }
+
+  get hasNext(): boolean {
+    return this.galleryCount > 0 && this.index < this.gallery.length - 1;
+  }
+
+  /** Show the next file of the gallery (by = 1) or the previous one (by = -1). */
+  step(by: number): void {
+    const next = this.gallery[this.index + by];
+    if (!this.galleryCount || !next) return;
+    this.releaseContent();
+    this.index += by;
+    this.data = next;
+    this.textContent = null;
+    this.errorMessage = '';
+    this.zoomLevel = 1;
+    this.state = 'loading';
+    void this.loadContent();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(event: KeyboardEvent): void {
+    if (!this.galleryCount || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === 'ArrowLeft') this.step(-1);
+    else if (event.key === 'ArrowRight') this.step(1);
+  }
+
+  onTouchStart(event: TouchEvent): void {
+    this.swipeStart = event.touches.length === 1
+      ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null;
+  }
+
+  /** A swipe across a picture that isn't zoomed in steps to the next file (left) or the previous one (right). */
+  onTouchEnd(event: TouchEvent): void {
+    const start = this.swipeStart;
+    this.swipeStart = null;
+    if (!start || !this.galleryCount || this.zoomLevel > 1 || event.changedTouches.length !== 1) return;
+    const dx = event.changedTouches[0].clientX - start.x;
+    const dy = event.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > 2 * Math.abs(dy)) this.step(dx < 0 ? 1 : -1);
   }
 
   private async loadContent(): Promise<void> {
+    const shown = ++this.shown;
     // If we have local content, use it directly
     if (this.data.localUrl) {
       this.contentUrl = this.data.localUrl;
@@ -90,9 +196,17 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
     // For documents, fetch text content instead of binary
     if (this.isDocument()) {
       try {
-        this.textContent = await this.apiService.getFileText(this.data.fileId);
+        const text = await this.apiService.getFileText(this.data.fileId);
+        if (shown !== this.shown) return;
+        this.textContent = text;
         this.state = 'loaded';
       } catch (error) {
+        if (shown !== this.shown) return;
+        // No text in it (a scan, say): it can still be downloaded
+        if (error instanceof HttpErrorResponse && error.status === 404) {
+          this.state = 'loaded';
+          return;
+        }
         console.error('Failed to load document text:', error);
         this.errorMessage = this.translate.instant('filePreview.documentFailed');
         this.state = 'error';
@@ -103,6 +217,7 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
     // Otherwise, fetch binary content from backend
     try {
       const blob = await this.apiService.getFile(this.data.fileId);
+      if (shown !== this.shown) return;
       this.contentUrl = URL.createObjectURL(blob);
       this.state = 'loaded';
 
@@ -111,6 +226,7 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
         this.regenerateAndSavePreview(blob);
       }
     } catch (error) {
+      if (shown !== this.shown) return;
       console.error('Failed to load file:', error);
       this.errorMessage = this.translate.instant('filePreview.loadFailed');
       this.state = 'error';
@@ -178,13 +294,34 @@ export class FilePreviewDialogComponent implements OnInit, OnDestroy {
     event.stopPropagation();
   }
 
-  download(): void {
-    if (!this.contentUrl) return;
+  /** The file can be saved: also a document whose text didn't load, or isn't there yet. */
+  get canDownload(): boolean {
+    return !this.downloading && (this.state !== 'loading' || this.isDocument());
+  }
 
-    const link = document.createElement('a');
-    link.href = this.contentUrl;
-    link.download = this.data.fileName;
-    link.click();
+  /**
+   * Save the file. What is shown is saved as it is; a document is shown as its text, so the
+   * file itself is fetched first.
+   */
+  async download(): Promise<void> {
+    if (this.contentUrl) {
+      saveUrl(this.contentUrl, this.data.fileName);
+      return;
+    }
+    if (this.downloading) return;
+    const { fileId, fileName } = this.data;
+    this.downloading = true;
+    try {
+      saveBlob(await this.apiService.getFile(fileId), fileName);
+    } catch (error) {
+      console.error('Failed to download file:', error);
+      if (this.data.fileId === fileId) {
+        this.errorMessage = this.translate.instant('filePreview.loadFailed');
+        this.state = 'error';
+      }
+    } finally {
+      this.downloading = false;
+    }
   }
 
   retry(): void {

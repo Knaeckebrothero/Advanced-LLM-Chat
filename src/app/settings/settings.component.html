@@ -185,6 +185,16 @@
         </p>
         <p class="setting-hint setting-error" *ngFor="let error of importErrors" role="alert">{{ error }}</p>
       </div>
+
+      <!-- Files: everything attached and created in the user's conversations, to open and download -->
+      <div class="setting-option">
+        <label>{{ 'files.settingsTitle' | translate }}</label>
+        <button type="button" class="secondary-button" (click)="showAllFiles()">
+          <mat-icon aria-hidden="true">perm_media</mat-icon>
+          {{ 'files.allTitle' | translate }}
+        </button>
+        <p class="setting-hint">{{ 'files.settingsHint' | translate }}</p>
+      </div>
     </div>
   </div>
 

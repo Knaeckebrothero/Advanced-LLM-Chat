@@ -148,6 +148,14 @@
           <mat-icon>location_on</mat-icon>
           <span>{{ 'composer.shareLocation' | translate }}</span>
         </button>
+        <!-- Everything attached and created in this chat so far, to open and download -->
+        <ng-container *ngIf="canShowChatFiles">
+          <mat-divider></mat-divider>
+          <button mat-menu-item (click)="chatFilesRequested.emit()">
+            <mat-icon>perm_media</mat-icon>
+            <span>{{ 'files.title' | translate }}</span>
+          </button>
+        </ng-container>
       </mat-menu>
 
       <!-- Extra composer tools from the parent (model and persona picker) -->

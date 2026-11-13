@@ -1,6 +1,7 @@
 // One stored file: a picture as high as its parent says, or a card with the file's name
 
 :host {
+  position: relative;
   display: block;
   flex: none;
   min-width: 0;
