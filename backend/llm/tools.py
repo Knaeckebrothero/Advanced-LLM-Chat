@@ -12,9 +12,9 @@ are built per answer for the user it is for: the file tools only see the files
 of that user's conversation (docs/files.md), the knowledge base tools only
 that user's notes (the shared knowledge base, or the agent's own one), the past
 chat tools only that user's conversations of the same memory (docs/past_chats.md).
-Opt-in groups (the knowledge base, with the memory, the past chats and the users'
-own MCP servers) are never part of "every enabled tool": an agent has to select
-them. The past chats also need the knowledge base (REQUIRED_GROUPS).
+Opt-in groups (web addresses, the knowledge base, with the memory, the past chats
+and the users' own MCP servers) are never part of "every enabled tool": an agent
+has to select them. The past chats also need the knowledge base (REQUIRED_GROUPS).
 
 An agent's skills (docs/skills.md) are not a group either: skill_tools() gives an
 agent with skills the tool use_skill, which loads one of them.
@@ -41,6 +41,7 @@ TOOL_TITLES = {
     "list_files": "Listing Files",
     "read_file": "Reading File",
     "web_search": "Searching the Web",
+    "web_fetch": "Opening Web Address",
     "get_graph_schema": "Inspecting Knowledge Graph",
     "search_graph": "Searching Knowledge Graph",
     "query_graph": "Querying Knowledge Graph",
@@ -64,6 +65,8 @@ TOOL_TITLES = {
 TOOL_GROUPS = {
     "files": ("list_files", "read_file"),
     "web_search": ("web_search",),
+    # What is at a web address: a page as text, an image or file saved to the conversation (docs/files.md)
+    "web_fetch": ("web_fetch",),
     "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
     "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
                        "memory_add", "memory_replace", "memory_remove"),
@@ -81,7 +84,7 @@ MEMORY_TOOL_NAMES = ("memory_add", "memory_replace", "memory_remove")
 
 # Groups an agent only gets when it selects them: not part of "every enabled tool" (an agent
 # with tools null, or no agent). All of them also need a signed-in user, never a guest.
-OPT_IN_GROUPS = frozenset({"knowledge_base", "past_chats", "user_mcp"})
+OPT_IN_GROUPS = frozenset({"web_fetch", "knowledge_base", "past_chats", "user_mcp"})
 
 # Groups that only work together with another one: the past chats are those of the agent's memory,
 # and an agent without the knowledge base has none
@@ -270,6 +273,9 @@ def _check_arguments(tool: Tool, arguments: Any) -> dict:
             # ... and a list as its JSON text, or one string in place of a list of strings
             elif "array" in types and isinstance(value, str) and _as_list(value, schema) is not None:
                 value = _as_list(value, schema)
+            # ... and an object as its JSON text
+            elif "object" in types and isinstance(value, str) and _as_object(value) is not None:
+                value = _as_object(value)
             else:
                 raise ToolInputError(f"Argument '{key}' for {tool.name} must be of type {' or '.join(types)}")
         if schema.get("type") == "array" and isinstance(schema.get("items"), dict) and schema["items"].get("type") == "integer":
@@ -294,6 +300,19 @@ def _as_list(value: str, schema: dict) -> Optional[list]:
     items = schema.get("items")
     if isinstance(items, dict) and items.get("type") == "string":
         return [value]
+    return None
+
+
+def _as_object(value: str) -> Optional[dict]:
+    """The object a model meant by a string: its JSON text ('{"left": 0, "top": 0}')."""
+    text = value.strip()
+    if text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except ValueError:
+            pass
     return None
 
 
@@ -363,9 +382,11 @@ def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = N
                        "or its fileId",
     }
     image_content = (
-        "An image you get to see yourself."
+        "An image you get to see yourself, a large one scaled down; with 'region' you look closer at a part of "
+        "it, at up to its full resolution."
         if vision else
-        "An image comes as a description written by a vision model; use 'query' to ask it something specific."
+        "An image comes as a description written by a vision model; use 'query' to ask it something specific, "
+        "and 'region' to have a part of the image looked at closer, at up to its full resolution."
     )
     query_subject = "a PDF's pages (a vision model answers it)" if vision else "an image or PDF"
     return [
@@ -399,6 +420,21 @@ def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = N
                         "type": "array",
                         "items": {"type": "integer"},
                         "description": "For PDFs: the pages to read, starting at 1, e.g. [1, 3]",
+                    },
+                    "region": {
+                        "type": "object",
+                        "description": "For images: the part to look closer at, to check details such as a face, "
+                                       "hands or small text. Its edges in percent of the image's width (left, "
+                                       "right) and height (top, bottom), from the top left corner, e.g. "
+                                       f"{tools.REGION_EXAMPLE} for the top right quarter. The smaller the part, "
+                                       "the larger you see it",
+                        "properties": {
+                            "left": {"type": "number", "description": "0 to 100"},
+                            "top": {"type": "number", "description": "0 to 100"},
+                            "right": {"type": "number", "description": "Greater than left, up to 100"},
+                            "bottom": {"type": "number", "description": "Greater than top, up to 100"},
+                        },
+                        "required": ["left", "top", "right", "bottom"],
                     },
                 },
                 "required": ["file"],
@@ -489,6 +525,53 @@ def web_search_tool() -> Tool:
             "required": ["query"],
         },
         func=web_search,
+    )
+
+
+def web_fetch_tool(user_id: int, conversation_id: Optional[str] = None, answer_id: Optional[int] = None,
+                   vision: bool = False) -> Tool:
+    """
+    web_fetch: what is at a web address (docs/files.md, "Web addresses").
+
+    Args:
+        user_id: The user the agent answers for: the owner of what it fetches.
+        conversation_id: The conversation it answers in, where a fetched image or file is saved.
+        answer_id: The id of the message being written, recorded with a fetched file.
+        vision: The model takes images: it gets a fetched image itself instead of a description.
+    """
+    from ..services.tools.web_fetch_tools import web_fetch
+    image_content = (
+        "an image you also get to see yourself"
+        if vision else
+        "of an image you get a description written by a vision model"
+    )
+    return Tool(
+        name="web_fetch",
+        description=(
+            "Open a web address and get what is there. A web page comes back as text, with its links and the "
+            "addresses of its images. An image, PDF or audio file is saved to this conversation's files, where "
+            f"the user can open it and you can show it in your answer; {image_content}. Call it to look at an "
+            "image that a tool's result, a page or the user names by its address, and to read a page whose "
+            "address you have. Several addresses: one call each, in the same turn. Only public http and https "
+            "addresses work; pages are read without running their scripts, and videos are not fetched."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The address, e.g. \"https://example.com/photos/fox.jpg\"",
+                },
+                "start": {
+                    "type": "integer",
+                    "description": "For a long page: the character to read on from, as the note under a "
+                                   "cut-off result says (default 0)",
+                },
+            },
+            "required": ["url"],
+        },
+        func=functools.partial(web_fetch, user_id=user_id, conversation_id=conversation_id,
+                               answer_id=answer_id, vision=vision),
     )
 
 
@@ -887,8 +970,8 @@ def tool_group_unavailable_reason(group: str) -> Optional[str]:
     Why the configuration switches a tool group off.
 
     The graph tools need NEO4J_ENABLED, web search needs TAVILY_API_KEY;
-    file access and the knowledge base are always available (the knowledge
-    base only to signed-in users, which tools_for_groups() checks).
+    file access, web addresses and the knowledge base are always available
+    (the last two only to signed-in users, which tools_for_groups() checks).
 
     Args:
         group: A key of TOOL_GROUPS.
@@ -927,12 +1010,18 @@ def tool_group_status() -> list[dict]:
 
 
 def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: Optional[dict],
-                 vault: int = 0, vision: bool = False, family_mode: bool = False, marking: bool = False) -> list[Tool]:
+                 vault: int = 0, vision: bool = False, family_mode: bool = False, marking: bool = False,
+                 answer_id: Optional[int] = None) -> list[Tool]:
     """The tool definitions of a group, for the user the agent answers for."""
     if group == "files":
         return file_tools(user_id, (conversation or {}).get("id"), vision)
     if group == "web_search":
         return [web_search_tool()]
+    if group == "web_fetch":
+        if user_id is None or guest:
+            log.debug("No web addresses without a signed-in user")
+            return []
+        return [web_fetch_tool(user_id, (conversation or {}).get("id"), answer_id, vision)]
     if group == "knowledge_graph":
         return graph_tools()
     if group == "knowledge_base":
@@ -954,7 +1043,8 @@ def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: 
 
 def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = False,
                    conversation: Optional[dict] = None, vault: int = 0, vision: bool = False,
-                   family_mode: bool = False, hide_definition: str = "") -> ToolRegistry:
+                   family_mode: bool = False, hide_definition: str = "",
+                   answer_id: Optional[int] = None) -> ToolRegistry:
     """The tools of these groups that the configuration enables, in TOOL_GROUPS order."""
     groups = set(groups)
     registry = ToolRegistry()
@@ -972,7 +1062,8 @@ def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = 
         if reason:
             log.debug(f"Tool group {group} disabled: {reason}")
             continue
-        for tool in _group_tools(group, user_id, guest, conversation, vault, vision, family_mode, marking):
+        for tool in _group_tools(group, user_id, guest, conversation, vault, vision, family_mode, marking,
+                                 answer_id):
             registry.add(tool)
     return registry
 
@@ -998,7 +1089,8 @@ def default_tools(user_id: Optional[int] = None, *, conversation: Optional[dict]
 
 def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = None, *, guest: bool = False,
                      conversation: Optional[dict] = None, vault: int = 0, vision: bool = False,
-                     family_mode: bool = False, hide_definition: str = "") -> ToolRegistry:
+                     family_mode: bool = False, hide_definition: str = "",
+                     answer_id: Optional[int] = None) -> ToolRegistry:
     """
     The enabled tools of the given tool groups, e.g. a persona's selection.
 
@@ -1008,9 +1100,10 @@ def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = N
         user_id: The user the agent answers for; the file tools only see this
             user's files of the conversation, the knowledge base tools only this
             user's notes, the past chat tools only this user's conversations
-            (None: no files, no knowledge base, no past chats).
+            (None: no files, no web addresses, no knowledge base, no past chats).
         guest: The user is a guest: no knowledge base and no past chats (a
-            guest's data is deleted when the session ends).
+            guest's data is deleted when the session ends), and no web addresses
+            (the server would fetch whatever an anonymous visitor names).
         conversation: The conversation the agent answers in (id, persona_id):
             the one the file tools see the files of, and recorded with the
             knowledge base changes.
@@ -1022,6 +1115,7 @@ def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = N
             past chat tools leave out hidden content.
         hide_definition: What the agent hides on its own (auto_hide, the user's text or the
             server's); empty: the group gives no tools.
+        answer_id: The id of the message being written, recorded with the files web_fetch saves.
 
     Returns:
         The tools; empty for an empty selection.
@@ -1032,6 +1126,7 @@ def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = N
     unknown = [group for group in groups if group not in TOOL_GROUPS]
     if unknown:
         log.warning(f"Ignoring unknown tool group(s): {', '.join(map(str, unknown))}")
-    selected = _enabled_tools(groups, user_id, guest, conversation, vault, vision, family_mode, hide_definition)
+    selected = _enabled_tools(groups, user_id, guest, conversation, vault, vision, family_mode, hide_definition,
+                              answer_id)
     log.debug(f"Tools for groups {groups}: {', '.join(selected.names()) or 'none'}")
     return selected

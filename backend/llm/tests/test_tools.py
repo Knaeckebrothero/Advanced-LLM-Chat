@@ -6,7 +6,8 @@ Offline test of the tool groups that personas select (no API keys or database ne
 Covers: tools_for_groups() with no selection, an empty one and single groups,
 unavailable groups (NEO4J_ENABLED off, TAVILY_API_KEY unset) and their
 reasons, the opt-in knowledge base with the memory tools (only when selected,
-only for signed-in users), the past chat tools (opt-in, only with the knowledge
+only for signed-in users), web addresses (web_fetch: opt-in, never for guests,
+bound to the answer; the tool itself: test_web_fetch.py), the past chat tools (opt-in, only with the knowledge
 base, the user and memory bound; the regular expressions translated for
 Postgres), the system prompt sections for the selected tools,
 the memory in the prompt (with_memory, a fake memory store), the tools
@@ -16,12 +17,15 @@ the file tools (fake file rows, temporary FILES_DIR): they only see the files of
 the conversation and user they are built for, find a file by name or ID, give
 a vision model an image itself (scaled) and a text-only model a description
 (the vision helper's error is not cached as one), and show files to the user.
+Looking closer at an image (read_file's region): a part at the image's own
+resolution, in every way an image can be turned, for both kinds of model.
 The knowledge base tools themselves need Postgres:
 backend/services/tests/knowledge_base_test.py.
 """
 import asyncio
 import base64
 import io
+import json
 import os
 import sys
 import tempfile
@@ -34,8 +38,8 @@ from backend.api import messages
 from backend.catalog import resolver
 from backend.llm import tools as tools_module
 from backend.llm.prompts import (CHAT_PROMPT, FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, MEMORY_EMPTY,
-                                 MEMORY_HEADING, WEB_SEARCH_PROMPT, build_system_prompt, with_instructions,
-                                 with_memory)
+                                 MEMORY_HEADING, WEB_FETCH_PROMPT, WEB_SEARCH_PROMPT, build_system_prompt,
+                                 with_instructions, with_memory)
 from backend.llm.tools import (OPT_IN_GROUPS, TOOL_GROUPS, ToolInputError, ToolText, default_tools,
                                tool_group_status, tool_message_content, tools_for_groups)
 from backend.llm.types import ModelConfig
@@ -81,7 +85,8 @@ async def test_selection_filters_the_enabled_tools():
 
 
 async def test_knowledge_base_is_opt_in():
-    assert OPT_IN_GROUPS == {"knowledge_base", "past_chats", "user_mcp"} and TOOL_GROUPS["knowledge_base"] == tuple(KB_TOOLS)
+    assert OPT_IN_GROUPS == {"web_fetch", "knowledge_base", "past_chats", "user_mcp"}
+    assert TOOL_GROUPS["knowledge_base"] == tuple(KB_TOOLS)
     # The users' own MCP servers: no static tools, backend/services/mcp/tools.py adds theirs per answer
     assert TOOL_GROUPS["user_mcp"] == () and len(tools_for_groups(["user_mcp"], user_id=1)) == 0
     with configured(neo4j=True, tavily=True):
@@ -99,6 +104,31 @@ async def test_knowledge_base_is_opt_in():
             assert not {"user_id", "writer"} & set(tool.parameters["properties"]), tool.name
 
 
+async def test_web_addresses_are_opt_in():
+    with configured(neo4j=True, tavily=True):
+        # Never part of "every enabled tool": an agent that may open any web address is picked for it
+        assert "web_fetch" not in default_tools(user_id=1).names()
+        assert "web_fetch" not in tools_for_groups(None, user_id=1).names()
+        assert tools_for_groups(["web_fetch"], user_id=1).names() == ["web_fetch"]
+        assert tools_for_groups(["web_fetch", "files", "web_search"], user_id=1).names() == \
+            [*FILE_TOOLS, "web_search", "web_fetch"]
+        # Not for a guest: the server would fetch whatever an anonymous visitor names
+        assert len(tools_for_groups(["web_fetch"], user_id=1, guest=True)) == 0
+        assert len(tools_for_groups(["web_fetch"])) == 0
+        assert tools_for_groups(["files", "web_fetch"], user_id=1, guest=True).names() == FILE_TOOLS
+        # The user, the conversation and the answer are bound, not arguments
+        tool = tools_for_groups(["web_fetch"], user_id=3, conversation={"id": "conv-7"}, vision=True,
+                                answer_id=99).get("web_fetch")
+        assert tool.func.keywords == {"user_id": 3, "conversation_id": "conv-7", "answer_id": 99, "vision": True}
+        assert set(tool.parameters["properties"]) == {"url", "start"}
+        # The prompt mentions it only for an agent that has it
+        assert WEB_FETCH_PROMPT in build_system_prompt(None, tools_for_groups(["web_fetch"], user_id=1))
+        assert WEB_FETCH_PROMPT not in build_system_prompt(None, tools_for_groups(None, user_id=1))
+    with configured(neo4j=False, tavily=False):
+        # Needs no key and no service
+        assert tools_for_groups(["web_fetch"], user_id=1).names() == ["web_fetch"]
+
+
 async def test_unavailable_groups_stay_off():
     with configured(neo4j=False, tavily=False):
         assert default_tools().names() == FILE_TOOLS
@@ -108,6 +138,8 @@ async def test_unavailable_groups_stay_off():
         assert status["files"] == {"id": "files", "available": True, "reason": None, "optIn": False, "requires": None}
         assert status["web_search"] == {"id": "web_search", "available": False,
                                         "reason": "TAVILY_API_KEY is not set", "optIn": False, "requires": None}
+        assert status["web_fetch"] == {"id": "web_fetch", "available": True, "reason": None, "optIn": True,
+                                       "requires": None}
         assert status["knowledge_graph"] == {"id": "knowledge_graph", "available": False,
                                              "reason": "NEO4J_ENABLED is off", "optIn": False, "requires": None}
         assert status["knowledge_base"] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True,
@@ -221,7 +253,8 @@ async def test_stream_generate_tools_follow_the_persona():
                           persona(4, [], enabled=False), persona(6, ["files", "knowledge_base"]),
                           persona(7, ["knowledge_base"], available_to_guests=True),
                           persona(8, ["knowledge_base"], own_memory=True),
-                          persona(9, ["knowledge_base"], own_memory=True, enabled=False)])
+                          persona(9, ["knowledge_base"], own_memory=True, enabled=False),
+                          persona(12, ["files", "web_fetch"], available_to_guests=True)])
     try:
         with configured(neo4j=True, tavily=True):
             def names(user, persona_id, config=config):
@@ -240,6 +273,10 @@ async def test_stream_generate_tools_follow_the_persona():
             assert names(user, 6) == sorted([*FILE_TOOLS, *KB_TOOLS])
             assert names(user, 7) == sorted(KB_TOOLS)
             assert names(guest, 7) is None, "a guest gets no knowledge base, and here no tools at all"
+            # Web addresses the same; what the agent fetches is recorded with the answer being written
+            assert names(user, 12) == sorted([*FILE_TOOLS, "web_fetch"]) and names(guest, 12) == FILE_TOOLS
+            fetch = messages._agent_tools(user, {"id": "conv-1", "persona_id": 12}, config, answer_id=42).get("web_fetch")
+            assert fetch.func.keywords == {"user_id": 1, "conversation_id": "conv-1", "answer_id": 42, "vision": False}
             # Its writes record the conversation and its agent; it is the shared knowledge base (vault 0)
             tools = messages._agent_tools(user, {"id": "conv-1", "persona_id": 6}, config)
             writer = tools.get("kb_write").func.__wrapped__.keywords["writer"]
@@ -471,6 +508,157 @@ async def test_vision_helper_errors_are_not_cached():
         vision_helper.get_vision_helper = saved
 
 
+def quarters(width: int, height: int):
+    """An image whose four quarters have a colour each: red, green, blue, yellow (rows, left to right)."""
+    from PIL import Image
+    image = Image.new("RGB", (width, height))
+    for index, colour in enumerate(((220, 30, 30), (30, 180, 30), (30, 30, 220), (230, 220, 40))):
+        image.paste(colour, ((index % 2) * width // 2, (index // 2) * height // 2,
+                             (index % 2 + 1) * width // 2, (index // 2 + 1) * height // 2))
+    return image
+
+
+def sent_image(result):
+    """The image a tool result carries for the model, opened."""
+    from PIL import Image
+    (part,) = result.images
+    return Image.open(io.BytesIO(base64.b64decode(part["image_url"]["url"].split(",", 1)[1])))
+
+
+async def test_looking_closer_at_an_image():
+    from PIL import Image, ImageChops, ImageOps
+    from backend.services import vision_helper
+
+    files_dir = tempfile.mkdtemp(prefix="region-test-")
+    quarters(3000, 2000).save(os.path.join(files_dir, "file_7_gg.png"), "PNG")
+    with open(os.path.join(files_dir, "file_1_aa.txt"), "wb") as f:
+        f.write(b"My notes")
+    saved = file_utils.FILES_DIR, file_store.db, vision_helper.get_vision_helper
+    file_utils.FILES_DIR = files_dir
+    file_store.db = FakeFileDB([
+        file_row("file_7_gg", 1, "conv-1", "big.png", "image/png", width=3000, height=2000, size_bytes=9000),
+        file_row("file_1_aa", 1, "conv-1", "notes.txt", size_bytes=8),
+    ])
+    service = get_file_retrieval_service()
+    saved_cache = service.description_cache
+    asked = []
+
+    class Helper:
+        async def describe_image(self, image_data, mime_type, prompt=None):
+            with Image.open(io.BytesIO(image_data)) as image:
+                asked.append((image.size, mime_type, prompt))
+            return f"Described {len(asked)}"
+
+    class Cache:
+        stored = {}
+
+        async def get(self, file_id, query=None):
+            return self.stored.get((file_id, query))
+
+        async def set(self, file_id, description, query=None):
+            self.stored[(file_id, query)] = description
+
+    vision_helper.get_vision_helper = lambda: Helper()
+    service.description_cache = Cache()
+    try:
+        seeing = tools_for_groups(["files"], user_id=1, conversation={"id": "conv-1"}, vision=True)
+        # The whole image reaches the model scaled down, and it is told how to look closer
+        whole = await seeing.call("read_file", {"file": "big.png"})
+        assert sent_image(whole).size == (1568, 1045)
+        assert "You see it scaled down to 1568×1045 px. To look closer at a part of it, call read_file with " \
+               'region, e.g. {"left": 50, "top": 0, "right": 100, "bottom": 50}.' in whole, whole
+        assert "scaled down" not in await seeing.call("read_file", {"file": "notes.txt"})
+
+        # A part no larger than a model takes: the image's own pixels
+        top_right = {"left": 50, "top": 0, "right": 100, "bottom": 50}
+        part = await seeing.call("read_file", {"file": "big.png", "region": top_right})
+        assert str(part) == ("big.png, the part from 50% to 100% of its width and 0% to 50% of its height: "
+                             "1500×1000 px of 3000×2000 px, at the image's own resolution. It follows."), part
+        closer = sent_image(part)
+        assert closer.size == (1500, 1000) and closer.format == "JPEG"
+        red, green, blue = closer.convert("RGB").getpixel((750, 500))
+        assert green > 150 and red < 80 and blue < 80, "the green quarter"
+        # A larger part is scaled like a whole image; edges past the image are the image's
+        half = await seeing.call("read_file", {"file": "big.png", "region": {"left": -5, "top": 0, "right": 120, "bottom": 50}})
+        assert sent_image(half).size == (1568, 523) and "3000×1000 px of 3000×2000 px, scaled down to 1568×523 px (52%)" in half
+        # As shares of the image, and as the JSON text some models send for an object
+        for spelled in ({"left": 0.5, "top": 0, "right": 1, "bottom": 0.5}, json.dumps(top_right)):
+            assert str(await seeing.call("read_file", {"file": "big.png", "region": spelled})) == str(part), spelled
+        small = await seeing.call("read_file", {"file": "big.png", "region": {"left": 10, "top": 60, "right": 12.5, "bottom": 62}})
+        assert sent_image(small).size == (75, 40) and "from 10% to 12.5% of its width and 60% to 62%" in small, small
+        blue_part = sent_image(small).convert("RGB").getpixel((30, 20))
+        assert blue_part[2] > 150 and blue_part[0] < 80, "the blue quarter, bottom left"
+
+        # What is no part of an image
+        for arguments, reason in (
+                ({"file": "notes.txt", "region": top_right}, "region is for images; notes.txt is text/plain"),
+                ({"file": "big.png", "region": {"left": 60, "top": 0, "right": 40, "bottom": 50}}, "right must be greater than left"),
+                ({"file": "big.png", "region": {"left": 10, "top": 10, "right": 10.5, "bottom": 50}}, "right must be greater"),
+                ({"file": "big.png", "region": {"left": 0, "top": 0, "right": 50}}, "needs the four edges"),
+                ({"file": "big.png", "region": {"left": "a", "top": 0, "right": 50, "bottom": 50}}, "needs the four edges"),
+                ({"file": "big.png", "region": "the top right"}, "must be of type object")):
+            try:
+                await seeing.call("read_file", arguments)
+                raise AssertionError(f"read {arguments}")
+            except ToolInputError as e:
+                assert reason in str(e), e
+        assert not asked, "a vision model needs no helper"
+
+        # A text-only model: the helper looks at the part, and answers a question about it. Kept per part
+        reading = tools_for_groups(["files"], user_id=1, conversation={"id": "conv-1"})
+        told = await reading.call("read_file", {"file": "big.png", "region": top_right})
+        assert told == ("big.png, the part from 50% to 100% of its width and 0% to 50% of its height: 1500×1000 px "
+                        "of 3000×2000 px, at the image's own resolution.\nDescribed 1"), told
+        assert not getattr(told, "images", None) and asked == [((1500, 1000), "image/jpeg", None)]
+        assert (await reading.call("read_file", {"file": "big.png", "region": top_right})).endswith("Described 1")
+        answered = await reading.call("read_file", {"file": "big.png", "region": top_right, "query": "Which colour?"})
+        other = await reading.call("read_file", {"file": "big.png", "region": {"left": 0, "top": 0, "right": 50, "bottom": 50}})
+        assert answered.endswith("Described 2") and other.endswith("Described 3") and len(asked) == 3
+        assert asked[1] == ((1500, 1000), "image/jpeg", "Which colour?")
+        assert set(Cache.stored) == {("file_7_gg", "[part 50,0,100,50] "), ("file_7_gg", "[part 50,0,100,50] Which colour?"),
+                                     ("file_7_gg", "[part 0,0,50,50] ")}, Cache.stored
+        # The whole image goes to the helper scaled, as to a vision model: a file can have 30 MB
+        assert await service._get_image_description("file_7_gg", file_utils.get_file_path("file_7_gg"), "image/png") \
+            == "Described 4"
+        assert asked[3] == ((1568, 1045), "image/jpeg", None)
+
+        # However an image is stored turned (EXIF orientation), the part is the one of the image as shown
+        picture = quarters(1200, 800)
+        for orientation in range(1, 9):
+            exif = Image.Exif()
+            exif[0x0112] = orientation
+            name = f"file_{20 + orientation}_aa"
+            picture.save(os.path.join(files_dir, name + ".jpg"), "JPEG", quality=95, subsampling=0, exif=exif.tobytes())
+            with Image.open(os.path.join(files_dir, name + ".jpg")) as stored:
+                shown = ImageOps.exif_transpose(stored)
+            for region in ((0.0, 0.0, 0.25, 0.5), (0.5, 0.25, 1.0, 0.75), (0.1, 0.6, 0.35, 0.95), (0.0, 0.0, 1.0, 1.0)):
+                cut = file_store.image_part_for_model(name, region)
+                box = tuple(round(share * (shown.width, shown.height)[index % 2]) for index, share in enumerate(region))
+                with Image.open(io.BytesIO(cut.data)) as got:
+                    want = shown.crop(box)
+                    assert cut.box == box and got.size == want.size == (cut.width, cut.height), (orientation, region)
+                    difference = ImageChops.difference(got.convert("RGB"), want).convert("L")
+                    assert sum(difference.getdata()) / (got.width * got.height) < 4, (orientation, region)
+
+        # A camera's photo with more pixels than are decoded at once: a part of it still is, decoded smaller
+        huge = os.path.join(files_dir, "file_40_aa.jpg")
+        quarters(8000, 6000).save(huge, "JPEG", quality=60)
+        assert 8000 * 6000 > file_store.MAX_IMAGE_PIXELS
+        cut = file_store.image_part_for_model("file_40_aa", (0.0, 0.0, 1.0, 1.0))
+        assert (cut.width, cut.height) == (1568, 1176) and cut.box == (0, 0, 8000, 6000) and cut.scale < 0.2
+        corner = file_store.image_part_for_model("file_40_aa", (0.9, 0.9, 1.0, 1.0))
+        assert corner.box == (7200, 5400, 8000, 6000) and (corner.width, corner.height) == (400, 300), corner.box
+        with Image.open(io.BytesIO(corner.data)) as got:
+            red, green, blue = got.convert("RGB").getpixel((200, 150))
+            assert red > 180 and green > 170 and blue < 110, "the yellow quarter, at half the photo's size"
+        quarters(8000, 6000).save(os.path.join(files_dir, "file_41_aa.png"), "PNG", compress_level=1)
+        assert file_store.image_part_for_model("file_41_aa", (0.0, 0.0, 0.1, 0.1)) is None, "a PNG is decoded whole"
+        assert file_store.image_part_for_model("file_99_zz", (0.0, 0.0, 0.5, 0.5)) is None
+    finally:
+        file_utils.FILES_DIR, file_store.db, vision_helper.get_vision_helper = saved
+        service.description_cache = saved_cache
+
+
 async def test_agents_hide_content():
     """The tool group auto_hide: hide_chat and the parameter hidden, only with a text of what to hide; the prompt."""
     from backend.llm.prompts import HIDE_KB_PROMPT, hide_prompt
@@ -521,9 +709,11 @@ async def test_agents_hide_content():
 
 
 TESTS = [test_agents_hide_content, test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
-         test_knowledge_base_is_opt_in, test_unavailable_groups_stay_off, test_prompt_only_describes_selected_tools,
+         test_knowledge_base_is_opt_in, test_web_addresses_are_opt_in, test_unavailable_groups_stay_off,
+         test_prompt_only_describes_selected_tools,
          test_past_chats_need_the_knowledge_base, test_memory_follows_the_tool_sections, test_stream_generate_tools_follow_the_persona,
-         test_file_tools_see_only_the_conversation, test_vision_helper_errors_are_not_cached]
+         test_file_tools_see_only_the_conversation, test_vision_helper_errors_are_not_cached,
+         test_looking_closer_at_an_image]
 
 
 async def main() -> int:

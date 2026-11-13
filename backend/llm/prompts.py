@@ -31,12 +31,17 @@ TOOLS_PROMPT = "Use your tools when they help you give a better answer."
 # Added when web search is enabled
 WEB_SEARCH_PROMPT = "Use web search for current events or facts you are unsure about."
 
+# Added when the agent may open web addresses (the tool group web_fetch, docs/files.md)
+WEB_FETCH_PROMPT = ("Use web_fetch to read a page or to look at an image at a web address. An image or file it "
+                    "fetches is saved to this conversation: show it by placing it in your answer under its saved name.")
+
 # Added when the file tools are enabled (docs/files.md)
 FILE_ACCESS_PROMPT = """## Files:
 This conversation has its own files: what the user attached, and what your tools created in it (e.g. generated images). You only see the files of this conversation.
 - What the user attaches to their latest message is in that message. In later messages it appears as a placeholder like [Attachment: report.pdf (fileId: abc123) - 5 pages, PDF document].
 - list_files() lists the conversation's files. Use it when the user refers to a file you can't find, e.g. an image from an earlier answer.
 - read_file(file="report.pdf") gives you a file's content; for an image, the image itself or a description of it. read_file(file="report.pdf", query="What is the revenue?") asks a question about a file you can't see yourself, read_file(file="report.pdf", pages=[1, 3]) reads some pages of a PDF.
+- A large image reaches you scaled down. To judge details (a face, hands, small text, sharpness), look closer at a part of it: read_file(file="fox-1.png", region={"left": 50, "top": 0, "right": 100, "bottom": 50}) gives its top right quarter, at up to the image's full resolution. The edges are percent of the image's width and height.
 - To show a file to the user, place it in your answer as a Markdown image with the file's name as the address: ![A red fox in the snow](fox-1.png). It appears at that place in your text: an image as the picture, any other file as a card to open. Put it on a line of its own, next to what you say about it; several in a row appear side by side. An image a tool created is only a small preview for the user until you place it: place the ones worth looking at.
 Name a file by its name, or by its fileId when several have the same name. Only files of this conversation can be placed. The chat can't display images from web addresses: give those as links, never as Markdown images."""
 
@@ -199,6 +204,8 @@ def build_system_prompt(
         tool_paragraph = TOOLS_PROMPT
         if "web_search" in names:
             tool_paragraph += " " + WEB_SEARCH_PROMPT
+        if "web_fetch" in names:
+            tool_paragraph += " " + WEB_FETCH_PROMPT
         sections.append(tool_paragraph)
     if names & FILE_TOOL_NAMES:
         sections.append(FILE_ACCESS_PROMPT)

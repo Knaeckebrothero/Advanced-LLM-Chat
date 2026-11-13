@@ -40,6 +40,7 @@ def get_mime_type(file_path: Path) -> str:
         '.png': 'image/png',
         '.gif': 'image/gif',
         '.webp': 'image/webp',
+        '.avif': 'image/avif',
     }
     return extension_to_mime.get(file_path.suffix.lower(), 'application/octet-stream')
 

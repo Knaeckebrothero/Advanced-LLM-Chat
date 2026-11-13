@@ -264,9 +264,9 @@ def run_tools(c, admin):
     c.section("Tools")
     r = admin.get("/api/admin/tools")
     groups = r.json()
-    c.check(r.status_code == 200 and [g["id"] for g in groups] == ["files", "web_search", "knowledge_graph",
-                                                                   "knowledge_base", "past_chats", "user_mcp"],
-            "GET /api/admin/tools lists the six groups", r.text)
+    c.check(r.status_code == 200 and [g["id"] for g in groups] == ["files", "web_search", "web_fetch", "knowledge_graph",
+                                                                   "knowledge_base", "past_chats", "auto_hide", "user_mcp"],
+            "GET /api/admin/tools lists the groups", r.text)
     c.check(all(set(g) == {"id", "available", "reason", "optIn", "requires"} for g in groups), "tool group fields",
             r.text)
     c.check(groups[0] == {"id": "files", "available": True, "reason": None, "optIn": False, "requires": None},

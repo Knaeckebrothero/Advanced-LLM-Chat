@@ -856,14 +856,27 @@ async def test_files():
     assert result.metadata["shownFiles"] == result.metadata["files"] and len(result.metadata["files"]) == 1
     assert result.endswith("[Saved to this conversation and shown to the user with your answer: t_paint-1.png.]"), result
     # More files than one result may keep, and a file that is too large
-    saved_limits = mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_FILE_SIZE
+    saved_limits = mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_TOOL_FILE_SIZE
     mcp_tools.MAX_FILES_PER_RESULT = 1
     result = await painter.call("t_paint__paint", {"prompt": "many", "count": 2})
     assert len(result.metadata["files"]) == 1 and "not kept: more than 1 files in one result" in result, result
-    mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_FILE_SIZE = saved_limits[0], 50
+    mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_TOOL_FILE_SIZE = saved_limits[0], 50
     result = await painter.call("t_paint__paint", {"prompt": "big"})
     assert not isinstance(result, ToolText) and "not kept: larger than 50 B" in result, result
-    mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_FILE_SIZE = saved_limits
+    mcp_tools.MAX_FILES_PER_RESULT, file_store.MAX_TOOL_FILE_SIZE = saved_limits
+    # A tool's file may be larger than an upload: the original of a generated image often is
+    assert file_store.MAX_TOOL_FILE_SIZE > file_store.MAX_FILE_SIZE
+    large = b"x" * (file_store.MAX_FILE_SIZE + 1)
+    kept = file_store.save_tool_file(large, user_id=me, conversation_id=one, mime_type="audio/mpeg", stem="large",
+                                     origin="Test")
+    assert kept["size_bytes"] == len(large) and kept["name"] == "large-1.mp3"
+    try:
+        file_store.store(large, me, name="large.mp3", mime_type="audio/mpeg")
+        raise AssertionError("an upload over the limit was stored")
+    except file_store.FileStoreError as e:
+        assert "larger than 10.0 MB" in str(e), e
+    file_utils.delete_stored_file(kept["file_id"])
+    db.delete_uploaded_file(kept["file_id"])
 
     # A picture the result only links to is read from the server and kept the same way. One the
     # server can't deliver is downloaded from the web address the result names for it; if that
@@ -1085,7 +1098,7 @@ async def test_media():
         fetched.append(address)
         return (b"x" * sizes[address], "image/jpeg") if address in sizes else None
 
-    saved = media.download, media.http_client, media.MCP_ALLOW_PRIVATE_URLS, file_store.MAX_FILE_SIZE
+    saved = media.download, media.http_client, media.MCP_ALLOW_PRIVATE_URLS, file_store.MAX_TOOL_FILE_SIZE
     media.download = fake_download
     try:
         # What the server delivers is taken; no download
@@ -1136,14 +1149,14 @@ async def test_media():
         for refused in ("https://cdn.example.com/page", "http://cdn.example.com/a.jpg", "https://cdn.example.com/down",
                         "https://cdn.example.com/loop", "https://cdn.example.com/missing", "spine://blobs/a.jpg"):
             assert await media.download(refused) is None, refused
-        file_store.MAX_FILE_SIZE = 4
+        file_store.MAX_TOOL_FILE_SIZE = 4
         assert await media.download("https://cdn.example.com/a.jpg") is None, "larger than the limit"
-        file_store.MAX_FILE_SIZE = saved[3]
+        file_store.MAX_TOOL_FILE_SIZE = saved[3]
         # The real client refuses private addresses
         media.http_client = saved[1]
         assert await media.download(f"https://127.0.0.1:{ports['closed']}/a.jpg") is None
     finally:
-        media.download, media.http_client, media.MCP_ALLOW_PRIVATE_URLS, file_store.MAX_FILE_SIZE = saved
+        media.download, media.http_client, media.MCP_ALLOW_PRIVATE_URLS, file_store.MAX_TOOL_FILE_SIZE = saved
 
 
 async def test_tool_records():
