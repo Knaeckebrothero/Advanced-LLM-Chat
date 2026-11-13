@@ -17,6 +17,7 @@ import { ApiService } from '../services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslateService } from '@ngx-translate/core';
 import { FamilyModeService } from '../services/family-mode.service';
+import { ConversationFilesDialogService } from '../components/conversation-files/conversation-files-dialog.service';
 
 
 @Component({
@@ -103,6 +104,18 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       (!conversation || conversation.id === '0') && messages.length === 0 && !streaming),
     distinctUntilChanged()
   );
+
+  // The attach menu offers "Files of this chat" once the server has the conversation
+  hasStoredConversation$: Observable<boolean> = this.chatState.activeConversation$.pipe(
+    map(conversation => !!conversation && conversation.id !== '0'),
+    distinctUntilChanged()
+  );
+
+  /** Every file of this conversation, to open and download. */
+  async showChatFiles(): Promise<void> {
+    const conversation = await firstValueFrom(this.chatState.activeConversation$);
+    if (conversation && conversation.id !== '0') this.filesDialog.open(conversation.id, conversation.name);
+  }
 
   // Manual editing: the composer offers Generate whenever the conversation has a stored message
   // (system messages aside, they belong to the system prompt): the model answers the conversation
@@ -221,7 +234,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     private cdr: ChangeDetectorRef,
     private snackBar: MatSnackBar,
     private translate: TranslateService,
-    private familyMode: FamilyModeService
+    private familyMode: FamilyModeService,
+    private filesDialog: ConversationFilesDialogService
   ) { }
 
   ngOnInit() {

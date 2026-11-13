@@ -29,7 +29,7 @@ import {
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
 import { IContextSize, ISystemPrompt, IConversationSummary } from '../data/models/conversation.model';
-import { FilePreviewSize, IFileRef } from '../data/models/file.model';
+import { FilePreviewSize, IAllFiles, IChatFile } from '../data/models/file.model';
 import {
   IKBMemory,
   IKBNote,
@@ -654,11 +654,24 @@ export class ApiService {
   }
 
   /** The files of a conversation, oldest first: its messages' attachments and what tools created in it. */
-  async getConversationFiles(conversationId: string): Promise<IFileRef[]> {
+  async getConversationFiles(conversationId: string): Promise<IChatFile[]> {
     return await lastValueFrom(
-      this.http.get<IFileRef[]>(`${this.baseUrl}/api/files`, {
+      this.http.get<IChatFile[]>(`${this.baseUrl}/api/files`, {
         ...this.getHttpOptions(),
         params: { conversationId }
+      })
+    );
+  }
+
+  /**
+   * The files of all the user's conversations, a page at a time: `limit` files after `offset`,
+   * of one source ("upload", "tool") or of both.
+   */
+  async getAllFiles(offset: number, limit: number, source?: 'upload' | 'tool'): Promise<IAllFiles> {
+    return await lastValueFrom(
+      this.http.get<IAllFiles>(`${this.baseUrl}/api/files/all`, {
+        ...this.getHttpOptions(),
+        params: { offset, limit, ...(source ? { source } : {}) }
       })
     );
   }

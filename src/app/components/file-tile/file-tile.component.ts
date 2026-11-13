@@ -1,4 +1,4 @@
-import { Component, HostBinding, Input, OnChanges } from '@angular/core';
+import { Component, ElementRef, HostBinding, Input, OnChanges, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,7 +7,7 @@ import { TranslateModule } from '@ngx-translate/core';
 import { FilePreviewSize, FileType, IFileRef } from '../../data/models/file.model';
 import { FilePreviewUtil } from '../../data/objects/message';
 import { FilePreviewsService } from '../../services/file-previews.service';
-import { FilePreviewDialogComponent, FilePreviewDialogData } from '../file-preview-dialog/file-preview-dialog.component';
+import { openFilePreview } from '../file-preview-dialog/file-preview-dialog.component';
 
 // A picture's tile is at most this much wider than high, or higher than wide
 const MAX_RATIO = 3;
@@ -20,6 +20,9 @@ const MAX_RATIO = 3;
  * Its parent sets the height (--file-tile-height). A picture takes its width from its shape and
  * is always shown whole: where the column is narrower than that, the tile gets lower instead of
  * cropping, and a panorama or a long strip sits inside a 3:1 tile over a blurred copy of itself.
+ *
+ * Content given to it is laid over the tile (the tile is its positioned box): an action of the
+ * parent's, such as Download in "Files of this chat".
  */
 @Component({
   selector: 'app-file-tile',
@@ -28,25 +31,49 @@ const MAX_RATIO = 3;
   templateUrl: './file-tile.component.html',
   styleUrls: ['./file-tile.component.scss']
 })
-export class FileTileComponent implements OnChanges {
+export class FileTileComponent implements OnChanges, OnDestroy {
   @Input({ required: true }) file!: IFileRef;
   /** Which preview to load: small for a row of thumbnails, large for the files of an answer. */
   @Input() size: FilePreviewSize = 'small';
   /** What the picture shows, for screen readers and the tooltip (else the file's name). */
   @Input() label = '';
+  /** The files the preview steps through from this one (previous, next), in their order. */
+  @Input() gallery?: IFileRef[];
+  /** Load the preview only when the tile comes into view: for long lists of files. */
+  @Input() lazy = false;
 
   url: string | null = null;
   failed = false;
   private shownFileId: string | null = null;
+  private inView?: IntersectionObserver;
 
-  constructor(private previews: FilePreviewsService, private dialog: MatDialog) {}
+  constructor(private previews: FilePreviewsService, private dialog: MatDialog,
+              private host: ElementRef<HTMLElement>) {}
 
   ngOnChanges(): void {
     if (this.file.fileId === this.shownFileId) return;
     const fileId = this.shownFileId = this.file.fileId;
     this.url = null;
     this.failed = false;
+    this.inView?.disconnect();
     if (!this.isImage && !this.isPdf) return;
+    if (!this.lazy || typeof IntersectionObserver === 'undefined') {
+      this.loadPreview(fileId);
+      return;
+    }
+    this.inView = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      this.inView?.disconnect();
+      this.loadPreview(fileId);
+    });
+    this.inView.observe(this.host.nativeElement);
+  }
+
+  ngOnDestroy(): void {
+    this.inView?.disconnect();
+  }
+
+  private loadPreview(fileId: string): void {
     // A PDF's card only has room for a small picture of its first page
     this.previews.url(fileId, this.isImage ? this.size : 'small').then(
       url => { if (this.shownFileId === fileId) this.url = url; },
@@ -105,21 +132,6 @@ export class FileTileComponent implements OnChanges {
   }
 
   open(): void {
-    const data: FilePreviewDialogData = {
-      fileId: this.file.fileId,
-      fileName: this.file.name,
-      fileSize: this.sizeText || undefined,
-      fileType: this.type,
-      mimeType: this.file.mimeType
-    };
-    this.dialog.open(FilePreviewDialogComponent, {
-      data,
-      panelClass: 'file-preview-dialog-panel',
-      hasBackdrop: false,  // The dialog has its own
-      maxWidth: '100vw',
-      maxHeight: '100vh',
-      width: '100vw',
-      height: '100vh'
-    });
+    openFilePreview(this.dialog, this.file, this.gallery);
   }
 }

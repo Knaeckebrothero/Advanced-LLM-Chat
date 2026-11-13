@@ -16,6 +16,7 @@ import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 import { CatalogService } from '../../services/catalog.service';
 import { AuthService } from '../../auth/auth.service';
 import { FamilyModeService } from '../../services/family-mode.service';
+import { ConversationFilesDialogService } from '../../components/conversation-files/conversation-files-dialog.service';
 
 
 @Component({
@@ -49,7 +50,8 @@ export class ConversationComponent implements OnInit, OnDestroy {
     private catalog: CatalogService,
     private auth: AuthService,
     private router: Router,
-    private familyMode: FamilyModeService
+    private familyMode: FamilyModeService,
+    private filesDialog: ConversationFilesDialogService
   ) {}
 
   onSelect(): void {
@@ -165,6 +167,11 @@ export class ConversationComponent implements OnInit, OnDestroy {
     } catch (error) {
       alert(this.translate.instant('conversationMenu.exportFailed', { error: describeHttpError(error, this.translate) }));
     }
+  }
+
+  /** Every file of the conversation, to open and download: what was attached and what the agent's tools created. */
+  showFiles(): void {
+    this.filesDialog.open(this.conversation.id, this.conversation.name);
   }
 
   /** Whether the summary of this conversation is being written (summarizeConversation()). */

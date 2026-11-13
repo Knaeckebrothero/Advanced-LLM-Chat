@@ -194,6 +194,28 @@ body.theme-initialized {
   }
 }
 
+// The lists of files ("Files of this chat", "All files"): the header stays and the list scrolls
+// inside (its maximum size is set where it opens)
+.conversation-files-dialog-panel {
+  width: 880px;
+
+  .mat-mdc-dialog-container {
+    --mdc-dialog-container-color: var(--theme-surface);
+    --mdc-dialog-container-shape: 20px;
+  }
+
+  .mat-mdc-dialog-surface {
+    overflow: hidden;
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  @media (max-width: 600px) {
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+}
+
 // Dialogs of the model catalog (persona values, catalog management)
 // The theme only emits Material color tokens, so the typography these dialogs need is set here
 .catalog-dialog-panel {

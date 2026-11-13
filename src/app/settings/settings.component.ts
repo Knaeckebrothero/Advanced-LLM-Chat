@@ -22,6 +22,7 @@ import { Conversation } from '../data/objects/conversation';
 import { IConversationFile } from '../data/models/api.model';
 import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
 import { FamilyModeService } from '../services/family-mode.service';
+import { ConversationFilesDialogService } from '../components/conversation-files/conversation-files-dialog.service';
 
 
 @Component({
@@ -80,7 +81,8 @@ export class SettingsComponent {
     private backgroundService: BackgroundService,
     private chatState: ChatStateService,
     authService: AuthService,
-    readonly familyMode: FamilyModeService
+    readonly familyMode: FamilyModeService,
+    private filesDialog: ConversationFilesDialogService
   ) {
     this.canImport = !authService.isGuest;
     this.hasMemory = !authService.isGuest;
@@ -250,6 +252,18 @@ export class SettingsComponent {
     if (imported && this.importErrors.length === 0) {
       this.dialogRef.close({ openConversationId: imported.id });
     }
+  }
+
+  /**
+   * The files of all conversations, over the settings. A conversation picked there opens: the
+   * settings close for it, like after an import.
+   */
+  showAllFiles(): void {
+    this.filesDialog.openAll().afterClosed().subscribe(result => {
+      if (result?.openConversationId) {
+        this.dialogRef.close({ openConversationId: result.openConversationId });
+      }
+    });
   }
 
   close(): void {

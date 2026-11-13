@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import List, Literal, Optional
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from backend.config import GUEST_FILES_MAX_MB, MAX_UPLOAD_FILES
@@ -20,6 +20,7 @@ from backend.security.guest_limits import count_guest_request
 from backend.services.document_handler import process_pdf_safely, get_extracted_text
 from backend.services.audio_handler import is_audio, process_audio, get_transcript
 from backend.services import file_store
+from backend.services.hidden_content import family_mode
 from backend.services.file_utils import get_file_path, delete_stored_file, stored_bytes
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
@@ -231,13 +232,42 @@ async def list_conversation_files(
 ) -> List[dict]:
     """
     The files of a conversation, oldest first: what its messages attach and what tools created
-    in it, each as {fileId, name, mimeType, size, width, height} (file_store.file_ref()). The
-    chat finds in it the files an answer places in its text (docs/files.md, "In the chat").
+    in it, each as {fileId, name, mimeType, size, width, height, source, origin, createdAt}
+    (file_store.file_entry()). The chat finds in it the files an answer places in its text, and
+    lists them under "Files of this chat" (docs/files.md, "In the chat").
 
     Only the user's own files: a conversation of somebody else has none, like a missing one.
     """
     rows = await asyncio.to_thread(file_store.conversation_files, conversationId, current_user['user_id'])
-    return [file_store.file_ref(row) for row in rows]
+    return [file_store.file_entry(row) for row in rows]
+
+
+@router.get("/all",
+            responses={
+                status.HTTP_200_OK: {"description": "The files of all the user's conversations"},
+                status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "Not authenticated"}
+            })
+async def list_all_files(
+        offset: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=200),
+        source: Optional[Literal["upload", "tool"]] = None,
+        current_user: dict = Depends(get_current_user),
+        hide: bool = Depends(family_mode)
+) -> dict:
+    """
+    The files of all the user's conversations, for "All files" in the settings (docs/files.md):
+    the conversations by their newest file, each conversation's files together, newest first.
+
+    Returns {files, counts, size}: `limit` files after `offset`, each as in the list of one
+    conversation with `conversationId` and `conversationName`; how many uploads and files of
+    tools there are in all (`counts`, whatever `source` asks for); and the bytes they take.
+    Files in no conversation (of deleted messages and conversations) are not listed, and a
+    device in family mode gets none of hidden conversations.
+    """
+    found = await asyncio.to_thread(file_store.all_files, current_user['user_id'], source=source,
+                                    family_mode=hide, limit=limit, offset=offset)
+    return {"files": [file_store.file_entry(row) for row in found["files"]],
+            "counts": found["counts"], "size": found["bytes"]}
 
 
 @router.get("/{file_id}",

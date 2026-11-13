@@ -58,6 +58,8 @@
     [canGenerate]="(canGenerate$ | async) ?? false"
     [generateContinues]="(generateKind$ | async) === 'continue'"
     [contextSize]="contextSize$ | async"
+    [canShowChatFiles]="(hasStoredConversation$ | async) ?? false"
+    (chatFilesRequested)="showChatFiles()"
     (generateRequested)="generateAnswer()"
     (messageSent)="onMessageSent($event)"
     (audioRequested)="onAudioRequested()"

@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatDividerModule } from '@angular/material/divider';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
@@ -72,6 +73,7 @@ import { IContextSize } from '../../data/models/conversation.model';
     MatIconModule,
     MatButtonModule,
     MatMenuModule,
+    MatDividerModule,
     MatTooltipModule,
     MatProgressBarModule,
     MatDialogModule,
@@ -124,6 +126,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   @Output() locationRequested = new EventEmitter<void>();
   @Output() stopRequested = new EventEmitter<void>();
   @Output() generateRequested = new EventEmitter<void>();
+  /** "Files of this chat" in the attach menu: offered for a conversation the server has. */
+  @Input() canShowChatFiles = false;
+  @Output() chatFilesRequested = new EventEmitter<void>();
 
   // Input property to track if AI is currently streaming
   @Input() isStreaming: boolean = false;

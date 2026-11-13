@@ -72,7 +72,35 @@
     "open": "Open {{name}}",
     "notFound": "(File not found: {{name}})",
     "shown": "Files of this answer",
-    "created": "More files created in this answer"
+    "created": "More files created in this answer",
+    "title": "Files of this chat",
+    "count": "{{count}} files",
+    "countOne": "1 file",
+    "filter": "Show",
+    "filters": {
+      "all": "All",
+      "upload": "Uploaded",
+      "tool": "Created by the agent"
+    },
+    "images": "Images",
+    "others": "Other files",
+    "documents": "Files",
+    "uploaded": "Uploaded",
+    "createdBy": "Created by {{origin}}",
+    "createdByAgent": "Created by the agent",
+    "download": "Download {{name}}",
+    "downloadFailed": "{{name}} could not be downloaded.",
+    "loading": "Loading files…",
+    "loadFailed": "The files could not be loaded.",
+    "empty": "No files in this chat yet",
+    "emptyHint": "Files you attach and files the agent creates appear here.",
+    "allTitle": "All files",
+    "openChat": "Open this chat",
+    "more": "Show more ({{shown}} of {{count}})",
+    "emptyAll": "No files yet",
+    "emptyAllHint": "Files you attach in a chat and files the agents create appear here.",
+    "settingsTitle": "Files",
+    "settingsHint": "Everything you attached and the agents created, from all your chats, to open and download."
   },
   "filePreview": {
     "zoomIn": "Zoom in",
@@ -88,7 +116,10 @@
     "downloadToView": "Download to view",
     "noPreview": "No preview for this kind of file",
     "downloadFile": "Download file",
-    "noAudioSupport": "Your browser cannot play this audio."
+    "noAudioSupport": "Your browser cannot play this audio.",
+    "previous": "Previous file",
+    "next": "Next file",
+    "position": "{{index}} of {{count}}"
   },
   "Login": "Login",
   "Please enter your email to continue": "Please enter your email to continue",
@@ -593,7 +624,8 @@
     "memoryFailed": "Could not save to the memory: {{error}}",
     "options": "More options",
     "deleteConfirm": "Delete this conversation?",
-    "exportFailed": "The conversation could not be exported: {{error}}"
+    "exportFailed": "The conversation could not be exported: {{error}}",
+    "files": "Files"
   },
   "systemPrompt": {
     "title": "System prompt",
