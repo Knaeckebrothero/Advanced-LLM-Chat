@@ -126,7 +126,7 @@ export class AuthService {
     try {
       // The backend rate-limits guests by the IP address of the connection
       const response = await lastValueFrom(
-        this.http.post<{ user: User, message: string, token: string }>(
+        this.http.post<{ user: User, message: string }>(
           `${this.baseUrl}/api/auth/guest-login`,
           {},
           { withCredentials: true, observe: 'response' }

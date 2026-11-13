@@ -7,7 +7,8 @@ import secrets
 from datetime import datetime, timedelta, UTC
 from typing import Optional, Dict
 from fastapi import Request, HTTPException, Depends
-from backend.config import ADMIN_EMAILS, AUTH_MODE, SESSION_TIMEOUT_HOURS, GUEST_SESSION_TIMEOUT_HOURS
+from backend.config import (ADMIN_EMAILS, AUTH_MODE, GUEST_LIMIT_HOURS, GUEST_SESSION_TIMEOUT_HOURS,
+                            SESSION_TIMEOUT_HOURS)
 from backend.database import db
 from backend.security.csrf import generate_csrf_token
 
@@ -256,8 +257,9 @@ async def cleanup_expired_sessions():
     """
     Periodically cleans up expired sessions from the database. This function runs in
     an infinite loop, purging sessions with expiration dates earlier than the
-    current time, and the guest users (with their conversations) that no session
-    reaches any more. It executes this cleanup process every hour.
+    current time, the guest users (with their conversations) that no session
+    reaches any more, and the used-up counters of the guests' limits. It executes
+    this cleanup process every hour.
 
     :return: None
     """
@@ -267,6 +269,8 @@ async def cleanup_expired_sessions():
             db.delete_expired_sessions()
             # Guest users whose sessions are gone, with their conversations
             db.delete_stale_guest_users(datetime.utcnow() - timedelta(hours=GUEST_SESSION_TIMEOUT_HOURS))
+            # Counters of the guests' limits that have started again (backend/security/guest_limits.py)
+            db.delete_stale_guest_usage(datetime.utcnow() - timedelta(hours=GUEST_LIMIT_HOURS))
             log.debug("Expired sessions cleanup completed")
 
         except Exception as e:
@@ -330,66 +334,11 @@ def client_ip(request: Request) -> Optional[str]:
     The client's IP address, taken from the connection, never from the request body.
 
     Behind a reverse proxy this is the proxy's address, unless uvicorn trusts the
-    proxy's X-Forwarded-For header (FORWARDED_ALLOW_IPS, default 127.0.0.1).
+    proxy's X-Forwarded-For header (FORWARDED_ALLOW_IPS, default 127.0.0.1). Trust
+    only the proxy: with FORWARDED_ALLOW_IPS=* a client can claim any address, and
+    with it a fresh guest limit.
 
     :param request: The HTTP request.
     :return: The address, or None if the server doesn't know it.
     """
     return request.client.host if request.client else None
-
-
-async def rate_limit_guest(request: Request, current_user: Optional[dict] = Depends(get_current_user_optional)):
-    """
-    Apply a rate limit mechanism for guest users based on their IP addresses. The function allows a
-    maximum number of requests for guest users within a specified time frame. If the limit is exceeded,
-    a 429 HTTP status is returned with details about when the user can retry.
-
-    :param request: The HTTP request object containing the request data and client information.
-    :type request: Request
-    :param current_user: An optional dictionary containing information about the current authenticated
-        user. Defaults to None if the user is not authenticated.
-    :type current_user: Optional[dict]
-    :return: None if no rate limit is applied or the user is not a guest.
-
-    :raises HTTPException: If the guest user exceeds the rate limit, a 429 Too Many Requests error is
-        raised, including a Retry-After header with the recommended wait time.
-    """
-    if current_user and not current_user.get("is_guest"):
-        return  # Not a guest, no rate limit
-
-    ip_address = client_ip(request) or "unknown"
-    now = datetime.now(UTC)
-    limit_duration = timedelta(hours=3)
-    max_requests = 5
-
-    usage = db.get_guest_usage(ip_address)
-
-    if usage:
-        last_request_at = usage["last_request_at"]
-        if isinstance(last_request_at, str):
-            last_request_at = datetime.fromisoformat(last_request_at)
-
-        # Ensure timezone awareness
-        if last_request_at.tzinfo is None:
-            last_request_at = last_request_at.replace(tzinfo=UTC)
-
-        if now - last_request_at > limit_duration:
-            # Reset counter
-            log.debug(f"Rate limit counter reset for guest IP {ip_address}")
-            db.reset_guest_usage(ip_address)
-        elif usage["request_count"] >= max_requests:
-            reset_time = last_request_at + limit_duration
-            retry_after_seconds = (reset_time - now).total_seconds()
-            headers = {"Retry-After": str(int(retry_after_seconds))}
-            log.warning(f"Rate limit exceeded for guest IP {ip_address}: {usage['request_count']}/{max_requests}")
-            raise HTTPException(
-                status_code=429,
-                detail=f"Too many requests. Please try again after {reset_time.isoformat()}",
-                headers=headers
-            )
-        else:
-            db.increment_guest_usage(ip_address)
-            log.debug(f"Guest request count: {usage['request_count'] + 1}/{max_requests} for IP {ip_address}")
-    else:
-        db.increment_guest_usage(ip_address)
-        log.debug(f"First guest request tracked for IP {ip_address}")

@@ -278,7 +278,8 @@ def message_api(fake_db, config):
     """
     from fastapi import FastAPI
     from backend.api import messages
-    from backend.security.auth import get_current_user, rate_limit_guest
+    from backend.security.auth import get_current_user
+    from backend.security.guest_limits import rate_limit_guest
 
     app = FastAPI()
     app.include_router(messages.router)

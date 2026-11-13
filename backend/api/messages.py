@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from typing import Dict, AsyncGenerator, List, Optional, Tuple
-from fastapi import APIRouter, Response, Depends, HTTPException, status
+from fastapi import APIRouter, Request, Response, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 from backend.models.common import ErrorResponse
 from backend.models.message import (
@@ -27,7 +27,9 @@ from backend.models.message import (
     AgentStep
 )
 from backend.database import db
-from backend.security.auth import get_current_user, verify_conversation_ownership, rate_limit_guest
+from backend.security.auth import get_current_user, verify_conversation_ownership
+from backend.security.errors import answer_error
+from backend.security.guest_limits import count_guest_request, guest_write, rate_limit_guest
 from backend.security.logging import crud_logger
 from backend.llm import (
     ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups, with_instructions,
@@ -195,6 +197,8 @@ async def _answer_context(
     toolset = McpToolset()
     if mcp:
         tools, toolset = await _mcp_tools(current_user, conversation, config, tools, answer_id)
+    if tools is not None and current_user.get('is_guest'):
+        tools.hide_errors = True  # A guest sees that a tool failed, not the text of an unexpected error
     history_builder = ConversationHistoryBuilder(db)
     system_prompt = with_instructions(
         _memory_prompt(
@@ -307,7 +311,8 @@ def _save_agent_message(
                  status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
                  status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse,
                                                           "description": "Internal server error"}
-             })
+             },
+             dependencies=[Depends(guest_write)])
 async def user_send_message(request_body: ApiMessageSend, response: Response,
                              current_user: dict = Depends(get_current_user)):
     """
@@ -430,7 +435,7 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
         crud_logger.error(f"Error sending message: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send message: {str(e)}. Please try again later."
+            detail="Failed to send message. Please try again later."
         )
 
 
@@ -511,7 +516,7 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
         logger.error(f"Error generating message: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=answer_error(e, current_user)
         )
 
 
@@ -525,7 +530,8 @@ async def generate_message(request_body: ApiMessageGenerate, response: Response,
                   status.HTTP_409_CONFLICT: {"model": ErrorResponse, "description": "Version conflict"},
                   status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse,
                                                            "description": "Internal server error"}
-              })
+              },
+              dependencies=[Depends(guest_write)])
 async def patch_message(request_body: MessagePatch, response: Response,
                         current_user: dict = Depends(get_current_user)):
     """
@@ -631,7 +637,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
         crud_logger.error(f"Error patching message: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update message: {str(e)}. Please refresh and try again."
+            detail="Failed to update message. Please refresh and try again."
         )
 
 
@@ -684,7 +690,7 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
         crud_logger.error(f"Error deleting message: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete message: {str(e)}. Please check your connection and try again."
+            detail="Failed to delete message. Please check your connection and try again."
         )
 
 
@@ -695,7 +701,8 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
                  status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
                  status.HTTP_404_NOT_FOUND: {"description": "Message not found"},
                  status.HTTP_409_CONFLICT: {"model": ErrorResponse, "description": "No room next to the message"},
-             })
+             },
+             dependencies=[Depends(guest_write)])
 async def insert_message(request_body: MessageInsert, current_user: dict = Depends(get_current_user)):
     """
     Insert a text message of the user, the assistant or the system before or after a message, without an answer.
@@ -816,7 +823,7 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
         crud_logger.error(f"Error rating message: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to rate message: {str(e)}"
+            detail="Failed to rate message"
         )
 
 
@@ -908,7 +915,7 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
         crud_logger.error(f"Error regenerating message: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to regenerate message: {str(e)}"
+            detail=answer_error(e, current_user)
         )
 
 
@@ -922,9 +929,11 @@ async def regenerate_message(request_body: RegenerateMessageRequest, response: R
                                                           "description": "Internal server error"},
                  status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse,
                                                         "description": "No language model configured"}
-             })
+             },
+             dependencies=[Depends(guest_write)])
 async def send_and_generate_message(
         request_body: ApiMessageSendAndGenerate,
+        request: Request,
         response: Response,
         current_user: dict = Depends(get_current_user)
 ):
@@ -938,6 +947,11 @@ async def send_and_generate_message(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this conversation"
             )
+
+        # An answer counts against the guests' limit like the other generating endpoints,
+        # before anything is stored (agent messages are stored without an answer)
+        if request_body.generateResponse and request_body.type != 'agent':
+            count_guest_request(request, current_user, "answers")
 
         # The server stamps the time, as in /send
         user_message_id = int(time.time() * 1000)
@@ -1099,7 +1113,7 @@ async def send_and_generate_message(
         logger.error(f"Error in send_and_generate: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=answer_error(e, current_user)
         )
 
 
@@ -1334,6 +1348,7 @@ async def stream_generate(
 
         except Exception as e:
             crud_logger.error(f"Error in stream generate: {str(e)}", exc_info=True)
+            error_text = answer_error(e, current_user)
 
             # Save error state using JSONB storage, with the usage until the error
             db.create_agent_message(
@@ -1343,7 +1358,7 @@ async def stream_generate(
                 time=current_time,
                 content=final_response,  # Response text (unified with text messages)
                 status='error',
-                error=str(e),
+                error=error_text,
                 steps=steps,
                 model_id=config.id,
                 model_name=config.display_name,
@@ -1353,7 +1368,7 @@ async def stream_generate(
 
             yield {
                 "event": "error",
-                "data": json.dumps({"error": str(e)})
+                "data": json.dumps({"error": error_text})
             }
 
     return EventSourceResponse(event_generator())
@@ -1488,6 +1503,7 @@ async def context_size(
 async def generate_tts(
     conversation_id: str,
     message_id: int,
+    request: Request,
     language: str = "en",
     current_user: dict = Depends(get_current_user)
 ):
@@ -1553,6 +1569,9 @@ async def generate_tts(
                 detail="Message has no text content"
             )
 
+        # New speech costs a model call or two; cached speech (above) is free
+        count_guest_request(request, current_user, "speech")
+
         # Preprocess text for TTS (converts markdown, tables, code to speakable prose)
         final_text = text_content
 
@@ -1594,5 +1613,5 @@ async def generate_tts(
         crud_logger.error(f"Error generating TTS: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"TTS generation failed: {str(e)}"
+            detail="TTS generation failed"
         )

@@ -1,6 +1,6 @@
 # Authentication
 
-Guests can always chat: a first visit starts a guest session (its own user, rate-limited by IP address, deleted once the session has expired). `AUTH_MODE` decides how everyone else logs in:
+Guests can always chat: a first visit starts a guest session (its own user, limited per client address as described under [Guests](#guests), deleted once the session has expired). `AUTH_MODE` decides how everyone else logs in:
 
 | `AUTH_MODE` | Login | For |
 |---|---|---|
@@ -10,7 +10,7 @@ Guests can always chat: a first visit starts a guest session (its own user, rate
 
 The default is `none`, so a deployment that forgets the setting can't expose the mock login. The development `.env` (from `.env.example`) sets `AUTH_MODE=mock`. The backend refuses to start with an unknown mode or incomplete OIDC settings.
 
-Code: `backend/security/oidc.py` (the flow), `backend/api/auth.py` (endpoints), `backend/security/auth.py` (sessions, `is_admin`), `src/app/auth/auth.service.ts` and `src/app/login/` (frontend).
+Code: `backend/security/oidc.py` (the flow), `backend/api/auth.py` (endpoints), `backend/security/auth.py` (sessions, `is_admin`), `backend/security/guest_limits.py` (what guests may use), `src/app/auth/auth.service.ts` and `src/app/login/` (frontend).
 
 ## How a login works (`oidc`)
 
@@ -21,6 +21,8 @@ The backend is a confidential client and runs the authorization code flow with P
 3. After the login the provider redirects to `GET /api/auth/oidc/callback`. The backend checks the state, swaps the code for tokens (client secret and PKCE verifier), checks the ID token's signature, issuer, audience, lifetime and nonce, and reads the roles.
 4. It finds or creates the user (see [Users](#users)), creates the session (replacing the guest session) and redirects to `FRONTEND_URL/auth/callback`. The frontend then loads the user, clears the guest's chats stored in the browser, and syncs.
 5. A refused or failed login ends on `FRONTEND_URL/login?error=...` (`auth_failed`, `provider_unavailable`, `forbidden`, `email_in_use`), and the login page explains it.
+
+**From the app's own pages only**: the logins, the logout and the session refresh carry no CSRF token (a browser may have no session yet), so the backend checks the `Origin` header instead: it must be `FRONTEND_URL` or one of `CORS_ORIGINS`. Another site's page can't log a visitor out or swap their session for a guest's. Requests without the header (scripts, tools) pass. Every other changing request needs the CSRF token.
 
 **Logout** ends the app session and returns the provider's logout URL (`logoutUrl`, with the ID token kept in the session row). The frontend sends the browser there, so the provider's session ends too and the next login asks for the password again. The provider then redirects to `FRONTEND_URL`, where the app starts a guest session.
 
@@ -52,6 +54,29 @@ The backend reaches the provider for the metadata, the signing keys and the toke
 - The first login links an existing user with the same email (e.g. from the mock login), so its chats are kept, but only if the provider says the email is verified. Otherwise the login is refused with `email_in_use`: tick "Email verified" for the user in Keycloak and log in again.
 - A provider that shares no email gets a placeholder (`oidc_<hash>@oidc.invalid`).
 - Guests are never admins; a guest who logs in starts with an empty chat list (the guest's chats are not carried over).
+
+## Guests
+
+A guest has no account, so what guests use is counted per client address. Every kind of request has its own counter, which starts again `GUEST_LIMIT_HOURS` (3) after its last counted request. Over a limit the server answers 429 with the time the counter starts again, and the chat shows it. Signed-in users are not limited.
+
+| Setting | Default | Counts |
+|---|---|---|
+| `GUEST_MAX_ANSWERS` | 5 | Answers of a model, on every endpoint that asks one, and summaries |
+| `GUEST_MAX_TITLES` | 10 | Conversation titles a model writes |
+| `GUEST_MAX_SPEECH` | 10 | Messages read aloud (speech that is already cached is free) |
+| `GUEST_MAX_UPLOADS` | 10 | Uploaded files |
+| `GUEST_MAX_WRITES` | 200 | Conversations and messages stored or changed (a rename counts too) |
+| `GUEST_MAX_LOGINS` | 30 | Guest sessions started |
+
+Also for guests only: a conversation or message can be at most `GUEST_MAX_REQUEST_KB` (256) large, and all guests' files together, with the pages and previews made from them, may take `GUEST_FILES_MAX_MB` (500); past that, guests can't upload until expired guests' files are deleted. For everyone: a request body can be at most `MAX_REQUEST_MB` (32), and an upload at most 10 files of 10 MB.
+
+**The address** is the connection's. An IPv6 address counts as its /64 network, since one connection has a whole /64 to pick addresses from. Behind a reverse proxy, ingress or tunnel, uvicorn must trust that proxy's `X-Forwarded-For` header, and only that proxy's: set `FORWARDED_ALLOW_IPS` to the proxy's address or network. Without it all guests share the proxy's address and one counter. With `*` the server believes whatever address a client claims, and every request gets fresh limits.
+
+**What guests can't do**: use models and agents that aren't marked for guests, the knowledge base and the memory, their own MCP servers, settings saved on the server, and the import of conversations. A guest's conversations and files are deleted once the session has expired (`GUEST_SESSION_TIMEOUT_HOURS`, 6). The app renews a session that is in use, but a guest's only for `GUEST_MAX_HOURS` (24) after the guest's first visit: then it runs out, so no guest keeps data on the server for ever. The browser starts a new guest session after that.
+
+**Errors**: when a model can't answer, a signed-in user gets the provider's error text, which usually says what to fix. A guest only learns that it failed (and the provider's HTTP status), because such texts can name internal addresses. The same goes for a tool that fails unexpectedly: a guest's steps say that it failed, not with which text.
+
+The limits bound what a visitor can cost and store; they are no protection against someone with many addresses. A public server's model keys should have spending limits at the provider.
 
 ## Option 1: the bundled Keycloak (docker compose)
 
@@ -106,5 +131,7 @@ Users who should keep the chats of an earlier (mock login) account need "Email v
 - Outside `mock` mode, sessions from the mock login (and sessions from before `auth_method` existed that aren't guest sessions) end at their next request.
 
 ## Tests
+
+`backend/security/tests/guest_limits_test.py` checks the guests' limits through the real app and a real Postgres (its own `<POSTGRES_DB>_guest_test` database): the counters, every limited endpoint, that signed-in users are not limited, the error texts, the logins and logout from another site's page, and the largest request.
 
 `backend/security/tests/oidc_test.py` checks the whole flow against a real Keycloak (the bundled one): login and callback, PKCE/state/nonce, cookies, admin and plain users, logout at the provider, session refresh, name and email changes, linking by verified email, refused, tampered and replayed logins, and that mock sessions end. Some checks run in-process (required role, admin emails, settings). Its docstring has the commands.

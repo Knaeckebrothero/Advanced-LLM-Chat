@@ -169,6 +169,31 @@ ADMIN_EMAILS = {
 AUTH_MODE = os.getenv("AUTH_MODE", "").strip().lower() or "none"
 SESSION_TIMEOUT_HOURS = int(os.getenv("SESSION_TIMEOUT_HOURS", "24"))
 GUEST_SESSION_TIMEOUT_HOURS = int(os.getenv("GUEST_SESSION_TIMEOUT_HOURS", "6"))
+# A guest's session is renewed while the guest is younger than this. Then it runs out, and the
+# guest's user, conversations and files are deleted: a guest can't keep them for ever
+GUEST_MAX_HOURS = int(os.getenv("GUEST_MAX_HOURS", "24"))
+# Guests have no account, so what they use is counted per client address (backend/security/guest_limits.py):
+# every kind of request has its own counter, which starts again GUEST_LIMIT_HOURS after its last
+# counted request. Signed-in users are not limited.
+GUEST_LIMIT_HOURS = float(os.getenv("GUEST_LIMIT_HOURS", "3"))
+GUEST_LIMITS = {
+    "answers": int(os.getenv("GUEST_MAX_ANSWERS", "5")),    # Answers of a model, summaries included
+    "logins": int(os.getenv("GUEST_MAX_LOGINS", "30")),     # Guest sessions started
+    "titles": int(os.getenv("GUEST_MAX_TITLES", "10")),     # Conversation titles a model writes
+    "speech": int(os.getenv("GUEST_MAX_SPEECH", "10")),     # Messages read aloud
+    "uploads": int(os.getenv("GUEST_MAX_UPLOADS", "10")),   # Uploaded files
+    "writes": int(os.getenv("GUEST_MAX_WRITES", "200")),    # Conversations and messages stored or changed
+}
+# The largest conversation or message a guest can store, in KB (the request's body)
+GUEST_MAX_REQUEST_KB = int(os.getenv("GUEST_MAX_REQUEST_KB", "256"))
+# What all guests' files may take together, with what is made from them (PDF pages, previews), in MB
+GUEST_FILES_MAX_MB = int(os.getenv("GUEST_FILES_MAX_MB", "500"))
+
+# The largest request body the server reads, in MB. Uploads have their own limit: MAX_UPLOAD_FILES
+# files of at most 10 MB each (backend/services/file_store.py).
+MAX_REQUEST_MB = int(os.getenv("MAX_REQUEST_MB", "32"))
+MAX_UPLOAD_FILES = 10
+
 # The provider's issuer, e.g. https://auth.example.com/realms/home for a Keycloak realm
 OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip().rstrip("/")
 # Where the backend reads the provider's metadata; set it when the backend reaches the
