@@ -38,6 +38,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import socket
 import sys
@@ -46,6 +47,7 @@ import textwrap
 import threading
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -65,7 +67,7 @@ from mcp.server.mcpserver import Elicit, MCPServer, Resolve  # noqa: E402
 from mcp.server.mcpserver.utilities.types import Image  # noqa: E402
 from mcp_types import ElicitRequestFormParams, ElicitRequestURLParams, ResourceLink  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
-from sqlalchemy import delete, insert, select  # noqa: E402
+from sqlalchemy import delete, insert, select, update  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse, RedirectResponse, Response  # noqa: E402
 
@@ -975,7 +977,51 @@ async def test_files():
             assert [ref["fileId"] for ref in listed] == [row["file_id"] for row in db.get_conversation_files(two, me)]
             assert listed[0]["fileId"] == picture and (listed[0]["name"], listed[0]["width"], listed[0]["height"]) == \
                 ("t_paint-1.png", 64, 48), listed
+            # Where each comes from and when, for the list "Files of this chat"
+            assert listed[0]["source"] == "tool" and listed[0]["origin"] == db.get_file(picture)["origin"], listed
+            assert listed[0]["origin"] and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", listed[0]["createdAt"]), listed
+            entry = file_store.file_entry(db.get_file(notes["file_id"]))
+            assert entry["source"] == "upload" and "origin" not in entry, entry
             assert client.get("/api/files").status_code == 422
+            # All files, for the settings: the files of every conversation of the user, with the
+            # conversation's name. The ones in no conversation are not among them
+            everything = client.get("/api/files/all").json()
+            assert {ref["fileId"] for ref in everything["files"]} == {picture, notes["file_id"]}, everything
+            assert everything["counts"] == {"upload": 1, "tool": 1} and everything["size"] > 0, everything
+            listed_picture = next(ref for ref in everything["files"] if ref["fileId"] == picture)
+            assert (listed_picture["conversationId"], listed_picture["conversationName"], listed_picture["source"]) == \
+                (two, "MCP test", "tool"), listed_picture
+            only_tools = client.get("/api/files/all", params={"source": "tool"}).json()
+            assert [ref["fileId"] for ref in only_tools["files"]] == [picture], only_tools
+            assert only_tools["counts"] == {"upload": 1, "tool": 1}, "the counts are of all files"
+            pages = [client.get("/api/files/all", params={"limit": 1, "offset": offset}).json()["files"] for offset in (0, 1, 2)]
+            assert [len(page) for page in pages] == [1, 1, 0] and pages[0] + pages[1] == everything["files"], pages
+            assert client.get("/api/files/all", params={"limit": 0}).status_code == 422
+            assert client.get("/api/files/all", params={"source": "other"}).status_code == 422
+            # A conversation's files stay together, the conversation with the newest file first
+            def stored_at(file_id: str, when: datetime) -> None:
+                with db.connection() as conn:
+                    conn.execute(update(uploaded_files).where(uploaded_files.c.file_id == file_id).values(created_at=when))
+
+            uploaded_at = db.get_file(notes["file_id"])["created_at"]
+            later = file_store.store(png(10, 10), me, name="later.png", mime_type="image/png", conversation_id=two)
+            stored_at(notes["file_id"], datetime(2030, 1, 1))
+            order = [row["file_id"] for row in file_store.all_files(me)["files"]]
+            assert order == [notes["file_id"], later["file_id"], picture], order
+            stored_at(notes["file_id"], datetime(2020, 1, 1))
+            order = [row["file_id"] for row in file_store.all_files(me)["files"]]
+            assert order == [later["file_id"], picture, notes["file_id"]], order
+            stored_at(notes["file_id"], uploaded_at)
+            file_utils.delete_stored_file(later["file_id"])
+            db.delete_uploaded_file(later["file_id"])
+            # Hidden conversations are left out for a device in family mode
+            with db.connection() as conn:
+                conn.execute(update(conversations).where(conversations.c.id == two).values(hidden=True))
+            assert [row["file_id"] for row in file_store.all_files(me, family_mode=True)["files"]] == [notes["file_id"]]
+            assert file_store.all_files(me, family_mode=True)["counts"] == {"upload": 1, "tool": 0}
+            assert len(file_store.all_files(me)["files"]) == 2
+            with db.connection() as conn:
+                conn.execute(update(conversations).where(conversations.c.id == two).values(hidden=False))
             uploaded = client.post("/api/files/upload", files=[("files", ("shot.png", png(30, 20), "image/png"))])
             assert uploaded.status_code == 201, uploaded.text
             row = db.get_file(uploaded.json()[0]["fileId"])

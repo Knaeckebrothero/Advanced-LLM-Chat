@@ -1,0 +1,390 @@
+// "Files of this chat": a header that stays, the list scrolls under it
+
+:host {
+  display: block;
+}
+
+.files-dialog {
+  display: flex;
+  flex-direction: column;
+  // As high as the dialog may get (where it opens), so the list scrolls and not the dialog
+  max-height: calc(100dvh - 24px);
+  color: var(--theme-text);
+}
+
+.files-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 16px 12px 24px;
+}
+
+.files-heading {
+  flex: 1;
+  min-width: 0;
+
+  h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+}
+
+.files-subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  color: var(--theme-text-secondary);
+
+  .files-chat-name {
+    overflow: hidden;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // A dot between the chat's name and the count, but none in front of a count on its own line
+  .files-chat-name + .files-summary::before {
+    content: '·';
+    margin-right: 8px;
+  }
+}
+
+.files-close {
+  flex: none;
+  color: var(--theme-text-secondary);
+}
+
+.files-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 24px 12px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--theme-text);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(.active) {
+    background-color: var(--theme-active);
+  }
+
+  &.active {
+    border-color: var(--theme-primary);
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+  }
+
+  .filter-count {
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+}
+
+.files-body {
+  flex: 1;
+  min-height: 220px;
+  overflow-y: auto;
+  padding: 4px 24px 24px;
+  border-top: 1px solid var(--theme-border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-border) transparent;
+}
+
+// Loading, failed, or no files yet
+.files-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 190px;
+  padding: 16px;
+  color: var(--theme-text-secondary);
+  font-size: 0.9rem;
+  text-align: center;
+
+  > mat-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 40px;
+    opacity: 0.7;
+  }
+
+  .files-state-title {
+    color: var(--theme-text);
+    font-size: 1rem;
+    font-weight: 500;
+  }
+}
+
+.files-section-title {
+  margin: 16px 0 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--theme-text-secondary);
+
+  .files-section-count {
+    margin-left: 4px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+}
+
+// All files: the files of one chat, under its name
+.files-group--chat {
+  margin-top: 12px;
+
+  & + & {
+    margin-top: 20px;
+    padding-top: 8px;
+    border-top: 1px solid var(--theme-border);
+  }
+
+  // The chat's rows of other files under its pictures
+  .files-gallery + .files-list {
+    margin-top: 8px;
+  }
+}
+
+.files-chat {
+  margin: 0 0 8px -8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.files-chat-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 4px 6px 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--theme-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: var(--theme-active);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 1px;
+  }
+
+  mat-icon {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    color: var(--theme-text-secondary);
+  }
+
+  .files-chat-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .files-chat-arrow {
+    opacity: 0.6;
+  }
+}
+
+.files-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+// Pictures: rows of one height, each as wide as its shape makes it (never cropped)
+.files-gallery {
+  --file-tile-height: 128px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+// Download without opening the picture, laid over its tile, for devices with a pointer; a tap
+// opens the picture, with Download there. On a narrow picture it sits in the middle
+.gallery-save {
+  position: absolute;
+  top: 6px;
+  right: min(6px, calc(50% - 15px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+
+  mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
+
+  .gallery-item:hover &,
+  &:focus-visible {
+    opacity: 1;
+  }
+
+  &:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.85);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  @media (hover: none) {
+    display: none;
+  }
+}
+
+.files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background-color: var(--theme-hover);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--theme-primary);
+  }
+}
+
+.file-row-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 8px 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: -2px;
+  }
+
+  mat-icon {
+    flex: none;
+    color: var(--theme-text-secondary);
+  }
+}
+
+.file-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.file-row-name {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row-details {
+  overflow: hidden;
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row-save {
+  flex: none;
+  color: var(--theme-text-secondary);
+}
+
+@media (max-width: 600px) {
+  .files-dialog {
+    max-height: calc(100dvh - 16px);
+  }
+
+  .files-header {
+    padding: 16px 8px 10px 16px;
+  }
+
+  .files-filter {
+    padding: 0 16px 10px;
+  }
+
+  .files-body {
+    padding: 2px 16px 16px;
+  }
+
+  .files-gallery {
+    --file-tile-height: 96px;
+    gap: 6px;
+  }
+
+  // The second line may wrap: a tool's title and a date don't fit one line of a phone
+  .file-row-details {
+    white-space: normal;
+  }
+}

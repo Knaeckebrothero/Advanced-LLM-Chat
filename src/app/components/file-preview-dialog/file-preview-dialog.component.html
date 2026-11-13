@@ -6,7 +6,11 @@
         <mat-icon class="file-type-icon">{{ getFileIcon() }}</mat-icon>
         <div class="file-details">
           <span class="file-name">{{ data.fileName }}</span>
-          <span class="file-size" *ngIf="data.fileSize">{{ data.fileSize }}</span>
+          <span class="file-size" *ngIf="data.fileSize || galleryCount">
+            <ng-container *ngIf="data.fileSize">{{ data.fileSize }}</ng-container>
+            <ng-container *ngIf="data.fileSize && galleryCount"> · </ng-container>
+            <ng-container *ngIf="galleryCount">{{ 'filePreview.position' | translate: { index: index + 1, count: galleryCount } }}</ng-container>
+          </span>
         </div>
       </div>
       <div class="header-actions">
@@ -41,7 +45,7 @@
         <button mat-icon-button
                 class="action-button"
                 (click)="download()"
-                [disabled]="state !== 'loaded'"
+                [disabled]="!canDownload"
                 [attr.aria-label]="'filePreview.download' | translate"
                 [matTooltip]="'filePreview.download' | translate">
           <mat-icon>download</mat-icon>
@@ -76,7 +80,8 @@
 
       <!-- Image preview with zoom -->
       <ng-container *ngIf="state === 'loaded' && isImage()">
-        <div class="image-container" (wheel)="onWheel($event)">
+        <div class="image-container" (wheel)="onWheel($event)"
+             (touchstart)="onTouchStart($event)" (touchend)="onTouchEnd($event)">
           <img [src]="contentUrl"
                [alt]="data.fileName"
                class="preview-image"
@@ -127,4 +132,16 @@
       </ng-container>
     </div>
   </div>
+
+  <!-- Opened from a list of files: step to the one before and the one after -->
+  <ng-container *ngIf="galleryCount">
+    <button mat-icon-button class="step-button step-button--previous" (click)="step(-1)" [disabled]="!hasPrevious"
+            [attr.aria-label]="'filePreview.previous' | translate" [matTooltip]="'filePreview.previous' | translate">
+      <mat-icon>chevron_left</mat-icon>
+    </button>
+    <button mat-icon-button class="step-button step-button--next" (click)="step(1)" [disabled]="!hasNext"
+            [attr.aria-label]="'filePreview.next' | translate" [matTooltip]="'filePreview.next' | translate">
+      <mat-icon>chevron_right</mat-icon>
+    </button>
+  </ng-container>
 </div>

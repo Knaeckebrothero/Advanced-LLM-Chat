@@ -17,11 +17,14 @@ import re
 import secrets
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from sqlalchemy import text
+
 from backend.database import db
-from backend.services import file_utils
+from backend.services import file_utils, hidden_content
 from backend.services.file_utils import get_file_path, is_file_id
 
 log = logging.getLogger(__name__)
@@ -238,6 +241,48 @@ def conversation_files(conversation_id: Optional[str], user_id: Optional[int]) -
     return db.get_conversation_files(conversation_id, user_id)
 
 
+def all_files(user_id: Optional[int], *, source: Optional[str] = None, family_mode: bool = False,
+              limit: int = 100, offset: int = 0) -> dict:
+    """
+    The files of all of a user's conversations: the conversations by their newest file, each
+    conversation's files together, newest first. Files in no conversation are not among them.
+
+    Args:
+        user_id: The files' owner.
+        source: Only these: "upload" or "tool".
+        family_mode: The device is in family mode: without the files of hidden conversations.
+        limit: At most this many.
+        offset: After this many.
+
+    Returns:
+        {"files": the rows, each with "conversation_name",
+         "counts": {"upload": ..., "tool": ...} (all of them, whatever `source` is),
+         "bytes": what all of them take}
+    """
+    if user_id is None:
+        return {"files": [], "counts": {"upload": 0, "tool": 0}, "bytes": 0}
+    where = 'f.user_id = :user_id AND c."userId" = :user_id'
+    if family_mode:
+        where += f" AND NOT {hidden_content.CONVERSATION_SQL}"
+    joined = f"FROM uploaded_files f JOIN conversations c ON c.id = f.conversation_id WHERE {where}"
+    with db.connection() as conn:
+        counts = {"upload": 0, "tool": 0}
+        taken = 0
+        for kind, files, size in conn.execute(text(
+                f"SELECT f.source, count(*), coalesce(sum(f.size_bytes), 0) {joined} GROUP BY f.source"),
+                {"user_id": user_id}):
+            counts["tool" if kind == "tool" else "upload"] += files
+            taken += int(size)
+        rows = conn.execute(text(
+            "SELECT f.*, c.name AS conversation_name, "
+            "max(f.created_at) OVER (PARTITION BY f.conversation_id) AS conversation_newest "
+            f"{joined}{' AND f.source = :source' if source else ''} "
+            "ORDER BY conversation_newest DESC, f.conversation_id, f.created_at DESC, f.file_id DESC "
+            "LIMIT :limit OFFSET :offset"),
+            {"user_id": user_id, "source": source, "limit": limit, "offset": offset})
+        return {"files": [dict(row._mapping) for row in rows], "counts": counts, "bytes": taken}
+
+
 def find_file(conversation_id: Optional[str], user_id: Optional[int], reference: str) -> dict:
     """
     The file of a conversation that a model means: by its file ID or by its name.
@@ -308,6 +353,27 @@ def file_ref(row: dict) -> dict:
     if row.get("width") and row.get("height"):
         ref["width"], ref["height"] = row["width"], row["height"]
     return ref
+
+
+def file_entry(row: dict) -> dict:
+    """
+    A file in the list of its conversation's files (GET /api/files): file_ref() with where it
+    comes from, `source` ("upload" or "tool") and for a tool's file `origin` (the tool's title),
+    and `createdAt` (UTC). A row of all_files() also names its conversation (`conversationId`,
+    `conversationName`).
+    """
+    entry = file_ref(row)
+    if "conversation_name" in row:
+        entry["conversationId"], entry["conversationName"] = row["conversation_id"], row["conversation_name"] or ""
+    entry["source"] = "tool" if row.get("source") == "tool" else "upload"
+    if row.get("origin"):
+        entry["origin"] = row["origin"]
+    created = row.get("created_at")
+    if isinstance(created, datetime):
+        # The database's times are UTC without a zone
+        created = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created.astimezone(timezone.utc)
+        entry["createdAt"] = created.isoformat(timespec="seconds").replace("+00:00", "Z")
+    return entry
 
 
 # =========================================================================

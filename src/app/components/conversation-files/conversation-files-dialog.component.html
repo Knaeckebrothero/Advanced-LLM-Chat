@@ -1,0 +1,136 @@
+<div class="files-dialog">
+  <header class="files-header">
+    <div class="files-heading">
+      <h2 id="conversation-files-title">{{ (all ? 'files.allTitle' : 'files.title') | translate }}</h2>
+      <p class="files-subtitle">
+        @if (data.conversationName) {
+          <span class="files-chat-name">{{ data.conversationName }}</span>
+        }
+        @if (counts.all && (state === 'loaded' || groups.length)) {
+          <span class="files-summary">{{ summary }}</span>
+        }
+      </p>
+    </div>
+    <button mat-icon-button class="files-close" (click)="close()"
+            [attr.aria-label]="'filePreview.close' | translate" [matTooltip]="'filePreview.close' | translate">
+      <mat-icon>close</mat-icon>
+    </button>
+  </header>
+
+  <!-- Only where there is a choice: files of both kinds -->
+  @if (counts.upload && counts.tool) {
+    <div class="files-filter" role="group" [attr.aria-label]="'files.filter' | translate">
+      @for (option of filters; track option) {
+        <button type="button" class="filter-chip" [class.active]="filter === option"
+                [attr.aria-pressed]="filter === option" (click)="show(option)">
+          <span>{{ 'files.filters.' + option | translate }}</span>
+          <span class="filter-count">{{ counts[option] }}</span>
+        </button>
+      }
+    </div>
+  }
+
+  <div class="files-body">
+    @switch (state) {
+      @case ('loading') {
+        <div class="files-state" role="status">
+          <mat-spinner diameter="32" aria-hidden="true"></mat-spinner>
+          <span>{{ 'files.loading' | translate }}</span>
+        </div>
+      }
+      @case ('error') {
+        <div class="files-state" role="alert">
+          <mat-icon aria-hidden="true">error_outline</mat-icon>
+          <span>{{ 'files.loadFailed' | translate }}</span>
+          <button mat-stroked-button (click)="load()">
+            <mat-icon>refresh</mat-icon>
+            {{ 'filePreview.retry' | translate }}
+          </button>
+        </div>
+      }
+      @default {
+        @if (!counts.all) {
+          <div class="files-state">
+            <mat-icon aria-hidden="true">perm_media</mat-icon>
+            <span class="files-state-title">{{ (all ? 'files.emptyAll' : 'files.empty') | translate }}</span>
+            <span>{{ (all ? 'files.emptyAllHint' : 'files.emptyHint') | translate }}</span>
+          </div>
+        }
+
+        @for (group of groups; track $index) {
+          <section class="files-group" [class.files-group--chat]="all">
+            <!-- All files: the chat the files are from, which a click opens -->
+            @if (all) {
+              <h3 class="files-chat">
+                <button type="button" class="files-chat-open" (click)="openConversation(group)"
+                        [matTooltip]="'files.openChat' | translate" matTooltipShowDelay="600">
+                  <mat-icon aria-hidden="true">forum</mat-icon>
+                  <span class="files-chat-title">{{ group.name || ('New Chat' | translate) }}</span>
+                  <mat-icon class="files-chat-arrow" aria-hidden="true">chevron_right</mat-icon>
+                </button>
+              </h3>
+            }
+
+            @if (group.images.length) {
+              @if (!all) {
+                <h3 class="files-section-title">
+                  {{ 'files.images' | translate }} <span class="files-section-count">{{ group.images.length }}</span>
+                </h3>
+              }
+              <div class="files-gallery" role="group" [attr.aria-label]="'files.images' | translate">
+                @for (entry of group.images; track entry.file.fileId) {
+                  <app-file-tile class="gallery-item" [file]="entry.file" size="small" [label]="entry.label"
+                                 [gallery]="gallery" [lazy]="true">
+                    <button type="button" class="gallery-save" (click)="save(entry.file)" [disabled]="isSaving(entry.file)"
+                            [attr.aria-label]="'files.download' | translate: { name: entry.file.name }"
+                            [matTooltip]="'filePreview.download' | translate">
+                      <mat-icon aria-hidden="true">{{ isSaving(entry.file) ? 'downloading' : 'download' }}</mat-icon>
+                    </button>
+                  </app-file-tile>
+                }
+              </div>
+            }
+
+            @if (group.others.length) {
+              @if (!all) {
+                <h3 class="files-section-title">
+                  {{ (group.images.length ? 'files.others' : 'files.documents') | translate }}
+                  <span class="files-section-count">{{ group.others.length }}</span>
+                </h3>
+              }
+              <ul class="files-list" [attr.aria-label]="'files.others' | translate">
+                @for (entry of group.others; track entry.file.fileId) {
+                  <li class="file-row">
+                    <button type="button" class="file-row-open" (click)="open(entry.file)"
+                            [attr.aria-label]="'files.open' | translate: { name: entry.file.name }">
+                      <mat-icon aria-hidden="true">{{ entry.icon }}</mat-icon>
+                      <span class="file-row-text">
+                        <span class="file-row-name">{{ entry.file.name }}</span>
+                        <span class="file-row-details">{{ entry.details }}</span>
+                      </span>
+                    </button>
+                    <button mat-icon-button class="file-row-save" (click)="save(entry.file)" [disabled]="isSaving(entry.file)"
+                            [attr.aria-label]="'files.download' | translate: { name: entry.file.name }"
+                            [matTooltip]="'filePreview.download' | translate">
+                      <mat-icon>{{ isSaving(entry.file) ? 'downloading' : 'download' }}</mat-icon>
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
+
+        <!-- All files arrive a page at a time -->
+        @if (all && listed < total) {
+          <div class="files-more">
+            <button mat-stroked-button (click)="more()" [disabled]="loadingMore">
+              <mat-icon>expand_more</mat-icon>
+              {{ 'files.more' | translate: { shown: listed, count: total } }}
+            </button>
+          </div>
+        }
+      }
+    }
+  </div>
+</div>

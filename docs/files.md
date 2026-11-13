@@ -75,6 +75,16 @@ The tool result steps of an answer carry the files in their metadata:
 
 `FileTileComponent` is one file: an image as its preview, anything else as a card with its name (a PDF with its first page); a click opens the existing preview dialog (zoom, download). Previews come from `GET /api/files/{id}/thumbnail` and are loaded with the session (`FilePreviewsService`), since the page may only show images from its own address or ones it loaded itself. Uploaded images in messages that came from the server use the same previews.
 
+**Files of this chat.** A dialog lists every file of a conversation, to open and to download: what the user attached and what the agent's tools created, newest first (`ConversationFilesDialogComponent` in `src/app/components/conversation-files/`, loaded from `GET /api/files?conversationId=` each time it opens). It opens from **Files** in a conversation's menu in the sidebar, and from **Files of this chat** in the composer's attach menu once the server has the conversation.
+
+- **Images** are a gallery of tiles in rows of one height (128 px, 96 px on phones), each as wide as its shape makes it. A tile's preview is loaded when it comes into view (`lazy`). A click opens the preview dialog, which steps through the listed images: buttons at the screen's edges, the arrow keys, or a swipe across an image that isn't zoomed in.
+- **Any other file** is a row with its size, where it comes from ("Uploaded", "Created by Civitai: Run step") and when. A click opens it in the preview dialog (a document as its extracted text, audio in a player).
+- **Download:** a button in each row, a button over each image for devices with a pointer (on a touch screen a tap opens the image, with Download there), and in the preview dialog. A document's preview shows only its text, so its download fetches the file.
+- **Filter:** in a conversation with files of both kinds, "All", "Uploaded" and "Created by the agent".
+- **Not in it:** files of deleted messages (they left the conversation), and files attached in the composer but not sent yet.
+
+**All files.** The same dialog lists the files of all the user's conversations, from **All files** in the settings (`GET /api/files/all`). They are grouped by conversation: the conversation with the newest file first, each under its name, its images as a gallery and its other files as rows under them. A click on a conversation's name closes the dialog and the settings and opens that conversation. The preview steps through the images of all listed conversations. The files arrive 100 at a time, with "Show more" for the next ones; the filter asks the server, since not all files are in the browser. Files in no conversation (of deleted messages and deleted conversations) are not listed.
+
 **Never cropped.** Every image is shown whole, everywhere:
 
 - **A file tile** is as high as its place says (320 px alone, 200 px in a row, 72 px as a small preview; less on phones) and as wide as the image's shape makes it. In a column narrower than that it is as wide as the column and lower. Its space is reserved from the stored width and height, so nothing jumps when the image loads.
@@ -91,7 +101,8 @@ All under `/api/files`, for the file's owner only (404 otherwise):
 
 - `POST /upload`: store files (multipart `files`); returns `[{fileId, transcript?}]`. PDFs get their text and pages extracted, audio is transcribed.
 - `GET /{id}`: the file.
-- `GET ?conversationId=…`: the files of a conversation, oldest first, as `[{fileId, name, mimeType, size, width, height}]`. None for a conversation of somebody else.
+- `GET ?conversationId=…`: the files of a conversation, oldest first, as `[{fileId, name, mimeType, size, width, height, source, origin, createdAt}]` (`file_store.file_entry()`): `source` is `upload` or `tool`, `origin` the tool's title (files of tools only), `createdAt` UTC. None for a conversation of somebody else.
+- `GET /all?offset=0&limit=100&source=upload|tool`: the files of all the user's conversations (at most 200 at once), as `{files, counts, size}`. `files` are entries as above with `conversationId` and `conversationName`, the conversations by their newest file, each conversation's files together, newest first. `counts` is `{upload, tool}` for all of them whatever `source` asks for, `size` the bytes they take. Files in no conversation are not among them.
 - `GET /{id}/thumbnail?size=small|large`: a preview of an image, or of a PDF's first page (rendered at the upload), as WebP, at most 256 or 1024 pixels on its longer edge. Made on the first request and kept next to the file (`<file ID>_thumb_<size>.webp`); cached by the browser for good, since a file never changes. 404 for any other file.
 - `GET /{id}/text`: a document's extracted text, or an audio file's transcript.
 - `DELETE /{id}`: the file with everything derived from it.
@@ -112,11 +123,12 @@ A file comes from anybody (a guest, an MCP server), so nothing that reads one ma
 
 - `python -m backend.llm.tests.run_all`: the file tools on a fake file table (the conversation's files only, names and IDs, a vision model gets the scaled image, a text-only model the description, a PDF's preview), lists that models send as text, the vision helper's errors not cached, and images in tool results for both adapters.
 - `ng test advanced-llm-chat --include='src/app/chat-ui/chat-ui-message/answer-parts.spec.ts'`: the files placed in an answer's text: where the text is split, rows, lists and tables, names in every spelling, files that don't exist, web addresses, code, an answer still being written.
-- `python backend/services/tests/mcp_test.py` (`test_files`, `test_media`): against a real Postgres and real MCP servers: images of a result saved with unique names, linked resources, the download fallback and its limits, uploads linked and unlinked with their messages, the migration's backfill, previews, the files API.
+- `python backend/services/tests/mcp_test.py` (`test_files`, `test_media`): against a real Postgres and real MCP servers: images of a result saved with unique names, linked resources, the download fallback and its limits, uploads linked and unlinked with their messages, the migration's backfill, previews, the files API (with where each listed file comes from, and the list of all files: its order, pages and filter).
 - `python backend/services/tests/upload_safety_test.py`: the limits above, offline, with files it builds itself: PDFs with pages of 200 inches, PDFs that take poppler minutes or pdfminer gigabytes, PNGs that claim millions of pixels, a camera's JPEG, the local Whisper model as a fake.
 
 ## Not built yet
 
+- **More to do with a listed file.** The lists open and download single files. There is no download of all files at once, no deleting a file from a list, and no jump from a file to its message (only to its conversation, from "All files"). Files in no conversation show in no list.
 - **Deleting files with their conversation.** Deleting a conversation, or a message, leaves its files on disk (as uploads always were; only an expired guest's files are deleted). They are in no conversation then, so a cleanup can find them (`conversation_id IS NULL`).
 - **One conversation per file.** A conversation imported into the account that already has its original shows the attachments, but its agent can't open them: they stay with the first conversation.
 - **Video, and media a result only names by address.** Linked videos are not fetched. A server that returns nothing but a web address in its text (no image block, no resource link) gets no file.
