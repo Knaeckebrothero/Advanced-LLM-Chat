@@ -60,12 +60,23 @@ class ModelConfig:
     # Prices per million tokens, for cost display
     input_price_per_mtok: Optional[float] = None
     output_price_per_mtok: Optional[float] = None
+    cached_input_price_per_mtok: Optional[float] = None  # input read from the provider's cache; None = the input price
 
     def cost(self, usage: "Usage") -> Optional[float]:
-        """Cost of a usage record in this model's currency, or None without prices."""
+        """
+        Cost of a usage record in this model's currency, or None without prices.
+
+        Input read from the cache (usage.cached_input_tokens, part of input_tokens)
+        costs the cached price when the model has one, else the input price.
+        Cache writes are counted at the input price (Anthropic charges 1.25 times).
+        """
         if self.input_price_per_mtok is None or self.output_price_per_mtok is None:
             return None
-        return (usage.input_tokens * self.input_price_per_mtok
+        cached = 0
+        if self.cached_input_price_per_mtok is not None:
+            cached = min(usage.cached_input_tokens or 0, usage.input_tokens)
+        return ((usage.input_tokens - cached) * self.input_price_per_mtok
+                + cached * (self.cached_input_price_per_mtok or 0)
                 + usage.output_tokens * self.output_price_per_mtok) / 1_000_000
 
 

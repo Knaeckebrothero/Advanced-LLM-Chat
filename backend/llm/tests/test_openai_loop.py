@@ -7,7 +7,8 @@ Covers: tool calls assembled from streamed fragments (two in parallel),
 reasoning from reasoning_content, reasoning and <think> tags, reasoning
 passback on and off, Thinking steps (start, deltas, completion with the same
 id), callId linking, tool errors, the step limit, request settings and
-extra_body, models without tools, usage summing, complete(), the images of
+extra_body, models without tools, usage summing, the cost with and without
+a price for cache reads, complete(), the images of
 a tool result, which follow the tool messages in a user message, and the tool
 record of an answer (tool_record.py): what it holds, and that the next turn's
 request starts with the last one word for word when the record goes back.
@@ -26,7 +27,7 @@ from backend.llm.tests.fake_openai_server import (
 from backend.llm.openai_chat import TOOL_IMAGES_NOTE
 from backend.llm.tool_record import images_note, record, with_text
 from backend.llm.tools import Tool, ToolRegistry, ToolText
-from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
+from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig, Usage
 
 
 def make_config(base_url: str, **overrides) -> ModelConfig:
@@ -165,7 +166,11 @@ async def test_three_step_chain_with_passback(server):
     usage = events[-1][1]
     assert (usage.input_tokens, usage.output_tokens, usage.reasoning_tokens, usage.cached_input_tokens) == (450, 45, 8, 100)
     api = usage.to_api(config)
+    # Without a cached price, cache hits cost the full input price
     assert api["currency"] == "EUR" and abs(api["cost"] - (450 * 2 + 45 * 10) / 1e6) < 1e-9, api
+    # With one, the 100 cached tokens cost the cached price and the other 350 the input price
+    api = usage.to_api(replace(config, cached_input_price_per_mtok=0.5))
+    assert abs(api["cost"] - (350 * 2 + 100 * 0.5 + 45 * 10) / 1e6) < 1e-9, api
 
     steps = steps_of(events)
     thinking = [s for s in steps if s.type == "thought"]
@@ -403,6 +408,27 @@ async def test_record_holds_complete_rounds_only(server):
     assert record([], "Just text.") == []
 
 
+
+async def test_cost_counts_cache_reads():
+    config = make_config("http://unused", input_price_per_mtok=0.182, output_price_per_mtok=0.547)
+    usage = Usage(input_tokens=140_000, output_tokens=2_000, cached_input_tokens=135_000)
+    full = (140_000 * 0.182 + 2_000 * 0.547) / 1e6
+    # No cached price: every input token at the input price (providers without a cache discount)
+    assert abs(config.cost(usage) - full) < 1e-12, config.cost(usage)
+    # A cached price: the cache hits at that price, the rest of the input at the input price
+    cached = replace(config, cached_input_price_per_mtok=0.005)
+    expected = (5_000 * 0.182 + 135_000 * 0.005 + 2_000 * 0.547) / 1e6
+    assert abs(cached.cost(usage) - expected) < 1e-12, cached.cost(usage)
+    assert usage.to_api(cached)["cost"] == round(expected, 6)
+    # No cache hits reported, a free cache, more hits reported than input: never below zero input
+    assert abs(cached.cost(Usage(input_tokens=1000, output_tokens=10)) - (1000 * 0.182 + 10 * 0.547) / 1e6) < 1e-12
+    free = replace(config, cached_input_price_per_mtok=0.0)
+    assert abs(free.cost(usage) - (5_000 * 0.182 + 2_000 * 0.547) / 1e6) < 1e-12
+    assert abs(cached.cost(Usage(input_tokens=100, output_tokens=0, cached_input_tokens=150)) - 100 * 0.005 / 1e6) < 1e-15
+    # Without an input or output price there is no cost, cached price or not
+    assert replace(cached, output_price_per_mtok=None).cost(usage) is None
+
+
 TESTS = [
     test_three_step_chain_with_passback,
     test_three_step_chain_without_passback,
@@ -415,6 +441,7 @@ TESTS = [
     test_complete,
     test_api_error_yields_usage_then_raises,
     test_record_holds_complete_rounds_only,
+    test_cost_counts_cache_reads,
 ]
 
 

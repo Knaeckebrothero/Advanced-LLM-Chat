@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS llm_models (
     privacy_tier TEXT,                       -- NULL = inherit from the provider
     input_price_per_mtok NUMERIC,            -- in the provider's currency
     output_price_per_mtok NUMERIC,
+    cached_input_price_per_mtok NUMERIC,     -- input read from the provider's cache, NULL = the input price
     is_auxiliary BOOLEAN DEFAULT FALSE,      -- used for background tasks (titles, speech preprocessing)
     available_to_guests BOOLEAN DEFAULT FALSE,
     enabled BOOLEAN DEFAULT TRUE,
@@ -284,6 +285,10 @@ ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS height INTEGER;
 ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'upload';
 ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS origin TEXT;
 ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS details TEXT;
+
+-- name: add_model_price_columns
+-- Databases from before the price of cache reads (the CREATE TABLE above has it)
+ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS cached_input_price_per_mtok NUMERIC;
 
 -- name: create_mcp_servers_table
 -- MCP servers (docs/mcp.md): the admins' servers, which agents pick (user_id NULL), and users' own

@@ -181,6 +181,7 @@ def build_model_config(model: dict, provider: dict) -> ModelConfig:
         extra_body=dict(model.get("extra_body") or {}),
         input_price_per_mtok=_float(model.get("input_price_per_mtok")),
         output_price_per_mtok=_float(model.get("output_price_per_mtok")),
+        cached_input_price_per_mtok=_float(model.get("cached_input_price_per_mtok")),
     )
 
 
