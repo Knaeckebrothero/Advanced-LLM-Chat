@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     Boolean,
+    Date,
     DateTime,
     Float,
     Numeric,
@@ -112,6 +113,18 @@ conversation_summaries = Table(
     Column('content', Text, nullable=False),
     Column('model_name', Text),  # The model that wrote it
     Column('created_at', BigInteger, nullable=False),  # Unix seconds
+)
+
+# The agent's memory as a conversation's system prompt shows it (backend/services/memory_snapshot.py)
+conversation_memory_snapshots = Table(
+    'conversation_memory_snapshots',
+    metadata,
+    Column('conversation_id', Text, ForeignKey('conversations.id', ondelete='CASCADE'), primary_key=True),
+    Column('vault', Integer, nullable=False),  # The knowledge base of the memory: 0 = the user's shared one
+    Column('family_mode', Boolean, nullable=False),  # Taken for a device in family mode (no hidden lines)
+    Column('content', Text, nullable=False),  # The memory as the prompt shows it ('' = empty)
+    Column('day', Date, nullable=False),  # The day the prompt calls today
+    Column('taken_at', DateTime, nullable=False, server_default=func.now()),
 )
 
 # Sessions table

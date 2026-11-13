@@ -289,15 +289,15 @@ async def check_answer() -> None:
     # The whole context of an answer, as stream-generate builds it
     config = ModelConfig(id=None, display_name="Fake", model_id="fake", provider_id=None, provider_name="Fake",
                          kind="openai_compatible", base_url="http://127.0.0.1:9", supports_tools=True)
-    tools, _, system_prompt, _, _ = await messages_api._answer_context(user, "skills-test-1", config, mcp=False)
+    tools, _, system_prompt, _, _, _ = await messages_api._answer_context(user, "skills-test-1", config, mcp=False)
     assert "use_skill" in tools.names(), tools.names()
     assert SKILLS_HEADING in system_prompt and f"- {later['name']}: Writes later." in system_prompt
     no_tools = dataclasses.replace(config, supports_tools=False)
-    tools, _, system_prompt, _, _ = await messages_api._answer_context(user, "skills-test-1", no_tools, mcp=False)
+    tools, _, system_prompt, _, _, _ = await messages_api._answer_context(user, "skills-test-1", no_tools, mcp=False)
     assert tools is None and SKILLS_HEADING not in system_prompt
     # An agent without tool groups still gets use_skill
     service.update_persona(helper.id, PersonaUpdate(tools=[]))
-    tools, _, _, _, _ = await messages_api._answer_context(user, "skills-test-1", config, mcp=False)
+    tools, _, _, _, _, _ = await messages_api._answer_context(user, "skills-test-1", config, mcp=False)
     assert tools.names() == ["use_skill"], tools.names()
 
 
