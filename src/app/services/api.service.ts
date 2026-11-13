@@ -552,6 +552,14 @@ export class ApiService {
     }
   }
 
+  // Hide a conversation or unhide it
+  async updateConversationHidden(id: string, name: string, hidden: boolean): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/${id}`;
+    const body: IApiConversationUpdate = { name, hidden };
+    const responseData = await lastValueFrom(this.http.patch<any>(endpoint, body, this.getHttpOptions()));
+    return Conversation.fromApiResponse(responseData);
+  }
+
   // Delete conversation
   async deleteConversation(id: string): Promise<void> {
     const endpoint = `${this.baseUrl}/api/conversation/${id}`;

@@ -54,7 +54,13 @@
   }
 
   <header class="note-header">
-    <h2 class="note-title">{{ note().title }}</h2>
+    <h2 class="note-title">
+      {{ note().title }}
+      @if (note().hidden) {
+        <mat-icon class="hidden-mark" [title]="(note().hiddenBy === 'agent' ? 'hide.byAgent' : 'hide.byUser') | translate"
+                  [attr.aria-label]="(note().hiddenBy === 'agent' ? 'hide.byAgent' : 'hide.byUser') | translate">visibility_off</mat-icon>
+      }
+    </h2>
     @if (note().description) {
       <p class="note-description">{{ note().description }}</p>
     }

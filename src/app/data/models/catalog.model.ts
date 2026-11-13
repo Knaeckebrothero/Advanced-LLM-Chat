@@ -10,13 +10,13 @@ export type PrivacyTier = 'local' | 'eu' | 'trusted' | 'untrusted';
 export type ReasoningMode = 'none' | 'optional' | 'always';
 export type Currency = 'USD' | 'EUR';
 /** Tool groups an agent can use (backend/llm/tools.py). */
-export type ToolGroup = 'files' | 'web_search' | 'knowledge_graph' | 'knowledge_base' | 'past_chats' | 'user_mcp';
+export type ToolGroup = 'files' | 'web_search' | 'knowledge_graph' | 'knowledge_base' | 'past_chats' | 'auto_hide' | 'user_mcp';
 
 export const PROVIDER_KINDS: ProviderKind[] = ['openai_compatible', 'anthropic'];
 export const PRIVACY_TIERS: PrivacyTier[] = ['local', 'eu', 'trusted', 'untrusted'];
 export const REASONING_MODES: ReasoningMode[] = ['none', 'optional', 'always'];
 export const CURRENCIES: Currency[] = ['USD', 'EUR'];
-export const TOOL_GROUPS: ToolGroup[] = ['files', 'web_search', 'knowledge_graph', 'knowledge_base', 'past_chats', 'user_mcp'];
+export const TOOL_GROUPS: ToolGroup[] = ['files', 'web_search', 'knowledge_graph', 'knowledge_base', 'past_chats', 'auto_hide', 'user_mcp'];
 /** Groups an agent only gets when it picks them, never with "all tools" (OPT_IN_GROUPS in backend/llm/tools.py). */
 export const OPT_IN_TOOL_GROUPS: ToolGroup[] = ['knowledge_base', 'past_chats', 'user_mcp'];
 /** Groups that only work together with another one (REQUIRED_GROUPS in backend/llm/tools.py). */
@@ -160,6 +160,7 @@ export interface IPersonaBase {
   sortOrder: number;
   ownMemory?: boolean;  // With the knowledge base: its own knowledge base and memory per user (default: the shared one)
   mcpServers?: string[] | null;  // Slugs of the admin MCP servers it uses (docs/mcp.md); null or [] = none
+  hidden?: boolean;  // Hidden with all its chats and its own knowledge base
 }
 
 export type IPersonaCreate = IPersonaBase;
@@ -177,6 +178,7 @@ export interface IPublicPersona {
   systemPrompt: string;
   variables: IPersonaVariable[];
   tools?: ToolGroup[] | null;
+  hidden?: boolean;  // Left out of the picker in family mode
 }
 
 /** A tool group and whether the server can offer it (GET /api/admin/tools). */

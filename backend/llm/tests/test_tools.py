@@ -151,6 +151,9 @@ async def test_past_chats_need_the_knowledge_base():
             tool = selected.get(name)
             assert not {"user_id", "vault", "scope"} & set(tool.parameters["properties"]), name
             assert tool.func.__wrapped__.keywords["scope"] == past_chats.Scope(user_id=1, vault=8), name
+        # A device in family mode can't find hidden chats
+        hiding = tools_for_groups(["knowledge_base", "past_chats"], user_id=1, vault=8, family_mode=True)
+        assert hiding.get("chat_read").func.__wrapped__.keywords["scope"].family_mode
         # The prompt section comes with the tools, after the knowledge base's
         prompt = build_system_prompt("You remember.", selected)
         assert prompt.index(KB_PROMPT) < prompt.index(CHAT_PROMPT)
@@ -175,12 +178,16 @@ async def test_memory_follows_the_tool_sections():
     # stream-generate adds the memory of the vault the tools write to, only with the memory tools
     saved = messages.kb.get_memory, messages.persona_vault
     asked = []
-    messages.kb.get_memory = lambda user_id, vault: asked.append((user_id, vault)) or {"content": f"- vault {vault}"}
+    messages.kb.get_memory = lambda user_id, vault, family_mode=False: (asked.append((user_id, vault, family_mode))
+                                                                      or {"content": f"- vault {vault}"})
     messages.persona_vault = lambda user, conversation: 8
     try:
         user = {"user_id": 1, "email": "a@example.com", "is_guest": False}
         with_kb = messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["knowledge_base"], user_id=1))
-        assert with_kb.endswith("<memory>\n- vault 8\n</memory>") and asked == [(1, 8)], (with_kb, asked)
+        assert with_kb.endswith("<memory>\n- vault 8\n</memory>") and asked == [(1, 8, False)], (with_kb, asked)
+        # A device in family mode gets the memory without its hidden lines
+        messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["knowledge_base"], user_id=1), True)
+        assert asked.pop() == (1, 8, True)
         assert messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["files"], user_id=1)) == "p"
         assert messages._memory_prompt("p", user, None, None) == "p" and len(asked) == 1
     finally:
@@ -236,12 +243,27 @@ async def test_stream_generate_tools_follow_the_persona():
             writer = tools.get("kb_write").func.__wrapped__.keywords["writer"]
             assert (writer.user_id, writer.conversation_id, writer.persona_id, writer.vault) == (1, "conv-1", 6, 0)
             assert tools.get("memory_add").func.__wrapped__.keywords["writer"] == writer
-            assert tools.get("kb_search").func.__wrapped__.keywords == {"user_id": 1, "vault": 0}
+            assert tools.get("kb_search").func.__wrapped__.keywords == {"user_id": 1, "vault": 0, "family_mode": False}
+            assert not writer.from_hidden and not writer.family_mode
+            # Family mode: a device in it binds family_mode to every tool that reads or writes;
+            # what is written in a hidden chat (marked, or of a hidden agent) is marked, unless it goes into
+            # a hidden agent's own knowledge base
+            tools = messages._agent_tools(user, {"id": "conv-1", "persona_id": 6}, config, hide=True)
+            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 0, "family_mode": True}
+            assert tools.get("kb_update").func.__wrapped__.keywords["writer"].family_mode
+            assert messages._agent_tools(user, {"id": "c", "persona_id": 6, "hidden": True}, config) \
+                .get("memory_add").func.__wrapped__.keywords["writer"].from_hidden
+            resolver.db.personas[10] = persona(10, ["knowledge_base"], hidden=True)
+            resolver.db.personas[11] = persona(11, ["knowledge_base"], own_memory=True, hidden=True)
+            assert messages._agent_tools(user, {"id": "c", "persona_id": 10}, config) \
+                .get("kb_write").func.__wrapped__.keywords["writer"].from_hidden, "the agent is hidden"
+            assert not messages._agent_tools(user, {"id": "c", "persona_id": 11, "hidden": True}, config) \
+                .get("kb_write").func.__wrapped__.keywords["writer"].from_hidden, "its own knowledge base is hidden anyway"
             # An agent with its own memory reads and writes its own knowledge base (vault: its id)
             tools = messages._agent_tools(user, {"id": "conv-2", "persona_id": 8}, config)
             assert tools.get("kb_write").func.__wrapped__.keywords["writer"].vault == 8
             assert tools.get("memory_remove").func.__wrapped__.keywords["writer"].vault == 8
-            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 8}
+            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 8, "family_mode": False}
             assert resolver.persona_vault(user, {"persona_id": 8}) == 8
             assert resolver.persona_vault(user, {"persona_id": 6}) == 0
             assert resolver.persona_vault(user, {"persona_id": 9}) == 0, "a disabled persona counts as none"
@@ -446,7 +468,56 @@ async def test_vision_helper_errors_are_not_cached():
         vision_helper.get_vision_helper = saved
 
 
-TESTS = [test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
+async def test_agents_hide_content():
+    """The tool group auto_hide: hide_chat and the parameter hidden, only with a text of what to hide; the prompt."""
+    from backend.llm.prompts import HIDE_KB_PROMPT, hide_prompt
+    conversation = {"id": "conv-n", "persona_id": None}
+    what = "Surprise parties and the gifts for them"
+    with configured(neo4j=False, tavily=False):
+        # Part of "all tools", but only with a stored conversation and a text of what to hide
+        assert "auto_hide" not in OPT_IN_GROUPS
+        assert "hide_chat" in default_tools(1, conversation=conversation, hide_definition=what).names()
+        assert "hide_chat" not in default_tools(1, conversation=conversation).names(), "no text: nothing hidden"
+        assert "hide_chat" not in default_tools(1, hide_definition=what).names(), "no conversation to hide"
+        tool = tools_for_groups(["auto_hide"], user_id=1, conversation=conversation, hide_definition=what).get("hide_chat")
+        assert tool.func.__wrapped__.keywords == {"conversation_id": "conv-n"}
+        assert not tool.parameters["required"] and "conversation_id" not in tool.parameters["properties"]
+        # The knowledge base tools get the parameter hidden only with the group and a text
+        marking = tools_for_groups(["knowledge_base", "auto_hide"], user_id=1, conversation=conversation,
+                                   hide_definition=what)
+        plain = tools_for_groups(["knowledge_base"], user_id=1, conversation=conversation, hide_definition=what)
+        untold = tools_for_groups(["knowledge_base", "auto_hide"], user_id=1, conversation=conversation)
+        for name in ("kb_write", "kb_update", "memory_add", "memory_replace"):
+            assert "hidden" in marking.get(name).parameters["properties"], name
+            assert "hidden" not in plain.get(name).parameters["properties"], name
+            assert "hidden" not in untold.get(name).parameters["properties"], name
+        assert "hidden" not in marking.get("kb_archive").parameters["properties"]
+        assert "hide_chat" not in untold.names()
+        # The prompt: the user's text in its block, how to save it only with the knowledge base
+        prompt = build_system_prompt(None, marking, what)
+        assert hide_prompt(what, True) in prompt and f"<what-to-hide>\n{what}\n</what-to-hide>" in prompt
+        assert HIDE_KB_PROMPT in prompt
+        only_chat = build_system_prompt(None, tools_for_groups(["auto_hide"], user_id=1, conversation=conversation,
+                                                               hide_definition=what), what)
+        assert "## Hidden content:" in only_chat and HIDE_KB_PROMPT not in only_chat
+        assert "## Hidden content:" not in build_system_prompt(None, plain, what)
+        assert "## Hidden content:" not in build_system_prompt(None, marking), "no text, no section"
+        # Switched off on the server: no group, no parameter
+        saved = tools_module.FAMILY_MODE_ENABLED
+        tools_module.FAMILY_MODE_ENABLED = False
+        try:
+            assert tools_module.tool_group_unavailable_reason("auto_hide") == "FAMILY_MODE_ENABLED is off"
+            off = tools_for_groups(["knowledge_base", "auto_hide"], user_id=1, conversation=conversation,
+                                   hide_definition=what)
+            assert "hide_chat" not in off.names() and "hidden" not in off.get("kb_write").parameters["properties"]
+        finally:
+            tools_module.FAMILY_MODE_ENABLED = saved
+    # In a hidden conversation the answer hides nothing: its agent sees all of its memory
+    assert resolver.conversation_hidden({"hidden": True}) and not resolver.conversation_hidden(None)
+
+
+
+TESTS = [test_agents_hide_content, test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
          test_knowledge_base_is_opt_in, test_unavailable_groups_stay_off, test_prompt_only_describes_selected_tools,
          test_past_chats_need_the_knowledge_base, test_memory_follows_the_tool_sections, test_stream_generate_tools_follow_the_persona,
          test_file_tools_see_only_the_conversation, test_vision_helper_errors_are_not_cached]

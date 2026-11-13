@@ -20,6 +20,11 @@ slugs go to kb_links, which gives the backlinks. Every write stores the new vers
 kb_note_revisions, with who wrote it and in which conversation. Archiving hides a note from
 lists and searches; an update restores it.
 
+Family mode: with family_mode, the reads leave out hidden notes and the lines tagged #hidden, and a
+save puts the hidden lines back (hidden_content.restore_hidden()). A writer from a hidden conversation
+(Writer.from_hidden) hides a new note and tags the lines it adds. A note's mark records who set it
+(hidden_by): what the user decided on the page, agents don't change.
+
 Search combines the words of the query (full-text search with the 'simple' configuration: the
 same for German and English, no stemming, words of four letters or more also match as prefixes),
 exact text (a case-insensitive substring) and tags. Embeddings are planned.
@@ -43,6 +48,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.database import db
 from backend.database.tables import conversations, kb_links, kb_note_revisions, kb_notes, personas
+from backend.services import hidden_content
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +89,8 @@ CODE_RE = re.compile(r"(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)")
 _TRANSLITERATION = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "æ": "ae", "ø": "o", "œ": "oe"})
 
 _NOTE_COLUMNS = (kb_notes.c.id, kb_notes.c.slug, kb_notes.c.title, kb_notes.c.description, kb_notes.c.tags,
-                 kb_notes.c.content, kb_notes.c.status, kb_notes.c.created_at, kb_notes.c.updated_at)
+                 kb_notes.c.content, kb_notes.c.status, kb_notes.c.hidden, kb_notes.c.hidden_by, kb_notes.c.created_at,
+                 kb_notes.c.updated_at)
 
 
 STATUSES = ("active", "archived")
@@ -122,6 +129,9 @@ class Writer:
     conversation_id: Optional[str] = None
     persona_id: Optional[int] = None
     vault: int = 0                          # 0: the user's shared knowledge base, else an agent's own
+    from_hidden: bool = False               # Writes from a hidden conversation: hide what it adds
+    # (the author 'user' is the user's own decision on a mark; the others are agents)
+    family_mode: bool = False                 # The request is in family mode: it sees none and keeps it on a save
 
 
 # =========================================================================
@@ -241,8 +251,12 @@ def _clean_content(content: Optional[str], title: str) -> str:
 # Reading
 # =========================================================================
 
-def _find_note(conn: Connection, user_id: int, ref: str, lock: bool = False, vault: int = 0) -> Optional[dict]:
-    """A note of a vault by its slug, by the slug its title would get, or by its exact title (case-insensitive)."""
+def _find_note(conn: Connection, user_id: int, ref: str, lock: bool = False, vault: int = 0,
+               family_mode: bool = False) -> Optional[dict]:
+    """
+    A note of a vault by its slug, by the slug its title would get, or by its exact title
+    (case-insensitive). With family_mode, a note hidden is not found.
+    """
     ref = (ref or "").strip()
     if ref.startswith("[[") and ref.endswith("]]"):
         ref = ref[2:-2].split("|", 1)[0].strip()
@@ -259,7 +273,9 @@ def _find_note(conn: Connection, user_id: int, ref: str, lock: bool = False, vau
     if lock:
         query = query.with_for_update()
     row = conn.execute(query).first()
-    return dict(row._mapping) if row else None
+    if row is None or (family_mode and row.hidden):
+        return None
+    return dict(row._mapping)
 
 
 def _not_found(ref: str) -> KBNotFound:
@@ -278,24 +294,28 @@ def _version(conn: Connection, note_id: int) -> int:
                         .where(kb_note_revisions.c.note_id == note_id)).scalar_one() or 0
 
 
-def get_note(user_id: int, ref: str, vault: int = 0) -> dict:
+def get_note(user_id: int, ref: str, vault: int = 0, family_mode: bool = False) -> dict:
     """
     A note with its version and links: "links" (the notes it links to: slug, title or None if there
-    is no such note, status) and "backlinks" (the active notes that link to it: slug, title).
+    is no such note, status) and "backlinks" (the active notes that link to it: slug, title). With
+    family_mode, a hidden note isn't found, and the note comes without its hidden lines, links to hidden
+    notes and backlinks from them.
 
     Raises:
         KBError: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref, vault=vault)
+        note = _find_note(conn, user_id, ref, vault=vault, family_mode=family_mode)
         if note is None:
             raise _not_found(ref)
         note["version"] = _version(conn, note["id"])
+        if family_mode:
+            note["content"] = hidden_content.visible(note["content"])
         targets = link_targets(note["content"])
         existing = {}
         if targets:
             rows = conn.execute(
-                select(kb_notes.c.slug, kb_notes.c.title, kb_notes.c.status)
+                select(kb_notes.c.slug, kb_notes.c.title, kb_notes.c.status, kb_notes.c.hidden)
                 .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault, kb_notes.c.slug.in_(targets))
             )
             existing = {row.slug: row for row in rows}
@@ -303,25 +323,25 @@ def get_note(user_id: int, ref: str, vault: int = 0) -> dict:
             {"slug": slug,
              "title": existing[slug].title if slug in existing else None,
              "status": existing[slug].status if slug in existing else None}
-            for slug in targets if slug != note["slug"]
+            for slug in targets
+            if slug != note["slug"] and not (family_mode and slug in existing and existing[slug].hidden)
         ]
-        note["backlinks"] = [
-            dict(row._mapping) for row in conn.execute(
-                select(kb_notes.c.slug, kb_notes.c.title)
-                .select_from(kb_links.join(kb_notes, kb_links.c.note_id == kb_notes.c.id))
-                .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault, kb_notes.c.status == "active",
-                       kb_links.c.target_slug == note["slug"], kb_notes.c.id != note["id"])
-                .order_by(kb_notes.c.title)
-            )
-        ]
+        backlinks = (select(kb_notes.c.slug, kb_notes.c.title)
+                     .select_from(kb_links.join(kb_notes, kb_links.c.note_id == kb_notes.c.id))
+                     .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault, kb_notes.c.status == "active",
+                            kb_links.c.target_slug == note["slug"], kb_notes.c.id != note["id"])
+                     .order_by(kb_notes.c.title))
+        if family_mode:
+            backlinks = backlinks.where(kb_notes.c.hidden.is_(False))
+        note["backlinks"] = [dict(row._mapping) for row in conn.execute(backlinks)]
     return note
 
 
 def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status: str = "active",
-               vault: int = 0) -> dict:
+               vault: int = 0, family_mode: bool = False) -> dict:
     """
     The notes of a vault with a status (the active ones by default), most recently updated first,
-    without the memory.
+    without the memory (and with family_mode without the hidden notes).
 
     Returns:
         {"notes": [...] (without content), "total": the number of matching notes,
@@ -332,12 +352,14 @@ def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status:
                   kb_notes.c.status == _check_status(status), kb_notes.c.slug != MEMORY_SLUG]
     if tag_filter:
         conditions.append(kb_notes.c.tags.any(tag_filter))
+    if family_mode:
+        conditions.append(kb_notes.c.hidden.is_(False))
     with db.connection() as conn:
         total = conn.execute(select(func.count()).select_from(kb_notes).where(*conditions)).scalar_one()
         notes = [
             dict(row._mapping) for row in conn.execute(
                 select(kb_notes.c.slug, kb_notes.c.title, kb_notes.c.description, kb_notes.c.tags,
-                       kb_notes.c.status, kb_notes.c.updated_at)
+                       kb_notes.c.status, kb_notes.c.hidden, kb_notes.c.hidden_by, kb_notes.c.updated_at)
                 .where(*conditions)
                 .order_by(kb_notes.c.updated_at.desc().nulls_last(), kb_notes.c.id.desc())
                 .limit(limit)
@@ -348,30 +370,39 @@ def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status:
             tags = [tuple(row) for row in conn.execute(text(
                 "SELECT tag, count(*) AS n FROM kb_notes, unnest(tags) AS tag "
                 "WHERE user_id = :user_id AND vault = :vault AND status = :status AND slug <> :memory "
+                + ("AND NOT hidden " if family_mode else "") +
                 "GROUP BY tag ORDER BY n DESC, tag LIMIT 20"
             ), {"user_id": user_id, "vault": vault, "status": status, "memory": MEMORY_SLUG})]
     return {"notes": notes, "total": total, "tags": tags}
 
 
-def count_notes(user_id: int, vault: int = 0) -> dict:
+def count_notes(user_id: int, vault: int = 0, family_mode: bool = False) -> dict:
     """The number of notes of a vault per status, without the memory: {"active": n, "archived": n}."""
+    conditions = [kb_notes.c.user_id == user_id, kb_notes.c.vault == vault, kb_notes.c.slug != MEMORY_SLUG]
+    if family_mode:
+        conditions.append(kb_notes.c.hidden.is_(False))
     with db.connection() as conn:
-        rows = conn.execute(select(kb_notes.c.status, func.count())
-                            .where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault,
-                                   kb_notes.c.slug != MEMORY_SLUG)
+        rows = conn.execute(select(kb_notes.c.status, func.count()).where(*conditions)
                             .group_by(kb_notes.c.status)).all()
     counts = dict.fromkeys(STATUSES, 0)
     counts.update({row[0]: row[1] for row in rows})
     return counts
 
 
-def all_notes(user_id: int, vault: int = 0) -> list[dict]:
-    """All notes of a vault with their content, active and archived and the memory, by slug (for the export)."""
+def all_notes(user_id: int, vault: int = 0, family_mode: bool = False) -> list[dict]:
+    """
+    All notes of a vault with their content, active and archived and the memory, by slug (for the
+    export); with family_mode without the hidden notes and lines.
+    """
+    query = select(*_NOTE_COLUMNS).where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault)
+    if family_mode:
+        query = query.where(kb_notes.c.hidden.is_(False))
     with db.connection() as conn:
-        return [dict(row._mapping) for row in conn.execute(
-            select(*_NOTE_COLUMNS).where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault)
-            .order_by(kb_notes.c.slug)
-        )]
+        notes = [dict(row._mapping) for row in conn.execute(query.order_by(kb_notes.c.slug))]
+    if family_mode:
+        for note in notes:
+            note["content"] = hidden_content.visible(note["content"])
+    return notes
 
 
 def changes_since(user_id: int, vault: int, since: datetime, until: Optional[datetime] = None) -> list[dict]:
@@ -399,20 +430,25 @@ def changes_since(user_id: int, vault: int, since: datetime, until: Optional[dat
     return [dict(row._mapping) for row in rows]
 
 
-def list_vaults(user_id: int) -> list[dict]:
+def list_vaults(user_id: int, family_mode: bool = False) -> list[dict]:
     """
     The user's vaults that have notes: [{"vault", "active", "archived", "memory_lines"}], by vault.
+    With family_mode without the own ones of hidden agents, hidden notes and the memory's hidden lines.
     """
+    shown = "AND NOT hidden " if family_mode else ""
     with db.connection() as conn:
         rows = conn.execute(text(
             "SELECT vault, "
-            "count(*) FILTER (WHERE slug <> :memory AND status = 'active') AS active, "
-            "count(*) FILTER (WHERE slug <> :memory AND status = 'archived') AS archived, "
+            f"count(*) FILTER (WHERE slug <> :memory AND status = 'active' {shown}) AS active, "
+            f"count(*) FILTER (WHERE slug <> :memory AND status = 'archived' {shown}) AS archived, "
             "max(content) FILTER (WHERE slug = :memory) AS memory "
-            "FROM kb_notes WHERE user_id = :user_id GROUP BY vault ORDER BY vault"
+            "FROM kb_notes WHERE user_id = :user_id "
+            + ("AND (vault = 0 OR vault NOT IN (SELECT id FROM personas WHERE hidden)) " if family_mode else "") +
+            "GROUP BY vault ORDER BY vault"
         ), {"user_id": user_id, "memory": MEMORY_SLUG}).all()
     return [{"vault": row.vault, "active": row.active, "archived": row.archived,
-             "memory_lines": memory_usage(row.memory or "")[0]} for row in rows]
+             "memory_lines": memory_usage((hidden_content.visible(row.memory) if family_mode else row.memory) or "")[0]}
+            for row in rows]
 
 
 _REVISION_SUMMARY_COLUMNS = (
@@ -437,7 +473,7 @@ def _revisions_query(user_id: int, note_id: int, *columns):
     )
 
 
-def list_revisions(user_id: int, ref: str, vault: int = 0) -> list[dict]:
+def list_revisions(user_id: int, ref: str, vault: int = 0, family_mode: bool = False) -> list[dict]:
     """
     A note's versions, newest first, without their content: action, author, the conversation and
     agent they were written in (conversation_name None if it was deleted), reason.
@@ -446,7 +482,7 @@ def list_revisions(user_id: int, ref: str, vault: int = 0) -> list[dict]:
         KBNotFound: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref, vault=vault)
+        note = _find_note(conn, user_id, ref, vault=vault, family_mode=family_mode)
         if note is None:
             raise _not_found(ref)
         return [dict(row._mapping) for row in conn.execute(
@@ -454,15 +490,15 @@ def list_revisions(user_id: int, ref: str, vault: int = 0) -> list[dict]:
         )]
 
 
-def get_revision(user_id: int, ref: str, revision_id: int, vault: int = 0) -> dict:
+def get_revision(user_id: int, ref: str, revision_id: int, vault: int = 0, family_mode: bool = False) -> dict:
     """
-    One version of a note, with its description, tags and content.
+    One version of a note, with its description, tags and content (with family_mode without its hidden lines).
 
     Raises:
         KBNotFound: There is no such note, or the version isn't one of it.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref, vault=vault)
+        note = _find_note(conn, user_id, ref, vault=vault, family_mode=family_mode)
         if note is None:
             raise _not_found(ref)
         row = conn.execute(
@@ -472,7 +508,10 @@ def get_revision(user_id: int, ref: str, revision_id: int, vault: int = 0) -> di
         ).first()
     if row is None:
         raise KBNotFound(f"Note '{note['slug']}' has no version {revision_id}")
-    return dict(row._mapping)
+    revision = dict(row._mapping)
+    if family_mode:
+        revision["content"] = hidden_content.visible(revision["content"])
+    return revision
 
 
 # Title words count most, then description and tags, then the content
@@ -480,14 +519,18 @@ _DOCUMENT = ("setweight(to_tsvector('simple', title), 'A') || "
              "setweight(to_tsvector('simple', coalesce(description, '') || ' ' || array_to_string(tags, ' ')), 'B') || "
              "setweight(to_tsvector('simple', content), 'D')")
 _EXACT_FIELDS = ("slug", "title", "coalesce(description, '')", "array_to_string(tags, ' ')", "content")
+# The content without the lines tagged #hidden, for a search that is in family mode (the sections of a
+# tagged heading still match: best effort, the snippet comes from hidden_content.visible())
+_VISIBLE_CONTENT = r"regexp_replace(content, '(?n)^.*(^|\s)#hidden([^\w/-].*)?$', '', 'gi')"
 
 
 def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iterable[str]] = None,
                  tags: Optional[Iterable[str]] = None, limit: int = 10, status: str = "active",
-                 vault: int = 0) -> list[dict]:
+                 vault: int = 0, family_mode: bool = False) -> list[dict]:
     """
     Search the notes of a vault with a status (the active ones by default) by words, exact text and
-    tags. The memory is left out: it is part of every answer anyway.
+    tags. The memory is left out: it is part of every answer anyway. With family_mode, hidden notes and
+    lines are left out.
 
     A note is found if it contains any query word, any exact text or any of the tags. The score is
     the full-text rank of the words, plus 1 per exact text it contains and 0.3 per tag it has; ties
@@ -513,17 +556,20 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
 
     params: dict = {"user_id": user_id, "vault": vault, "limit": limit, "status": _check_status(status),
                     "memory": MEMORY_SLUG}
+    document = _DOCUMENT.replace("content", _VISIBLE_CONTENT) if family_mode else _DOCUMENT
+    fields = tuple(_VISIBLE_CONTENT if field == "content" else field for field in _EXACT_FIELDS) if family_mode \
+        else _EXACT_FIELDS
     matches, scores, columns = [], [], []
     if words:
         params["tsquery"] = _tsquery(words)
-        matches.append(f"({_DOCUMENT}) @@ to_tsquery('simple', :tsquery)")
-        columns.append(f"ts_rank({_DOCUMENT}, to_tsquery('simple', :tsquery)) AS word_rank")
+        matches.append(f"({document}) @@ to_tsquery('simple', :tsquery)")
+        columns.append(f"ts_rank({document}, to_tsquery('simple', :tsquery)) AS word_rank")
         scores.append("word_rank")
     if exact:
         hits = []
         for i, value in enumerate(exact[:10]):
             params[f"exact{i}"] = f"%{_escape_like(value)}%"
-            hits.append("(CASE WHEN " + " OR ".join(f"{field} ILIKE :exact{i}" for field in _EXACT_FIELDS)
+            hits.append("(CASE WHEN " + " OR ".join(f"{field} ILIKE :exact{i}" for field in fields)
                         + " THEN 1 ELSE 0 END)")
         columns.append(f"({' + '.join(hits)}) AS exact_hits")
         matches.append(f"({' + '.join(hits)}) > 0")
@@ -536,10 +582,10 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
 
     sql = f"""
         SELECT * FROM (
-            SELECT slug, title, description, tags, status, content, updated_at, {', '.join(columns)}
+            SELECT slug, title, description, tags, status, hidden, hidden_by, content, updated_at, {', '.join(columns)}
             FROM kb_notes
             WHERE user_id = :user_id AND vault = :vault AND status = :status AND slug <> :memory
-              AND ({' OR '.join(matches)})
+              {'AND NOT hidden' if family_mode else ''} AND ({' OR '.join(matches)})
         ) AS hits
         ORDER BY {' + '.join(scores)} DESC, updated_at DESC NULLS LAST
         LIMIT :limit
@@ -550,7 +596,8 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
     for row in rows:
         row["matched"] = [name for name, key in (("words", "word_rank"), ("exact", "exact_hits"), ("tags", "tag_hits"))
                           if row.get(key)]
-        row["snippet"] = _snippet(row.pop("content"), exact + words)
+        content = row.pop("content")
+        row["snippet"] = _snippet(hidden_content.visible(content) if family_mode else content, exact + words)
     return rows
 
 
@@ -585,9 +632,10 @@ def _set_links(conn: Connection, note_id: int, content: str) -> None:
 
 
 def create_note(writer: Writer, title: str, content: str, description: Optional[str] = None,
-                tags: Optional[Iterable[str]] = None) -> dict:
+                tags: Optional[Iterable[str]] = None, hidden_note: bool = False) -> dict:
     """
-    Create a note in the writer's vault; its slug is made from the title.
+    Create a note in the writer's vault; its slug is made from the title. It is hidden if hidden_note
+    or the writer writes from a hidden conversation, and the mark is the writer's (hidden_by).
 
     Raises:
         KBError: Invalid fields, a note with that slug exists already (also an archived one), or
@@ -597,8 +645,9 @@ def create_note(writer: Writer, title: str, content: str, description: Optional[
     values = {
         "user_id": writer.user_id, "vault": writer.vault, "slug": note_slug(title), "title": title,
         "description": _clean_description(description), "tags": normalize_tags(tags),
-        "content": _clean_content(content, title),
+        "content": _clean_content(content, title), "hidden": bool(hidden_note or writer.from_hidden),
     }
+    values["hidden_by"] = _marker(writer) if values["hidden"] else None
     if values["slug"] == MEMORY_SLUG:
         raise KBError(f"The title \"{title}\" is reserved for the memory; choose a different title"
                       + (", or change the memory with memory_add, memory_replace and memory_remove"
@@ -607,7 +656,7 @@ def create_note(writer: Writer, title: str, content: str, description: Optional[
         with db.connection() as conn:
             existing = _find_note(conn, writer.user_id, values["slug"], vault=writer.vault)
             if existing is not None and existing["slug"] == values["slug"]:
-                raise _exists(existing)
+                raise _exists(existing, writer)
             note = dict(conn.execute(insert(kb_notes).values(**values).returning(*_NOTE_COLUMNS)).one()._mapping)
             _add_revision(conn, note, "create", writer)
             _set_links(conn, note["id"], note["content"])
@@ -617,9 +666,14 @@ def create_note(writer: Writer, title: str, content: str, description: Optional[
             existing = _find_note(conn, writer.user_id, values["slug"], vault=writer.vault)
         if existing is None:
             raise
-        raise _exists(existing)
+        raise _exists(existing, writer)
     log.info(f"Knowledge base {_vault_name(writer)}: created note {note['slug']}")
     return note
+
+
+def _marker(writer: Writer) -> str:
+    """Who sets a mark: the user (on the page) or an agent (an answer, the memory review, the consolidation)."""
+    return "user" if writer.author == "user" else "agent"
 
 
 def _vault_name(writer: Writer) -> str:
@@ -631,7 +685,9 @@ def _memory_by_line() -> KBError:
     return KBError("The memory is changed line by line: use memory_add, memory_replace or memory_remove")
 
 
-def _exists(note: dict) -> KBExists:
+def _exists(note: dict, writer: Optional[Writer] = None) -> KBError:
+    if writer is not None and writer.family_mode and note.get("hidden"):
+        return KBError("A note with this slug exists already; choose a different title")
     archived = " (archived)" if note["status"] == "archived" else ""
     return KBExists(f"A note with the slug '{note['slug']}' exists already{archived}: \"{note['title']}\". "
                     f"Change it with kb_update (this also restores an archived note), or choose a different title",
@@ -641,7 +697,7 @@ def _exists(note: dict) -> KBExists:
 def update_note(writer: Writer, ref: str, content: Optional[str] = None, append: Optional[str] = None,
                 title: Optional[str] = None, description: Optional[str] = None,
                 tags: Optional[Iterable[str]] = None, base_version: Optional[int] = None,
-                reason: Optional[str] = None) -> tuple[dict, list[str]]:
+                reason: Optional[str] = None, hidden_note: Optional[bool] = None) -> tuple[dict, list[str]]:
     """
     Change a note; its slug stays. Updating an archived note restores it. Only the user (the page)
     changes the memory this way; the agent changes it line by line (memory_add() and the like).
@@ -653,6 +709,12 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
         tags: Replaces the list of tags ([] removes them).
         base_version: The version the change was made on (the page); refused if the note changed since.
         reason: Stored with the revision (e.g. which version was restored).
+        hidden_note: Hides the note or not. From the page it is the user's decision; an agent
+            can't change a mark the user set (refused if it is the only change, else left alone).
+
+    A writer that is in family mode (Writer.family_mode) wrote content without the hidden lines, which
+    are put back; one from a hidden conversation (Writer.from_hidden) tags the lines it adds, unless the
+    note is hidden anyway.
 
     Returns:
         (the note, what changed; [] if the values were the same already)
@@ -663,15 +725,17 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
     """
     if content is not None and append is not None:
         raise KBError("Give either content (replaces the whole text) or append (adds to the end), not both")
-    if all(value is None for value in (content, append, title, description, tags)):
+    if all(value is None for value in (content, append, title, description, tags, hidden_note)):
         raise KBError("Nothing to change: give content, append, title, description or tags")
 
     with db.connection() as conn:
-        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault)
+        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault, family_mode=writer.family_mode)
         if note is None:
             raise _not_found(ref)
         if note["slug"] == MEMORY_SLUG and writer.author != "user":
             raise _memory_by_line()
+        if note["slug"] == MEMORY_SLUG and hidden_note:
+            raise KBError("The memory can't be hidden as a whole; tag its hidden lines with #hidden")
         note["version"] = _version(conn, note["id"])
         if base_version is not None and base_version != note["version"]:
             raise KBConflict(f"Note '{note['slug']}' changed since version {base_version}; it is at version "
@@ -680,17 +744,33 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
         changes = []
         if title is not None:
             new["title"] = _clean_title(title)
+        tag_new = writer.from_hidden and not note["hidden"]
         if content is not None:
             new["content"] = _clean_content(content, new["title"])
+            if writer.family_mode:
+                new["content"] = hidden_content.restore_hidden(note["content"], new["content"])
+            if tag_new:
+                new["content"] = hidden_content.tag_new_lines(note["content"], new["content"])
         if append is not None:
             addition = append.strip()
             if not addition:
                 raise KBError("append must not be empty")
+            if tag_new:
+                addition = hidden_content.tag_lines(addition)
             new["content"] = _clean_content(f"{note['content'].rstrip()}\n\n{addition}", new["title"])
         if description is not None:
             new["description"] = _clean_description(description)
         if tags is not None:
             new["tags"] = normalize_tags(tags)
+        # Agents never change what the user decided, and take back only marks of agents
+        user_mark = writer.author != "user" and (note["hidden_by"] == "user"
+                                                 or (note["hidden"] and note["hidden_by"] != "agent"))
+        if hidden_note is not None and bool(hidden_note) != note["hidden"]:
+            if not user_mark:
+                new["hidden"], new["hidden_by"] = bool(hidden_note), _marker(writer)
+            elif all(value is None for value in (content, append, title, description, tags)):
+                raise KBError(f"The user decided this note is {'' if note['hidden'] else 'not '}hidden, so it stays "
+                              f"as it is")
 
         if new["title"] != note["title"]:
             changes.append(f"title → \"{new['title']}\"")
@@ -700,17 +780,21 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
             changes.append("description changed" if new["description"] else "description removed")
         if new["tags"] != note["tags"]:
             changes.append(f"tags → [{', '.join(new['tags'])}]")
+        if new["hidden"] != note["hidden"]:
+            changes.append("hidden" if new["hidden"] else "no longer hidden")
         if note["status"] == "archived":
             new["status"] = "active"
             changes.append("restored from the archive")
         if not changes:
             return note, []
+        if hidden_note is not None and bool(hidden_note) != note["hidden"] and user_mark:
+            changes.append("the hidden mark stays as the user set it")
 
         content_changed = new["content"] != note["content"]
         note = dict(conn.execute(
             update(kb_notes).where(kb_notes.c.id == note["id"])
             .values(title=new["title"], description=new["description"], tags=new["tags"],
-                    content=new["content"], status=new["status"])
+                    content=new["content"], status=new["status"], hidden=new["hidden"], hidden_by=new["hidden_by"])
             .returning(*_NOTE_COLUMNS)
         ).one()._mapping)
         _add_revision(conn, note, "update", writer, reason=reason)
@@ -731,7 +815,7 @@ def archive_note(writer: Writer, ref: str, reason: Optional[str] = None) -> tupl
         KBError: There is no such note, or it is the memory (which is never archived).
     """
     with db.connection() as conn:
-        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault)
+        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault, family_mode=writer.family_mode)
         if note is None:
             raise _not_found(ref)
         if note["slug"] == MEMORY_SLUG:
@@ -760,7 +844,7 @@ def restore_note(writer: Writer, ref: str) -> tuple[dict, bool]:
         KBNotFound: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault)
+        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault, family_mode=writer.family_mode)
         if note is None:
             raise _not_found(ref)
         if note["status"] == "active":
@@ -782,14 +866,14 @@ def restore_revision(writer: Writer, ref: str, revision_id: int,
     Raises:
         KBNotFound: There is no such note or version. KBConflict: the note changed since base_version.
     """
-    revision = get_revision(writer.user_id, ref, revision_id, vault=writer.vault)
+    revision = get_revision(writer.user_id, ref, revision_id, vault=writer.vault, family_mode=writer.family_mode)
     when = revision["created_at"].strftime("%Y-%m-%d %H:%M") if revision["created_at"] else f"#{revision_id}"
     return update_note(writer, ref, content=revision["content"], title=revision["title"],
                        description=revision["description"] or "", tags=revision["tags"],
                        base_version=base_version, reason=f"Restored the version of {when}")
 
 
-def delete_note(user_id: int, ref: str, vault: int = 0) -> str:
+def delete_note(user_id: int, ref: str, vault: int = 0, family_mode: bool = False) -> str:
     """
     Delete a note for good, with all its versions (only from the page: the agent can only archive).
     Links to it from other notes stay and point to a note that doesn't exist (any more).
@@ -801,7 +885,7 @@ def delete_note(user_id: int, ref: str, vault: int = 0) -> str:
         KBNotFound: There is no such note.
     """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, ref, lock=True, vault=vault)
+        note = _find_note(conn, user_id, ref, lock=True, vault=vault, family_mode=family_mode)
         if note is None:
             raise _not_found(ref)
         conn.execute(delete(kb_notes).where(kb_notes.c.id == note["id"]))
@@ -830,36 +914,44 @@ def memory_usage(content: str) -> tuple[int, int]:
     return len(lines), len(content)
 
 
-def _memory_text(text: Optional[str]) -> str:
-    """One line of the memory as the agent gives it: on one line, without a bullet or date of its own."""
+def _memory_text(text: Optional[str]) -> tuple[str, bool]:
+    """
+    One line of the memory as the agent gives it: on one line, without a bullet or date of its own,
+    and whether it ended with the tag #hidden (which goes after the date).
+    """
     text = " ".join((text or "").split())
     text = re.sub(r"^[-*+]\s+", "", text)
+    text, tagged = hidden_content.strip_trailing_tag(text)
     text = _MEMORY_DATE_RE.sub("", text).strip()
     if not text:
         raise KBError("The text must not be empty")
     if len(text) > MEMORY_LINE_CHARS:
         raise KBError(f"A line of the memory has at most {MEMORY_LINE_CHARS} characters ({len(text)} given): keep "
                       f"it short and put the details into a note (kb_write) that the line points to with [[slug]]")
-    return text
+    return text, tagged
 
 
-def _memory_line(text: str) -> str:
-    return f"- {text} ({_today()})"
+def _memory_line(text: str, tagged: bool = False) -> str:
+    """A line of the memory: "- <text> (<date>)", with " #hidden" at the end if tagged."""
+    return f"- {text} ({_today()})" + (f" {hidden_content.TAG}" if tagged else "")
 
 
 def _line_key(line: str) -> str:
-    """A memory line without bullet and date, lowercased, to find duplicates."""
-    return _MEMORY_DATE_RE.sub("", re.sub(r"^\s*[-*+]\s+", "", line)).strip().lower()
+    """A memory line without bullet, date and #hidden at its end, lowercased, to find duplicates."""
+    line = hidden_content.strip_trailing_tag(re.sub(r"^\s*[-*+]\s+", "", line))[0]
+    return _MEMORY_DATE_RE.sub("", line).strip().lower()
 
 
-def _find_line(lines: list[str], part: str) -> int:
-    """The index of the one line of text that contains part (case-insensitive)."""
+def _find_line(lines: list[str], part: str, family_mode: bool = False) -> int:
+    """The index of the one line of text that contains part (case-insensitive); with family_mode a visible one."""
     part = " ".join((part or "").split())
     if not part:
         raise KBError("Give a part of the line, e.g. a few words of it")
     needle = part.lower()
+    hidden = hidden_content.hidden_mask(lines) if family_mode else [False] * len(lines)
     found = [i for i, line in enumerate(lines)
-             if line.strip() and _heading(line) is None and needle in " ".join(line.split()).lower()]
+             if line.strip() and not hidden[i] and _heading(line) is None
+             and needle in " ".join(line.split()).lower()]
     if not found:
         raise KBError(f"No line of the memory contains \"{part}\"; copy a part of the line from the memory in the "
                       f"system prompt")
@@ -906,12 +998,17 @@ def memory_status(content: str) -> str:
     return status
 
 
-def get_memory(user_id: int, vault: int = 0) -> Optional[dict]:
-    """The memory note of a vault (with its version), or None if it has none yet."""
+def get_memory(user_id: int, vault: int = 0, family_mode: bool = False) -> Optional[dict]:
+    """
+    The memory note of a vault (with its version), or None if it has none yet; with family_mode
+    without its hidden lines.
+    """
     with db.connection() as conn:
-        note = _find_note(conn, user_id, MEMORY_SLUG, vault=vault)
+        note = _find_note(conn, user_id, MEMORY_SLUG, vault=vault, family_mode=family_mode)
         if note is not None:
             note["version"] = _version(conn, note["id"])
+            if family_mode:
+                note["content"] = hidden_content.visible(note["content"])
     return note
 
 
@@ -956,10 +1053,14 @@ def _change_memory(writer: Writer, change) -> tuple[dict, bool]:
     return note, True
 
 
-def memory_add(writer: Writer, text: str, section: Optional[str] = None) -> tuple[dict, bool]:
+def memory_add(writer: Writer, text: str, section: Optional[str] = None,
+               hidden_line: Optional[bool] = None) -> tuple[dict, bool]:
     """
     Add a line to the memory, with today's date at its end: under the heading section (made at the
     end if missing), else before the first heading.
+
+    The line ends with #hidden if hidden_line, or (without it) if the text does or the writer writes from
+    a hidden conversation; hidden_line False: an agent says it isn't hidden, even in a hidden conversation.
 
     Returns:
         (the memory, False if it has the same line already)
@@ -967,7 +1068,8 @@ def memory_add(writer: Writer, text: str, section: Optional[str] = None) -> tupl
     Raises:
         KBError: Empty or too long text or section, or the memory would get too long.
     """
-    text = _memory_text(text)
+    text, tagged = _memory_text(text)
+    tagged = hidden_line if hidden_line is not None else tagged or writer.from_hidden
     heading = " ".join((section or "").split()).lstrip("#").strip()
     if len(heading) > MEMORY_SECTION_CHARS:
         raise KBError(f"A section name has at most {MEMORY_SECTION_CHARS} characters")
@@ -975,7 +1077,7 @@ def memory_add(writer: Writer, text: str, section: Optional[str] = None) -> tupl
     def change(lines: list[str]) -> Optional[list[str]]:
         if any(_line_key(line) == text.lower() for line in lines if _heading(line) is None):
             return None
-        line = _memory_line(text)
+        line = _memory_line(text, tagged)
         if heading:
             start = next((i for i, other in enumerate(lines) if (_heading(other) or "").lower() == heading.lower()),
                          None)
@@ -992,18 +1094,21 @@ def memory_add(writer: Writer, text: str, section: Optional[str] = None) -> tupl
     return _change_memory(writer, change)
 
 
-def memory_replace(writer: Writer, line: str, text: str) -> dict:
+def memory_replace(writer: Writer, line: str, text: str, hidden_line: Optional[bool] = None) -> dict:
     """
-    Replace the one line of the memory that contains line (a part of it) with text, dated today.
+    Replace the one line of the memory that contains line (a part of it) with text, dated today. The
+    new line keeps the tag #hidden of the old one, and gets it from a writer in a hidden conversation;
+    hidden_line True or False decides it instead.
 
     Raises:
         KBError: No line or several lines contain it, empty or too long text, the memory would get too long.
     """
-    text = _memory_text(text)
+    text, tagged = _memory_text(text)
 
     def change(lines: list[str]) -> list[str]:
-        index = _find_line(lines, line)
-        return lines[:index] + [_memory_line(text)] + lines[index + 1:]
+        index = _find_line(lines, line, writer.family_mode)
+        keep = hidden_line if hidden_line is not None else tagged or writer.from_hidden or hidden_content.has_tag(lines[index])
+        return lines[:index] + [_memory_line(text, keep)] + lines[index + 1:]
 
     return _change_memory(writer, change)[0]
 
@@ -1022,7 +1127,7 @@ def memory_remove(writer: Writer, line: str) -> tuple[dict, str]:
     removed: list[str] = []
 
     def change(lines: list[str]) -> list[str]:
-        index = _find_line(lines, line)
+        index = _find_line(lines, line, writer.family_mode)
         removed.append(lines[index].strip())
         return lines[:index] + lines[index + 1:]
 

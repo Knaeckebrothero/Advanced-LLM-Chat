@@ -85,6 +85,18 @@
         <mat-hint>{{ 'knowledgeBase.editor.tagsHint' | translate }}</mat-hint>
       }
     </mat-form-field>
+
+    @if (canHide) {
+      <div class="field-hidden">
+        <mat-slide-toggle name="hidden" [(ngModel)]="hidden" (ngModelChange)="changed()">
+          {{ 'hide.note' | translate }}
+        </mat-slide-toggle>
+        <p class="field-hint">{{ 'hide.noteHint' | translate }}</p>
+        @if (note()?.hidden && note()?.hiddenBy === 'agent') {
+          <p class="field-hint">{{ 'hide.noteByAgent' | translate }}</p>
+        }
+      </div>
+    }
   </div>
 
   <div class="content-field">

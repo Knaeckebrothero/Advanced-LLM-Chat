@@ -25,11 +25,14 @@ class KBNoteSummary(BaseModel):
     tags: List[str] = []
     status: NoteStatus
     updatedAt: Optional[UtcDatetime] = None
+    hidden: bool = False  # Hidden
+    hiddenBy: Optional[str] = None  # Who set hidden: "user" or "agent" (agents leave the user's decision alone)
 
     @classmethod
     def from_row(cls, row: dict) -> "KBNoteSummary":
         return cls(slug=row["slug"], title=row["title"], description=row["description"], tags=row["tags"] or [],
-                   status=row["status"], updatedAt=row["updated_at"])
+                   status=row["status"], updatedAt=row["updated_at"], hidden=bool(row.get("hidden")),
+                   hiddenBy=row.get("hidden_by"))
 
 
 class KBTagCount(BaseModel):
@@ -110,6 +113,7 @@ class KBNoteWrite(BaseModel):
     content: str
     description: Optional[str] = Field(None, max_length=MAX_DESCRIPTION_CHARS)
     tags: List[str] = Field(default_factory=list, max_length=MAX_TAGS)
+    hidden: Optional[bool] = None  # Hide the note or not; None keeps it
 
 
 class KBNoteUpdate(KBNoteWrite):

@@ -8,6 +8,8 @@
           (touchstart)="onPressStart($event)"
           (touchend)="onPressEnd()">
     <div class="conversation-content">
+      <mat-icon *ngIf="!editing && isHidden" class="hidden-mark" [title]="hiddenHint | translate"
+                [attr.aria-label]="hiddenHint | translate">visibility_off</mat-icon>
       <span *ngIf="!editing" [title]="conversation.name">{{ conversation.name }}</span>
       <input *ngIf="editing"
              #editInput
@@ -48,6 +50,11 @@
             [title]="'conversationMenu.memoryHint' | translate">
       <mat-icon>psychology</mat-icon>
       <span>{{ (reviewingMemory ? 'conversationMenu.memorySaving' : 'conversationMenu.memory') | translate }}</span>
+    </button>
+    <button mat-menu-item *ngIf="familyModeAvailable" [disabled]="agentHidden" (click)="toggleHidden()"
+            [title]="hideMenuHint | translate">
+      <mat-icon>{{ isHidden ? 'visibility' : 'visibility_off' }}</mat-icon>
+      <span>{{ (isHidden ? 'hide.unmark' : 'hide.mark') | translate }}</span>
     </button>
     <button mat-menu-item (click)="deleteConversation()">
       <mat-icon>delete</mat-icon>

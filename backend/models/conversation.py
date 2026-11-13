@@ -79,6 +79,8 @@ class ConversationResponse(BaseModel):
     :type personaId: Optional[int]
     :ivar personaValues: Values for the persona's variables.
     :type personaValues: Optional[Dict[str, str]]
+    :ivar hidden: Hidden; a chat is also hidden if its agent is.
+    :type hidden: bool
     """
     id: str  # Now using UUID
     userId: int
@@ -94,6 +96,8 @@ class ConversationResponse(BaseModel):
     modelId: Optional[int] = None
     personaId: Optional[int] = None
     personaValues: Optional[Dict[str, str]] = None
+    hidden: bool = False
+    hiddenBy: Optional[str] = None  # Who set hidden: "user" or "agent" (agents leave the user's decision alone)
 
 
 class Conversation(BaseModel):
@@ -127,6 +131,8 @@ class Conversation(BaseModel):
     :type personaId: Optional[int]
     :ivar personaValues: Values for the persona's variables.
     :type personaValues: Optional[Dict[str, str]]
+    :ivar hidden: Hidden; a chat is also hidden if its agent is.
+    :type hidden: bool
     """
     id: str
     userId: int
@@ -139,6 +145,8 @@ class Conversation(BaseModel):
     modelId: Optional[int] = None
     personaId: Optional[int] = None
     personaValues: Optional[Dict[str, str]] = None
+    hidden: bool = False
+    hiddenBy: Optional[str] = None  # Who set hidden: "user" or "agent" (agents leave the user's decision alone)
 
     @classmethod
     def from_row(cls, row: dict) -> "Conversation":
@@ -161,6 +169,8 @@ class Conversation(BaseModel):
             modelId=row.get('model_id'),
             personaId=row.get('persona_id'),
             personaValues=row.get('persona_values'),
+            hidden=bool(row.get('hidden')),
+            hiddenBy=row.get('hidden_by'),
         )
 
 
@@ -181,12 +191,15 @@ class ConversationCreateRequest(BaseModel):
     :type personaId: Optional[int]
     :ivar personaValues: Optional values for the persona's variables.
     :type personaValues: Optional[Dict[str, str]]
+    :ivar hidden: Hidden from the start.
+    :type hidden: bool
     """
     name: str = Field(max_length=MAX_NAME_LENGTH)
     participants: List[str]
     modelId: Optional[int] = None
     personaId: Optional[int] = None
     personaValues: Optional[Dict[str, str]] = None
+    hidden: bool = False
 
 
 class ConversationUpdateRequest(BaseModel):
@@ -205,11 +218,14 @@ class ConversationUpdateRequest(BaseModel):
     :type personaId: Optional[int]
     :ivar personaValues: New values for the persona's variables.
     :type personaValues: Optional[Dict[str, str]]
+    :ivar hidden: Hide the conversation, or unhide it.
+    :type hidden: Optional[bool]
     """
     name: Optional[str] = Field(default=None, max_length=MAX_NAME_LENGTH)
     modelId: Optional[int] = None
     personaId: Optional[int] = None
     personaValues: Optional[Dict[str, str]] = None
+    hidden: Optional[bool] = None
 
 
 class ConversationWithDetails(Conversation):

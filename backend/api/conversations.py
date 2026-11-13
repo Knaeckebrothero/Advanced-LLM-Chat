@@ -118,7 +118,9 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
                 lastModified=conv['lastModified'] or int(time.time()),
                 modelId=conv.get('model_id'),
                 personaId=conv.get('persona_id'),
-                personaValues=conv.get('persona_values')
+                personaValues=conv.get('persona_values'),
+                hidden=bool(conv.get('hidden')),
+                hiddenBy=conv.get('hidden_by')
             ))
 
         logger.info(f"Returning {len(conversation_responses)} conversations for user_id: {user_id}")
@@ -204,7 +206,9 @@ async def get_conversation(conversation_id: str, response: Response, current_use
             syncHash=sync_hash,
             modelId=conv.get('model_id'),
             personaId=conv.get('persona_id'),
-            personaValues=conv.get('persona_values')
+            personaValues=conv.get('persona_values'),
+            hidden=bool(conv.get('hidden')),
+            hiddenBy=conv.get('hidden_by')
         )
 
     except HTTPException:
@@ -251,7 +255,8 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
         participants=participants_json,
         model_id=req.modelId,
         persona_id=req.personaId,
-        persona_values=req.personaValues
+        persona_values=req.personaValues,
+        hidden=req.hidden
     )
 
     crud_logger.info(f"Conversation created - id: {new_id}, user_id: {user_id}, name: {req.name[:100]}, "
@@ -414,9 +419,9 @@ async def update_conversation(
     """
     Handles the updating of a specific conversation for the currently authorized user.
 
-    This endpoint allows the user to update the name, the catalog model, the persona
-    and the persona values of a conversation if the specified conversation belongs to
-    the user. Only the fields that are sent change; null clears the model or persona.
+    This endpoint allows the user to update the name, the catalog model, the persona,
+    the persona values and the hidden mark of a conversation if the specified conversation
+    belongs to the user. Only the fields that are sent change; null clears the model or persona.
     The request validates the existence of the conversation and that the user may use
     the chosen model and persona, then updates the record in the database.
     Returns the updated conversation details on success.
@@ -462,11 +467,16 @@ async def update_conversation(
         name=req.name,
         model_id=model_id,
         persona_id=persona_id,
-        persona_values=persona_values
+        persona_values=persona_values,
+        hidden=req.hidden if req.hidden is not None else UNSET,
+        # The user's own decision, which agents leave alone 
+        hidden_by='user' if req.hidden is not None else UNSET
     )
 
     if req.name is not None:
         crud_logger.info(f"Conversation {conversation_id} renamed to '{req.name[:100]}' by user {user_id}")
+    if req.hidden is not None:
+        crud_logger.info(f"Conversation {conversation_id} {'hidden' if req.hidden else 'unhidden'} by user {user_id}")
     if sent & {"modelId", "personaId", "personaValues"}:
         crud_logger.info(f"Conversation {conversation_id} catalog selection updated by user {user_id} - "
                          f"model_id: {updated_conv.get('model_id')}, persona_id: {updated_conv.get('persona_id')}")

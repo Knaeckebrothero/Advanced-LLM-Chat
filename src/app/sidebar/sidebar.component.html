@@ -1,7 +1,19 @@
 <div class="sidebar" *ngIf="{ selectedId: selectedConversationId$ | async, path: currentPath$ | async } as view">
   <div class="sidebar-header">
-    <div class="brand">
-      <mat-icon class="brand-mark" aria-hidden="true">forum</mat-icon>
+    <!-- With FAMILY_MODE_SWITCH=logo, five quick taps on the logo turn family mode off and on; while it is off,
+         the logo wears sunglasses -->
+    <div class="brand" (click)="onLogoTap()">
+      <span class="brand-logo" [class.pulse]="logoPulse">
+        <mat-icon class="brand-mark" aria-hidden="true">forum</mat-icon>
+        <svg *ngIf="showingHidden$ | async" class="brand-shades" viewBox="0 0 24 24" aria-hidden="true">
+          <!-- On the front speech bubble of the icon (it spans 2..17 x 2..13 of the 24px grid) -->
+          <path class="frame" d="M3 5.4h13.2v.9H3z"/>
+          <path class="frame" d="M3.5 6h5.4v1.5c0 1.25-.95 2-2.3 2H5.7c-1.3 0-2.2-.8-2.2-2z"/>
+          <path class="frame" d="M10.3 6h5.4v1.5c0 1.2-.9 2-2.2 2h-.9c-1.35 0-2.3-.75-2.3-2z"/>
+          <rect class="glint" x="4.3" y="6.6" width="1.4" height=".55" rx=".27"/>
+          <rect class="glint" x="11.1" y="6.6" width="1.4" height=".55" rx=".27"/>
+        </svg>
+      </span>
       <span class="brand-name">LLM Chat</span>
     </div>
     <button class="sidebar-close-btn" (click)="closeSidebar()"

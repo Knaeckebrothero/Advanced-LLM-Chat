@@ -98,6 +98,25 @@ You can search and read your earlier conversations with this user: the ones that
 
 CHAT_TOOL_NAMES = set(TOOL_GROUPS["past_chats"])
 
+# Added with the tool hide_chat (the tool group auto_hide); HIDE_KB_PROMPT also with the knowledge base
+HIDE_PROMPT = """## Hidden content:
+The user's devices have a family mode, which hides some content, for example when someone else may see the screen. You mark that content, so family mode can hide it. What to hide, in the user's words:
+<what-to-hide>
+{definition}
+</what-to-hide>
+Anything else stays visible.
+- Once this conversation turns to such content, hide it with hide_chat, once; it stays hidden. Not for a single passing word.
+- If the user says it shouldn't be hidden, or the tool says the user decided, leave it as it is.
+- Hiding only decides what family mode shows: don't comment on it, and don't let it change how you answer."""
+
+HIDE_KB_PROMPT = """- What you save about such content is hidden too: write such a note with hidden: true and save such a line of the memory with hidden: true; in a note that isn't hidden, end such a line with the tag #hidden. In a hidden conversation, what you save is hidden on its own; pass hidden: false for a line that needn't be, such as the user's name."""
+
+
+def hide_prompt(definition: str, with_knowledge_base: bool) -> str:
+    """The section on hidden content: what to hide (the user's text) and, with the knowledge base, how to save it."""
+    prompt = HIDE_PROMPT.format(definition=definition.strip())
+    return prompt + "\n" + HIDE_KB_PROMPT if with_knowledge_base else prompt
+
 # Heads a conversation's system messages, after the rest of the prompt
 INSTRUCTIONS_HEADING = "## Instructions for this conversation:"
 
@@ -113,6 +132,7 @@ MCP_UNAVAILABLE_INTRO = ("Not available in this answer (their tools may appear i
 def build_system_prompt(
     persona_prompt: Optional[str],
     tools: Union[ToolRegistry, Iterable[str], None],
+    hide_definition: Optional[str] = None,
 ) -> str:
     """
     Build the agent's system prompt.
@@ -120,6 +140,7 @@ def build_system_prompt(
     Args:
         persona_prompt: A rendered persona prompt that replaces the identity paragraph, or None.
         tools: The tools the model gets (a registry or tool names); None or empty for no tools.
+        hide_definition: What the agent hides on its own (with hide_chat); the section is left out without it.
 
     Returns:
         The system prompt.
@@ -147,6 +168,9 @@ def build_system_prompt(
         sections.append(KB_PROMPT)
     if names & CHAT_TOOL_NAMES:
         sections.append(CHAT_PROMPT)
+    if "hide_chat" in names:
+        if hide_definition and hide_definition.strip():
+            sections.append(hide_prompt(hide_definition, bool(names & KB_TOOL_NAMES)))
 
     return "\n\n".join(sections)
 

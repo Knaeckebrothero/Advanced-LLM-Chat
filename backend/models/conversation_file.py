@@ -50,10 +50,12 @@ class ConversationFileHeader(BaseModel):
     :ivar name: The conversation's name.
     :ivar createdAt: When the conversation was created.
     :ivar updatedAt: When the conversation was last changed.
+    :ivar hidden: The conversation was hidden, marked or through its agent; the import marks it.
     """
     name: str = Field(min_length=1, max_length=500)
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
+    hidden: Optional[bool] = None
 
 
 class ConversationFile(BaseModel):

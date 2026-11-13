@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS conversations (
     persona_values JSONB,        -- values for the persona's variables: {"style": "pirate"}
     -- Memory review (backend/services/memory_review.py)
     memory_reviewed_until BIGINT,        -- the newest message id the review has read, NULL = none yet
-    memory_review_failed_at TIMESTAMP    -- the last review that failed (retried an hour later), NULL after a success
+    memory_review_failed_at TIMESTAMP,   -- the last review that failed (retried an hour later), NULL after a success
+    hidden BOOLEAN NOT NULL DEFAULT FALSE, -- hidden, hidden in family mode
+    hidden_by TEXT                         -- who set hidden: 'user' (agents leave it alone) or 'agent', NULL = nobody
 );
 
 -- name: create_messages_table
@@ -114,6 +116,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     background_blur INTEGER DEFAULT 0,       -- 0-20 px
     editing_mode TEXT DEFAULT 'guided',      -- 'guided' (an edited message is answered again) | 'manual' (edit and insert any message)
     memory_model_id INTEGER,                 -- llm_models.id that reviews conversations for the memory, NULL = the chat's model
+    auto_hide_prompt TEXT,                   -- what agents hide on their own, in the user's words, NULL = the server's
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -209,6 +212,7 @@ CREATE TABLE IF NOT EXISTS personas (
     sort_order INTEGER DEFAULT 0,
     own_memory BOOLEAN DEFAULT FALSE,        -- its own knowledge base and memory per user instead of the user's shared one
     mcp_servers JSONB,                       -- slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,     -- hidden with its chats and its own knowledge base
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -227,6 +231,8 @@ CREATE TABLE IF NOT EXISTS kb_notes (
     tags TEXT[] NOT NULL DEFAULT '{}',       -- lowercase
     content TEXT NOT NULL,                   -- Markdown, links to other notes as [[slug]]
     status TEXT NOT NULL DEFAULT 'active',   -- 'active' | 'archived' (kb_archive, an update restores it)
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,     -- hidden, hidden in family mode
+    hidden_by TEXT,                            -- who set hidden: 'user' (agents leave it alone) or 'agent', NULL = nobody
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id, vault, slug)
@@ -246,6 +252,15 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS memory_review_failed_at TIMES
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS own_memory BOOLEAN DEFAULT FALSE;
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS memory_model_id INTEGER;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS memory_vault INTEGER;
+
+-- name: add_hidden_columns
+-- Databases from before family mode (, the CREATE TABLEs above have the columns)
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS hidden_by TEXT;
+ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS hidden_by TEXT;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS auto_hide_prompt TEXT;
 
 -- name: add_mcp_columns
 -- Databases from before MCP servers (the CREATE TABLE above has it)

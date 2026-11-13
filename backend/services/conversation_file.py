@@ -17,6 +17,7 @@ from backend.models.conversation_file import (
 )
 from backend.models.message import AgentStep
 from backend.services.llm import generate_conversation_id
+from backend.services.hidden_content import conversation_is_hidden
 
 # The role names of the app; other exports may write the assistant in lower case
 ROLE_NAMES = {"user": "user", "assistant": "Assistant", "system": "system"}
@@ -104,6 +105,8 @@ def export_conversation(conversation: dict, messages: list[dict]) -> dict:
             "name": conversation['name'],
             "createdAt": _iso(conversation['createdAt']),
             "updatedAt": _iso(conversation['updatedAt']),
+            # hidden through its agent too, since the agent isn't part of the file
+            **({"hidden": True} if conversation_is_hidden(conversation['id']) else {}),
         },
         "messages": exported,
     }
@@ -165,4 +168,5 @@ def import_conversation(file: ConversationFile, user_id: int) -> dict:
         created_at=created_at.replace(tzinfo=None),
         updated_at=max(updated_at, created_at).replace(tzinfo=None),
         message_rows=rows,
+        hidden=bool(file.conversation.hidden),
     )

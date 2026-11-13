@@ -26,6 +26,7 @@ from sqlalchemy.exc import DBAPIError
 
 from backend.database import db
 from backend.llm.prompts import memory_time_zone
+from backend.services import hidden_content
 
 log = logging.getLogger(__name__)
 
@@ -54,9 +55,10 @@ class ChatSearchError(ValueError):
 
 @dataclass(frozen=True)
 class Scope:
-    """Whose chats, of which memory: what the tools bind."""
+    """Whose chats, of which memory: what the tools bind; family_mode leaves out hidden conversations."""
     user_id: int
     vault: int
+    family_mode: bool = False
 
 
 # =========================================================================
@@ -192,11 +194,17 @@ def _around(line: str, position: int, width: int = LINE_CHARS) -> str:
     return ("…" if start > 0 else "") + part + ("…" if start + width < len(line) else "")
 
 
-# Messages of a user's conversations in one memory; the search leaves out system messages
-_SCOPE = """
+def _hidden(scope: Scope) -> str:
+    """The condition that leaves out hidden conversations (c), if the scope hides them."""
+    return f" AND NOT {hidden_content.CONVERSATION_SQL}" if scope.family_mode else ""
+
+
+def _scope(scope: Scope) -> str:
+    """Messages of a user's conversations in one memory; the search leaves out system messages."""
+    return f"""
     FROM messages m
     JOIN conversations c ON c.id = m."conversationId"
-    WHERE c."userId" = :user_id AND m.memory_vault = :vault
+    WHERE c."userId" = :user_id AND m.memory_vault = :vault{_hidden(scope)}
 """
 _NOT_SYSTEM = """ AND lower(m."roleName") <> 'system'"""
 
@@ -205,13 +213,13 @@ def _conversation_info(conn, scope: Scope, ids: list[str]) -> dict[str, dict]:
     """Title, agent, number of messages and first and last message of conversations, in the memory."""
     if not ids:
         return {}
-    rows = conn.execute(text("""
+    rows = conn.execute(text(f"""
         SELECT c.id, c.name, c.persona_id, p.name AS agent, count(*) AS messages,
                min(m.id) AS first_id, max(m.id) AS last_id
         FROM messages m
         JOIN conversations c ON c.id = m."conversationId"
         LEFT JOIN personas p ON p.id = c.persona_id
-        WHERE c."userId" = :user_id AND m.memory_vault = :vault AND c.id = ANY(:ids)
+        WHERE c."userId" = :user_id AND m.memory_vault = :vault AND c.id = ANY(:ids){_hidden(scope)}
         GROUP BY c.id, p.name
     """), {"user_id": scope.user_id, "vault": scope.vault, "ids": ids}).mappings()
     return {row["id"]: _info(row) for row in rows}
@@ -254,7 +262,7 @@ def search(scope: Scope, pattern: str, literal: bool = False, after: Optional[st
         WITH candidates AS (
             SELECT m.id, m."conversationId" AS conversation_id, m."roleName" AS role_name,
                    message_search_text(m.content) AS body
-            {_SCOPE}{_NOT_SYSTEM} AND {match}{period}
+            {_scope(scope)}{_NOT_SYSTEM} AND {match}{period}
             ORDER BY m.id DESC
             LIMIT :limit
         ), lines AS (
@@ -274,7 +282,7 @@ def search(scope: Scope, pattern: str, literal: bool = False, after: Optional[st
     """
     count_sql = f"""
         SELECT count(*) AS messages, count(DISTINCT m."conversationId") AS conversations
-        {_SCOPE}{_NOT_SYSTEM} AND {match}{period}
+        {_scope(scope)}{_NOT_SYSTEM} AND {match}{period}
     """
     try:
         with db.connection() as conn:
@@ -350,14 +358,14 @@ def list_chats(scope: Scope, after: Optional[str] = None, before: Optional[str] 
             FROM messages m
             JOIN conversations c ON c.id = m."conversationId"
             LEFT JOIN personas p ON p.id = c.persona_id
-            WHERE c."userId" = :user_id AND m.memory_vault = :vault
+            WHERE c."userId" = :user_id AND m.memory_vault = :vault{_hidden(scope)}
             GROUP BY c.id, p.name
             HAVING {in_period}
             ORDER BY max(m.id) DESC
             LIMIT :limit
         """), params).mappings().all()
         total = conn.execute(text(f"""
-            SELECT count(DISTINCT m."conversationId") {_SCOPE}{period}
+            SELECT count(DISTINCT m."conversationId") {_scope(scope)}{period}
         """), params).scalar_one()
     conversations = []
     for row in rows:
@@ -387,7 +395,7 @@ def read_chat(scope: Scope, conversation: str, message: Optional[int] = None,
     conversation = (conversation or "").strip()
     with db.connection() as conn:
         ids = conn.execute(text(f"""
-            SELECT m.id {_SCOPE} AND c.id = :conversation ORDER BY m.id
+            SELECT m.id {_scope(scope)} AND c.id = :conversation ORDER BY m.id
         """), {"user_id": scope.user_id, "vault": scope.vault, "conversation": conversation}).scalars().all()
         if not ids:
             raise ChatSearchError(f"No conversation {conversation!r} among your past chats; take the id from "
