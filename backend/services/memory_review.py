@@ -14,6 +14,10 @@ one within MEMORY_REVIEW_MAX_AGE_DAYS), one at a time. A conversation remembers 
 message the review read (memory_reviewed_until), so every message is read once; a failed review
 is tried again after RETRY_MINUTES. review_conversation() also runs on request
 (POST /api/kb/review). The conversation is data for the model, never instructions.
+
+The messages the review read that belong to no memory yet (e.g. an imported conversation that got
+an agent with the knowledge base) join the memory it saves to, so that agent's past chat tools find
+them (db.set_memory_review(..., vault=...), docs/past_chats.md).
 """
 import asyncio
 import logging
@@ -223,12 +227,14 @@ async def _review(conversation_id: str) -> ReviewResult:
         db.set_memory_review(conversation_id, failed=True)
         return ReviewResult("not_available", "The conversation's agent doesn't have the knowledge base")
 
+    # What the review read joins its memory, if it belongs to none (docs/past_chats.md)
+    vault = persona_vault(user, conversation)
     since = conversation.get("memory_reviewed_until") or 0
     builder = ConversationHistoryBuilder(db)
     earlier, new = db.get_messages_for_review(conversation_id, since, CONTEXT_MESSAGES)
     if not any(message_text(builder, row) for row in new):
         if new:
-            db.set_memory_review(conversation_id, reviewed_until=new[-1]["id"])
+            db.set_memory_review(conversation_id, reviewed_until=new[-1]["id"], vault=vault)
         return ReviewResult("nothing_new", "No new messages since the last review", reviewed_until=since or None)
 
     config = resolve_memory_model(user, conversation)
@@ -236,7 +242,6 @@ async def _review(conversation_id: str) -> ReviewResult:
         db.set_memory_review(conversation_id, failed=True)
         return ReviewResult("not_available", "No model with tool support for the memory review: set a memory "
                                              "model in the settings")
-    vault = persona_vault(user, conversation)
     result = ReviewResult("done", model_name=config.display_name)
     window = config.context_window or DEFAULT_CONTEXT_WINDOW
     parts = _parts(new, max(1000, int(window * TRANSCRIPT_SHARE)), builder)
@@ -262,7 +267,7 @@ async def _review(conversation_id: str) -> ReviewResult:
             result.status, result.detail = "failed", f"{type(e).__name__}: {e}"
             return result
         result.reviewed_until = last_id
-        db.set_memory_review(conversation_id, reviewed_until=last_id)
+        db.set_memory_review(conversation_id, reviewed_until=last_id, vault=vault)
     result.detail = " ".join(line for line in lines if line)
     log.info(f"Memory review of conversation {conversation_id} done in {time.monotonic() - started:.1f}s: "
              f"{len(result.changes)} change(s), {result.usage.input_tokens} input / {result.usage.output_tokens} "

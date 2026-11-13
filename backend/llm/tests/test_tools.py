@@ -6,7 +6,9 @@ Offline test of the tool groups that personas select (no API keys or database ne
 Covers: tools_for_groups() with no selection, an empty one and single groups,
 unavailable groups (NEO4J_ENABLED off, TAVILY_API_KEY unset) and their
 reasons, the opt-in knowledge base with the memory tools (only when selected,
-only for signed-in users), the system prompt sections for the selected tools,
+only for signed-in users), the past chat tools (opt-in, only with the knowledge
+base, the user and memory bound; the regular expressions translated for
+Postgres), the system prompt sections for the selected tools,
 the memory in the prompt (with_memory, a fake memory store), the tools
 stream-generate sends for a conversation's persona (_agent_tools, with a fake
 database; the shared knowledge base, or the persona's own with own_memory), and
@@ -31,13 +33,14 @@ from typing import get_args
 from backend.api import messages
 from backend.catalog import resolver
 from backend.llm import tools as tools_module
-from backend.llm.prompts import (FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, MEMORY_EMPTY, MEMORY_HEADING,
-                                 WEB_SEARCH_PROMPT, build_system_prompt, with_instructions, with_memory)
+from backend.llm.prompts import (CHAT_PROMPT, FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, MEMORY_EMPTY,
+                                 MEMORY_HEADING, WEB_SEARCH_PROMPT, build_system_prompt, with_instructions,
+                                 with_memory)
 from backend.llm.tools import (OPT_IN_GROUPS, TOOL_GROUPS, ToolInputError, ToolText, default_tools,
                                tool_group_status, tool_message_content, tools_for_groups)
 from backend.llm.types import ModelConfig
 from backend.models.catalog import ToolGroup
-from backend.services import file_store, file_utils
+from backend.services import file_store, file_utils, past_chats
 from backend.services.file_retrieval_service import get_file_retrieval_service
 from backend.services.tools import web_search_tools
 
@@ -45,6 +48,7 @@ FILE_TOOLS = ["list_files", "read_file", "show_file"]
 GRAPH_TOOLS = ["get_graph_schema", "search_graph", "query_graph"]
 KB_TOOLS = ["kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
             "memory_add", "memory_replace", "memory_remove"]
+CHAT_TOOLS = ["chat_search", "chat_list", "chat_read"]
 
 
 @contextmanager
@@ -77,7 +81,7 @@ async def test_selection_filters_the_enabled_tools():
 
 
 async def test_knowledge_base_is_opt_in():
-    assert OPT_IN_GROUPS == {"knowledge_base", "user_mcp"} and TOOL_GROUPS["knowledge_base"] == tuple(KB_TOOLS)
+    assert OPT_IN_GROUPS == {"knowledge_base", "past_chats", "user_mcp"} and TOOL_GROUPS["knowledge_base"] == tuple(KB_TOOLS)
     # The users' own MCP servers: no static tools, backend/services/mcp/tools.py adds theirs per answer
     assert TOOL_GROUPS["user_mcp"] == () and len(tools_for_groups(["user_mcp"], user_id=1)) == 0
     with configured(neo4j=True, tavily=True):
@@ -101,12 +105,15 @@ async def test_unavailable_groups_stay_off():
         assert len(tools_for_groups(["web_search", "knowledge_graph"])) == 0
         status = {entry["id"]: entry for entry in tool_group_status()}
         assert list(status) == list(TOOL_GROUPS)
-        assert status["files"] == {"id": "files", "available": True, "reason": None, "optIn": False}
+        assert status["files"] == {"id": "files", "available": True, "reason": None, "optIn": False, "requires": None}
         assert status["web_search"] == {"id": "web_search", "available": False,
-                                        "reason": "TAVILY_API_KEY is not set", "optIn": False}
+                                        "reason": "TAVILY_API_KEY is not set", "optIn": False, "requires": None}
         assert status["knowledge_graph"] == {"id": "knowledge_graph", "available": False,
-                                             "reason": "NEO4J_ENABLED is off", "optIn": False}
-        assert status["knowledge_base"] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True}
+                                             "reason": "NEO4J_ENABLED is off", "optIn": False, "requires": None}
+        assert status["knowledge_base"] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True,
+                                            "requires": None}
+        assert status["past_chats"] == {"id": "past_chats", "available": True, "reason": None, "optIn": True,
+                                        "requires": "knowledge_base"}
     with configured(neo4j=True, tavily=True):
         assert all(entry["available"] and entry["reason"] is None for entry in tool_group_status())
 
@@ -124,6 +131,35 @@ async def test_prompt_only_describes_selected_tools():
         assert notebook.startswith("You keep notes.") and notebook.endswith(KB_PROMPT)
         assert FILE_ACCESS_PROMPT not in notebook
         assert build_system_prompt("You translate.", None) == "You translate."
+
+
+async def test_past_chats_need_the_knowledge_base():
+    assert TOOL_GROUPS["past_chats"] == tuple(CHAT_TOOLS)
+    with configured(neo4j=True, tavily=True):
+        # Opt-in: never part of "every enabled tool"
+        assert not set(CHAT_TOOLS) & set(tools_for_groups(None, user_id=1).names())
+        # Only with the knowledge base: without it the agent has no memory, so no chats to search
+        assert len(tools_for_groups(["past_chats"], user_id=1)) == 0
+        assert len(tools_for_groups(["files", "past_chats"], user_id=1)) == len(FILE_TOOLS)
+        assert tools_for_groups(["knowledge_base", "past_chats"], user_id=1).names() == [*KB_TOOLS, *CHAT_TOOLS]
+        # For signed-in users only
+        assert len(tools_for_groups(["knowledge_base", "past_chats"], user_id=1, guest=True)) == 0
+        assert len(tools_for_groups(["knowledge_base", "past_chats"])) == 0
+        # The user and the memory are bound, not schema arguments
+        selected = tools_for_groups(["knowledge_base", "past_chats"], user_id=1, vault=8)
+        for name in CHAT_TOOLS:
+            tool = selected.get(name)
+            assert not {"user_id", "vault", "scope"} & set(tool.parameters["properties"]), name
+            assert tool.func.__wrapped__.keywords["scope"] == past_chats.Scope(user_id=1, vault=8), name
+        # The prompt section comes with the tools, after the knowledge base's
+        prompt = build_system_prompt("You remember.", selected)
+        assert prompt.index(KB_PROMPT) < prompt.index(CHAT_PROMPT)
+        assert CHAT_PROMPT not in build_system_prompt("You keep notes.", KB_TOOLS)
+    # Postgres reads \b as a backspace: the search translates it outside brackets, keeps escaped backslashes
+    assert past_chats.postgres_regex(r"\bcat\b|\Bdog") == r"\ycat\y|\Ydog"
+    assert past_chats.postgres_regex(r"a\\b [\b] []\b] [[:alpha:]\b]\b") == r"a\\b [\b] []\b] [[:alpha:]\b]\y"
+    assert past_chats.postgres_regex("(?i)lisbon") == "lisbon"
+    assert past_chats.literal_regex("C++ (what?) a.b \\x") == r"C\+\+ \(what\?\) a\.b \\x"
 
 
 async def test_memory_follows_the_tool_sections():
@@ -412,7 +448,7 @@ async def test_vision_helper_errors_are_not_cached():
 
 TESTS = [test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
          test_knowledge_base_is_opt_in, test_unavailable_groups_stay_off, test_prompt_only_describes_selected_tools,
-         test_memory_follows_the_tool_sections, test_stream_generate_tools_follow_the_persona,
+         test_past_chats_need_the_knowledge_base, test_memory_follows_the_tool_sections, test_stream_generate_tools_follow_the_persona,
          test_file_tools_see_only_the_conversation, test_vision_helper_errors_are_not_cached]
 
 

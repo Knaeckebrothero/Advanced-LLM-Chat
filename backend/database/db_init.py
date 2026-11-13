@@ -301,7 +301,7 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
 
 
 def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfill_file_owners: bool = False,
-                       link_files: bool = False) -> bool:
+                       link_files: bool = False, fill_memory: bool = False) -> bool:
     """
     Execute the schema SQL file to create tables, indexes, and triggers.
 
@@ -315,6 +315,8 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
             transaction (when this run creates uploaded_files).
         link_files: Give existing files their conversation in the same transaction
             (when this run adds uploaded_files.conversation_id).
+        fill_memory: Give existing messages their memory in the same transaction
+            (when this run adds messages.memory_vault, docs/past_chats.md).
 
     Returns:
         True if successful, False otherwise.
@@ -339,6 +341,9 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
             if link_files:
                 from backend.database.db import backfill_file_conversations
                 linked = backfill_file_conversations(conn)
+            if fill_memory:
+                from backend.database.db import backfill_message_memory
+                filled = backfill_message_memory(conn)
             conn.commit()
 
         logger.info(f"  ✓ Executed schema from {schema_path.name}")
@@ -351,6 +356,9 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
         if link_files:
             logger.info(f"  ✓ Files belong to conversations now: {linked} existing file(s) got the "
                         f"conversation whose message attaches them")
+        if fill_memory:
+            logger.info(f"  ✓ Messages belong to a memory now: {filled} existing message(s) got the one of "
+                        f"their conversation's agent")
         return True
 
     except Exception as e:
@@ -635,11 +643,13 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     engine = get_engine(args.host, args.port, args.user, args.password, args.database)
 
     # Rebuild the indexes once after the switch from the Alpine image, enable pgvector
-    from backend.database.db import files_lack_conversations, prepare_database
+    from backend.database.db import files_lack_conversations, messages_lack_memory, prepare_database
     prepare_database(engine)
 
-    # Before the migration adds the column: this run links the existing files to their conversations
+    # Before the migration adds the columns: this run links the existing files to their conversations,
+    # and gives the existing messages their memory
     link_files = files_lack_conversations(engine)
+    fill_memory = messages_lack_memory(engine)
 
     # Step 2: Production migration (runs FIRST if --prod is set)
     if prod_mode:
@@ -668,7 +678,7 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     logger.info("")
     logger.info(f"[{current_step}/{total_steps}] Creating/updating tables from schema...")
     backfill_file_owners = not inspect(engine).has_table("uploaded_files")
-    if not execute_schema_sql(engine, SCHEMA_FILE, logger, backfill_file_owners, link_files):
+    if not execute_schema_sql(engine, SCHEMA_FILE, logger, backfill_file_owners, link_files, fill_memory):
         return False
 
     # Step 5: Insert seed data if requested (runs LAST)

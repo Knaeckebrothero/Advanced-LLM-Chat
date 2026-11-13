@@ -19,6 +19,7 @@ import {
   IProviderOut,
   IToolStatus,
   OPT_IN_TOOL_GROUPS,
+  REQUIRED_TOOL_GROUPS,
   TOOL_GROUPS
 } from '../data/models/catalog.model';
 import { IMcpConfig, IMcpConnectResult, IMcpServerCreate, IMcpServerOut, IMcpServerUpdate, IMcpTestResult } from '../data/models/mcp.model';
@@ -111,7 +112,8 @@ export class CatalogAdminStore {
     } catch (error) {
       console.warn('Tool groups could not be loaded:', error);
     }
-    return TOOL_GROUPS.map(id => ({ id, available: true, reason: null, optIn: OPT_IN_TOOL_GROUPS.includes(id) }));
+    return TOOL_GROUPS.map(id => ({ id, available: true, reason: null, optIn: OPT_IN_TOOL_GROUPS.includes(id),
+                                    requires: REQUIRED_TOOL_GROUPS[id] ?? null }));
   }
 
   /**

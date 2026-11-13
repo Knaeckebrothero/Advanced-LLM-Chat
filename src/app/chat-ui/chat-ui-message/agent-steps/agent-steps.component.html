@@ -44,13 +44,19 @@
           </div>
           <span class="step-title">{{ stepTitle(step) }}</span>
         </mat-panel-title>
-        <mat-panel-description *ngIf="step.duration || noteSlug(step) || mcpLink(step)">
+        <mat-panel-description *ngIf="step.duration || noteSlug(step) || chatOf(step) || mcpLink(step)">
           <!-- A knowledge base tool's result: open its note (without toggling the step) -->
           <a *ngIf="noteSlug(step) as slug" class="step-note-link" [routerLink]="['/knowledge-base', slug]"
              [queryParams]="noteVault(step)"
              (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()"
              [matTooltip]="'knowledgeBase.openNote' | translate" [attr.aria-label]="'knowledgeBase.openNote' | translate">
             <mat-icon>menu_book</mat-icon>
+          </a>
+          <!-- A past chat the agent read: open it -->
+          <a *ngIf="chatOf(step) as chat" class="step-note-link" href="" role="button"
+             (click)="openChat(chat, $event)" (keydown.enter)="openChat(chat, $event)"
+             [matTooltip]="'knowledgeBase.openChat' | translate" [attr.aria-label]="'knowledgeBase.openChat' | translate">
+            <mat-icon>history</mat-icon>
           </a>
           <!-- An MCP server the answer couldn't use: the MCP servers page, to sign in or check it -->
           <a *ngIf="mcpLink(step) as mcp" class="step-note-link" routerLink="/mcp"
@@ -83,7 +89,11 @@
           {{ 'knowledgeBase.openNote' | translate }}
         </a>
         <ng-template #metadataJson>
-          <div class="step-metadata" *ngIf="step.metadata && !isMcpStep(step) && !filesOf(step)">
+          <a *ngIf="chatOf(step) as chat" class="step-note-button" href="" role="button" (click)="openChat(chat, $event)">
+            <mat-icon>history</mat-icon>
+            {{ 'knowledgeBase.openChat' | translate }}
+          </a>
+          <div class="step-metadata" *ngIf="step.metadata && !isMcpStep(step) && !filesOf(step) && !chatOf(step)">
             <pre class="metadata-json">{{ step.metadata | json }}</pre>
           </div>
         </ng-template>

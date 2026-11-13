@@ -147,14 +147,33 @@ export class PersonaDialogComponent {
     return this.toolMode === 'all' ? this.inAllTools(tool) : this.pickedTools.has(tool.id);
   }
 
-  /** An unavailable tool can't be picked, but one that is picked already can be removed. */
+  /**
+   * An unavailable tool can't be picked, nor one whose required group isn't picked (the past chats
+   * need the knowledge base); one that is picked already can be removed.
+   */
   isToolDisabled(tool: IToolStatus): boolean {
-    return this.toolMode === 'all' || (!tool.available && !this.pickedTools.has(tool.id));
+    if (this.toolMode === 'all') return true;
+    if (this.pickedTools.has(tool.id)) return false;
+    return !tool.available || (!!tool.requires && !this.pickedTools.has(tool.requires));
   }
 
+  /** The hint under an opt-in group: what picking it gives. */
+  optInHint(id: ToolGroup): string {
+    if (id === 'user_mcp') return 'catalog.admin.personas.toolOptInUserMcp';
+    if (id === 'past_chats') return 'catalog.admin.personas.toolOptInPastChats';
+    return 'catalog.admin.personas.toolOptIn';
+  }
+
+  /** Removing a group also removes the groups that only work with it. */
   toggleTool(id: ToolGroup, checked: boolean): void {
-    if (checked) this.pickedTools.add(id);
-    else this.pickedTools.delete(id);
+    if (checked) {
+      this.pickedTools.add(id);
+    } else {
+      this.pickedTools.delete(id);
+      for (const tool of this.tools) {
+        if (tool.requires === id) this.pickedTools.delete(tool.id);
+      }
+    }
     this.form.markAsDirty();
   }
 

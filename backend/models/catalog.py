@@ -14,7 +14,7 @@ PrivacyTier = Literal["local", "eu", "trusted", "untrusted"]
 ReasoningMode = Literal["none", "optional", "always"]
 Currency = Literal["USD", "EUR"]
 # Tool groups a persona can use; the keys of backend.llm.tools.TOOL_GROUPS
-ToolGroup = Literal["files", "web_search", "knowledge_graph", "knowledge_base", "user_mcp"]
+ToolGroup = Literal["files", "web_search", "knowledge_graph", "knowledge_base", "past_chats", "user_mcp"]
 
 
 # Providers
@@ -201,6 +201,7 @@ class ToolGroupStatus(BaseModel):
     available: bool
     reason: Optional[str] = None  # Why it is unavailable, e.g. "TAVILY_API_KEY is not set"
     optIn: bool = False  # Only for personas that select it, never part of tools null (the knowledge base)
+    requires: Optional[ToolGroup] = None  # Works only together with this group (past_chats: knowledge_base)
 
 
 # Import and export

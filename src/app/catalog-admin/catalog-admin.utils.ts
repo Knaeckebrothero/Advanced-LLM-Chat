@@ -100,6 +100,7 @@ const TOOL_ICONS: Record<ToolGroup, string> = {
   web_search: 'travel_explore',
   knowledge_graph: 'hub',
   knowledge_base: 'menu_book',
+  past_chats: 'history',
   user_mcp: 'extension'
 };
 

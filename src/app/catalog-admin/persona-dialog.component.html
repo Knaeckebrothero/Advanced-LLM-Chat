@@ -101,7 +101,7 @@
               {{ 'catalog.admin.personas.toolUnavailable' | translate: { reason: tool.reason || ('catalog.admin.personas.toolUnavailableUnknown' | translate) } }}
             </p>
           } @else if (tool.optIn) {
-            <p class="tool-reason">{{ (tool.id === 'user_mcp' ? 'catalog.admin.personas.toolOptInUserMcp' : 'catalog.admin.personas.toolOptIn') | translate }}</p>
+            <p class="tool-reason">{{ optInHint(tool.id) | translate }}</p>
           }
         </div>
       }

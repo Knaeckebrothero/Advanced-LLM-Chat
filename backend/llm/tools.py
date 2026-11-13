@@ -10,9 +10,11 @@ them to the model. default_tools() returns the tools that are enabled by the
 configuration, tools_for_groups() limits them to a persona's tool groups. Both
 are built per answer for the user it is for: the file tools only see the files
 of that user's conversation (docs/files.md), the knowledge base tools only
-that user's notes (the shared knowledge base, or the agent's own one). Opt-in groups (the knowledge base,
-with the memory, and the users' own MCP servers) are never part of "every
-enabled tool": an agent has to select them.
+that user's notes (the shared knowledge base, or the agent's own one), the past
+chat tools only that user's conversations of the same memory (docs/past_chats.md).
+Opt-in groups (the knowledge base, with the memory, the past chats and the users'
+own MCP servers) are never part of "every enabled tool": an agent has to select
+them. The past chats also need the knowledge base (REQUIRED_GROUPS).
 
 Tools of MCP servers are not a static group: backend/services/mcp/tools.py
 connects to the servers of an answer and adds their tools to the registry
@@ -49,6 +51,9 @@ TOOL_TITLES = {
     "memory_add": "Saving to Memory",
     "memory_replace": "Updating Memory",
     "memory_remove": "Removing from Memory",
+    "chat_search": "Searching Past Chats",
+    "chat_list": "Listing Past Chats",
+    "chat_read": "Reading Past Chat",
 }
 
 # Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
@@ -58,6 +63,8 @@ TOOL_GROUPS = {
     "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
     "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
                        "memory_add", "memory_replace", "memory_remove"),
+    # The user's earlier conversations of the agent's memory (docs/past_chats.md); only with the knowledge base
+    "past_chats": ("chat_search", "chat_list", "chat_read"),
     # The users' own MCP servers: their tools are added per answer (backend/services/mcp/tools.py)
     "user_mcp": (),
 }
@@ -66,8 +73,12 @@ TOOL_GROUPS = {
 MEMORY_TOOL_NAMES = ("memory_add", "memory_replace", "memory_remove")
 
 # Groups an agent only gets when it selects them: not part of "every enabled tool" (an agent
-# with tools null, or no agent). Both also need a signed-in user, never a guest.
-OPT_IN_GROUPS = frozenset({"knowledge_base", "user_mcp"})
+# with tools null, or no agent). All of them also need a signed-in user, never a guest.
+OPT_IN_GROUPS = frozenset({"knowledge_base", "past_chats", "user_mcp"})
+
+# Groups that only work together with another one: the past chats are those of the agent's memory,
+# and an agent without the knowledge base has none
+REQUIRED_GROUPS = {"past_chats": "knowledge_base"}
 
 # JSON schema types the argument check understands
 _JSON_TYPES = {
@@ -704,6 +715,101 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
     ]
 
 
+def past_chats_tools(user_id: int, vault: int = 0) -> list[Tool]:
+    """
+    The past chat tools: search, list and read the user's earlier conversations of the agent's
+    memory, the current one included (docs/past_chats.md).
+
+    Args:
+        user_id: The user whose chats they are; not an argument the model sees.
+        vault: The agent's memory: 0 for the shared knowledge base, else the personas.id of the
+            agent whose own knowledge base it is (backend.catalog.resolver.persona_vault()). Only
+            the messages that belong to it can be found.
+    """
+    from ..services.past_chats import PATTERN_MAX_CHARS, Scope
+    from ..services.tools import chat_tools
+
+    scope = {"scope": Scope(user_id=user_id, vault=vault)}
+    after_param = {"type": "string",
+                   "description": "Only messages from this date or time on, e.g. \"2026-11-01\" or "
+                                  "\"2026-11-01T18:00\" (the time zone of your memory's dates)"}
+    before_param = {"type": "string", "description": "Only messages before this date or time"}
+    return [
+        Tool(
+            name="chat_search",
+            description=(
+                "Search your earlier conversations with this user (the ones of your memory, this one included) "
+                "for the lines of messages that match a regular expression, case-insensitive. Put alternatives "
+                "into one pattern, e.g. several words or both languages: \"lisbon|lissabon\"; \\b marks a word "
+                "boundary. Returns the matching lines newest first with the line before and after, grouped by "
+                "conversation (id, title, agent, dates), each with its message id, and how many messages match "
+                "in all. Read around a hit with chat_read."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string",
+                                "description": f"A regular expression, e.g. \"\\bmother\\b|\\bmom\\b|mutter|mama\" "
+                                               f"(at most {PATTERN_MAX_CHARS} characters)"},
+                    "literal": {"type": "boolean",
+                                "description": "Search for the pattern as plain text, e.g. for \"C++\" (default false)"},
+                    "after": after_param,
+                    "before": before_param,
+                    "max_matches": {"type": "integer",
+                                    "description": f"Number of lines, 1 to {chat_tools.MAX_SEARCH_MATCHES} (default 30)"},
+                },
+                "required": ["pattern"],
+            },
+            func=_in_thread(functools.partial(chat_tools.chat_search, **scope)),
+        ),
+        Tool(
+            name="chat_list",
+            description=(
+                "List your earlier conversations with this user (the ones of your memory, this one included), "
+                "most recent first: id, title, agent, dates, number of messages, and how each starts (or the "
+                "summary of its earlier part). Use it for questions by time, e.g. what you talked about last "
+                "week; read one with chat_read."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "after": after_param,
+                    "before": before_param,
+                    "max_results": {"type": "integer",
+                                    "description": f"Number of conversations, 1 to {chat_tools.MAX_LIST_RESULTS} "
+                                                   f"(default 10)"},
+                },
+            },
+            func=_in_thread(functools.partial(chat_tools.chat_list, **scope)),
+        ),
+        Tool(
+            name="chat_read",
+            description=(
+                "Read messages of an earlier conversation with this user (or of this one): around a message, "
+                "e.g. a hit of chat_search, or from the start without it. Long messages are cut; "
+                "messages_before=0 and messages_after=0 shows one message alone, at more length. Says how many "
+                "messages come before and after, so you can read on."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "conversation": {"type": "string",
+                                     "description": "The conversation's id, from chat_search or chat_list"},
+                    "message": {"type": "integer", "description": "The id of a message to read around"},
+                    "messages_before": {"type": "integer",
+                                        "description": "How many messages before it (default 3)"},
+                    "messages_after": {"type": "integer",
+                                       "description": "How many messages after it, or after the first one without "
+                                                      "message (default 8, or 10 from the start); at most 30 "
+                                                      "messages in all"},
+                },
+                "required": ["conversation"],
+            },
+            func=_in_thread(functools.partial(chat_tools.chat_read, **scope)),
+        ),
+    ]
+
+
 def tool_group_unavailable_reason(group: str) -> Optional[str]:
     """
     Why the configuration switches a tool group off.
@@ -735,12 +841,14 @@ def tool_group_unavailable_reason(group: str) -> Optional[str]:
 def tool_group_status() -> list[dict]:
     """
     Every tool group with its availability, in TOOL_GROUPS order:
-    [{"id", "available", "reason", "optIn"}] (optIn: only for agents that select it).
+    [{"id", "available", "reason", "optIn", "requires"}] (optIn: only for agents that select it;
+    requires: the group it only works with, REQUIRED_GROUPS).
     """
     status = []
     for group in TOOL_GROUPS:
         reason = tool_group_unavailable_reason(group)
-        status.append({"id": group, "available": reason is None, "reason": reason, "optIn": group in OPT_IN_GROUPS})
+        status.append({"id": group, "available": reason is None, "reason": reason, "optIn": group in OPT_IN_GROUPS,
+                       "requires": REQUIRED_GROUPS.get(group)})
     return status
 
 
@@ -758,6 +866,11 @@ def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: 
             log.debug("No knowledge base without a signed-in user")
             return []
         return knowledge_base_tools(user_id, conversation, vault)
+    if group == "past_chats":
+        if user_id is None or guest:
+            log.debug("No past chats without a signed-in user")
+            return []
+        return past_chats_tools(user_id, vault)
     if group == "user_mcp":
         return []  # Added per answer by backend/services/mcp/tools.py
     raise ValueError(f"Unknown tool group '{group}'")
@@ -770,6 +883,9 @@ def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = 
     registry = ToolRegistry()
     for group in TOOL_GROUPS:
         if group not in groups:
+            continue
+        if REQUIRED_GROUPS.get(group, group) not in groups:
+            log.debug(f"Tool group {group} needs {REQUIRED_GROUPS[group]}")
             continue
         reason = tool_group_unavailable_reason(group)
         if reason:
@@ -808,14 +924,16 @@ def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = N
             opt-in groups (default_tools()). Unknown groups are ignored.
         user_id: The user the agent answers for; the file tools only see this
             user's files of the conversation, the knowledge base tools only this
-            user's notes (None: no files and no knowledge base).
-        guest: The user is a guest: no knowledge base (a guest's data is
-            deleted when the session ends).
+            user's notes, the past chat tools only this user's conversations
+            (None: no files, no knowledge base, no past chats).
+        guest: The user is a guest: no knowledge base and no past chats (a
+            guest's data is deleted when the session ends).
         conversation: The conversation the agent answers in (id, persona_id):
             the one the file tools see the files of, and recorded with the
             knowledge base changes.
         vault: The knowledge base: 0 for the user's shared one, else the
-            agent's own (backend.catalog.resolver.persona_vault()).
+            agent's own (backend.catalog.resolver.persona_vault()); also the
+            memory whose conversations the past chat tools see.
         vision: The model takes images (read_file then gives it images themselves).
 
     Returns:

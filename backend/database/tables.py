@@ -83,6 +83,9 @@ messages = Table(
     Column('model_id', Integer),  # llm_models.id at the time (NULL for the environment model)
     Column('model_name', Text),  # Copy of the display name, kept if the model is deleted
     Column('usage', JSONB),  # inputTokens, outputTokens, reasoningTokens, cachedInputTokens, cost, currency
+    # The memory it belongs to, set by a trigger when it is stored (docs/past_chats.md): None none,
+    # 0 the shared knowledge base, else the personas.id of an agent with its own
+    Column('memory_vault', Integer),
 )
 
 # The tool record of an answer: its tool calls and their results as the model got them
