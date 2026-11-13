@@ -122,7 +122,8 @@ async def _run_tool(registry: ToolRegistry, call: ToolCall, arguments: Any, erro
             error = str(e)
         except Exception as e:
             log.error(f"Tool {call.name} failed: {e}", exc_info=True)
-            error = f"{type(e).__name__}: {e}"
+            hidden = getattr(registry, "hide_errors", False)
+            error = f"the tool failed ({type(e).__name__})" if hidden else f"{type(e).__name__}: {e}"
     log.warning(f"Tool call {call.name} ({call.id}) returned an error: {error}")
     return f"Error: {error}", True, int((time.monotonic() - started) * 1000)
 

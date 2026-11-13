@@ -28,7 +28,7 @@ import sys
 import tempfile
 import time
 import warnings
-from datetime import date
+from datetime import date, datetime, timedelta, UTC
 from pathlib import Path
 
 # Make the backend package importable when run as a script
@@ -117,7 +117,8 @@ def login(base_url, responses, email=None):
     if email:
         response = session.post("/api/auth/mock-login", json={"email": email})
     else:
-        db.reset_guest_usage("127.0.0.1")  # The guest login is rate limited per IP
+        # Guest logins are limited per address: forget the test database's counters
+        db.delete_stale_guest_usage(datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1))
         response = session.post("/api/auth/guest-login")
     response.raise_for_status()
     return session

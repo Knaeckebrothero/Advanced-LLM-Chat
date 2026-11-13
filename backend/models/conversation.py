@@ -3,9 +3,12 @@ Conversation-related models.
 """
 from typing import Dict, List, Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.models.common import UtcDatetime
+
+# Longest name of a conversation (the app names them with up to 50 characters; users rename them)
+MAX_NAME_LENGTH = 500
 
 
 class ConversationState(BaseModel):
@@ -179,7 +182,7 @@ class ConversationCreateRequest(BaseModel):
     :ivar personaValues: Optional values for the persona's variables.
     :type personaValues: Optional[Dict[str, str]]
     """
-    name: str
+    name: str = Field(max_length=MAX_NAME_LENGTH)
     participants: List[str]
     modelId: Optional[int] = None
     personaId: Optional[int] = None
@@ -203,7 +206,7 @@ class ConversationUpdateRequest(BaseModel):
     :ivar personaValues: New values for the persona's variables.
     :type personaValues: Optional[Dict[str, str]]
     """
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=MAX_NAME_LENGTH)
     modelId: Optional[int] = None
     personaId: Optional[int] = None
     personaValues: Optional[Dict[str, str]] = None

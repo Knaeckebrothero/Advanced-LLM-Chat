@@ -25,11 +25,11 @@ import logging
 import os
 import re
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Optional, Generator
 
-from sqlalchemy import create_engine, inspect, text, select, insert, update, delete, null, func, or_
+from sqlalchemy import create_engine, inspect, text, select, insert, update, delete, null, func, or_, case
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.pool import QueuePool
@@ -909,7 +909,7 @@ class Database:
         Returns:
             Updated conversation dictionary or None if not found.
         """
-        log.debug(f"Updating conversation {conversation_id}: name={name}, version={version}, "
+        log.debug(f"Updating conversation {conversation_id}: name={name and name[:100]}, version={version}, "
                   f"model_id={model_id}, persona_id={persona_id}")
         values = {}
         if name is not None:
@@ -1940,103 +1940,83 @@ class Database:
     # Guest Usage CRUD Operations
     # =========================================================================
 
-    def get_guest_usage(self, ip_address: str) -> Optional[dict]:
+    def get_guest_usage(self, key: str) -> Optional[dict]:
         """
-        Get guest usage record for an IP address.
+        Get a counter of the guests' limits (backend/security/guest_limits.py).
 
         Args:
-            ip_address: The IP address.
+            key: The counter's key, "<counter>:<address>".
 
         Returns:
-            Guest usage dictionary or None if not found.
-        """
-        log.debug(f"Getting guest usage for IP: {ip_address}")
-        with self.connection() as conn:
-            stmt = select(guest_usage).where(guest_usage.c.ip_address == ip_address)
-            result = conn.execute(stmt).fetchone()
-            usage = self._row_to_dict(result)
-            if usage:
-                log.debug(f"Guest usage: count={usage.get('request_count')}")
-            return usage
-
-    def create_or_update_guest_usage(
-        self,
-        ip_address: str,
-        request_count: int,
-        last_request_at: datetime
-    ) -> dict:
-        """
-        Create or update guest usage record (upsert).
-
-        Args:
-            ip_address: The IP address.
-            request_count: Number of requests.
-            last_request_at: Timestamp of last request.
-
-        Returns:
-            The guest usage dictionary.
+            The row (ip_address, request_count, last_request_at) or None.
         """
         with self.connection() as conn:
-            # Try to update first
-            stmt = (
-                update(guest_usage)
-                .where(guest_usage.c.ip_address == ip_address)
-                .values(request_count=request_count, last_request_at=last_request_at)
-                .returning(guest_usage)
-            )
-            result = conn.execute(stmt).fetchone()
+            stmt = select(guest_usage).where(guest_usage.c.ip_address == key)
+            return self._row_to_dict(conn.execute(stmt).fetchone())
 
-            if result is None:
-                # Insert if not exists
-                stmt = insert(guest_usage).values(
-                    ip_address=ip_address,
-                    request_count=request_count,
-                    last_request_at=last_request_at,
-                ).returning(guest_usage)
-                result = conn.execute(stmt).fetchone()
-
-            return self._row_to_dict(result)
-
-    def increment_guest_usage(self, ip_address: str) -> dict:
+    def count_guest_usage(self, key: str, amount: int, limit: int, window: timedelta) -> Optional[datetime]:
         """
-        Increment the request count for a guest IP.
+        Count requests against one of the guests' limits.
 
-        Creates a new record if it doesn't exist.
+        One statement checks the limit and counts, so requests that arrive together can't
+        all slip under it. A counter starts again once `window` has passed since its last
+        counted request; a refused request doesn't move that time.
 
         Args:
-            ip_address: The IP address.
+            key: The counter's key, "<counter>:<address>" (stored in the column ip_address).
+            amount: How many requests to count.
+            limit: How many the counter takes per window.
+            window: How long after its last counted request a counter starts again.
 
         Returns:
-            Updated guest usage dictionary.
+            None if the requests were counted, else the time (UTC, naive) the counter starts again.
         """
-        log.debug(f"Incrementing guest usage for IP: {ip_address}")
         now = datetime.utcnow()
-        current = self.get_guest_usage(ip_address)
+        with self.connection() as conn:
+            if amount <= limit:
+                expired = guest_usage.c.last_request_at < now - window
+                stmt = (
+                    pg_insert(guest_usage)
+                    .values(ip_address=key, request_count=amount, last_request_at=now)
+                    .on_conflict_do_update(
+                        index_elements=[guest_usage.c.ip_address],
+                        set_={
+                            "request_count": case((expired, amount), else_=guest_usage.c.request_count + amount),
+                            "last_request_at": now,
+                        },
+                        where=or_(expired, guest_usage.c.request_count + amount <= limit),
+                    )
+                    .returning(guest_usage.c.request_count)
+                )
+                if conn.execute(stmt).fetchone() is not None:
+                    return None
+            last = conn.execute(
+                select(guest_usage.c.last_request_at).where(guest_usage.c.ip_address == key)).scalar()
+        return (last or now) + window
 
-        if current is None:
-            log.debug(f"Creating new guest usage record for {ip_address}")
-            return self.create_or_update_guest_usage(ip_address, 1, now)
-
-        new_count = current['request_count'] + 1
-        log.debug(f"Incrementing guest usage to {new_count} for {ip_address}")
-        return self.create_or_update_guest_usage(
-            ip_address,
-            new_count,
-            now
-        )
-
-    def reset_guest_usage(self, ip_address: str) -> dict:
+    def delete_stale_guest_usage(self, last_request_before: datetime) -> int:
         """
-        Reset the request count for a guest IP.
+        Delete the counters of the guests' limits that have started again anyway.
 
         Args:
-            ip_address: The IP address.
+            last_request_before: Delete counters whose last counted request was before this time (UTC).
 
         Returns:
-            Updated guest usage dictionary.
+            Number of counters deleted.
         """
-        log.debug(f"Resetting guest usage for IP: {ip_address}")
-        return self.create_or_update_guest_usage(ip_address, 0, datetime.utcnow())
+        with self.connection() as conn:
+            stmt = delete(guest_usage).where(guest_usage.c.last_request_at < last_request_before)
+            return conn.execute(stmt).rowcount
+
+    def get_guest_file_ids(self) -> list[str]:
+        """The IDs of all files that belong to guests (their uploads and what tools made for them)."""
+        with self.connection() as conn:
+            stmt = (
+                select(uploaded_files.c.file_id)
+                .select_from(uploaded_files.join(users, uploaded_files.c.user_id == users.c.id))
+                .where(users.c.is_guest.is_(True))
+            )
+            return [row[0] for row in conn.execute(stmt)]
 
     # =========================================================================
     # User Settings CRUD Operations

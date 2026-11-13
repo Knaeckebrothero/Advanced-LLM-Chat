@@ -9,16 +9,18 @@ import asyncio
 import logging
 from typing import List, Literal, Optional
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
+from backend.config import GUEST_FILES_MAX_MB, MAX_UPLOAD_FILES
 from backend.models.common import ErrorResponse
 from backend.database import db
 from backend.security.auth import get_current_user, verify_file_ownership
-from backend.services.document_handler import process_pdf, get_extracted_text
+from backend.security.guest_limits import count_guest_request
+from backend.services.document_handler import process_pdf_safely, get_extracted_text
 from backend.services.audio_handler import is_audio, process_audio, get_transcript
 from backend.services import file_store
-from backend.services.file_utils import get_file_path, delete_stored_file
+from backend.services.file_utils import get_file_path, delete_stored_file, stored_bytes
 
 router = APIRouter(prefix="/api/files", tags=["Files"])
 logger = logging.getLogger(__name__)
@@ -37,13 +39,18 @@ class UploadedFileResponse(BaseModel):
              response_model=List[UploadedFileResponse],
              status_code=status.HTTP_201_CREATED,
              responses={
-                 status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "No files provided"},
+                 status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "No files, or too many"},
                  # status.HTTP_413_PAYLOAD_TOO_LARGE: {"model": ErrorResponse, "description": "File too large"},
                  # Does not work with the current version of starlette, use ENTITY_TOO_LARGE instead
                  status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"model": ErrorResponse, "description": "File too large"},
-                 status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"}
+                 status.HTTP_429_TOO_MANY_REQUESTS: {"model": ErrorResponse,
+                                                     "description": "A guest has uploaded too many files"},
+                 status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "Internal server error"},
+                 status.HTTP_507_INSUFFICIENT_STORAGE: {"model": ErrorResponse,
+                                                        "description": "The guests' files take too much space"}
              })
 async def upload_files(
+        request: Request,
         files: List[UploadFile] = File(...),
         current_user: dict = Depends(get_current_user)
 ):
@@ -55,26 +62,48 @@ async def upload_files(
     For audio files, transcription is automatically performed using Whisper and
     the transcript is included in the response.
 
+    Guests' uploads are limited: each file counts against their address's limit
+    (backend/security/guest_limits.py), and all guests' files together may take at
+    most GUEST_FILES_MAX_MB, so visitors can't fill the volume that everyone's files
+    are on. Guests' files are deleted with their session.
+
+    :param request: The HTTP request
+    :type request: Request
     :param files: The list of files to be uploaded
     :type files: List[UploadFile]
     :param current_user: The currently authenticated user making the request
     :type current_user: dict
     :return: A list of uploaded file responses with fileId and optional transcript
     :rtype: List[UploadedFileResponse]
-    :raises HTTPException: Raised on validation errors like missing files, files
-        exceeding the size limit, or on internal server errors
+    :raises HTTPException: Raised on validation errors like missing files, too many
+        files, files exceeding the size limit, a guest over a limit, or on internal
+        server errors
     """
     logger.info(f"File upload called with {len(files)} files")
 
     try:
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
+        if len(files) > MAX_UPLOAD_FILES:
+            raise HTTPException(status_code=400, detail=f"At most {MAX_UPLOAD_FILES} files at once")
+        # The size the upload declares, before anything is read into memory
+        for file in files:
+            if file.size is not None and file.size > file_store.MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail=f"File {file.filename} exceeds maximum size of 10MB")
+
+        if current_user.get("is_guest"):
+            await _check_guest_storage()
+            count_guest_request(request, current_user, "uploads", amount=len(files))
 
         uploaded_files = []
 
         for file in files:
-            # Read file to check size and content
-            contents = await file.read()
+            # Before every file: the one before may have left a lot (a PDF's pages)
+            if current_user.get("is_guest") and uploaded_files:
+                await _check_guest_storage()
+
+            # Never more in memory than a file may have
+            contents = await file.read(file_store.MAX_FILE_SIZE + 1)
             if len(contents) > file_store.MAX_FILE_SIZE:
                 raise HTTPException(status_code=413, detail=f"File {file.filename} exceeds maximum size of 10MB")
 
@@ -90,11 +119,12 @@ async def upload_files(
             # Initialize response for this file
             file_response = UploadedFileResponse(fileId=file_id)
 
-            # Process PDFs to extract text and render pages
+            # Process PDFs to extract text and render pages: in a process of its own with limits
+            # (a PDF can be made to take any amount of time and memory), off the event loop
             if file.content_type in PDF_MIME_TYPES:
                 logger.info(f"Processing PDF: {file_id}")
                 try:
-                    result = process_pdf(file_path, file_id)
+                    result = await asyncio.to_thread(process_pdf_safely, file_path, file_id)
                     if result.get('error'):
                         logger.warning(f"PDF processing had errors: {result['error']}")
                     else:
@@ -129,6 +159,20 @@ async def upload_files(
     except Exception as e:
         logger.error(f"Error uploading files: {str(e)}")
         raise HTTPException(status_code=500, detail="Error uploading files")
+
+
+async def _check_guest_storage() -> None:
+    """
+    Refuse a guest's upload while all guests' files, with what is made from them, take
+    GUEST_FILES_MAX_MB or more.
+
+    :raises HTTPException: 507 until guests' files are deleted (with their sessions).
+    """
+    taken = await asyncio.to_thread(lambda: stored_bytes(db.get_guest_file_ids()))
+    if taken >= GUEST_FILES_MAX_MB * 1024 * 1024:
+        logger.warning(f"Guests' files take {taken} bytes, over GUEST_FILES_MAX_MB={GUEST_FILES_MAX_MB}")
+        raise HTTPException(status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                            detail="Guests can't upload files right now. Please try again later.")
 
 
 def _own_file_path(file_id: str, current_user: dict) -> Path:
@@ -324,5 +368,5 @@ async def delete_file(
         logger.error(f"Error deleting file {file_id}: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to delete file: {str(e)}"
+            detail="Failed to delete file"
         )

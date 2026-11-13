@@ -1,7 +1,6 @@
 """
 Authentication-related models.
 """
-from typing import Optional
 from pydantic import BaseModel
 
 
@@ -25,17 +24,13 @@ class LoginResponse(BaseModel):
     Represents the response after a successful login attempt.
 
     This class models the structure of a typical login response, providing
-    details about the user, an accompanying message, and an optional token
-    for authentication. It serves as the return type for login operations
-    and ensures standardized output.
+    details about the user and an accompanying message. The session itself is
+    only in the HttpOnly cookie, never in the body, where scripts could read it.
 
     :ivar user: A dictionary containing the authenticated user's details.
     :type user: dict
     :ivar message: A message conveying information about the login operation.
     :type message: str
-    :ivar token: An optional token for authenticating subsequent requests.
-    :type token: Optional[str]
     """
     user: dict
     message: str
-    token: Optional[str] = None
