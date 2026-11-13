@@ -10,6 +10,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import {
   IKBNote,
@@ -27,6 +28,7 @@ import { KnowledgeBaseStore, kbErrorDetail } from './knowledge-base.store';
 import { NoteContentComponent } from './note-content.component';
 import { slugify } from './kb-markdown';
 import { confirmDialog } from './kb-confirm';
+import { FamilyModeService } from '../services/family-mode.service';
 
 /** A tag as the backend stores it: lowercase, without '#', spaces as dashes. */
 function normalizeTag(value: string): string {
@@ -52,7 +54,8 @@ function normalizeTag(value: string): string {
     MatInputModule,
     MatProgressSpinnerModule,
     TranslateModule,
-    NoteContentComponent
+    NoteContentComponent,
+    MatSlideToggleModule
   ],
   templateUrl: './note-editor.component.html',
   styleUrls: ['./kb-pane.scss', './note-editor.component.scss']
@@ -80,6 +83,7 @@ export class NoteEditorComponent implements OnInit {
   description = '';
   tags: string[] = [];
   content = '';
+  hidden = false;  // Hidden
   view: 'write' | 'preview' = 'write';
 
   saving = false;
@@ -94,7 +98,8 @@ export class NoteEditorComponent implements OnInit {
   constructor(
     private store: KnowledgeBaseStore,
     private dialog: MatDialog,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private familyModeService: FamilyModeService
   ) {}
 
   ngOnInit(): void {
@@ -103,7 +108,13 @@ export class NoteEditorComponent implements OnInit {
     this.description = note?.description ?? '';
     this.tags = [...(note?.tags ?? [])];
     this.content = note?.content ?? '';
+    this.hidden = !!note?.hidden;
     this.original = this.snapshot();
+  }
+
+  /** A note can be hidden where the server offers family mode; the memory only line by line (#hidden). */
+  get canHide(): boolean {
+    return this.familyModeService.available && !this.store.isMemory(this.note()?.slug);
   }
 
   get isNew(): boolean {
@@ -120,7 +131,7 @@ export class NoteEditorComponent implements OnInit {
   }
 
   private snapshot(): string {
-    return JSON.stringify([this.title, this.description, this.tags, this.content]);
+    return JSON.stringify([this.title, this.description, this.tags, this.content, this.hidden]);
   }
 
   changed(): void {
@@ -171,7 +182,8 @@ export class NoteEditorComponent implements OnInit {
       title: this.title.trim(),
       content: this.content,
       description: this.description.trim() || null,
-      tags: this.tags
+      tags: this.tags,
+      ...(this.canHide ? { hidden: this.hidden } : {})
     };
     try {
       const note = this.note();

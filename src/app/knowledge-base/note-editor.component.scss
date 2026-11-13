@@ -65,6 +65,15 @@
   color: var(--theme-tier-untrusted);
 }
 
+// Hidden: a switch with its hint under the tags
+.field-hidden {
+  .field-hint {
+    margin: 4px 0 0;
+    font-size: 0.8rem;
+    color: var(--theme-text-secondary);
+  }
+}
+
 .banner-detail {
   display: block;
   margin-top: 2px;

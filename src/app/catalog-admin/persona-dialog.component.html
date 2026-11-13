@@ -156,7 +156,13 @@
     <div class="toggle-grid">
       <mat-slide-toggle formControlName="enabled">{{ 'catalog.admin.fields.enabled' | translate }}</mat-slide-toggle>
       <mat-slide-toggle formControlName="availableToGuests">{{ 'catalog.admin.fields.availableToGuests' | translate }}</mat-slide-toggle>
+      @if (familyModeAvailable) {
+        <mat-slide-toggle formControlName="hidden">{{ 'hide.agent' | translate }}</mat-slide-toggle>
+      }
     </div>
+    @if (familyModeAvailable) {
+      <p class="tool-reason">{{ 'hide.agentHint' | translate }}</p>
+    }
     <mat-form-field appearance="outline" class="sort-order-field">
       <mat-label>{{ 'catalog.admin.fields.sortOrder' | translate }}</mat-label>
       <input matInput type="number" formControlName="sortOrder" step="10">

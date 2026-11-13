@@ -846,7 +846,8 @@ class Database:
         last_modified: int = None,
         model_id: int = None,
         persona_id: int = None,
-        persona_values: dict = None
+        persona_values: dict = None,
+        hidden: bool = False
     ) -> dict:
         """
         Create a new conversation.
@@ -860,6 +861,7 @@ class Database:
             model_id: Catalog model (llm_models.id); None = the user's default model.
             persona_id: Persona (personas.id); None = no persona.
             persona_values: Values for the persona's variables, stored as JSONB.
+            hidden: Hidden.
 
         Returns:
             The created conversation dictionary.
@@ -874,6 +876,7 @@ class Database:
                 model_id=model_id,
                 persona_id=persona_id,
                 persona_values=_jsonb(persona_values),
+                hidden=bool(hidden),
             ).returning(conversations)
             result = conn.execute(stmt).fetchone()
             log.info(f"Created conversation: {conversation_id}")
@@ -886,7 +889,8 @@ class Database:
         name: str,
         created_at: datetime,
         updated_at: datetime,
-        message_rows: list[dict]
+        message_rows: list[dict],
+        hidden: bool = False
     ) -> dict:
         """
         Create a conversation with its messages in one transaction (conversation import).
@@ -904,6 +908,7 @@ class Database:
             updated_at: When the conversation was last changed (naive UTC).
             message_rows: Column values of the messages in conversation order; 'id' is
                 the wanted id (the message's time in milliseconds).
+            hidden: Hidden.
 
         Returns:
             The created conversation dictionary.
@@ -918,6 +923,7 @@ class Database:
                 createdAt=created_at,
                 updatedAt=updated_at,
                 lastModified=int(updated_at.replace(tzinfo=timezone.utc).timestamp()),
+                hidden=bool(hidden),
             ).returning(conversations)).fetchone()
 
             previous_id = 0
@@ -957,7 +963,9 @@ class Database:
         last_modified: int = None,
         model_id=UNSET,
         persona_id=UNSET,
-        persona_values=UNSET
+        persona_values=UNSET,
+        hidden=UNSET,
+        hidden_by=UNSET
     ) -> Optional[dict]:
         """
         Update a conversation.
@@ -971,6 +979,8 @@ class Database:
             model_id: New catalog model; None clears it, UNSET keeps it.
             persona_id: New persona; None clears it, UNSET keeps it.
             persona_values: New persona variable values; None clears them, UNSET keeps them.
+            hidden: Hidden or not; UNSET keeps it.
+            hidden_by: Who set it ('user' or 'agent'); UNSET keeps it.
 
         Returns:
             Updated conversation dictionary or None if not found.
@@ -990,6 +1000,10 @@ class Database:
             values['persona_id'] = persona_id
         if persona_values is not UNSET:
             values['persona_values'] = _jsonb(persona_values)
+        if hidden is not UNSET:
+            values['hidden'] = bool(hidden)
+        if hidden_by is not UNSET:
+            values['hidden_by'] = hidden_by
 
         if not values:
             log.debug("No values to update")
@@ -1194,13 +1208,14 @@ class Database:
         The conversations with new messages for the nightly consolidation: of signed-in users, with
         an enabled persona that selects the knowledge base, with a message (not a system message)
         in (after_id, until_id]. Each row: user_id, vault (the persona's id with own_memory, else 0),
-        conversation_id, name, persona_id, first_message_id and last_message_id in that range.
+        conversation_id, name, persona_id, hidden (marked, or of a hidden agent: ),
+        first_message_id and last_message_id in that range.
         """
         with self.connection() as conn:
             rows = conn.execute(text('''
                 SELECT c."userId" AS user_id,
                        CASE WHEN coalesce(p.own_memory, false) THEN p.id ELSE 0 END AS vault,
-                       c.id AS conversation_id, c.name, c.persona_id,
+                       c.id AS conversation_id, c.name, c.persona_id, (c.hidden OR p.hidden) AS hidden,
                        min(m.id) AS first_message_id, max(m.id) AS last_message_id
                 FROM conversations c
                 JOIN users u ON u.id = c."userId" AND NOT coalesce(u.is_guest, false)
@@ -2133,7 +2148,8 @@ class Database:
         background_dim=UNSET,
         background_blur=UNSET,
         editing_mode=UNSET,
-        memory_model_id=UNSET
+        memory_model_id=UNSET,
+        auto_hide_prompt=UNSET
     ) -> dict:
         """
         Create or update user settings.
@@ -2150,6 +2166,8 @@ class Database:
             editing_mode: 'guided' or 'manual'; UNSET keeps it.
             memory_model_id: Catalog model of the memory review; None clears it (the
                 conversation's model), UNSET keeps it.
+            auto_hide_prompt: What agents hide on their own; None follows the server's text,
+                UNSET keeps it.
 
         Returns:
             The user settings dictionary.
@@ -2164,6 +2182,7 @@ class Database:
             ("background_blur", background_blur),
             ("editing_mode", editing_mode),
             ("memory_model_id", memory_model_id),
+            ("auto_hide_prompt", auto_hide_prompt),
         ):
             if value is not UNSET:
                 values[column] = value

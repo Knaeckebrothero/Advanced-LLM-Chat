@@ -51,6 +51,10 @@ class AppSettings(BaseModel):
     backgroundBlur: int = Field(0, ge=0, le=20)
     editingMode: EditingMode = "guided"
     memoryModelId: Optional[int] = None
+    # Family mode: what agents hide on their own, in the user's words. The response gives the user's
+    # text, else the server's (AUTO_HIDE_DEFINITION); in an update, left out keeps it, null follows the
+    # server's again, "" lets agents hide nothing on their own.
+    autoHidePrompt: Optional[str] = Field(None, max_length=4000)
 
 
 class AppSettingsResponse(AppSettings):

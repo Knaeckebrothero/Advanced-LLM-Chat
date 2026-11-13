@@ -117,6 +117,8 @@ def note_markdown(note: dict, zone: Optional[tzinfo] = None) -> str:
         value = _yaml_time(local_time(note.get(f"{key}_at"), zone))
         if value:
             lines.append(f"{key}: {value}")
+    if note.get("hidden"):
+        lines.append("hidden: true")
     lines += ["---", "", f"# {note['title']}", "", obsidian_links(note["content"]).strip(), ""]
     return "\n".join(lines)
 
@@ -127,15 +129,16 @@ def note_path(note: dict) -> str:
     return f"{folder}/{note['slug']}.md"
 
 
-def export_vault(user_id: int, zone: Optional[tzinfo] = None, vault: int = 0) -> tuple[bytes, int]:
+def export_vault(user_id: int, zone: Optional[tzinfo] = None, vault: int = 0,
+                 family_mode: bool = False) -> tuple[bytes, int]:
     """
     A knowledge base of the user (with its memory as memory.md) as a zip, with times in the zone
-    (UTC without one).
+    (UTC without one); with family_mode without the hidden notes and lines.
 
     Returns:
         (the zip, the number of notes in it)
     """
-    notes = kb.all_notes(user_id, vault)
+    notes = kb.all_notes(user_id, vault, family_mode=family_mode)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         # The vault folder itself, so even an empty knowledge base unpacks to a folder Obsidian can open

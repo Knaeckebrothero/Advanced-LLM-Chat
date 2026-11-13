@@ -51,6 +51,7 @@ import { RouterModule, Routes } from '@angular/router';
 import { SidebarComponent } from "./sidebar/sidebar.component";
 import { CommonModule } from '@angular/common';
 import { AuthInterceptor } from './auth/auth.interceptor';
+import { FamilyModeInterceptor } from './services/family-mode.interceptor';
 import { TranslateLoader, TranslateModule } from "@ngx-translate/core";
 import { TranslateHttpLoader } from "@ngx-translate/http-loader";
 import { MarkdownModule, MARKED_OPTIONS } from 'ngx-markdown';
@@ -156,6 +157,11 @@ export function HttpLoaderFactory(http: HttpClient) {
     {
       provide: HTTP_INTERCEPTORS,
       useClass: AuthInterceptor,
+      multi: true
+    },
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: FamilyModeInterceptor,
       multi: true
     },
     provideAppInitializer(() => {

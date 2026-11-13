@@ -21,6 +21,7 @@ import { AuthService } from '../auth/auth.service';
 import { Conversation } from '../data/objects/conversation';
 import { IConversationFile } from '../data/models/api.model';
 import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
+import { FamilyModeService } from '../services/family-mode.service';
 
 
 @Component({
@@ -78,7 +79,8 @@ export class SettingsComponent {
     private catalogService: CatalogService,
     private backgroundService: BackgroundService,
     private chatState: ChatStateService,
-    authService: AuthService
+    authService: AuthService,
+    readonly familyMode: FamilyModeService
   ) {
     this.canImport = !authService.isGuest;
     this.hasMemory = !authService.isGuest;
@@ -102,6 +104,11 @@ export class SettingsComponent {
 
   editingMode(settings: AppSettings): EditingMode {
     return settings.editingMode ?? 'guided';
+  }
+
+  /** What agents hide on their own, in the user's words; empty: nothing. */
+  updateAutoHide(autoHidePrompt: string): void {
+    this.settingsState.updateSettings({ autoHidePrompt: autoHidePrompt.trim() });
   }
 
   updateEditingMode(editingMode: EditingMode) {

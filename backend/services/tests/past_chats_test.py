@@ -18,7 +18,9 @@ lines, the period, the scope: other users, other memories, the current conversat
 trigram index serves the search; a search that takes too long; chat_list (order, period, the
 summary only when the memory has every message it covers); chat_read (from the start, around a
 message, paging, cuts, one message alone, the budget, a conversation of two memories, unknown
-conversations and messages); the tools' texts and refusals; a deleted conversation.
+conversations and messages); the tools' texts and refusals; a deleted conversation; hidden chats
+(marked, or of a hidden agent) left out of search, list and read for a device that hides them
+.
 
 It creates the database <POSTGRES_DB>_chats_test if needed (or --database, whose name must contain
 "test") and deletes its own test users, so it never touches the real database:
@@ -500,9 +502,31 @@ async def test_tools():
     assert "with a deleted agent" in await own_registry.call("chat_list", {})
 
 
+async def test_hidden_chats_left_out():
+    chats = chats_for_search()
+    planner = add_persona("party planner", ["knowledge_base"])
+    with db.connection() as conn:
+        conn.execute(update(conversations).where(conversations.c.id == chats["family"]).values(hidden=True))
+        conn.execute(update(personas).where(personas.c.id == planner).values(hidden=True))
+    party = add_conversation(0, planner, "Party planning")
+    add_message(party, "user", "My mother must not find out about the party.", at(14))
+    hiding = Scope(user_id=user_ids[0], vault=0, family_mode=True)
+    shown = {c["title"] for c in past_chats.search(scope(), "mother|mutter")["conversations"]}
+    assert shown == {"Lisbon trip", "Family", "Party planning"}, shown
+    hidden = past_chats.search(hiding, "mother|mutter")
+    assert [c["title"] for c in hidden["conversations"]] == ["Lisbon trip"], hidden
+    assert hidden["matching_conversations"] == 1, "the count doesn't give them away either"
+    listed = past_chats.list_chats(hiding)
+    assert [c["title"] for c in listed["conversations"]] == ["Lisbon trip"] and listed["total"] == 1, listed
+    assert "No conversation" in refused(past_chats.read_chat, hiding, chats["family"])
+    assert "No conversation" in refused(past_chats.read_chat, hiding, party)
+    assert past_chats.read_chat(scope(), party)["title"] == "Party planning"
+
+
 TESTS = [test_memory_on_insert, test_message_text, test_backfill_of_existing_messages,
          test_review_claims_messages_without_memory, test_search_matches, test_search_lines_and_limits,
-         test_search_scope_and_period, test_search_uses_the_trigram_index, test_list, test_read, test_tools]
+         test_search_scope_and_period, test_search_uses_the_trigram_index, test_list, test_read, test_tools,
+         test_hidden_chats_left_out]
 
 
 async def run() -> int:

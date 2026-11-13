@@ -8,10 +8,15 @@ import { SettingsDialogService } from "../settings/settings-dialog";
 import { MatDialogModule } from '@angular/material/dialog';
 import { AuthService } from '../auth/auth.service';
 import { ChatStateService } from '../services/chat-state.service';
+import { FamilyModeService } from '../services/family-mode.service';
 import { UIStateService } from '../services/ui-state.service';
 import { Observable, Subject, combineLatest } from 'rxjs';
 import { filter, map, shareReplay, startWith, takeUntil } from 'rxjs/operators';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
+
+/** Taps on the logo, within this time, that turn family mode off and on (onLogoTap()). */
+const LOGO_TAPS = 5;
+const LOGO_TAP_WINDOW_MS = 3000;
 
 @Component({
   selector: 'app-sidebar',
@@ -30,7 +35,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   groupedConversations: { [key: string]: Conversation[] } = {};
 
-  conversations$: Observable<Conversation[]> = this.chatState.conversations$;
+  // Without the hidden ones while this device is in family mode
+  conversations$: Observable<Conversation[]> = this.chatState.visibleConversations$;
   activeConversationId$: Observable<string | null> = this.uiState.activeConversationId$;
   isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
   isAdmin$: Observable<boolean> = this.authService.isAdmin$;  // The Agents page is for admins
@@ -62,8 +68,37 @@ export class SidebarComponent implements OnInit, OnDestroy {
     public router: Router,
     private settingsDialog: SettingsDialogService,
     private authService: AuthService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private familyMode: FamilyModeService
   ) { }
+
+  /** Family mode is off on this device: the logo wears sunglasses. */
+  showingHidden$: Observable<boolean> = combineLatest([this.familyMode.available$, this.familyMode.active$]).pipe(
+    map(([available, active]) => available && !active)
+  );
+
+  /** Taps on the logo within the last LOGO_TAP_WINDOW_MS. */
+  private logoTaps: number[] = [];
+  /** The logo pulses once when the switch flips. */
+  logoPulse = false;
+
+  /** Five quick taps on the logo turn family mode off and on, where the server puts its switch there. */
+  onLogoTap(): void {
+    if (!this.familyMode.available || this.familyMode.switchKind !== 'logo') return;
+    const now = Date.now();
+    this.logoTaps = [...this.logoTaps.filter(time => now - time < LOGO_TAP_WINDOW_MS), now];
+    if (this.logoTaps.length < LOGO_TAPS) return;
+    this.logoTaps = [];
+    this.familyMode.toggle();
+    // A short vibration on phones that have it
+    try {
+      navigator.vibrate?.(30);
+    } catch {
+      // Not allowed here: the pulse is enough
+    }
+    this.logoPulse = true;
+    setTimeout(() => this.logoPulse = false, 400);
+  }
 
   /** Whether the nav item of the route is the current page ('/' only exactly, the others with their subpages). */
   isNavActive(path: string | null, route: string): boolean {

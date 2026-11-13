@@ -58,6 +58,8 @@ conversations = Table(
     # Memory review (backend/services/memory_review.py)
     Column('memory_reviewed_until', BigInteger),  # The newest message id the review has read
     Column('memory_review_failed_at', DateTime),  # The last failed review (naive UTC), NULL after a success
+    Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden
+    Column('hidden_by', Text),  # Who set hidden: 'user' (agents leave it alone) or 'agent', None = nobody
 )
 
 # Messages table
@@ -149,6 +151,7 @@ user_settings = Table(
     Column('background_blur', Integer, server_default='0'),  # 0-20 px
     Column('editing_mode', Text, server_default='guided'),  # 'guided' | 'manual'
     Column('memory_model_id', Integer),  # llm_models.id that reviews conversations for the memory, NULL = the chat's
+    Column('auto_hide_prompt', Text),  # What agents hide on their own, in the user's words; NULL = the server's
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
@@ -249,6 +252,7 @@ personas = Table(
     Column('sort_order', Integer, server_default='0'),
     Column('own_memory', Boolean, server_default='false'),  # Its own knowledge base and memory per user
     Column('mcp_servers', JSONB),  # Slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
+    Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden with its chats and own knowledge base
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
@@ -268,6 +272,8 @@ kb_notes = Table(
     Column('tags', ARRAY(Text), nullable=False, server_default='{}'),
     Column('content', Text, nullable=False),  # Markdown, links as [[slug]]
     Column('status', Text, nullable=False, server_default='active'),  # 'active' | 'archived'
+    Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden
+    Column('hidden_by', Text),  # Who set hidden: 'user' (agents leave it alone) or 'agent', None = nobody
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
     UniqueConstraint('user_id', 'vault', 'slug'),

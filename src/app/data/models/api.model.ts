@@ -90,6 +90,7 @@ export interface IApiConversationUpdate {
   modelId?: number | null;
   personaId?: number | null;
   personaValues?: PersonaValues | null;
+  hidden?: boolean;
 }
 
 /**
@@ -100,7 +101,7 @@ export interface IConversationFile {
   type: 'advanced-llm-chat-conversation';
   version: number;
   exportedAt?: string;
-  conversation: { name: string; createdAt?: string; updatedAt?: string };
+  conversation: { name: string; createdAt?: string; updatedAt?: string; hidden?: boolean };
   messages: Record<string, unknown>[];
 }
 
@@ -118,4 +119,6 @@ export interface IApiConversationResponse {
   modelId?: number | null;
   personaId?: number | null;
   personaValues?: PersonaValues | null;
+  hidden?: boolean;
+  hiddenBy?: 'user' | 'agent' | null;
 }

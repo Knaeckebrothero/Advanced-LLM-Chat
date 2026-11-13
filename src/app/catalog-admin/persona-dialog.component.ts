@@ -22,6 +22,7 @@ import {
 import { IMcpServerOut } from '../data/models/mcp.model';
 import { sortServers } from '../mcp/mcp-utils';
 import { CatalogAdminStore } from './catalog-admin.store';
+import { FamilyModeService } from '../services/family-mode.service';
 import { describeHttpError, DIALOG_ERROR, findPlaceholders, INVALID_FIELD, numberOrNull, revealInDialog, textOrNull, toolIcon } from './catalog-admin.utils';
 
 export interface PersonaDialogData {
@@ -77,14 +78,19 @@ export class PersonaDialogComponent {
   saving = false;
   error: string | null = null;
 
+  /** The server offers family mode. */
+  readonly familyModeAvailable: boolean;
+
   constructor(
     @Inject(MAT_DIALOG_DATA) data: PersonaDialogData,
     private dialogRef: MatDialogRef<PersonaDialogComponent, IPersonaOut>,
     private host: ElementRef<HTMLElement>,
     private store: CatalogAdminStore,
     private translate: TranslateService,
-    private fb: FormBuilder
+    private fb: FormBuilder,
+    familyMode: FamilyModeService
   ) {
+    this.familyModeAvailable = familyMode.available;
     this.persona = data.persona;
     this.isCopy = !data.persona && !!data.copyOf;
     const p = data.persona ?? data.copyOf ?? null;
@@ -114,7 +120,8 @@ export class PersonaDialogComponent {
       availableToGuests: [p?.availableToGuests ?? false],
       enabled: [p?.enabled ?? true],
       sortOrder: [p?.sortOrder ?? 0],
-      ownMemory: [p?.ownMemory ?? false]
+      ownMemory: [p?.ownMemory ?? false],
+      hidden: [p?.hidden ?? false]
     });
   }
 
@@ -267,6 +274,7 @@ export class PersonaDialogComponent {
       enabled: !!v.enabled,
       sortOrder: numberOrNull(v.sortOrder) ?? 0,
       ownMemory: !!v.ownMemory,
+      hidden: !!v.hidden,
       // [] for none: unambiguous for create and update
       mcpServers: this.mcpOptions.map(o => o.slug).filter(slug => this.pickedMcp.has(slug))
     };

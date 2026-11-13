@@ -106,6 +106,11 @@ button.conversation-button {
   overflow: hidden;
   text-overflow: ellipsis;
 
+  .hidden-mark {
+    margin-right: 6px;
+    vertical-align: -2px;
+  }
+
   &:has(.edit-input) {
     overflow: visible;
   }

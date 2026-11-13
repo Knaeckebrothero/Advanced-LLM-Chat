@@ -2,6 +2,7 @@ import { Component, DestroyRef, OnInit, computed, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { combineLatest } from 'rxjs';
+import { skip } from 'rxjs/operators';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
@@ -16,6 +17,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { IKBNote, IKBNoteSummary, IKBSearchHit, IKBVault, KB_MEMORY_SLUG, NoteStatus } from '../data/models/knowledge-base.model';
 import { ChatStateService } from '../services/chat-state.service';
+import { FamilyModeService } from '../services/family-mode.service';
 import { ConfirmDialogData } from '../catalog-admin/confirm-dialog.component';
 import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
 import { KnowledgeBaseStore, kbErrorDetail } from './knowledge-base.store';
@@ -88,10 +90,12 @@ export class KnowledgeBaseComponent implements OnInit {
     private snackBar: MatSnackBar,
     private translate: TranslateService,
     private chatState: ChatStateService,
-    private destroyRef: DestroyRef
+    private destroyRef: DestroyRef,
+    private familyMode: FamilyModeService
   ) {}
 
   ngOnInit(): void {
+    this.reloadWhenFamilyModeSwitches();
     this.store.loadVaults();
     let listLoaded = false;
     combineLatest([this.route.paramMap, this.route.queryParamMap]).pipe(takeUntilDestroyed(this.destroyRef))
@@ -108,6 +112,23 @@ export class KnowledgeBaseComponent implements OnInit {
         this.editorDirty = false;
         this.store.open(params.get('slug'));
       });
+  }
+
+  /**
+   * The server leaves out what is hidden while this device is in family mode: when the switch
+   * changes, everything shown is loaded again, and a knowledge base that is hidden now (a hidden
+   * agent's own) gives way to the shared one.
+   */
+  private reloadWhenFamilyModeSwitches(): void {
+    this.familyMode.active$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(async () => {
+      await this.store.loadVaults();
+      if (!this.store.vaults().some(vault => vault.id === this.store.vault())) {
+        this.router.navigate([NOTE_ROUTE]);
+        return;
+      }
+      this.store.loadList();
+      this.store.open(this.store.slug());
+    });
   }
 
   /** Go to a note (or the list) of the knowledge base shown. */
@@ -193,6 +214,7 @@ export class KnowledgeBaseComponent implements OnInit {
 
   onCreated(note: IKBNote | null): void {
     this.creating.set(null);
+    if (note && this.hiddenAfterSave(note)) return;
     if (note) {
       this.snackBar.open(this.translate.instant('knowledgeBase.note.createdDone'), undefined, { duration: 3000 });
       this.go(note.slug);
@@ -201,7 +223,21 @@ export class KnowledgeBaseComponent implements OnInit {
 
   onEdited(note: IKBNote | null): void {
     this.mode.set('view');
+    if (note && this.hiddenAfterSave(note)) return;
     if (note) this.snackBar.open(this.translate.instant('knowledgeBase.note.saved'), undefined, { duration: 3000 });
+  }
+
+  /**
+   * A note just hidden on a device in family mode: saved, and from now on hidden, so
+   * the page goes back to the list and says why .
+   */
+  private hiddenAfterSave(note: IKBNote): boolean {
+    if (!note.hidden || !this.familyMode.active) return false;
+    this.snackBar.open(this.translate.instant('hide.noteSavedHidden'), undefined, { duration: 5000 });
+    this.store.open(null);
+    this.store.loadList();
+    this.go();
+    return true;
   }
 
   /** After a conflict the changes were dropped: show the note as it is now. */

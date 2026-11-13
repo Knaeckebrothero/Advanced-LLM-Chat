@@ -44,13 +44,67 @@ $row-selected: var(--theme-row-selected);
   align-items: center;
   gap: 8px;
   min-width: 0;
+  // Quick taps on it turn family mode off and on (onLogoTap()): no text selection, no double-tap zoom,
+  // no tap highlight or long-press callout (iOS) that would show it is tappable
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  // A touch target of about 46px for a 22px logo, without moving anything
+  padding: 12px 8px 12px 0;
+  margin: -12px -8px -12px 0;
+
+  // iOS Safari is sparing with clicks on elements that don't look clickable: a pointer cursor makes
+  // it fire them, and touch screens show no cursor, so desktops get no hint
+  @media (hover: none) {
+    cursor: pointer;
+  }
+
+  // The logo, and the sunglasses it wears while hidden content is shown
+  .brand-logo {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+
+    // The sign that the switch flipped: a short pulse
+    &.pulse {
+      animation: logo-pulse 0.4s ease-out;
+    }
+  }
 
   .brand-mark {
-    flex-shrink: 0;
     font-size: 22px;
     width: 22px;
     height: 22px;
     color: var(--theme-primary);
+  }
+
+  .brand-shades {
+    position: absolute;
+    inset: 0;
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
+    animation: shades-on 0.35s ease-out;
+
+    .frame {
+      fill: #111;
+    }
+
+    .glint {
+      fill: #fff;
+      opacity: 0.75;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .brand-logo.pulse,
+    .brand-shades {
+      animation: none;
+    }
   }
 
   .brand-name {
@@ -300,4 +354,16 @@ $row-selected: var(--theme-row-selected);
       height: 22px;
     }
   }
+}
+
+@keyframes logo-pulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.8); }
+  100% { transform: scale(1); }
+}
+
+// The sunglasses slide down onto the logo
+@keyframes shades-on {
+  from { transform: translateY(-6px); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }

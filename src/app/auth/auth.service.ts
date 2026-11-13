@@ -10,6 +10,7 @@ import { DBService } from '../data/db.service';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository } from '../repositories/message.repository';
 import { ApiService } from '../services/api.service';
+import { FamilyModeService } from '../services/family-mode.service';
 
 
 interface User {
@@ -42,6 +43,10 @@ export interface AuthConfig {
   mode: 'oidc' | 'mock' | 'none';
   // The OIDC provider's name for the login button
   providerName?: string | null;
+  // The server offers family mode (FAMILY_MODE_ENABLED)
+  familyModeAvailable?: boolean;
+  // How a device turns it off and on: a switch in the settings, or five taps on the logo
+  familyModeSwitch?: 'settings' | 'logo';
 }
 
 // The user whose conversations are stored in this browser (IndexedDB)
@@ -78,7 +83,8 @@ export class AuthService {
     private dbService: DBService,
     private conversationRepository: ConversationRepository,
     private messageRepository: MessageRepository,
-    private apiService: ApiService
+    private apiService: ApiService,
+    private familyMode: FamilyModeService
   ) {
     // Store the promise but don't await it in constructor
     this.authInitialized = this.initializeAuthFlow();
@@ -117,6 +123,7 @@ export class AuthService {
     try {
       const config = await lastValueFrom(this.http.get<AuthConfig>(`${this.baseUrl}/api/auth/config`));
       this.authConfigSubject.next(config);
+      this.familyMode.setAvailable(config.familyModeAvailable, config.familyModeSwitch);
     } catch (error) {
       console.warn('AuthService: Could not load the login options:', error);
     }

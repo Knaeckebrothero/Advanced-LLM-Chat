@@ -452,9 +452,10 @@ async def test_stream_generate_keeps_and_replays_tool_calls(server):
     question = user(1000_000, 1000, "What is alpha?")
     fake_db = StoringDB([question])
     config = make_config(server.base_url, context_window=100000, supports_tools=True)
-    saved = messages._agent_tools, messages._mcp_tools
-    messages._agent_tools = lambda current_user, conversation, config: tools
+    saved = messages._agent_tools, messages._mcp_tools, messages.auto_hide_definition
+    messages._agent_tools = lambda current_user, conversation, config, *rest: tools
     messages._mcp_tools = no_mcp
+    messages.auto_hide_definition = lambda user_id: ""  # No database here
     try:
         server.script(calls_the_tool, answers)
         with message_api(fake_db, config) as client:
@@ -495,7 +496,7 @@ async def test_stream_generate_keeps_and_replays_tool_calls(server):
             texts = sum(estimate_tokens(row["content"]) for row in fake_db.rows)
             assert size["historyTokens"] > texts + estimate_tokens(tool_record[1]["content"]), (size, texts)
     finally:
-        messages._agent_tools, messages._mcp_tools = saved
+        messages._agent_tools, messages._mcp_tools, messages.auto_hide_definition = saved
 
 
 TESTS = [test_summarizes_only_past_the_trigger, test_latest_question_is_never_summarized,

@@ -107,7 +107,7 @@ export class ModelPickerComponent {
   ) {
     this.view$ = combineLatest([
       this.catalog.models$,
-      this.catalog.personas$,
+      this.catalog.visiblePersonas$,  // Without hidden agents while this device is in family mode
       this.chatState.selection$,
       this.chatState.effectiveModel$,
       this.chatState.activePersona$

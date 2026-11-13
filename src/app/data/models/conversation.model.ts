@@ -4,6 +4,9 @@
 
 import { PersonaValues } from './catalog.model';
 
+/** Who set a hidden mark: the user's decision, which agents leave alone, or an agent's. */
+export type HiddenBy = 'user' | 'agent';
+
 export interface IConversation {
   id: string;
   userId: number;
@@ -23,6 +26,12 @@ export interface IConversation {
   personaValues?: PersonaValues | null;
   // Local only: the selection changed offline and still has to be sent to the backend
   selectionPending?: boolean;
+  // Hidden; a chat of a hidden agent is hidden too (isConversationHidden())
+  hidden?: boolean;
+  // Who set hidden: the user (agents leave it alone) or an agent; null/undefined = nobody
+  hiddenBy?: HiddenBy | null;
+  // Local only: the mark changed offline and still has to be sent to the backend
+  hiddenPending?: boolean;
 }
 
 /**

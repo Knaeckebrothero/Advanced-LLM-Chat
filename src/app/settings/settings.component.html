@@ -145,6 +145,32 @@
         <p class="setting-hint">{{ (editingMode(settings) === 'manual' ? 'editing.manualHint' : 'editing.guidedHint') | translate }}</p>
       </div>
 
+      <!-- Family mode: its switch, unless the server puts it on the logo -->
+      <div class="setting-option" *ngIf="(familyMode.available$ | async) && familyMode.switchKind === 'settings'">
+        <label id="family-mode-label">{{ 'hide.familyMode' | translate }}</label>
+        <div class="options-group" role="group" aria-labelledby="family-mode-label" *ngIf="{ on: familyMode.active$ | async } as mode">
+          <button type="button" class="option-button" [class.active]="mode.on" [attr.aria-pressed]="mode.on"
+                  (click)="familyMode.setOn(true)">
+            <mat-icon aria-hidden="true">family_restroom</mat-icon>
+            <span>{{ 'hide.on' | translate }}</span>
+          </button>
+          <button type="button" class="option-button" [class.active]="!mode.on" [attr.aria-pressed]="!mode.on"
+                  (click)="familyMode.setOn(false)">
+            <mat-icon aria-hidden="true">visibility</mat-icon>
+            <span>{{ 'hide.off' | translate }}</span>
+          </button>
+        </div>
+        <p class="setting-hint">{{ 'hide.familyModeHint' | translate }}</p>
+      </div>
+
+      <!-- What agents hide on their own: only while family mode is off -->
+      <div class="setting-option" *ngIf="hasMemory && (familyMode.available$ | async) && (familyMode.active$ | async) === false">
+        <label for="auto-hide-prompt">{{ 'hide.autoHide' | translate }}</label>
+        <textarea id="auto-hide-prompt" class="setting-textarea" rows="4" maxlength="4000"
+                  [value]="settings.autoHidePrompt ?? ''" (change)="updateAutoHide($any($event.target).value)"></textarea>
+        <p class="setting-hint">{{ 'hide.autoHideHint' | translate }}</p>
+      </div>
+
       <!-- Conversations: files exported from a conversation's menu (guests' conversations are not kept) -->
       <div class="setting-option">
         <label>{{ 'conversations.title' | translate }}</label>

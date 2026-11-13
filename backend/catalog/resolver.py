@@ -533,3 +533,25 @@ def persona_vault(user: Optional[dict], conversation: Optional[dict]) -> int:
     if not persona_usable(persona, user) or not persona.get("own_memory"):
         return 0
     return persona["id"]
+
+
+def _persona_hidden(persona_id: Optional[int]) -> bool:
+    persona = db.get_persona_by_id(persona_id) if persona_id else None
+    return bool(persona and persona.get("hidden"))
+
+
+def conversation_hidden(conversation: Optional[dict]) -> bool:
+    """The conversation (a conversations row) is hidden: marked, or its agent is."""
+    conversation = conversation or {}
+    return bool(conversation.get("hidden")) or _persona_hidden(conversation.get("persona_id"))
+
+
+def writes_hidden(conversation: Optional[dict], vault: int) -> bool:
+    """
+    What is written in this conversation (a conversations row: its hidden and persona_id) into the
+    knowledge base vault gets hidden: the conversation is marked or its agent
+    is, and the knowledge base isn't a hidden agent's own one (all of which is hidden anyway).
+    """
+    if not conversation_hidden(conversation):
+        return False
+    return not (vault and _persona_hidden(vault))

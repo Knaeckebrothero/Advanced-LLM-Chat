@@ -15,6 +15,8 @@ SELECT
     c.model_id,
     c.persona_id,
     c.persona_values,
+    c.hidden,
+    c.hidden_by,
     COUNT(m.id) as message_count
 FROM conversations c
 LEFT JOIN messages m ON c.id = m."conversationId"
@@ -35,6 +37,8 @@ SELECT
     c.model_id,
     c.persona_id,
     c.persona_values,
+    c.hidden,
+    c.hidden_by,
     COUNT(m.id) as message_count
 FROM conversations c
 LEFT JOIN messages m ON c.id = m."conversationId"
