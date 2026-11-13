@@ -89,7 +89,7 @@ Write sentences, as if describing a photo to someone. Order: the subject first, 
   - Quality tags, score tags and `masterpiece` mean nothing to these models.
   - `(word:1.2)` weights are unreliable on their encoders and don't work at all on Krea 2.
 - **Describe quality** as what you'd see instead: "sharp focus, fine skin texture, detailed fabric".
-- **Text in the image:** give the exact words in quotes, early and short: `a neon sign that reads "OPEN LATE"`.
+- **Text in the image:** give the exact words in quotes, early and short: `a neon sign that reads "OPEN LATE"`. Put only the words the user gave on it: no invented dates, places or programme. Offer to add them instead.
 - **Camera language works:**
   - "85mm portrait lens", "wide-angle 24mm";
   - "f/1.8, blurred background" or "f/11, everything sharp";
@@ -127,7 +127,7 @@ Then add what you actually saw go wrong (`extra arms`, `2girls` when you wanted 
 | Family | Sampler | Steps | CFG / guidance | Clip skip |
 |---|---|---|---|---|
 | SD 1.5 | Euler a or DPM++ 2M Karras | 20–30 | 6–8 | 2 for anime models |
-| SDXL | DPM++ 2M Karras or Euler a | 20–30 | 5–7 | — (Civitai's SDXL service rejects it) |
+| SDXL | DPM++ 2M Karras or Euler a | 20–30 | 5–7 | 1; 2 for anime checkpoints (when the input schema has `clipSkip`) |
 | SDXL Lightning, LCM, Turbo | Euler or LCM | 4–8 | 1–2 | — |
 | Pony V6 | Euler a | 25 | 6–7 | **2** |
 | Illustrious | Euler a | 20–28 | 5–7 | 1–2 (follow the checkpoint) |
