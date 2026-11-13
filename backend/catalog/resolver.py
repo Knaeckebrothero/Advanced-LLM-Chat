@@ -169,6 +169,7 @@ def build_model_config(model: dict, provider: dict) -> ModelConfig:
         default_headers=dict(provider.get("default_headers") or {}),
         privacy_tier=model.get("privacy_tier") or provider["privacy_tier"],
         currency=provider.get("currency") or "USD",
+        reported_cost_unit=_float(provider.get("reported_cost_unit")),
         supports_tools=_bool(model.get("supports_tools"), True),
         supports_vision=_bool(model.get("supports_vision"), False),
         reasoning=model.get("reasoning") or "none",

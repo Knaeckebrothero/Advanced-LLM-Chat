@@ -277,7 +277,7 @@ def _block_param(block: Any) -> Optional[dict]:
 def _usage_of(usage: Any) -> Usage:
     """Convert Claude's usage; input_tokens there excludes cache reads and writes, so add them."""
     if usage is None:
-        return Usage()
+        return Usage(calls=1)
     cache_read = getattr(usage, "cache_read_input_tokens", None) or 0
     cache_write = getattr(usage, "cache_creation_input_tokens", None) or 0
     details = getattr(usage, "output_tokens_details", None)
@@ -286,6 +286,7 @@ def _usage_of(usage: Any) -> Usage:
         output_tokens=usage.output_tokens or 0,
         reasoning_tokens=getattr(details, "thinking_tokens", None),
         cached_input_tokens=cache_read or None,
+        calls=1,  # Claude reports no cost: the cost is computed from the prices
     )
 
 

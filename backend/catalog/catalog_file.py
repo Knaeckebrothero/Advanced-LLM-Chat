@@ -79,7 +79,7 @@ MCP_SERVER_KEYS = {
 
 # Column order in exported entries (natural keys first)
 PROVIDER_EXPORT_COLUMNS = [
-    "name", "kind", "base_url", "api_key_env", "privacy_tier", "currency",
+    "name", "kind", "base_url", "api_key_env", "privacy_tier", "currency", "reported_cost_unit",
     "default_headers", "notes", "enabled",
 ]
 MODEL_EXPORT_COLUMNS = [
@@ -98,7 +98,7 @@ MCP_SERVER_EXPORT_COLUMNS = list(MCP_SERVER_KEYS)
 SKILL_KEYS = {"name": "name", "description": "description", "content": "content", "enabled": "enabled"}
 SKILL_EXPORT_COLUMNS = list(SKILL_KEYS)
 NUMERIC_COLUMNS = {"temperature", "top_p", "input_price_per_mtok", "output_price_per_mtok",
-                   "cached_input_price_per_mtok"}
+                   "cached_input_price_per_mtok", "reported_cost_unit"}
 
 # Reported once by an import whose file has provider entries
 PROVIDERS_IGNORED = "providers ignored: providers come from the server's catalog file"
