@@ -6,6 +6,7 @@ Uses existing document_handler.py and audio_handler.py for file processing,
 and Vision Helper for image analysis when the primary model is text-only.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -112,6 +113,7 @@ class FileRetrievalService:
             '.jpeg': 'image/jpeg',
             '.gif': 'image/gif',
             '.webp': 'image/webp',
+            '.avif': 'image/avif',
             '.mp3': 'audio/mpeg',
             '.wav': 'audio/wav',
             '.m4a': 'audio/mp4',
@@ -200,9 +202,31 @@ class FileRetrievalService:
         query: Optional[str] = None
     ) -> str:
         """Get or generate image description using Vision Helper."""
-        # Check cache first
+        return await self._describe(file_id, query, query, file_path=file_path, mime_type=mime_type)
+
+    async def describe_image_part(self, file_id: str, data: bytes, mime_type: str, part: str,
+                                  query: Optional[str] = None) -> str:
+        """
+        What the vision helper says about a part of an image (file_store.image_part_for_model()),
+        or its answer to a query about it. Cached per part and query.
+
+        Args:
+            file_id: The image the part is cut from.
+            data: The part.
+            mime_type: Its type.
+            part: Names the part, e.g. "50,0,100,50": descriptions of different parts are kept apart.
+            query: Optional question about the part.
+        """
+        return await self._describe(file_id, query, f"[part {part}] {query or ''}", data=data, mime_type=mime_type)
+
+    async def _describe(self, file_id: str, query: Optional[str], cached_as: Optional[str], *,
+                        mime_type: str, file_path: Optional[Path] = None, data: Optional[bytes] = None) -> str:
+        """
+        The vision helper's description of an image (file_path) or of given image data, cached
+        under cached_as (the query, or a part's name with it).
+        """
         if self.description_cache:
-            cached = await self.description_cache.get(file_id, query)
+            cached = await self.description_cache.get(file_id, cached_as)
             if cached:
                 logger.info(f"Using cached description for {file_id}")
                 return cached
@@ -211,16 +235,21 @@ class FileRetrievalService:
         try:
             from .vision_helper import get_vision_helper, is_error
             vision_helper = get_vision_helper()
-            image_data = file_path.read_bytes()
+            if data is None:
+                # Scaled like the image a vision model of the chat gets: a file can have 30 MB,
+                # which no helper takes. As it is only where it can't be scaled
+                from . import file_store
+                prepared = await asyncio.to_thread(file_store.image_for_model, file_id)
+                data, mime_type = prepared if prepared else (file_path.read_bytes(), mime_type)
             description = await vision_helper.describe_image(
-                image_data=image_data,
+                image_data=data,
                 mime_type=mime_type,
                 prompt=query
             )
 
             # Store in cache (not the helper's error message: the next call asks again)
             if self.description_cache and not is_error(description):
-                await self.description_cache.set(file_id, description, query)
+                await self.description_cache.set(file_id, description, cached_as)
 
             return description
         except Exception as e:

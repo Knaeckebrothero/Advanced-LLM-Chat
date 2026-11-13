@@ -10,7 +10,7 @@ A result carries media in three ways:
   address in the result that ends in the resource's file name is downloaded instead.
 
 Downloads only follow https, only to public addresses (unless MCP_ALLOW_PRIVATE_URLS), carry
-none of the server's headers, and stop at the size the file store takes.
+none of the server's headers, and stop at the size the file store takes from a tool.
 """
 import asyncio
 import base64
@@ -107,7 +107,7 @@ async def download(url: str) -> Optional[tuple[bytes, str]]:
     A media file from a web address: (data, MIME type), or None if it is no media, too large,
     not reachable, or not on a public https address.
     """
-    limit = file_store.MAX_FILE_SIZE
+    limit = file_store.MAX_TOOL_FILE_SIZE
     timeout = httpx2.Timeout(MCP_CONNECT_TIMEOUT, read=READ_TIMEOUT)
     try:
         async with http_client(guarded=not MCP_ALLOW_PRIVATE_URLS, timeout=timeout) as client:

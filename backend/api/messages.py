@@ -134,7 +134,8 @@ def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
 
 
 def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig,
-                 hide: bool = False, hide_definition: str = "", skills: Iterable[dict] = ()) -> Optional[ToolRegistry]:
+                 hide: bool = False, hide_definition: str = "", skills: Iterable[dict] = (),
+                 answer_id: Optional[int] = None) -> Optional[ToolRegistry]:
     """
     The tools for an answer: the tools the server enables, limited to the tool
     groups of the conversation's persona (if it has a selection; the knowledge
@@ -145,6 +146,8 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
     is in family mode, which the knowledge base and past chat tools then leave out;
     hide_definition is what the agent hides on its own (none without it). With the
     persona's skills (persona_skills()), use_skill loads them (docs/skills.md).
+    answer_id is the id of the message being written, recorded with the files
+    web_fetch saves.
 
     :return: The tools, or None for none (the model doesn't support tools, or
         the persona selected no enabled tool group).
@@ -154,7 +157,7 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
     tools = tools_for_groups(persona_tool_groups(current_user, conversation), user_id=current_user['user_id'],
                              guest=bool(current_user.get('is_guest')), conversation=conversation,
                              vault=persona_vault(current_user, conversation), vision=config.supports_vision,
-                             family_mode=hide, hide_definition=hide_definition)
+                             family_mode=hide, hide_definition=hide_definition, answer_id=answer_id)
     for tool in skill_tools(list(skills)):
         tools.add(tool)
     return tools if len(tools) else None
@@ -290,7 +293,7 @@ async def _answer_parts(
     hide_definition = auto_hide_definition(current_user.get('user_id')) if config.supports_tools else ""
     # The agent's skills, listed in the prompt and loaded with use_skill; a model without tools has none
     skills = persona_skills(current_user, conversation) if config.supports_tools else []
-    tools = _agent_tools(current_user, conversation, config, hide, hide_definition, skills)
+    tools = _agent_tools(current_user, conversation, config, hide, hide_definition, skills, answer_id)
     toolset = McpToolset()
     if mcp:
         tools, toolset = await _mcp_tools(current_user, conversation, config, tools, answer_id)
