@@ -173,8 +173,12 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       automountServiceAccountToken: false
+      {{- with .Values.backend.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
-        {{- include "llmchat.waitForPostgres" . | nindent 8 }}
+        {{- include "llmchat.waitForPostgres" (dict "ctx" $ "securityContext" .Values.backend.securityContext) | nindent 8 }}
         {{- if .Values.backend.migrate }}
         - name: migrate
           image: {{ include "llmchat.image" (dict "image" .Values.backend.image "ctx" $) }}

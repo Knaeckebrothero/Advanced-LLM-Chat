@@ -37,8 +37,12 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           automountServiceAccountToken: false
+          {{- with .Values.backend.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           initContainers:
-            {{- include "llmchat.waitForPostgres" . | nindent 12 }}
+            {{- include "llmchat.waitForPostgres" (dict "ctx" $ "securityContext" .Values.backend.securityContext) | nindent 12 }}
           containers:
             - name: memory-dream
               image: {{ include "llmchat.image" (dict "image" .Values.backend.image "ctx" $) }}

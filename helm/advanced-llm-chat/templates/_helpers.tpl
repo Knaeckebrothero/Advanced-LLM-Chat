@@ -23,6 +23,12 @@ app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
 
+{{/* The labels every pod of the release has, whatever its component */}}
+{{- define "llmchat.releaseLabels" -}}
+app.kubernetes.io/name: {{ include "llmchat.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
 {{- define "llmchat.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .ctx.Chart.Name .ctx.Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{ include "llmchat.selectorLabels" . }}
@@ -95,17 +101,23 @@ app.kubernetes.io/part-of: {{ include "llmchat.name" .ctx }}
       key: {{ include "llmchat.postgresSecretKey" . }}
 {{- end }}
 
-{{/* An init container that waits until Postgres accepts connections */}}
+{{/* An init container that waits until Postgres accepts connections; call with
+     (dict "ctx" $ "securityContext" .Values.backend.securityContext), the security context is optional */}}
 {{- define "llmchat.waitForPostgres" -}}
 - name: wait-for-postgres
-  image: {{ include "llmchat.image" (dict "image" .Values.postgresql.image "ctx" .) }}
-  imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+  image: {{ include "llmchat.image" (dict "image" .ctx.Values.postgresql.image "ctx" .ctx) }}
+  imagePullPolicy: {{ .ctx.Values.postgresql.image.pullPolicy }}
   command: ["sh", "-c", "until pg_isready -h \"$POSTGRES_HOST\" -p \"$POSTGRES_PORT\" -U \"$POSTGRES_USER\"; do echo waiting for postgres; sleep 2; done"]
+  {{- with .securityContext }}
+  securityContext:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   env:
-    {{- include "llmchat.postgresEnv" . | nindent 4 }}
+    {{- include "llmchat.postgresEnv" .ctx | nindent 4 }}
 {{- end }}
 
-{{/* The backend's settings, secrets and volumes (the backend and its migrate init container) */}}
+{{/* The backend's settings, secrets, volumes and security context (the backend, its migrate init
+     container and the memory-dream job) */}}
 {{- define "llmchat.backendEnv" -}}
 envFrom:
   - configMapRef:
@@ -152,6 +164,10 @@ volumeMounts:
     mountPath: /app/catalog-custom
     readOnly: true
   {{- end }}
+{{- with .Values.backend.securityContext }}
+securityContext:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end }}
 
 {{/* Checks of the values that would otherwise fail at runtime */}}

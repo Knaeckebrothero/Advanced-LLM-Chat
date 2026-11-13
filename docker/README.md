@@ -6,6 +6,7 @@ This directory contains the Docker configuration for containerizing both the Ang
 
 - **Dockerfile**: Multi-stage build configuration for the Angular frontend app
 - **backend.Dockerfile**: Python FastAPI backend with SQLite database
+- **backend-entrypoint.sh**: The backend image's entrypoint: gives the data directories to the user `app` and drops root (see [The backend's user](#the-backends-user))
 - **nginx.conf**: Nginx configuration optimized for serving Angular SPA
 - **docker-compose.yml**: Docker Compose configuration for running both services
 - **docker-compose.keycloak.yml**: Optional Keycloak for logging in, added to either compose file (see [Login](#login))
@@ -137,6 +138,15 @@ Guests can always chat. How everyone else logs in is `AUTH_MODE` (details in
 
 `AUTH_MODE=mock` (log in with any email, no password) is for development only.
 
+## The backend's user
+
+The backend runs as the user `app` (uid and gid 10001), not as root. The container's first process is `tini`, which collects the processes that others leave behind (the renderer of a PDF that took too long). The container still starts as root: its entrypoint (`backend-entrypoint.sh`) gives `app` the directories the backend writes to (`/app/.filesystem` with the uploaded files, the TTS cache and logs, and `/app/devcerts`), then drops root for good and starts the backend. The image sets `FILESYSTEM_PATH=/app/.filesystem` and `FILES_DIR=/app/.filesystem/files` itself, as the compose files do.
+
+**Upgrading from an image that ran as root** needs no manual step: on the first start the entrypoint changes the owner of the files already in the volume (or in `./data`, where they then belong to uid 10001 on the host). Later starts leave the volume alone.
+
+- Don't set `user:` for the backend while a volume still holds root's files: started as another user, the entrypoint can't change their owner. With a new volume, `user: "10001:10001"` works.
+- `docker compose exec backend ...` runs as root. Add `-u app` to commands that write files, e.g. `docker compose exec -u app backend python -m backend.services.memory_dream`; what root leaves in the volume is given to `app` at the next start.
+
 ## Container Details
 
 ### Frontend Container
@@ -152,6 +162,7 @@ Guests can always chat. How everyone else logs in is `AUTH_MODE` (details in
 
 ### Backend Container
 - **Base Image**: python:3.11-slim
+- **User**: `app` (uid 10001); starts as root only to hand over the data directories
 - **Exposed Port**: 8443 (HTTPS)
 - **Database**: SQLite (persisted in volume)
 - **Features**:
