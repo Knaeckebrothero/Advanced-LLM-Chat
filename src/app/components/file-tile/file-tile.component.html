@@ -1,14 +1,21 @@
 <button type="button" class="file-tile" (click)="open()"
-        [attr.aria-label]="'files.open' | translate: { name: file.name }"
-        [matTooltip]="isPicture ? file.name : ''" matTooltipShowDelay="600">
+        [attr.aria-label]="'files.open' | translate: { name: label || file.name }"
+        [matTooltip]="isPicture ? (label || file.name) : ''" matTooltipShowDelay="600">
   @if (isPicture) {
     @if (url) {
-      <img [src]="url" [alt]="file.name" draggable="false">
+      @if (letterboxed) {
+        <img class="file-tile-backdrop" [src]="url" alt="" aria-hidden="true" draggable="false">
+      }
+      <img class="file-tile-image" [src]="url" [alt]="label || file.name" draggable="false">
     } @else {
       <span class="file-tile-loading" aria-hidden="true"></span>
     }
   } @else {
-    <mat-icon aria-hidden="true">{{ icon }}</mat-icon>
+    @if (url) {
+      <img class="file-tile-page" [src]="url" alt="" aria-hidden="true" draggable="false">
+    } @else {
+      <mat-icon aria-hidden="true">{{ icon }}</mat-icon>
+    }
     @if (!isSmall) {
       <span class="file-tile-text">
         <span class="file-tile-name">{{ file.name }}</span>

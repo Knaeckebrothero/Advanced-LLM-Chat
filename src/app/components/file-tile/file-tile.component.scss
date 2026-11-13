@@ -8,6 +8,14 @@
   height: var(--file-tile-height, 64px);
 }
 
+// A picture is as high as its parent says and as wide as its shape then makes it. In a column
+// narrower than that it is as wide as the column and lower, so it is never cropped
+:host(.is-picture) {
+  width: min(100%, calc(var(--file-tile-height, 64px) * var(--file-tile-ratio, 1)));
+  height: auto;
+  aspect-ratio: var(--file-tile-ratio, 1);
+}
+
 // A card is as wide as its text needs; a small one is a square with the icon
 :host(:not(.is-picture)) {
   height: auto;
@@ -22,6 +30,7 @@
 }
 
 .file-tile {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -61,11 +70,43 @@
     padding: 10px 14px;
   }
 
-  img {
+  // The whole picture; one longer or wider than its tile sits over a blurred copy of itself
+  .file-tile-image {
+    position: relative;
     display: block;
     width: 100%;
     height: 100%;
+    object-fit: contain;
+  }
+
+  .file-tile-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
+    filter: blur(14px);
+    transform: scale(1.3);
+    opacity: 0.55;
+  }
+
+  // A PDF's first page in place of the icon
+  .file-tile-page {
+    flex: none;
+    width: 40px;
+    max-height: 56px;
+    object-fit: contain;
+    border: 1px solid var(--theme-border);
+    border-radius: 4px;
+    background: #fff;
+  }
+
+  :host(.is-small) & .file-tile-page {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
   }
 
   mat-icon {

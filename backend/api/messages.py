@@ -349,7 +349,8 @@ async def user_send_message(request_body: ApiMessageSend, response: Response,
         f"Message send called - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
 
     try:
-        if not request_body.content:
+        # Files alone are a message too (a photo without a word)
+        if not request_body.content and not getattr(request_body, 'attachments', None):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message content cannot be empty"

@@ -26,6 +26,9 @@
     "chooseFile": "Choose file",
     "shareLocation": "Share location",
     "send": "Send message",
+    "fileTooLarge": "Not attached, larger than {{size}} MB: {{names}}",
+    "dropFiles": "Drop the files to attach them",
+    "sendsAfterUpload": "Sends as soon as the files are uploaded",
     "stop": "Stop answering",
     "generate": "Generate an answer",
     "context": {
@@ -66,6 +69,7 @@
   },
   "files": {
     "open": "Open {{name}}",
+    "notFound": "(File not found: {{name}})",
     "shown": "Files of this answer",
     "created": "More files created in this answer"
   },

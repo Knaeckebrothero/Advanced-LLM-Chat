@@ -17,7 +17,7 @@ const MD_LINK_RE = /(\[[^[\]]*\]\(\s*<?)([^)\s>]+)(>?(?:\s+"[^"]*")?\s*\))/g;
 // Task list items: "- [ ] open", "- [x] done"
 const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\](?=\s)/gm;
 // Code is left as it is: fenced blocks and inline code
-const CODE_RE = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/;
+export const CODE_RE = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/;
 
 /** A slug for a title or link target: lowercase ASCII letters, digits and dashes ("Größe & Gewicht" -> "groesse-gewicht"). */
 export function slugify(value: string): string {
