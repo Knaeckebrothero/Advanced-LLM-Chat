@@ -72,7 +72,35 @@
     "open": "{{name}} öffnen",
     "notFound": "(Datei nicht gefunden: {{name}})",
     "shown": "Dateien dieser Antwort",
-    "created": "Weitere in dieser Antwort erstellte Dateien"
+    "created": "Weitere in dieser Antwort erstellte Dateien",
+    "title": "Dateien dieses Chats",
+    "count": "{{count}} Dateien",
+    "countOne": "1 Datei",
+    "filter": "Anzeigen",
+    "filters": {
+      "all": "Alle",
+      "upload": "Hochgeladen",
+      "tool": "Vom Agenten erstellt"
+    },
+    "images": "Bilder",
+    "others": "Weitere Dateien",
+    "documents": "Dateien",
+    "uploaded": "Hochgeladen",
+    "createdBy": "Erstellt von {{origin}}",
+    "createdByAgent": "Vom Agenten erstellt",
+    "download": "{{name}} herunterladen",
+    "downloadFailed": "{{name}} konnte nicht heruntergeladen werden.",
+    "loading": "Dateien werden geladen…",
+    "loadFailed": "Die Dateien konnten nicht geladen werden.",
+    "empty": "In diesem Chat gibt es noch keine Dateien",
+    "emptyHint": "Hier erscheinen Dateien, die du anhängst, und Dateien, die der Agent erstellt.",
+    "allTitle": "Alle Dateien",
+    "openChat": "Diesen Chat öffnen",
+    "more": "Mehr anzeigen ({{shown}} von {{count}})",
+    "emptyAll": "Noch keine Dateien",
+    "emptyAllHint": "Hier erscheinen Dateien, die du in einem Chat anhängst, und Dateien, die die Agenten erstellen.",
+    "settingsTitle": "Dateien",
+    "settingsHint": "Alles, was du angehängt hast und was die Agenten erstellt haben, aus allen deinen Chats, zum Öffnen und Herunterladen."
   },
   "filePreview": {
     "zoomIn": "Vergrößern",
@@ -88,7 +116,10 @@
     "downloadToView": "Zum Ansehen herunterladen",
     "noPreview": "Für diese Art von Datei gibt es keine Vorschau",
     "downloadFile": "Datei herunterladen",
-    "noAudioSupport": "Dein Browser kann diese Aufnahme nicht abspielen."
+    "noAudioSupport": "Dein Browser kann diese Aufnahme nicht abspielen.",
+    "previous": "Vorherige Datei",
+    "next": "Nächste Datei",
+    "position": "{{index}} von {{count}}"
   },
   "Login": "Anmelden",
   "Please enter your email to continue": "Gib deine E-Mail-Adresse ein, um fortzufahren",
@@ -593,7 +624,8 @@
     "memoryFailed": "Speichern im Gedächtnis fehlgeschlagen: {{error}}",
     "options": "Weitere Optionen",
     "deleteConfirm": "Diese Unterhaltung löschen?",
-    "exportFailed": "Die Unterhaltung konnte nicht exportiert werden: {{error}}"
+    "exportFailed": "Die Unterhaltung konnte nicht exportiert werden: {{error}}",
+    "files": "Dateien"
   },
   "systemPrompt": {
     "title": "Systemprompt",
