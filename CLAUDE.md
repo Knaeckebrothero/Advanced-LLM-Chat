@@ -182,6 +182,7 @@ Located in `src/app/data/objects/`:
 - **Strict Mode**: All code must pass strict TypeScript checks - no ESLint configured
 - **Angular Material**: Use existing Material components for UI consistency
 - **Message Type Safety**: Use factory methods for message creation, type guards for content access
+- **No inline scripts**: the Content-Security-Policy (`docker/nginx.conf`, and the meta tag in `src/index.html`) is `script-src 'self'`, so no `<script>` block or `on...=` handler in HTML and no `eval`/`new Function`: the browser refuses them and the feature silently breaks. A script that must run before the app goes into a file under `src/assets/` (like `theme-init.js`; nginx serves it `no-cache`, as it has no hash in its name). The production build keeps `inlineCritical: false` in `angular.json`, since Angular's inline stylesheet loader is an `onload` handler
 
 ### Data Layer
 - **IndexedDB**: All database operations go through `DbService` - never access directly

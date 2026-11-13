@@ -161,8 +161,8 @@ The backend runs as the user `app` (uid and gid 10001), not as root. The contain
 - **Build Process**: Multi-stage (Node.js for building, Nginx for serving)
 - **Features**:
   - Gzip compression enabled
-  - Static asset caching
-  - Security headers configured
+  - Static asset caching (the hashed bundles for a year; `assets/env.js`, `assets/theme-init.js` and `ngsw-worker.js` with `no-cache`)
+  - Security headers, with a Content-Security-Policy that runs scripts only from the app's own files (`script-src 'self'`: no inline script, no eval)
   - SPA routing handled correctly
   - Runtime environment variable injection via `envsubst`
 
