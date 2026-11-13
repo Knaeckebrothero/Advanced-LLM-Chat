@@ -89,6 +89,10 @@ WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", None)  # Optional: 'en', 'de', 
 WHISPER_TIMEOUT = float(os.getenv("WHISPER_TIMEOUT", "120"))  # Timeout for transcription requests
 USE_LOCAL_WHISPER = os.getenv("USE_LOCAL_WHISPER", "false").lower() == "true"
 LOCAL_WHISPER_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "base")  # tiny, base, small, medium, large
+# Whether a transcription the API could not do (it failed, or no key is set) is done by the local
+# model, which is loaded into the server's memory and slow on a CPU. 'false': it just fails.
+# USE_LOCAL_WHISPER=true uses the local model either way
+WHISPER_LOCAL_FALLBACK = os.getenv("WHISPER_LOCAL_FALLBACK", "true").lower() == "true"
 
 # Text-to-Speech Configuration
 # TTS_BASE_URL allows deploying TTS on a separate server/GPU from other models
