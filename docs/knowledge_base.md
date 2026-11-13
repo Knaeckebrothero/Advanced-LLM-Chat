@@ -187,4 +187,4 @@ The compose files and the Helm chart run `pgvector/pgvector:pg16` (Debian) inste
 - **Import** of an Obsidian vault (see the export).
 - **`[[links]]` in chat answers:** the agent mentions notes as `[[slug]]`, which the chat shows as plain text; they could link to the page.
 - **A diff** between two versions in the history.
-- **Memory:** search over past conversations as a tool (the journal and the review cover most of it); the nightly consolidation in docker compose (Kubernetes only, by decision).
+- **Memory:** search over past conversations as tools (planned in `docs/past_chats.md`); the nightly consolidation in docker compose (Kubernetes only, by decision).
