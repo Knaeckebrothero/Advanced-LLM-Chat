@@ -50,6 +50,7 @@ from backend.database.tables import (
     conversations,
     messages,
     conversation_summaries,
+    conversation_memory_snapshots,
     message_tool_records,
     sessions,
     guest_usage,
@@ -1351,6 +1352,37 @@ class Database:
             row = conn.execute(stmt.returning(conversation_summaries)).fetchone()
             log.info(f"Stored the summary of {conversation_id}: {message_count} messages up to {covers_until}")
             return self._row_to_dict(row)
+
+    def get_memory_snapshot(self, conversation_id: str) -> Optional[dict]:
+        """
+        The memory as the conversation's system prompt shows it (backend/services/memory_snapshot.py).
+
+        Returns:
+            The row (conversation_id, vault, family_mode, content, day, taken_at), or None.
+        """
+        with self.connection() as conn:
+            row = conn.execute(select(conversation_memory_snapshots).where(
+                conversation_memory_snapshots.c.conversation_id == conversation_id)).fetchone()
+            return self._row_to_dict(row)
+
+    def save_memory_snapshot(self, conversation_id: str, vault: int, family_mode: bool, content: str, day) -> None:
+        """Store the memory a conversation's system prompt shows from now on, replacing the one it had."""
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        values = {'vault': vault, 'family_mode': family_mode, 'content': content, 'day': day,
+                  'taken_at': datetime.now(timezone.utc).replace(tzinfo=None)}
+        with self.connection() as conn:
+            stmt = pg_insert(conversation_memory_snapshots).values(conversation_id=conversation_id, **values)
+            conn.execute(stmt.on_conflict_do_update(index_elements=['conversation_id'], set_=values))
+
+    def last_answer_time(self, conversation_id: str) -> Optional[int]:
+        """
+        When the newest answer of a conversation began (its id: the server's clock in milliseconds,
+        which time has in seconds), None without one.
+        """
+        with self.connection() as conn:
+            return conn.execute(select(func.max(messages.c.id)).where(
+                (messages.c.conversationId == conversation_id) & (messages.c.type == 'agent'))).scalar()
 
     @staticmethod
     def _drop_summary_covering(conn, conversation_id: str, message_id: int) -> None:

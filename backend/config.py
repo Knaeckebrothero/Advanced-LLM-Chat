@@ -134,6 +134,11 @@ MEMORY_REVIEW_MAX_AGE_DAYS = float(os.getenv("MEMORY_REVIEW_MAX_AGE_DAYS", "7"))
 # The time zone of the memory's dates ("today" in the prompt, the date of a memory line) and of the
 # days in the journal of the nightly consolidation (backend/services/memory_dream.py), e.g. Europe/Berlin
 MEMORY_TIME_ZONE = os.getenv("MEMORY_TIME_ZONE", "UTC")
+# The memory in a conversation's system prompt (backend/services/memory_snapshot.py) stays as it was
+# while the conversation goes on, so the provider's prompt cache keeps working; changes reach the model
+# as a note. After a pause of MEMORY_SNAPSHOT_REFRESH_MINUTES without an answer, when the cache is gone
+# anyway, the prompt takes the memory as it is now.
+MEMORY_SNAPSHOT_REFRESH_MINUTES = float(os.getenv("MEMORY_SNAPSHOT_REFRESH_MINUTES", "30"))
 
 # Family mode: conversations, agents, notes and lines tagged #hidden can be hidden; a device in family mode
 # (the X-Family-Mode header) doesn't show them, and the agents that answer it leave them out. Off: none of it.

@@ -1075,12 +1075,59 @@ async def test_agents_hide_content():
             conn.execute(delete(user_settings).where(user_settings.c.user_id == user_id))
 
 
+async def test_memory_snapshot():
+    """The memory a conversation's prompt shows (backend/services/memory_snapshot.py), on the real tables."""
+    import time
+    from datetime import date
+    from backend.services import memory_snapshot
+
+    conversation_id = "kb-test-snapshot"
+    with db.connection() as conn:
+        conn.execute(insert(conversations).values(id=conversation_id, userId=user_ids[0], name="Snapshot test"))
+    saved = memory_snapshot.db
+    memory_snapshot.db = db
+    try:
+        # The store: none, then one, replaced in place
+        assert db.get_memory_snapshot(conversation_id) is None and db.last_answer_time(conversation_id) is None
+        db.save_memory_snapshot(conversation_id, 0, False, "- Old line.", date(2026, 11, 16))
+        db.save_memory_snapshot(conversation_id, 3, True, "- New line.", date(2026, 11, 17))
+        row = db.get_memory_snapshot(conversation_id)
+        assert (row["vault"], row["family_mode"], row["content"], row["day"]) == \
+            (3, True, "- New line.", date(2026, 11, 17)), row
+
+        # The newest answer began at its id (milliseconds); the user's messages don't count
+        now_ms = int(time.time() * 1000)
+        with db.connection() as conn:
+            for offset, role, kind in ((-5000, "user", "text"), (-4000, "Assistant", "agent"), (-1000, "user", "text")):
+                conn.execute(insert(messages).values(id=now_ms + offset, conversationId=conversation_id, roleName=role,
+                                                     content="x", time=(now_ms + offset) // 1000, type=kind))
+        assert db.last_answer_time(conversation_id) == now_ms - 4000
+
+        # The real memory: the prompt keeps the snapshot while the agent saves, the note has the new line
+        registry = tools()
+        await registry.call("memory_add", {"text": "Likes foxes", "section": "About the user"})
+        first = memory_snapshot.prompt_memory(conversation_id, memory_text(), 0, False)  # Another vault: taken anew
+        assert "Likes foxes" in first.content and first.note is None, first
+        await registry.call("memory_add", {"text": "Has a cat", "section": "About the user"})
+        kept = memory_snapshot.prompt_memory(conversation_id, memory_text(), 0, False)
+        assert "Has a cat" not in kept.content and "Has a cat" in kept.note and "Likes foxes" not in kept.note, kept
+        assert db.get_memory_snapshot(conversation_id)["content"] == first.content
+
+        # Deleting the conversation deletes its snapshot
+        with db.connection() as conn:
+            conn.execute(delete(messages).where(messages.c.conversationId == conversation_id))
+            conn.execute(delete(conversations).where(conversations.c.id == conversation_id))
+        assert db.get_memory_snapshot(conversation_id) is None
+    finally:
+        memory_snapshot.db = saved
+
+
 TESTS = [test_slugs_and_links, test_write_and_read_back, test_same_slug_is_refused, test_links_and_backlinks,
          test_update, test_search, test_list, test_archive_and_restore, test_users_are_separate, test_revisions,
          test_parallel_tool_calls, test_deleting_a_user_deletes_the_notes, test_tool_results_link_to_their_note,
          test_page_edits_and_versions, test_obsidian_export, test_api, test_memory, test_memory_limits, test_vaults,
          test_api_vaults_and_memory, test_memory_review, test_memory_dream, test_hidden_lines,
-         test_hidden_store_and_tools, test_hidden_api_and_agents, test_agents_hide_content]
+         test_hidden_store_and_tools, test_hidden_api_and_agents, test_agents_hide_content, test_memory_snapshot]
 
 
 async def run() -> int:

@@ -183,13 +183,15 @@ async def test_memory_follows_the_tool_sections():
     messages.persona_vault = lambda user, conversation: 8
     try:
         user = {"user_id": 1, "email": "a@example.com", "is_guest": False}
-        with_kb = messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["knowledge_base"], user_id=1))
+        with_kb, note = messages._memory_prompt("p", user, {"persona_id": 8},
+                                                tools_for_groups(["knowledge_base"], user_id=1))
         assert with_kb.endswith("<memory>\n- vault 8\n</memory>") and asked == [(1, 8, False)], (with_kb, asked)
+        assert note is None, "without a conversation id there is no snapshot, so nothing to note"
         # A device in family mode gets the memory without its hidden lines
         messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["knowledge_base"], user_id=1), True)
         assert asked.pop() == (1, 8, True)
-        assert messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["files"], user_id=1)) == "p"
-        assert messages._memory_prompt("p", user, None, None) == "p" and len(asked) == 1
+        assert messages._memory_prompt("p", user, {"persona_id": 8}, tools_for_groups(["files"], user_id=1)) == ("p", None)
+        assert messages._memory_prompt("p", user, None, None) == ("p", None) and len(asked) == 1
     finally:
         messages.kb.get_memory, messages.persona_vault = saved
 
