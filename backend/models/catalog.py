@@ -29,6 +29,9 @@ class ProviderBase(BaseModel):
     apiKeyEnv: Optional[str] = None  # Name of the environment variable holding the key
     privacyTier: PrivacyTier
     currency: Currency = "USD"
+    # One unit of the usage.cost the provider reports with each response, in that currency (Cortecs:
+    # 0.000001); the cost of an answer is then what the provider billed. None = computed from the prices
+    reportedCostUnit: Optional[float] = Field(default=None, gt=0)
     defaultHeaders: Optional[dict[str, str]] = None
     notes: Optional[str] = None
     enabled: bool = True

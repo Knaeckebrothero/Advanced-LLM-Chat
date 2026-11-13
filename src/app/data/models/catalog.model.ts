@@ -56,6 +56,7 @@ export interface IProviderOut {
   apiKeySet: boolean;  // Whether that variable is set on the server
   privacyTier: PrivacyTier;
   currency: Currency;
+  reportedCostUnit?: number | null;  // One unit of the cost the provider reports per response; null = computed from the prices
   defaultHeaders?: Record<string, string> | null;
   notes?: string | null;
   enabled: boolean;

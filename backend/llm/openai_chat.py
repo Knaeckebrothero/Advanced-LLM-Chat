@@ -135,16 +135,27 @@ def _reasoning_of(obj: Any) -> Optional[str]:
 
 
 def _usage_of(usage: Any) -> Usage:
-    """Convert an OpenAI usage object."""
+    """
+    Convert an OpenAI usage object (one model call). Some providers add what the call cost
+    them as usage.cost (Cortecs: in millionths of a euro); it counts only for providers with
+    a reported_cost_unit (ModelConfig.cost()).
+    """
     if usage is None:
-        return Usage()
+        return Usage(calls=1)
     completion_details = getattr(usage, "completion_tokens_details", None)
     prompt_details = getattr(usage, "prompt_tokens_details", None)
+    cost = getattr(usage, "cost", None)
+    if cost is None:
+        cost = (getattr(usage, "model_extra", None) or {}).get("cost")
+    reported = isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost >= 0
     return Usage(
         input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
         output_tokens=getattr(usage, "completion_tokens", 0) or 0,
         reasoning_tokens=getattr(completion_details, "reasoning_tokens", None),
         cached_input_tokens=getattr(prompt_details, "cached_tokens", None),
+        calls=1,
+        reported_calls=1 if reported else 0,
+        reported_cost=float(cost) if reported else 0.0,
     )
 
 

@@ -58,8 +58,8 @@ def tool_call_delta(index: int, *, id: Optional[str] = None, name: Optional[str]
 
 
 def usage_chunk(prompt_tokens: int, completion_tokens: int, reasoning_tokens: Optional[int] = None,
-                cached_tokens: Optional[int] = None) -> dict:
-    """The final usage-only chunk sent with stream_options.include_usage."""
+                cached_tokens: Optional[int] = None, cost: Optional[float] = None) -> dict:
+    """The final usage-only chunk sent with stream_options.include_usage (cost: Cortecs' usage.cost)."""
     usage: dict[str, Any] = {
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
@@ -69,6 +69,8 @@ def usage_chunk(prompt_tokens: int, completion_tokens: int, reasoning_tokens: Op
         usage["completion_tokens_details"] = {"reasoning_tokens": reasoning_tokens}
     if cached_tokens is not None:
         usage["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
+    if cost is not None:
+        usage["cost"] = cost
     return {"id": "chatcmpl-fake", "object": "chat.completion.chunk", "created": int(time.time()),
             "model": "fake-model", "choices": [], "usage": usage}
 

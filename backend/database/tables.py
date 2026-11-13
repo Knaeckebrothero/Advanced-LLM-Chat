@@ -198,6 +198,7 @@ llm_providers = Table(
     Column('api_key_env', Text),  # Name of the environment variable holding the key
     Column('privacy_tier', Text, nullable=False),  # 'local' | 'eu' | 'trusted' | 'untrusted'
     Column('currency', Text, nullable=False, server_default='USD'),  # Currency of the model prices
+    Column('reported_cost_unit', Numeric),  # One unit of a response's usage.cost in that currency; NULL = not used
     Column('default_headers', JSONB),
     Column('notes', Text),
     Column('enabled', Boolean, server_default='true'),

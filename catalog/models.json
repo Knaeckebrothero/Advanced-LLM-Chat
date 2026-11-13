@@ -8,7 +8,8 @@
       "api_key_env": "CORTECS_API_KEY",
       "privacy_tier": "eu",
       "currency": "EUR",
-      "notes": "EU router (Vienna). Account settings: Sovereign Cloud and zero data retention on, Nebius excluded. Prices from api.cortecs.ai/v1/models on 2026-11-13."
+      "reported_cost_unit": 0.000001,
+      "notes": "EU router (Vienna). Account settings: Sovereign Cloud and zero data retention on, Nebius excluded. Each request goes to one host of the model, at that host's price: the cost of an answer is what Cortecs reports (usage.cost, in millionths of a euro), the prices here are the cheapest host's (api.cortecs.ai/v1/models on 2026-11-13; per host: /v1/models/<id>?extended=true)."
     },
     {
       "name": "Homelab",
@@ -95,9 +96,12 @@
       "reasoning_passback": true,
       "reasoning_effort": "high",
       "context_window": 524288,
+      "extra_body": {"allowed_providers": ["arkane", "tensorix"], "provider_order": "custom"},
       "input_price_per_mtok": 2.693,
       "output_price_per_mtok": 13.464,
-      "sort_order": 40
+      "cached_input_price_per_mtok": 0.269,
+      "sort_order": 40,
+      "notes": "Pinned to the host Arkane (cache reads 0.269, 90% cache hits, the fastest), Tensorix (0.673) if Arkane fails: each host has its own cache. Request settings need Allow overwrite in the Cortecs console."
     },
     {
       "provider": "Cortecs",

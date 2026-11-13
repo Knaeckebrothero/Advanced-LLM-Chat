@@ -69,11 +69,12 @@ PROVIDER_FIELDS = {
     "apiKeyEnv": "api_key_env",
     "privacyTier": "privacy_tier",
     "currency": "currency",
+    "reportedCostUnit": "reported_cost_unit",
     "defaultHeaders": "default_headers",
     "notes": "notes",
     "enabled": "enabled",
 }
-PROVIDER_NULLABLE = {"base_url", "api_key_env", "default_headers", "notes"}
+PROVIDER_NULLABLE = {"base_url", "api_key_env", "reported_cost_unit", "default_headers", "notes"}
 
 MODEL_FIELDS = {
     "providerId": "provider_id",
@@ -269,6 +270,7 @@ def provider_out(row: dict) -> ProviderOut:
         apiKeySet=api_key_set(row),
         privacyTier=row["privacy_tier"],
         currency=row.get("currency") or "USD",
+        reportedCostUnit=_float(row.get("reported_cost_unit")),
         defaultHeaders=row.get("default_headers"),
         notes=row.get("notes"),
         enabled=row.get("enabled") is not False,

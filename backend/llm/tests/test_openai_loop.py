@@ -409,6 +409,48 @@ async def test_record_holds_complete_rounds_only(server):
 
 
 
+async def test_cost_reported_by_the_provider(server):
+    """A provider that reports what each call cost it (Cortecs: usage.cost, in millionths of a euro)."""
+    def calls_a_tool(cost):
+        def turn(body):
+            return [chunk(tool_calls=[tool_call_delta(0, id="call_r", name="lookup", arguments='{"key": "alpha"}')]),
+                    chunk(finish_reason="tool_calls"), usage_chunk(1000, 20, cost=cost)]
+        return turn
+
+    def answers(cost):
+        def turn(body):
+            return [chunk(content="Done."), chunk(finish_reason="stop"), usage_chunk(1200, 10, cost=cost)]
+        return turn
+
+    config = make_config(server.base_url, input_price_per_mtok=2.0, output_price_per_mtok=10.0)
+    reporting = replace(config, reported_cost_unit=0.000001)
+    computed = (2200 * 2.0 + 30 * 10.0) / 1e6
+    question = [{"role": "user", "content": "Look up alpha"}]
+
+    # Every call reported its cost: the answer costs what the provider billed, whatever the prices say
+    server.script(calls_a_tool(2700), answers(3250))
+    usage = (await collect(config, question, server, tools=TOOLS))[-1][1]
+    assert (usage.calls, usage.reported_calls, usage.reported_cost) == (2, 2, 5950.0), usage
+    assert abs(reporting.cost(usage) - 0.00595) < 1e-12, reporting.cost(usage)
+    assert usage.to_api(reporting)["cost"] == 0.00595 and usage.to_api(reporting)["currency"] == "EUR"
+    assert abs(config.cost(usage) - computed) < 1e-12, "a provider without a unit: computed from the prices"
+    assert abs(replace(reporting, input_price_per_mtok=None).cost(usage) - 0.00595) < 1e-12, "no prices needed"
+    # Adding an empty record (no calls) changes nothing
+    total = Usage()
+    total.add(Usage())
+    total.add(usage)
+    assert abs(reporting.cost(total) - 0.00595) < 1e-12
+
+    # One call without a cost: the whole answer is computed from the prices
+    server.script(calls_a_tool(2700), answers(None))
+    usage = (await collect(config, question, server, tools=TOOLS))[-1][1]
+    assert (usage.calls, usage.reported_calls) == (2, 1), usage
+    assert abs(reporting.cost(usage) - computed) < 1e-12, reporting.cost(usage)
+    # Nothing to go on: no cost
+    assert replace(reporting, input_price_per_mtok=None).cost(usage) is None
+    assert not server.errors, server.errors
+
+
 async def test_cost_counts_cache_reads():
     config = make_config("http://unused", input_price_per_mtok=0.182, output_price_per_mtok=0.547)
     usage = Usage(input_tokens=140_000, output_tokens=2_000, cached_input_tokens=135_000)
@@ -442,6 +484,7 @@ TESTS = [
     test_api_error_yields_usage_then_raises,
     test_record_holds_complete_rounds_only,
     test_cost_counts_cache_reads,
+    test_cost_reported_by_the_provider,
 ]
 
 
