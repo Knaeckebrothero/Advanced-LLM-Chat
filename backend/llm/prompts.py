@@ -9,6 +9,7 @@ knowledge base, the agent's memory follows (with_memory()). A conversation's sys
 messages come last (with_instructions()).
 """
 import logging
+import re
 from datetime import date, datetime, timezone, tzinfo
 from typing import Iterable, Optional, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -117,6 +118,21 @@ def hide_prompt(definition: str, with_knowledge_base: bool) -> str:
     """The section on hidden content: what to hide (the user's text) and, with the knowledge base, how to save it."""
     prompt = HIDE_PROMPT.format(definition=definition.strip())
     return prompt + "\n" + HIDE_KB_PROMPT if with_knowledge_base else prompt
+
+
+# The section in a system prompt: from its heading to the next section, or to the end
+_HIDE_SECTION = re.compile(r"(?:\A|\n\n)(" + re.escape(HIDE_PROMPT.split("\n", 1)[0]) + r"\n.*?)(?=\n\n## |\Z)", re.S)
+
+
+def hide_section(system_prompt: str) -> str:
+    """The section on hidden content in a system prompt, '' if it has none."""
+    found = _HIDE_SECTION.search(system_prompt or "")
+    return found.group(1) if found else ""
+
+
+def without_hide_section(system_prompt: str) -> str:
+    """A system prompt without its section on hidden content: what a device in family mode is shown of it."""
+    return _HIDE_SECTION.sub("", system_prompt or "").lstrip("\n")
 
 # The section of the agent's skills (docs/skills.md), with the tool use_skill
 SKILLS_HEADING = "## Skills:"
@@ -237,7 +253,9 @@ def with_instructions(system_prompt: str, instructions: Iterable[str]) -> str:
     texts = [text.strip() for text in instructions if text and text.strip()]
     if not texts:
         return system_prompt
-    return f"{system_prompt}\n\n{INSTRUCTIONS_HEADING}\n" + "\n\n".join(texts)
+    section = f"{INSTRUCTIONS_HEADING}\n" + "\n\n".join(texts)
+    # A conversation can have no system prompt of its own (manual editing): then they are all of it
+    return f"{system_prompt}\n\n{section}" if system_prompt else section
 
 
 def with_mcp_servers(system_prompt: str, servers: Iterable[dict], unavailable: Iterable[dict] = ()) -> str:

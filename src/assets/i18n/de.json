@@ -31,6 +31,7 @@
     "sendsAfterUpload": "Wird gesendet, sobald die Dateien hochgeladen sind",
     "stop": "Antwort abbrechen",
     "generate": "Antwort generieren",
+    "generateMore": "Weitere Antwort generieren (der Agent schreibt weiter)",
     "context": {
       "total": "Etwa {{count}} von {{window}} Eingabe-Tokens ({{percent}} %)",
       "parts": "Systemprompt {{system}} · Tools {{tools}} · Verlauf {{history}} ({{messages}} Nachrichten)",
@@ -539,7 +540,7 @@
     "guided": "Geführt",
     "manual": "Manuell",
     "guidedHint": "Du bearbeitest deine eigenen Nachrichten, und eine bearbeitete Nachricht wird neu beantwortet.",
-    "manualHint": "Du bearbeitest jede Nachricht, auch die Antworten, und fügst überall Nachrichten ein. Nichts wird von selbst beantwortet: „Antwort generieren“ im Eingabefeld beantwortet deine neueste Nachricht."
+    "manualHint": "Du bearbeitest jede Nachricht, auch die Antworten, und fügst überall Nachrichten ein, und nichts davon wird von selbst beantwortet. „Antwort generieren“ im leeren Eingabefeld beantwortet den Chat, wie er dasteht, auch nach einer Antwort."
   },
   "hide": {
     "familyMode": "Familienmodus",
@@ -593,6 +594,29 @@
     "options": "Weitere Optionen",
     "deleteConfirm": "Diese Unterhaltung löschen?",
     "exportFailed": "Die Unterhaltung konnte nicht exportiert werden: {{error}}"
+  },
+  "systemPrompt": {
+    "title": "Systemprompt",
+    "state": {
+      "built": "Aus dem Agenten erstellt",
+      "custom": "Für diesen Chat bearbeitet",
+      "none": "Keiner"
+    },
+    "hint": {
+      "built": "Was die nächste Antwort als Systemnachricht bekommt. Systemnachrichten in diesem Chat werden danach angefügt.",
+      "custom": "Wird genau so gesendet: Gedächtnis, Hinweise zu Werkzeugen und Datum darin ändern sich nicht mehr.",
+      "none": "Dieser Chat sendet keinen Systemprompt. Systemnachrichten darin werden weiterhin gesendet."
+    },
+    "tokens": "etwa {{count}} Tokens",
+    "showAll": "Alles zeigen",
+    "showLess": "Weniger zeigen",
+    "edit": "Systemprompt bearbeiten",
+    "remove": "Keinen Systemprompt senden",
+    "reset": "Zurück zum Prompt des Agenten",
+    "editHint": "Mit dem Speichern wird dies der eigene Systemprompt des Chats: Er wird genau so gesendet, bis du zum Prompt des Agenten zurückgehst.",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "saveFailed": "Der Systemprompt konnte nicht gespeichert werden."
   },
   "summary": {
     "title": "{{count}} frühere Nachrichten zusammengefasst",

@@ -130,6 +130,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Manual editing: the newest message is the user's and has no answer, so an empty field offers Generate
   @Input() canGenerate: boolean = false;
+  /** Generate would follow an answer: the model goes on from it (another label, the same button). */
+  @Input() generateContinues = false;
 
   // Manual editing: about how many input tokens the next answer sends (null hides the indicator)
   @Input() contextSize: IContextSize | null = null;

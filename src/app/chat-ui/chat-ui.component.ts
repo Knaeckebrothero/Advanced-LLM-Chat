@@ -1,7 +1,7 @@
 import { Component, ViewChild, ViewChildren, ElementRef, QueryList, AfterViewChecked, AfterViewInit, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Message, AgentContent } from '../data/objects/message';
 import { AuthService } from '../auth/auth.service';
-import { Subscription, Observable, combineLatest, from, of } from 'rxjs';
+import { BehaviorSubject, Subject, Subscription, Observable, combineLatest, firstValueFrom, from, merge, of } from 'rxjs';
 import { map, filter, distinctUntilChanged, debounceTime, switchMap, catchError, shareReplay } from 'rxjs/operators';
 import { FilePreview, FilePreviewUtil } from '../data/objects/file-preview';
 import { RecordingResult } from '../data/objects/recording';
@@ -12,7 +12,7 @@ import { SettingsStateService } from '../services/settings-state.service';
 import { ChatUiInputfieldComponent } from './chat-ui-inputfield/chat-ui-inputfield.component';
 import { ChatUiMessageComponent } from './chat-ui-message/chat-ui-message.component';
 import { IPublicModel } from '../data/models/catalog.model';
-import { IContextSize, IConversationSummary } from '../data/models/conversation.model';
+import { IContextSize, IConversationSummary, ISystemPrompt } from '../data/models/conversation.model';
 import { ApiService } from '../services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslateService } from '@ngx-translate/core';
@@ -104,21 +104,29 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     distinctUntilChanged()
   );
 
-  // Manual editing: the composer offers Generate while the newest message (system messages aside,
-  // they belong to the system prompt) is a stored message of the user that has no answer yet.
-  // After an answer it is not offered: a history that ends with the model's message would be
-  // continued (Anthropic prefill) or refused, not answered.
-  canGenerate$: Observable<boolean> = combineLatest([
+  // Manual editing: the composer offers Generate whenever the conversation has a stored message
+  // (system messages aside, they belong to the system prompt): the model answers the conversation
+  // as it stands. 'answer': the newest message is the user's and has no answer yet. 'continue':
+  // it is an answer, and the server asks the model to go on from it (CONTINUE_NOTE in
+  // backend/services/conversation_history.py), since no provider answers a history that ends
+  // with the model's own message.
+  generateKind$: Observable<'answer' | 'continue' | null> = combineLatest([
     this.settingsState.settings$,
     this.messages$
   ]).pipe(
     map(([settings, messages]) => {
-      if (settings.editingMode !== 'manual') return false;
+      if (settings.editingMode !== 'manual') return null;
       const newest = [...messages].reverse().find(m => m.roleName !== 'system');
-      return !!newest && newest.id > 0 && newest.roleName === 'user';
+      if (!newest || newest.id <= 0) return null;
+      return newest.roleName === 'user' ? 'answer' as const : 'continue' as const;
     }),
     distinctUntilChanged()
   );
+  canGenerate$: Observable<boolean> = this.generateKind$.pipe(map(kind => kind !== null));
+
+  // A saved change of the system prompt: shown at once, and the input tokens are counted again
+  private systemPromptEdited$ = new Subject<ISystemPrompt>();
+  private systemPromptSaved$ = new BehaviorSubject<number>(0);
 
   // Manual editing: about how many input tokens the next answer sends. The backend counts again
   // whenever the messages, the summary, the model or the agent change (the effective model follows
@@ -129,7 +137,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.chatState.activeConversation$,
     this.chatState.messages$,
     this.chatState.conversationSummary$,
-    this.chatState.effectiveModel$
+    this.chatState.effectiveModel$,
+    this.systemPromptSaved$
   ]).pipe(
     debounceTime(300),
     switchMap(([manual, signedIn, conversation, , , model]) => {
@@ -138,6 +147,50 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     }),
     shareReplay({ bufferSize: 1, refCount: true })
   );
+
+  // Manual editing: the system prompt the next answer gets, shown as the conversation's first
+  // message. The backend builds it again whenever the conversation, its agent or the model
+  // change, when an answer is done (it may have changed the agent's memory) and when family mode
+  // is switched; a saved change shows at once. Null hides it.
+  systemPrompt$: Observable<ISystemPrompt | null> = merge(
+    combineLatest([
+      this.settingsState.settings$.pipe(map(settings => settings.editingMode === 'manual'), distinctUntilChanged()),
+      this.authService.currentUser$.pipe(map(user => user !== null), distinctUntilChanged()),
+      this.chatState.activeConversation$,
+      this.chatState.effectiveModel$,
+      this.chatState.state$.pipe(map(state => !!state.isStreaming), distinctUntilChanged()),
+      this.familyMode.active$
+    ]).pipe(
+      debounceTime(300),
+      switchMap(([manual, signedIn, conversation, model, streaming]) => {
+        if (!manual || !signedIn || !conversation || conversation.id === '0') return of(null);
+        if (streaming) return of(undefined);  // Keep what is shown while the answer is written
+        return from(this.apiService.getSystemPrompt(conversation.id, model?.id)).pipe(catchError(() => of(null)));
+      }),
+      filter((prompt): prompt is ISystemPrompt | null => prompt !== undefined)
+    ),
+    this.systemPromptEdited$
+  ).pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  systemPromptBusy = false;
+  systemPromptFailed = false;
+
+  /** Save the conversation's own system prompt ('' for none), or go back to the built one (null). */
+  async saveSystemPrompt(content: string | null): Promise<void> {
+    const [conversation, model] = await firstValueFrom(
+      combineLatest([this.chatState.activeConversation$, this.chatState.effectiveModel$]));
+    if (!conversation || conversation.id === '0' || this.systemPromptBusy) return;
+    this.systemPromptBusy = true;
+    this.systemPromptFailed = false;
+    try {
+      this.systemPromptEdited$.next(await this.apiService.setSystemPrompt(conversation.id, content, model?.id));
+      this.systemPromptSaved$.next(this.systemPromptSaved$.value + 1);
+    } catch (error) {
+      console.error('Error saving the system prompt:', error);
+      this.systemPromptFailed = true;
+    } finally {
+      this.systemPromptBusy = false;
+    }
+  }
 
   // Scrolled up far enough: a button jumps back to the newest message
   showScrollToBottom = false;
@@ -653,7 +706,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.chatState.cancelStreaming();
   }
 
-  // Generate in the composer (manual editing): answer the newest message, which is the user's
+  // Generate in the composer (manual editing): answer the conversation as it stands
   async generateAnswer(): Promise<void> {
     // Like a regeneration: follow the bottom instead of anchoring the user message at the top
     this.useAnchorMode = false;

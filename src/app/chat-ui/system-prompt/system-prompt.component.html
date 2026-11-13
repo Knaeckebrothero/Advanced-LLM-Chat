@@ -1,0 +1,47 @@
+<section class="system-prompt" [class.is-custom]="prompt.custom" [attr.aria-label]="'systemPrompt.title' | translate">
+  <header class="system-prompt-header">
+    <mat-icon class="system-prompt-icon" aria-hidden="true">tune</mat-icon>
+    <span class="system-prompt-title">{{ 'systemPrompt.title' | translate }}</span>
+    <span class="system-prompt-state">{{ 'systemPrompt.state.' + state | translate }}</span>
+    <span class="system-prompt-tokens" *ngIf="prompt.tokens">{{ 'systemPrompt.tokens' | translate: { count: tokens } }}</span>
+    <span class="system-prompt-actions" *ngIf="!editing">
+      <button type="button" mat-icon-button (click)="startEditing()" [disabled]="busy"
+              [matTooltip]="'systemPrompt.edit' | translate" [attr.aria-label]="'systemPrompt.edit' | translate">
+        <mat-icon>edit</mat-icon>
+      </button>
+      <button type="button" mat-icon-button *ngIf="prompt.content" (click)="remove()" [disabled]="busy"
+              [matTooltip]="'systemPrompt.remove' | translate" [attr.aria-label]="'systemPrompt.remove' | translate">
+        <mat-icon>delete_outline</mat-icon>
+      </button>
+      <button type="button" mat-icon-button *ngIf="prompt.custom" (click)="reset()" [disabled]="busy"
+              [matTooltip]="'systemPrompt.reset' | translate" [attr.aria-label]="'systemPrompt.reset' | translate">
+        <mat-icon>restart_alt</mat-icon>
+      </button>
+    </span>
+  </header>
+  <p class="system-prompt-hint">{{ 'systemPrompt.hint.' + state | translate }}</p>
+
+  <ng-container *ngIf="!editing">
+    <!-- As plain text: the model gets it as it is, with its marks and tags -->
+    <pre *ngIf="prompt.content" class="system-prompt-text" [class.is-cut]="long && !expanded" [id]="textId">{{ prompt.content }}</pre>
+    <button *ngIf="prompt.content && long" type="button" class="system-prompt-toggle" (click)="expanded = !expanded"
+            [attr.aria-expanded]="expanded" [attr.aria-controls]="textId">
+      <span>{{ (expanded ? 'systemPrompt.showLess' : 'systemPrompt.showAll') | translate }}</span>
+      <mat-icon aria-hidden="true">{{ expanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+    </button>
+    <p class="system-prompt-error" *ngIf="failed" role="alert">{{ 'systemPrompt.saveFailed' | translate }}</p>
+  </ng-container>
+
+  <form *ngIf="editing" class="system-prompt-editor" (ngSubmit)="submit()">
+    <textarea name="systemPrompt" [(ngModel)]="draft" rows="14" spellcheck="false"
+              [attr.aria-label]="'systemPrompt.title' | translate" (keydown.escape)="cancel()"></textarea>
+    <p class="system-prompt-hint">{{ 'systemPrompt.editHint' | translate }}</p>
+    <p class="system-prompt-error" *ngIf="failed" role="alert">{{ 'systemPrompt.saveFailed' | translate }}</p>
+    <div class="system-prompt-buttons">
+      <button type="button" class="system-prompt-button" (click)="cancel()">{{ 'systemPrompt.cancel' | translate }}</button>
+      <button type="submit" class="system-prompt-button system-prompt-button--primary" [disabled]="busy">
+        {{ 'systemPrompt.save' | translate }}
+      </button>
+    </div>
+  </form>
+</section>

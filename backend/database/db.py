@@ -965,7 +965,8 @@ class Database:
         persona_id=UNSET,
         persona_values=UNSET,
         hidden=UNSET,
-        hidden_by=UNSET
+        hidden_by=UNSET,
+        system_prompt=UNSET
     ) -> Optional[dict]:
         """
         Update a conversation.
@@ -981,6 +982,8 @@ class Database:
             persona_values: New persona variable values; None clears them, UNSET keeps them.
             hidden: Hidden or not; UNSET keeps it.
             hidden_by: Who set it ('user' or 'agent'); UNSET keeps it.
+            system_prompt: The conversation's own system prompt; None goes back to the one built
+                from its agent, '' sends none, UNSET keeps it.
 
         Returns:
             Updated conversation dictionary or None if not found.
@@ -1004,6 +1007,8 @@ class Database:
             values['hidden'] = bool(hidden)
         if hidden_by is not UNSET:
             values['hidden_by'] = hidden_by
+        if system_prompt is not UNSET:
+            values['system_prompt'] = system_prompt
 
         if not values:
             log.debug("No values to update")

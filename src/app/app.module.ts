@@ -14,6 +14,7 @@ import { ElicitationCardComponent } from './chat-ui/chat-ui-message/agent-steps/
 import { AnswerFilesComponent } from './chat-ui/chat-ui-message/answer-files/answer-files.component';
 import { FileTileComponent } from './components/file-tile/file-tile.component';
 import { ChatUiSummaryComponent } from './chat-ui/chat-ui-summary/chat-ui-summary.component';
+import { SystemPromptComponent } from './chat-ui/system-prompt/system-prompt.component';
 import { ModelPickerComponent } from './chat-ui/model-picker/model-picker.component';
 import { ModelSelectComponent } from './components/catalog/model-select.component';
 import { adminGuard } from './auth/admin.guard';
@@ -122,6 +123,7 @@ export function HttpLoaderFactory(http: HttpClient) {
     ElicitationCardComponent,
     AnswerFilesComponent,
     FileTileComponent,
+    SystemPromptComponent,
     RouterModule.forRoot(routes),
     ServiceWorkerModule.register(
       'ngsw-worker.js', {
