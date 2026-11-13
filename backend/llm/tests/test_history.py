@@ -268,6 +268,22 @@ async def test_long_tool_results_are_cut_in_later_turns():
     assert messages[2]["content"] == "r" * 50_000
 
 
+async def test_loaded_skills_are_never_cut():
+    # A skill the agent loaded (docs/skills.md) goes back whole; another result of the same answer is cut
+    limit = settings.HISTORY_TOOL_RESULT_CHARS
+    record = [
+        {"role": "assistant", "content": "", "tool_calls": [
+            tool_call("use_skill:0", "use_skill", '{"name": "image-generation"}'),
+            tool_call("read_file:1", "read_file", '{"file": "fox.png"}')]},
+        {"role": "tool", "tool_call_id": "use_skill:0", "content": "s" * (limit + 5000)},
+        {"role": "tool", "tool_call_id": "read_file:1", "content": "r" * (limit + 5000)},
+        {"role": "assistant", "content": "A fox in the snow."},
+    ]
+    messages, _ = await ConversationHistoryBuilder(FakeDB(TOOL_ROWS, {3000_500: record})).build_history("c")
+    assert messages[2]["content"] == "s" * (limit + 5000)
+    assert messages[3]["content"] == "r" * limit + RESULT_CUT_NOTE.format(count=5000)
+
+
 async def test_failed_answer_keeps_its_tool_calls():
     # The answer failed after its tool ran: no text, but the model should know the tool ran
     rows = [TOOL_ROWS[0], assistant(3000_500, 3000, ""), TOOL_ROWS[2]]
@@ -279,7 +295,8 @@ TESTS = [test_vision_model_gets_image, test_text_model_gets_placeholder, test_re
          test_other_users_files_are_left_out, test_system_messages_become_instructions, test_history_fits_token_budget,
          test_latest_question_survives_tiny_budget, test_budget_from_context_window,
          test_answer_goes_back_with_its_tool_calls, test_answer_with_tool_calls_fits_whole_or_not,
-         test_long_tool_results_are_cut_in_later_turns, test_failed_answer_keeps_its_tool_calls]
+         test_long_tool_results_are_cut_in_later_turns, test_loaded_skills_are_never_cut,
+         test_failed_answer_keeps_its_tool_calls]
 
 
 async def main() -> int:

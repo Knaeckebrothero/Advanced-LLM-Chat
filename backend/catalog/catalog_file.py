@@ -7,16 +7,17 @@ Format (snake_case keys matching the database columns, see docs/model_catalog_ap
       "version": 1,
       "providers": [{"name", "kind", "base_url", "api_key_env", "privacy_tier", "currency", ...}],
       "models":    [{"provider": "<provider name>", "display_name", "model_id", ...}],
-      "personas":  [{"name", "system_prompt", "variables", "tools", ...}]
+      "skills":    [{"name", "description", "content", "enabled"}],
+      "personas":  [{"name", "system_prompt", "variables", "tools", "skills", ...}]
     }
 
 Seeding (seed_from_file(), run by app_init on every start) treats the file as
 the source of the providers: they are created or replaced by name. Models (by
-provider and display_name) and personas (by name) are only created when
-missing; existing ones are left untouched, so edits made in the app survive
-every deploy.
+provider and display_name), MCP servers (by slug), skills and personas (by
+name) are only created when missing; existing ones are left untouched, so
+edits made in the app survive every deploy (and a deleted one comes back).
 
-The import in the app (import_catalog()) upserts models and personas: a new
+The import in the app (import_catalog()) upserts the other sections: a new
 entry gets defaults for the keys it leaves out, an existing entry only changes
 the keys that are present, and null clears optional columns. Provider entries
 are ignored, since providers come from the server's catalog file.
@@ -42,6 +43,7 @@ from backend.database import db
 from backend.models.mcp import McpServerCreate, McpServerUpdate
 from backend.services.mcp import servers as mcp_servers
 from backend.services.mcp import store as mcp_store
+from backend.services import skills as skill_store
 from backend.models.catalog import (
     ImportCounts,
     ImportResult,
@@ -50,6 +52,8 @@ from backend.models.catalog import (
     PersonaCreate,
     PersonaUpdate,
     ProviderBase,
+    SkillCreate,
+    SkillUpdate,
 )
 
 log = logging.getLogger(__name__)
@@ -87,9 +91,12 @@ MODEL_EXPORT_COLUMNS = [
 ]
 PERSONA_EXPORT_COLUMNS = [
     "name", "description", "system_prompt", "variables", "tools", "available_to_guests",
-    "enabled", "sort_order", "own_memory", "mcp_servers", "hidden",
+    "enabled", "sort_order", "own_memory", "mcp_servers", "skills", "hidden",
 ]
 MCP_SERVER_EXPORT_COLUMNS = list(MCP_SERVER_KEYS)
+# Skills (docs/skills.md); natural key name
+SKILL_KEYS = {"name": "name", "description": "description", "content": "content", "enabled": "enabled"}
+SKILL_EXPORT_COLUMNS = list(SKILL_KEYS)
 NUMERIC_COLUMNS = {"temperature", "top_p", "input_price_per_mtok", "output_price_per_mtok"}
 
 # Reported once by an import whose file has provider entries
@@ -111,6 +118,7 @@ class SeedResult:
     models: SeedCounts = field(default_factory=SeedCounts)
     personas: SeedCounts = field(default_factory=SeedCounts)
     mcp_servers: SeedCounts = field(default_factory=SeedCounts)
+    skills: SeedCounts = field(default_factory=SeedCounts)
     errors: list[str] = field(default_factory=list)
 
 
@@ -154,13 +162,16 @@ def export_catalog() -> dict:
         entry = {column: row.get(column) for column in MCP_SERVER_EXPORT_COLUMNS}
         mcp_entries.append({key: value for key, value in entry.items() if value is not None})
 
+    skill_entries = [{column: row[column] for column in SKILL_EXPORT_COLUMNS} for row in skill_store.list_skills()]
+
     log.info(f"Exported catalog: {len(provider_entries)} providers, {len(model_entries)} models, "
-             f"{len(persona_entries)} personas, {len(mcp_entries)} MCP servers")
+             f"{len(persona_entries)} personas, {len(mcp_entries)} MCP servers, {len(skill_entries)} skills")
     return {
         "version": CATALOG_FILE_VERSION,
         "providers": provider_entries,
         "models": model_entries,
         "mcp_servers": mcp_entries,
+        "skills": skill_entries,
         "personas": persona_entries,
     }
 
@@ -292,6 +303,31 @@ def _import_mcp_server(entry: dict, label: str, errors: list, *, create_only: bo
         raise CatalogError(str(e)) from e
 
 
+def _import_skill(entry: dict, label: str, errors: list, *, create_only: bool) -> str:
+    """Create or update (unless create_only) a skill, found by its name."""
+    fields = _fields(entry, SKILL_KEYS, label, errors)
+    name = str(entry.get("name") or "").strip()
+    if not name:
+        raise CatalogError("name is required")
+    fields["name"] = name
+    existing = skill_store.get_skill_by_name(name)
+    if existing and create_only:
+        return "kept"
+    try:
+        if existing:
+            skill_store.update_skill(existing["id"], SkillUpdate(**fields))
+            return "updated"
+        skill_store.create_skill(SkillCreate(**fields))
+        return "created"
+    except ValidationError as e:
+        raise CatalogError(skill_store.validation_message(e)) from e
+    except skill_store.SkillError as e:
+        raise CatalogError(str(e)) from e
+
+
+SECTIONS = ("providers", "models", "mcp_servers", "skills", "personas")
+
+
 def _check_file(data) -> list[str]:
     """
     Check the structure of a catalog file.
@@ -308,11 +344,10 @@ def _check_file(data) -> list[str]:
     version = data.get("version", CATALOG_FILE_VERSION)
     if version != CATALOG_FILE_VERSION:
         raise CatalogError(f"Unsupported catalog file version {version!r} (expected {CATALOG_FILE_VERSION})")
-    for section in ("providers", "models", "mcp_servers", "personas"):
+    for section in SECTIONS:
         if data.get(section) is not None and not isinstance(data[section], list):
             raise CatalogError(f"'{section}' must be a list")
-    return [f"unknown top-level key '{key}' ignored" for key in data
-            if key not in ("version", "providers", "models", "mcp_servers", "personas")]
+    return [f"unknown top-level key '{key}' ignored" for key in data if key != "version" and key not in SECTIONS]
 
 
 def _run_section(data: dict, section: str, importer, counts, errors: list, **options) -> None:
@@ -337,7 +372,7 @@ def _run_section(data: dict, section: str, importer, counts, errors: list, **opt
 
 def import_catalog(data: dict) -> ImportResult:
     """
-    Import a catalog file uploaded in the app: upsert models, then personas.
+    Import a catalog file uploaded in the app: upsert models, MCP servers, skills, then personas.
 
     Provider entries are ignored (one message in errors); a model whose
     provider is not in the catalog is reported in errors.
@@ -353,12 +388,13 @@ def import_catalog(data: dict) -> ImportResult:
             version, sections that are not lists).
     """
     result = ImportResult(models=ImportCounts(), personas=ImportCounts(), mcpServers=ImportCounts(),
-                          errors=_check_file(data))
+                          skills=ImportCounts(), errors=_check_file(data))
     if data.get("providers"):
         result.errors.append(PROVIDERS_IGNORED)
     _run_section(data, "models", _import_model, result.models, result.errors, create_only=False)
     # Before the personas, which name them
     _run_section(data, "mcp_servers", _import_mcp_server, result.mcpServers, result.errors, create_only=False)
+    _run_section(data, "skills", _import_skill, result.skills, result.errors, create_only=False)
     _run_section(data, "personas", _import_persona, result.personas, result.errors, create_only=False)
 
     log.info(
@@ -434,6 +470,44 @@ def _apply_environment(data: dict) -> list[str]:
     return messages
 
 
+def _read_skill_files(data: dict, base: Path) -> list[str]:
+    """
+    Fill in the skills of a seed file that name a SKILL.md file ({"file": "skills/x/SKILL.md"},
+    relative to the catalog file and inside its folder) with the file's name, description and
+    text, so the skills that ship with the app are kept as Markdown, not as JSON strings.
+
+    Like _apply_environment(), this only runs when seeding from MODEL_CATALOG_FILE, never for
+    files uploaded in the UI, so an upload can't read files of the server.
+
+    Args:
+        data: The parsed catalog file; changed in place.
+        base: The folder of the catalog file.
+
+    Returns:
+        Messages about files that couldn't be read (their entries are left out).
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("skills"), list):
+        return []
+    messages = []
+    entries = []
+    folder = base.resolve()
+    for entry in data["skills"]:
+        if not (isinstance(entry, dict) and "file" in entry):
+            entries.append(entry)
+            continue
+        path = (folder / str(entry["file"])).resolve()
+        try:
+            if not path.is_relative_to(folder):
+                raise CatalogError("must be inside the catalog file's folder")
+            fields, _ = skill_store.parse_skill_md(path.read_text(encoding="utf-8"))
+        except (OSError, CatalogError, skill_store.SkillError) as e:
+            messages.append(f"skill file '{entry['file']}' skipped: {e}")
+            continue
+        entries.append({**fields, **{key: value for key, value in entry.items() if key != "file"}})
+    data["skills"] = entries
+    return messages
+
+
 def seed_catalog(data: dict) -> SeedResult:
     """
     Seed the catalog from a parsed catalog file: create or replace the
@@ -456,12 +530,14 @@ def seed_catalog(data: dict) -> SeedResult:
     _run_section(data, "providers", _seed_provider, result.providers, result.errors)
     _run_section(data, "models", _import_model, result.models, result.errors, create_only=True)
     _run_section(data, "mcp_servers", _import_mcp_server, result.mcp_servers, result.errors, create_only=True)
+    _run_section(data, "skills", _import_skill, result.skills, result.errors, create_only=True)
     _run_section(data, "personas", _import_persona, result.personas, result.errors, create_only=True)
 
     log.info(
         f"Seeded catalog: providers {result.providers.created} created / {result.providers.updated} updated, "
         f"models {result.models.created} created / {result.models.kept} kept, "
         f"MCP servers {result.mcp_servers.created} / {result.mcp_servers.kept}, "
+        f"skills {result.skills.created} / {result.skills.kept}, "
         f"personas {result.personas.created} / {result.personas.kept}, {len(result.errors)} error(s)"
     )
     return result
@@ -494,7 +570,7 @@ def seed_from_file(path: str | Path) -> SeedResult:
         for entry in (data.get("providers") or [] if isinstance(data, dict) else [])
         if isinstance(entry, dict)
     }
-    for message in _apply_environment(data):
+    for message in _apply_environment(data) + _read_skill_files(data, resolved.parent):
         log.warning(f"Catalog file {resolved.name}: {message}")
     result = seed_catalog(data)
     for error in result.errors:

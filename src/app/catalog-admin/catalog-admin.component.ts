@@ -12,11 +12,12 @@ import { ModelsTabComponent } from './models-tab.component';
 import { PersonasTabComponent } from './personas-tab.component';
 import { ImportExportTabComponent } from './import-export-tab.component';
 import { McpServersTabComponent } from './mcp-servers-tab.component';
+import { SkillsTabComponent } from './skills-tab.component';
 
 /**
  * The Agents page for admins (route /agents, loaded on demand): agents (personas in the API),
- * the models with a read-only view of their providers, the MCP servers the agents use, and the
- * JSON import and export.
+ * the models with a read-only view of their providers, the skills and MCP servers the agents use,
+ * and the JSON import and export.
  */
 @Component({
   selector: 'app-catalog-admin',
@@ -30,6 +31,7 @@ import { McpServersTabComponent } from './mcp-servers-tab.component';
     TranslateModule,
     ModelsTabComponent,
     PersonasTabComponent,
+    SkillsTabComponent,
     McpServersTabComponent,
     ImportExportTabComponent
   ],

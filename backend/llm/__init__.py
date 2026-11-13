@@ -4,8 +4,8 @@ LLM runtime: clients, agent loop and tools on the official openai and anthropic 
 from .types import ModelConfig, Usage, model_from_env
 from .agent_loop import complete, run_agent
 from .client import ModelConfigError, create_client, get_client
-from .prompts import build_system_prompt, with_instructions, with_mcp_servers, with_memory
-from .tools import TOOL_GROUPS, Tool, ToolRegistry, default_tools, tool_group_status, tools_for_groups
+from .prompts import build_system_prompt, with_instructions, with_mcp_servers, with_memory, with_skills
+from .tools import TOOL_GROUPS, Tool, ToolRegistry, default_tools, skill_tools, tool_group_status, tools_for_groups
 
 __all__ = [
     "ModelConfig",
@@ -20,10 +20,12 @@ __all__ = [
     "with_instructions",
     "with_memory",
     "with_mcp_servers",
+    "with_skills",
     "Tool",
     "ToolRegistry",
     "default_tools",
     "tools_for_groups",
+    "skill_tools",
     "tool_group_status",
     "TOOL_GROUPS",
 ]

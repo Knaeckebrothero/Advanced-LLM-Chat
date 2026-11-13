@@ -90,6 +90,13 @@ import { CatalogAdminDialogs } from './catalog-admin-dialogs';
                 <td>{{ mcp.updated }}</td>
               </tr>
             }
+            @if (result.skills; as skills) {
+              <tr>
+                <th scope="row">{{ 'catalog.admin.skills.title' | translate }}</th>
+                <td>{{ skills.created }}</td>
+                <td>{{ skills.updated }}</td>
+              </tr>
+            }
           </tbody>
         </table>
         @if (result.errors.length > 0) {

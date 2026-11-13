@@ -4,7 +4,8 @@ End-to-end check of the model catalog: HTTP API, guest filtering, admin rule,
 read-only providers with keys from the environment, persona tools, seeding
 from a catalog file (in-process), import/export, conversations and settings,
 the tools stream-generate sends (against a fake model server), plus the
-resolver and persona rendering (in-process, against the same database).
+resolver and persona rendering (in-process, against the same database), and
+the agents' skills (docs/skills.md).
 
 It WIPES the catalog tables (providers, models, personas) of the target
 database, so it refuses to run unless the database name contains "test".
@@ -55,7 +56,7 @@ TOGGLE_KEY_ENV = "ZZ_CATALOG_TOGGLE_API_KEY"
 PROVIDER_OUT_FIELDS = {"id", "name", "kind", "baseUrl", "apiKeyEnv", "apiKeySet", "privacyTier", "currency",
                        "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
 PERSONA_OUT_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "availableToGuests",
-                      "enabled", "sortOrder", "ownMemory", "mcpServers", "hidden"}
+                      "enabled", "sortOrder", "ownMemory", "mcpServers", "skills", "hidden"}
 PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "hidden"}
 
 
@@ -125,9 +126,12 @@ def login(base_url, responses, email=None):
 
 
 def wipe_catalog():
-    """Delete every provider (cascades to models) and persona."""
+    """Delete every provider (cascades to models), persona and skill."""
+    from backend.services import skills
     for persona in db.get_personas():
         db.delete_persona(persona["id"])
+    for skill in skills.list_skills():
+        skills.delete_skill(skill["id"])
     for provider in db.get_llm_providers():
         db.delete_llm_provider(provider["id"])
 
@@ -602,7 +606,7 @@ def run_import_export(c, admin, main):
 
     r = admin.post("/api/admin/catalog/import", json=first)
     result = r.json()
-    c.check(r.status_code == 200 and set(result) == {"models", "personas", "mcpServers", "errors"}
+    c.check(r.status_code == 200 and set(result) == {"models", "personas", "mcpServers", "skills", "errors"}
             and result["errors"] == [catalog_file.PROVIDERS_IGNORED]
             and result["models"] == {"created": 0, "updated": len(first["models"])}
             and result["personas"] == {"created": 0, "updated": len(first["personas"])},
@@ -672,6 +676,61 @@ def run_import_export(c, admin, main):
             "unsupported file version -> 400")
     c.check(admin.post("/api/admin/catalog/import", json={"providers": {}}).status_code == 400,
             "sections must be lists -> 400")
+
+
+def run_skills(c, admin, user, personas):
+    c.section("Skills (docs/skills.md)")
+    c.check(user.get("/api/admin/skills").status_code == 403, "non-admin -> 403 on the skills")
+    body = {"name": f"{PREFIX}-drawing", "description": "Draws things. Use when asked for a drawing.",
+            "content": "# Drawing\n\nStart with shapes."}
+    r = admin.post("/api/admin/skills", json=body)
+    skill = r.json()
+    c.check(r.status_code == 201 and skill["enabled"] is True and skill["agents"] == []
+            and set(skill) == {"id", "name", "description", "content", "enabled", "agents", "createdAt", "updatedAt"},
+            "create a skill -> 201", str(skill))
+    c.check(admin.post("/api/admin/skills", json=body).status_code == 409, "same name -> 409")
+    c.check(admin.post("/api/admin/skills", json={**body, "name": "Not A Name"}).status_code == 422,
+            "a name that isn't lowercase with hyphens -> 422")
+    c.check(admin.post("/api/admin/skills", json={**body, "name": f"{PREFIX}-long", "content": "x" * 20001})
+            .status_code == 422, "text over 20,000 characters -> 422")
+
+    pirate = personas[0]
+    r = admin.put(f"/api/admin/personas/{pirate['id']}", json={"skills": [skill["name"]]})
+    c.check(r.status_code == 200 and r.json()["skills"] == [skill["name"]], "an agent gets the skill", r.text[:200])
+    r = admin.put(f"/api/admin/personas/{pirate['id']}", json={"skills": ["no-such-skill"]})
+    c.check(r.status_code == 400 and "Unknown skill" in r.text, "an unknown skill -> 400", r.text[:200])
+    listed = next(s for s in admin.get("/api/admin/skills").json() if s["id"] == skill["id"])
+    c.check(listed["agents"] == [{"id": pirate["id"], "name": pirate["name"]}], "the skill lists its agents",
+            str(listed["agents"]))
+
+    r = admin.put(f"/api/admin/skills/{skill['id']}", json={"name": f"{PREFIX}-sketching"})
+    agent = next(p for p in admin.get("/api/admin/personas").json() if p["id"] == pirate["id"])
+    c.check(r.status_code == 200 and agent["skills"] == [f"{PREFIX}-sketching"], "a rename follows in the agents",
+            str(agent["skills"]))
+
+    r = admin.get(f"/api/admin/skills/{skill['id']}/export")
+    c.check(r.status_code == 200 and r.headers["content-type"].startswith("text/markdown")
+            and f'filename="{PREFIX}-sketching.md"' in r.headers.get("content-disposition", "")
+            and r.text.startswith(f"---\nname: {PREFIX}-sketching\n"), "export -> SKILL.md download", r.text[:120])
+    exported = r.text
+    c.check(admin.post("/api/admin/skills/import", json={"text": exported}).status_code == 409,
+            "importing a taken name -> 409")
+    r = admin.post("/api/admin/skills/import",
+                   json={"text": exported.replace("Start with shapes.", "Start with lines.").replace(
+                       "---\n\n", "license: MIT\n---\n\n", 1), "replace": True})
+    result = r.json()
+    c.check(r.status_code == 200 and result["created"] is False and result["skill"]["id"] == skill["id"]
+            and result["skill"]["content"].endswith("Start with lines.") and result["ignored"] == ["license"],
+            "import with replace -> the skill's text replaced, unknown keys named", r.text[:200])
+    c.check(admin.post("/api/admin/skills/import", json={"text": "no frontmatter"}).status_code == 400,
+            "a file without frontmatter -> 400")
+    c.check(any(s["name"] == f"{PREFIX}-sketching" for s in admin.get("/api/admin/catalog/export").json()["skills"]),
+            "the catalog export has the skills")
+
+    c.check(admin.delete(f"/api/admin/skills/{skill['id']}").status_code == 204, "delete -> 204")
+    agent = next(p for p in admin.get("/api/admin/personas").json() if p["id"] == pirate["id"])
+    c.check(agent["skills"] is None, "a deleted skill is taken off its agents", str(agent["skills"]))
+    c.check(admin.delete(f"/api/admin/skills/{skill['id']}").status_code == 404, "delete again -> 404")
 
 
 def run_seeding(c, admin, main, models, personas):
@@ -939,6 +998,7 @@ def main():
     if not args.skip_network:
         run_fetch_models(c, admin, env)
     run_import_export(c, admin, main_provider)
+    run_skills(c, admin, user, personas)
     run_seeding(c, admin, main_provider, models, personas)
     run_resolver(c, models, personas, conversation, args.user_email)
     run_deletes(c, admin, main_provider, models, personas)

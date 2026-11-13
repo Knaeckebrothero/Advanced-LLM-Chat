@@ -16,6 +16,9 @@ Opt-in groups (the knowledge base, with the memory, the past chats and the users
 own MCP servers) are never part of "every enabled tool": an agent has to select
 them. The past chats also need the knowledge base (REQUIRED_GROUPS).
 
+An agent's skills (docs/skills.md) are not a group either: skill_tools() gives an
+agent with skills the tool use_skill, which loads one of them.
+
 Tools of MCP servers are not a static group: backend/services/mcp/tools.py
 connects to the servers of an answer and adds their tools to the registry
 (docs/mcp.md). The group user_mcp only marks that an agent wants the users'
@@ -55,6 +58,7 @@ TOOL_TITLES = {
     "chat_list": "Listing Past Chats",
     "chat_read": "Reading Past Chat",
     "hide_chat": "Hiding the Chat",
+    "use_skill": "Using Skill",
 }
 
 # Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
@@ -763,6 +767,42 @@ def hide_tools(conversation: Optional[dict]) -> list[Tool]:
             "required": [],
         },
         func=_in_thread(functools.partial(tools_module.hide_chat, conversation_id=conversation_id)),
+    )]
+
+
+def skill_tools(skills: list[dict]) -> list[Tool]:
+    """
+    use_skill for an agent's skills (docs/skills.md), bound to them: the agent can only load
+    a skill it has. None without skills.
+
+    Args:
+        skills: The agent's enabled skills ({"name", "description", "content"}), as
+            backend.catalog.resolver.persona_skills() gives them.
+    """
+    if not skills:
+        return []
+    from backend.services.tools.skill_tools import use_skill
+
+    by_name = {skill["name"]: skill for skill in skills}
+    return [Tool(
+        name="use_skill",
+        description=(
+            "Load one of your skills: instructions for a kind of work, listed in your system prompt under "
+            "\"Skills\". Call it before you start work that matches a skill's description, then follow the "
+            "instructions it returns. A skill you loaded earlier in this conversation is still there."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "enum": list(by_name),
+                    "description": "The skill's name, as listed",
+                },
+            },
+            "required": ["name"],
+        },
+        func=_in_thread(functools.partial(use_skill, skills=by_name)),
     )]
 
 

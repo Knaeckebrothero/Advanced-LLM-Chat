@@ -180,6 +180,10 @@
       "notes": "Without tools: Chat Completions rejects tools together with reasoning on this model, and it always reasons (tested 2026-10-30). Tools need the Responses API, which the runtime doesn't use yet. Above 272k input tokens OpenAI charges twice the input and 1.5 times the output price."
     }
   ],
+  "skills": [
+    {"file": "skills/image-generation/SKILL.md"},
+    {"file": "skills/character-writing/SKILL.md"}
+  ],
   "personas": [
     {
       "name": "Pirate",

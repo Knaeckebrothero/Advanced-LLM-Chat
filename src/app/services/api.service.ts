@@ -21,6 +21,10 @@ import {
   IProviderOut,
   IPublicModel,
   IPublicPersona,
+  ISkillCreate,
+  ISkillImportResult,
+  ISkillOut,
+  ISkillUpdate,
   IToolStatus,
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
@@ -770,6 +774,45 @@ export class ApiService {
   async deletePersona(id: number): Promise<void> {
     await lastValueFrom(
       this.http.delete(`${this.baseUrl}/api/admin/personas/${id}`, this.getHttpOptions())
+    );
+  }
+
+  // Skills of the agents (docs/skills.md)
+
+  async getAdminSkills(): Promise<ISkillOut[]> {
+    return await lastValueFrom(this.http.get<ISkillOut[]>(`${this.baseUrl}/api/admin/skills`, this.getHttpOptions()));
+  }
+
+  async createSkill(skill: ISkillCreate): Promise<ISkillOut> {
+    return await lastValueFrom(
+      this.http.post<ISkillOut>(`${this.baseUrl}/api/admin/skills`, skill, this.getHttpOptions())
+    );
+  }
+
+  /** A new name is also changed in the agents that have the skill. */
+  async updateSkill(id: number, update: ISkillUpdate): Promise<ISkillOut> {
+    return await lastValueFrom(
+      this.http.put<ISkillOut>(`${this.baseUrl}/api/admin/skills/${id}`, update, this.getHttpOptions())
+    );
+  }
+
+  /** Also takes the skill off the agents that have it. */
+  async deleteSkill(id: number): Promise<void> {
+    await lastValueFrom(this.http.delete(`${this.baseUrl}/api/admin/skills/${id}`, this.getHttpOptions()));
+  }
+
+  /** One SKILL.md file; an existing name is a 409 unless replace is set. */
+  async importSkill(text: string, replace: boolean): Promise<ISkillImportResult> {
+    return await lastValueFrom(
+      this.http.post<ISkillImportResult>(`${this.baseUrl}/api/admin/skills/import`, { text, replace },
+                                         this.getHttpOptions())
+    );
+  }
+
+  /** The skill as a SKILL.md file. */
+  async exportSkill(id: number): Promise<string> {
+    return await lastValueFrom(
+      this.http.get(`${this.baseUrl}/api/admin/skills/${id}/export`, { ...this.getHttpOptions(), responseType: 'text' })
     );
   }
 

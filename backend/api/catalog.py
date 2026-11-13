@@ -7,7 +7,8 @@ every user (guests only see what is available to guests). Everything under
 
 Providers are read-only here: they come from the server's catalog file
 (MODEL_CATALOG_FILE), and their API keys from environment variables, which no
-response contains. Models and personas (the "agents" of the UI) are edited here.
+response contains. Models, personas (the "agents" of the UI) and their skills
+(docs/skills.md) are edited here.
 
 The contract is in docs/model_catalog_api.md.
 """
@@ -17,7 +18,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from backend.catalog import catalog_file, service
 from backend.catalog.fetch import fetch_provider_models
@@ -37,8 +38,15 @@ from backend.models.catalog import (
     ProviderOut,
     PublicModel,
     PublicPersona,
+    SkillCreate,
+    SkillImport,
+    SkillImportResult,
+    SkillOut,
+    SkillUpdate,
     ToolGroupStatus,
 )
+from backend.services import skills
+from backend.services.skills import SkillError
 from backend.security.auth import get_current_user, require_admin
 from backend.security.logging import crud_logger
 
@@ -52,8 +60,8 @@ ADMIN_ERRORS = {
 }
 
 
-def _http_error(error: CatalogError) -> HTTPException:
-    """Turn a catalog error into an HTTP error with its status code."""
+def _http_error(error: CatalogError | SkillError) -> HTTPException:
+    """Turn a catalog or skill error into an HTTP error with its status code."""
     return HTTPException(status_code=error.status_code, detail=str(error))
 
 
@@ -377,6 +385,149 @@ async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_ad
 
 
 # =========================================================================
+# Admin: skills (docs/skills.md)
+# =========================================================================
+
+@router.get("/admin/skills",
+            response_model=List[SkillOut],
+            responses=ADMIN_ERRORS,
+            summary="List Skills",
+            operation_id="adminListSkills")
+async def admin_list_skills(admin: dict = Depends(require_admin)):
+    """
+    Lists every skill, disabled ones too, by name, each with the agents that have it.
+
+    :return: The skills.
+    :rtype: List[SkillOut]
+    """
+    return skills.list_skills()
+
+
+@router.post("/admin/skills",
+             response_model=SkillOut,
+             status_code=status.HTTP_201_CREATED,
+             responses=ADMIN_ERRORS,
+             summary="Create Skill",
+             operation_id="adminCreateSkill")
+async def admin_create_skill(req: SkillCreate, admin: dict = Depends(require_admin)):
+    """
+    Creates a skill.
+
+    :param req: The skill.
+    :type req: SkillCreate
+    :return: The created skill.
+    :rtype: SkillOut
+    :raises HTTPException: 400 for an empty field, 409 if the name is taken.
+    """
+    try:
+        skill = skills.create_skill(req)
+    except SkillError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Skill created - id: {skill['id']}, name: {skill['name']}, by user {admin['user_id']}")
+    return skill
+
+
+@router.post("/admin/skills/import",
+             response_model=SkillImportResult,
+             responses=ADMIN_ERRORS,
+             summary="Import Skill",
+             description="Creates a skill from a SKILL.md file, or with replace changes the one of that name",
+             operation_id="adminImportSkill")
+async def admin_import_skill(req: SkillImport, admin: dict = Depends(require_admin)):
+    """
+    Imports one SKILL.md file: its frontmatter's name and description, and its text. Other
+    frontmatter keys are left out and named in ignored.
+
+    :param req: The file's text, and whether to replace a skill of the same name.
+    :type req: SkillImport
+    :return: The skill, whether it was created, and the keys left out.
+    :rtype: SkillImportResult
+    :raises HTTPException: 400 for a malformed or invalid file, 409 if the name is taken without replace.
+    """
+    try:
+        skill, created, ignored = skills.import_skill_md(req.text, req.replace)
+    except SkillError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Skill imported - id: {skill['id']}, name: {skill['name']}, created: {created}, "
+                     f"by user {admin['user_id']}")
+    return SkillImportResult(skill=skill, created=created, ignored=ignored)
+
+
+@router.put("/admin/skills/{skill_id}",
+            response_model=SkillOut,
+            responses=ADMIN_ERRORS,
+            summary="Update Skill",
+            operation_id="adminUpdateSkill")
+async def admin_update_skill(skill_id: int, req: SkillUpdate, admin: dict = Depends(require_admin)):
+    """
+    Updates the fields of a skill that are sent. A new name is also changed in the agents that have it.
+
+    :param skill_id: The skill's ID.
+    :type skill_id: int
+    :param req: The fields to change.
+    :type req: SkillUpdate
+    :return: The updated skill.
+    :rtype: SkillOut
+    :raises HTTPException: 404 if not found, 400 for an empty field, 409 if the new name is taken.
+    """
+    try:
+        skill = skills.update_skill(skill_id, req)
+    except SkillError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Skill updated - id: {skill_id}, fields: {sorted(req.model_fields_set)}, "
+                     f"by user {admin['user_id']}")
+    return skill
+
+
+@router.delete("/admin/skills/{skill_id}",
+               status_code=status.HTTP_204_NO_CONTENT,
+               responses=ADMIN_ERRORS,
+               summary="Delete Skill",
+               operation_id="adminDeleteSkill")
+async def admin_delete_skill(skill_id: int, admin: dict = Depends(require_admin)):
+    """
+    Deletes a skill and takes it off the agents that have it.
+
+    :param skill_id: The skill's ID.
+    :type skill_id: int
+    :raises HTTPException: 404 if not found.
+    """
+    try:
+        skills.delete_skill(skill_id)
+    except SkillError as e:
+        raise _http_error(e)
+    crud_logger.info(f"Skill deleted - id: {skill_id}, by user {admin['user_id']}")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/admin/skills/{skill_id}/export",
+            response_class=PlainTextResponse,
+            responses=ADMIN_ERRORS,
+            summary="Export Skill",
+            description="The skill as a SKILL.md file",
+            operation_id="adminExportSkill")
+async def admin_export_skill(skill_id: int, admin: dict = Depends(require_admin)):
+    """
+    Exports a skill as a SKILL.md file (frontmatter with name and description, then the text),
+    offered as a download named after the skill.
+
+    :param skill_id: The skill's ID.
+    :type skill_id: int
+    :return: The file.
+    :rtype: PlainTextResponse
+    :raises HTTPException: 404 if not found.
+    """
+    try:
+        skill = skills.get_skill(skill_id)
+    except SkillError as e:
+        raise _http_error(e)
+    # A skill's name is lowercase letters, digits and hyphens, safe in the header
+    headers = {"Content-Disposition": f'attachment; filename="{skill["name"]}.md"'}
+    return PlainTextResponse(skills.format_skill_md(skill), media_type="text/markdown; charset=utf-8",
+                             headers=headers)
+
+
+# =========================================================================
 # Admin: tools
 # =========================================================================
 
@@ -451,6 +602,7 @@ async def admin_import_catalog(
         raise _http_error(e)
     crud_logger.info(
         f"Catalog imported by user {admin['user_id']} - models {result.models.created}+{result.models.updated}, "
+        f"skills {result.skills.created}+{result.skills.updated}, "
         f"personas {result.personas.created}+{result.personas.updated} (created+updated), "
         f"{len(result.errors)} error(s)"
     )

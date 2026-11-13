@@ -17,6 +17,10 @@ import {
   IPersonaOut,
   IPersonaUpdate,
   IProviderOut,
+  ISkillCreate,
+  ISkillImportResult,
+  ISkillOut,
+  ISkillUpdate,
   IToolStatus,
   OPT_IN_TOOL_GROUPS,
   REQUIRED_TOOL_GROUPS,
@@ -29,8 +33,8 @@ export type AdminLoadState = 'loading' | 'ready' | 'forbidden' | 'error';
 
 /**
  * State of the Agents page: providers (read-only, configured on the server), models and
- * personas as the admin API returns them, the tool groups and the MCP servers of the agents,
- * plus the write operations. After every change the lists are reloaded, and so is the public
+ * personas as the admin API returns them, the tool groups, the MCP servers and the skills of
+ * the agents, plus the write operations. After every change the lists are reloaded, and so is the public
  * catalog the pickers use.
  */
 @Injectable()
@@ -42,6 +46,8 @@ export class CatalogAdminStore {
   readonly mcpServers$ = new BehaviorSubject<IMcpServerOut[]>([]);
   readonly mcpConfig$ = new BehaviorSubject<IMcpConfig | null>(null);  // null: not known
   readonly mcpError$ = new BehaviorSubject<string | null>(null);  // The MCP servers could not be loaded
+  readonly skills$ = new BehaviorSubject<ISkillOut[]>([]);
+  readonly skillsError$ = new BehaviorSubject<string | null>(null);  // The skills could not be loaded
   readonly state$ = new BehaviorSubject<AdminLoadState>('loading');
   readonly loadError$ = new BehaviorSubject<string | null>(null);
 
@@ -75,6 +81,10 @@ export class CatalogAdminStore {
     return this.mcpConfig$.value;
   }
 
+  get skills(): ISkillOut[] {
+    return this.skills$.value;
+  }
+
   async loadAll(): Promise<void> {
     this.state$.next('loading');
     this.loadError$.next(null);
@@ -84,7 +94,8 @@ export class CatalogAdminStore {
         this.api.getAdminModels(),
         this.api.getAdminPersonas(),
         this.loadTools(),
-        this.loadMcp()
+        this.loadMcp(),
+        this.loadSkills()
       ]);
       this.providers$.next(providers ?? []);
       this.models$.next(models ?? []);
@@ -130,6 +141,17 @@ export class CatalogAdminStore {
       console.warn('MCP servers could not be loaded:', servers.reason);
       this.mcpServers$.next([]);
       this.mcpError$.next(describeHttpError(servers.reason, this.translate));
+    }
+  }
+
+  /** The skills (docs/skills.md). A failure doesn't block the page: the section says so. */
+  private async loadSkills(): Promise<void> {
+    try {
+      this.skills$.next(await this.api.getAdminSkills() ?? []);
+      this.skillsError$.next(null);
+    } catch (error) {
+      console.warn('Skills could not be loaded:', error);
+      this.skillsError$.next(describeHttpError(error, this.translate));
     }
   }
 
@@ -218,13 +240,14 @@ export class CatalogAdminStore {
     const saved = id === null
       ? await this.api.createPersona(data as IPersonaCreate)
       : await this.api.updatePersona(id, data as IPersonaUpdate);
-    await this.reload(['personas']);
+    // The skills list the agents that have them
+    await Promise.all([this.reload(['personas']), this.loadSkills()]);
     return saved;
   }
 
   async deletePersona(id: number): Promise<void> {
     await this.api.deletePersona(id);
-    await this.reload(['personas']);
+    await Promise.all([this.reload(['personas']), this.loadSkills()]);
   }
 
   /** A name for a copy that no other persona has yet ("Name (copy)", "Name (copy 2)", ...). */
@@ -283,6 +306,42 @@ export class CatalogAdminStore {
       : [...this.mcpServers, server]);
   }
 
+  // Skills of the agents (docs/skills.md)
+
+  /** Renaming a skill changes it in the agents' lists, so they are reloaded too. */
+  async saveSkill(id: number | null, data: ISkillCreate | ISkillUpdate): Promise<ISkillOut> {
+    const saved = id === null
+      ? await this.api.createSkill(data as ISkillCreate)
+      : await this.api.updateSkill(id, data as ISkillUpdate);
+    await Promise.all([this.loadSkills(), this.reload(['personas'])]);
+    return saved;
+  }
+
+  /** Flip the switch in the list without opening the dialog. */
+  async setSkillEnabled(skill: ISkillOut, enabled: boolean): Promise<void> {
+    const updated = await this.api.updateSkill(skill.id, { enabled });
+    this.skills$.next(this.skills.map(s => (s.id === skill.id ? updated : s)));
+  }
+
+  /** Deleting a skill takes it off the agents, so they are reloaded too. */
+  async deleteSkill(id: number): Promise<void> {
+    await this.api.deleteSkill(id);
+    await Promise.all([this.loadSkills(), this.reload(['personas'])]);
+  }
+
+  /** One SKILL.md file; the list is reloaded by the caller once all files are in (reloadSkills()). */
+  importSkill(text: string, replace: boolean): Promise<ISkillImportResult> {
+    return this.api.importSkill(text, replace);
+  }
+
+  reloadSkills(): Promise<void> {
+    return this.loadSkills();
+  }
+
+  exportSkill(id: number): Promise<string> {
+    return this.api.exportSkill(id);
+  }
+
   // Import and export
 
   exportCatalog(): Promise<ICatalogFile> {
@@ -291,8 +350,8 @@ export class CatalogAdminStore {
 
   async importCatalog(file: ICatalogFile): Promise<IImportResult> {
     const result = await this.api.importCatalog(file);
-    // Providers aren't imported, but their model counts change; the file may hold MCP servers
-    await Promise.all([this.reload(['providers', 'models', 'personas']), this.loadMcp()]);
+    // Providers aren't imported, but their model counts change; the file may hold MCP servers and skills
+    await Promise.all([this.reload(['providers', 'models', 'personas']), this.loadMcp(), this.loadSkills()]);
     return result;
   }
 }

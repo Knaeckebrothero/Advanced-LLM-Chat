@@ -85,6 +85,8 @@ The contract for the runtime, the catalog, agents, tools and the history budget 
 
 Personas: Pirate (all tools) and Translator (no tools).
 
+Skills: `image-generation` and `character-writing`, as `SKILL.md` files in `catalog/skills/` (`docs/skills.md`).
+
 ### Decisions made by the user (2026-10-30)
 
 - "Usability first, privacy preferred" for providers.
@@ -172,6 +174,14 @@ The HomeLab repository (`~/Repositories/HomeLab`, private) deploys the chart thr
     - **Found, not fixed:** Gemma 4 through the homelab router writes its reasoning into the answer text after a tool call ("The user is asking for …"), so it shows in the chat. The dev `.env` has no `MEMORY_TIME_ZONE`, so agents tell times in UTC there (production sets it through `backend.memoryDream.timeZone`). Every `--reload` of the dev backend writes new dev certificates (`backend/main.py` at import), so a browser has to accept them again.
     - **Dev data left from the tests:** the mock user `chats-demo@example.com` (six chats, notes) and the agent "Tagebuch (Test)" (own memory); the Notebook agent has `past_chats` switched on.
     - **Next:** release it (the next release cherry-picks `e30f7a3` and what follows, see "Status"), then give an agent in production `past_chats` and try it on the real chats, also the imported 2023/24 ones. Later (`docs/past_chats.md`, "Later"): jump to the message from a step, ranking, embeddings if the tests show misses, search for the user in the sidebar.
+13. **Skills** (2026-11-13, on `develop`, **not released yet**; `docs/skills.md`, planned in `d7d8e27`). Texts in the open `SKILL.md` format that admins attach to agents; the agent sees their descriptions and loads one with `use_skill` when a request needs it. Built:
+    - **Storage and admin:** table `skills`, `personas.skills` (names; a rename or delete follows in the agents), `backend/services/skills.py`, the endpoints under `/api/admin/skills` (also `SKILL.md` import with replace, and export), the catalog file's `skills` section. On the Agents page a Skills section (new, edit, enable, import one or more `SKILL.md`, download) and a Skills section in the agent dialog.
+    - **In the answer:** `persona_skills()`, `with_skills()` (a section that makes the model check every skill before answering), `skill_tools()` with `use_skill` (names as an enum; also for an agent without tool groups; none for a model without tools); its results are never cut in the history.
+    - **Decided by the user:** only admins write skills, users' own later; only on demand and only an agent's own skills, no "always in the prompt"; text only; two starter skills ship by default.
+    - **Starter skills** in `catalog/skills/` (the seed file names them with `{"file": ...}`, read only when seeding): `image-generation` (16k characters: model family, checkpoint and LoRAs with AIRs and trigger words, tags or prose per family, negative prompts, settings and sizes per family, Civitai's `get_input_schema`/`whatif`/`run_step` flow, fixes for failures; from Civitai's docs, OpenAPI spec and site code and the model cards) and `character-writing` (9.5k: core, flaws, voice, cards in the V2/V3 format, playing a character). Both came from two research passes, summarised in `docs/skills.md`.
+    - **Tested:** `skills_test.py` (5 checks against Postgres), `run_all` (with `test_loaded_skills_are_never_cut`), the catalog test (198 passed; its 4 failures are not about skills: three expect the tool groups from before family mode, one the cached price that was being added at the time), and live: DeepSeek V4.1 Flash loaded `image-generation` as its first step and followed it, then `character-writing` in the same chat without reloading the first, and nothing for small talk. Gemma 4 loaded `character-writing`, and `image-generation` in 1 of 2 runs (0 of 2 before the stricter prompt and a description that starts with "Writes prompts for image models").
+    - **Dev data:** the agent "Skills (Test)" (id 10) with both skills, its chat "Anime Elf Forest Prompt Setup", and the two skills imported into the dev database.
+    - **Next:** release it; in production attach `image-generation` to an agent that has the Civitai MCP servers, and try a real generation (costs Buzz). Later (`docs/skills.md`): a skill picked by the user in the chat (for models that don't load skills on their own), the eight further skills the research ranked, tests whether skills get loaded.
 
 ## Repositories
 
