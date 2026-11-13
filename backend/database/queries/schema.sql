@@ -51,7 +51,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- Which model wrote an assistant message, and what it cost
     model_id INTEGER,            -- llm_models.id at the time (NULL for the environment model)
     model_name TEXT,             -- copy of the display name, kept if the model is deleted
-    usage JSONB                  -- {"inputTokens", "outputTokens", "reasoningTokens", "cachedInputTokens", "cost", "currency"}
+    usage JSONB,                 -- {"inputTokens", "outputTokens", "reasoningTokens", "cachedInputTokens", "cost", "currency"}
+    -- The memory the message belongs to, set when it is stored (docs/past_chats.md): NULL none, 0 the shared
+    -- knowledge base, else the personas.id of an agent with its own (no FK)
+    memory_vault INTEGER
 );
 
 -- name: create_message_tool_records_table
@@ -242,6 +245,7 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS memory_reviewed_until BIGINT;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS memory_review_failed_at TIMESTAMP;
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS own_memory BOOLEAN DEFAULT FALSE;
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS memory_model_id INTEGER;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS memory_vault INTEGER;
 
 -- name: add_mcp_columns
 -- Databases from before MCP servers (the CREATE TABLE above has it)
@@ -406,10 +410,12 @@ CREATE TRIGGER update_conversations_timestamp
     EXECUTE FUNCTION update_conversation_timestamp();
 
 -- name: create_messages_trigger
+-- A message that only joins a memory (the memory review, docs/past_chats.md) keeps its updated_at
 DROP TRIGGER IF EXISTS update_messages_timestamp ON messages;
 CREATE TRIGGER update_messages_timestamp
     BEFORE UPDATE ON messages
     FOR EACH ROW
+    WHEN (OLD.memory_vault IS NOT DISTINCT FROM NEW.memory_vault)
     EXECUTE FUNCTION update_timestamp();
 
 -- name: create_user_settings_trigger
@@ -467,3 +473,78 @@ UPDATE conversations c
 SET "lastMessageAt" = to_timestamp((SELECT max(m.id) FROM messages m WHERE m."conversationId" = c.id) / 1000.0) AT TIME ZONE 'UTC'
 WHERE c."lastMessageAt" IS NULL
   AND EXISTS (SELECT 1 FROM messages m WHERE m."conversationId" = c.id);
+
+-- name: create_conversation_memory_vault_function
+-- The memory a new message of a conversation belongs to (docs/past_chats.md), from the conversation's agent
+-- now. NULL without an agent, for a disabled agent, an agent without the knowledge base, or a guest. The
+-- agent's id with its own memory, else 0, the shared knowledge base. The same rule as persona_tool_groups()
+-- and persona_vault() in backend/catalog/resolver.py. (No semicolons in these comments: init_tables() splits
+-- the statements at them.)
+CREATE OR REPLACE FUNCTION conversation_memory_vault(conversation TEXT)
+RETURNS INTEGER AS $$
+    SELECT CASE
+        WHEN u.is_guest OR p.id IS NULL OR p.enabled IS FALSE THEN NULL
+        WHEN jsonb_typeof(p.tools) IS DISTINCT FROM 'array' OR NOT (p.tools ? 'knowledge_base') THEN NULL
+        WHEN p.own_memory THEN p.id
+        ELSE 0
+    END
+    FROM conversations c
+    JOIN users u ON u.id = c."userId"
+    LEFT JOIN personas p ON p.id = c.persona_id
+    WHERE c.id = conversation
+$$ LANGUAGE sql STABLE;
+
+-- name: create_message_memory_vault_trigger
+-- Every new message gets its memory, wherever it is stored (sync, insert, import, insert between messages)
+CREATE OR REPLACE FUNCTION set_message_memory_vault()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.memory_vault IS NULL THEN
+        NEW.memory_vault := conversation_memory_vault(NEW."conversationId");
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS set_messages_memory_vault ON messages;
+CREATE TRIGGER set_messages_memory_vault
+    BEFORE INSERT ON messages
+    FOR EACH ROW
+    EXECUTE FUNCTION set_message_memory_vault();
+
+-- name: create_message_search_text_function
+-- The text of a message for the search over past chats (docs/past_chats.md). content is plain text, or a
+-- JSON object with "content" and "attachments" (a message with attachments), as _parse_content() in
+-- backend/services/conversation_history.py reads it. Never fails, since the index below uses it and a
+-- failure would keep the message from being stored. Text that starts with "{" but isn't JSON (a pasted
+-- snippet) is returned as it is.
+CREATE OR REPLACE FUNCTION message_search_text(content TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    parsed JSONB;
+BEGIN
+    IF content IS NULL OR left(content, 1) <> '{' THEN
+        RETURN content;
+    END IF;
+    BEGIN
+        parsed := content::jsonb;
+    EXCEPTION WHEN others THEN
+        RETURN content;
+    END;
+    IF jsonb_typeof(parsed) = 'object' AND parsed ? 'content' THEN
+        RETURN coalesce(parsed ->> 'content', '');
+    END IF;
+    RETURN content;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
+
+-- name: create_message_search_index
+-- The trigram index of the search over past chats, for its regular expressions. pg_trgm comes with Postgres
+-- and prepare_database() creates it. A server without it gets no index, and the search scans the messages.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+        CREATE INDEX IF NOT EXISTS idx_messages_search_trgm ON messages
+            USING gin (message_search_text(content) gin_trgm_ops);
+    END IF;
+END $$;

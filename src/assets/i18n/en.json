@@ -249,6 +249,7 @@
       "web_search": "Web search",
       "knowledge_graph": "Knowledge graph",
       "knowledge_base": "Knowledge base",
+      "past_chats": "Past chats",
       "user_mcp": "Users' own MCP servers"
     },
     "untrustedNotice": "This provider may store or train on your messages. Don't share personal information.",
@@ -413,6 +414,7 @@
         "toolUnavailableUnknown": "no reason given",
         "toolOptIn": "Only when picked here, and only for signed-in users: each user has their own notes",
         "toolOptInUserMcp": "Only when picked here, and only for signed-in users: the servers each user adds on the MCP servers page",
+        "toolOptInPastChats": "Only when picked here, together with the knowledge base: the agent searches and reads the user's earlier chats of its memory",
         "ownMemory": "Own memory",
         "ownMemoryHint": "Off: the agent uses the user's shared knowledge base and memory, like the other agents. On: it keeps its own for each user, which other agents don't see (e.g. for personal topics).",
         "noToolsHint": "Without tools, the agent answers from the conversation alone.",
@@ -570,6 +572,7 @@
     "noteFailed": "The note could not be loaded.",
     "back": "Back to the list",
     "openNote": "Open note",
+    "openChat": "Open chat",
     "note": {
       "edit": "Edit",
       "history": "History",

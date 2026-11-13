@@ -10,15 +10,17 @@ export type PrivacyTier = 'local' | 'eu' | 'trusted' | 'untrusted';
 export type ReasoningMode = 'none' | 'optional' | 'always';
 export type Currency = 'USD' | 'EUR';
 /** Tool groups an agent can use (backend/llm/tools.py). */
-export type ToolGroup = 'files' | 'web_search' | 'knowledge_graph' | 'knowledge_base' | 'user_mcp';
+export type ToolGroup = 'files' | 'web_search' | 'knowledge_graph' | 'knowledge_base' | 'past_chats' | 'user_mcp';
 
 export const PROVIDER_KINDS: ProviderKind[] = ['openai_compatible', 'anthropic'];
 export const PRIVACY_TIERS: PrivacyTier[] = ['local', 'eu', 'trusted', 'untrusted'];
 export const REASONING_MODES: ReasoningMode[] = ['none', 'optional', 'always'];
 export const CURRENCIES: Currency[] = ['USD', 'EUR'];
-export const TOOL_GROUPS: ToolGroup[] = ['files', 'web_search', 'knowledge_graph', 'knowledge_base', 'user_mcp'];
+export const TOOL_GROUPS: ToolGroup[] = ['files', 'web_search', 'knowledge_graph', 'knowledge_base', 'past_chats', 'user_mcp'];
 /** Groups an agent only gets when it picks them, never with "all tools" (OPT_IN_GROUPS in backend/llm/tools.py). */
-export const OPT_IN_TOOL_GROUPS: ToolGroup[] = ['knowledge_base', 'user_mcp'];
+export const OPT_IN_TOOL_GROUPS: ToolGroup[] = ['knowledge_base', 'past_chats', 'user_mcp'];
+/** Groups that only work together with another one (REQUIRED_GROUPS in backend/llm/tools.py). */
+export const REQUIRED_TOOL_GROUPS: Partial<Record<ToolGroup, ToolGroup>> = { past_chats: 'knowledge_base' };
 
 /** Persona placeholders the backend fills in itself; they need no input. */
 export const BUILT_IN_PERSONA_VARIABLES = ['date', 'user_name', 'language'];
@@ -183,6 +185,7 @@ export interface IToolStatus {
   available: boolean;
   reason?: string | null;  // Why it isn't available (e.g. a missing environment variable)
   optIn?: boolean;         // Only for agents that pick it, not part of "all tools" (the knowledge base)
+  requires?: ToolGroup | null;  // Works only together with this group (the past chats: the knowledge base)
 }
 
 // ============================================================================

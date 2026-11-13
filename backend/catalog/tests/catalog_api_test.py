@@ -260,14 +260,18 @@ def run_tools(c, admin):
     r = admin.get("/api/admin/tools")
     groups = r.json()
     c.check(r.status_code == 200 and [g["id"] for g in groups] == ["files", "web_search", "knowledge_graph",
-                                                                   "knowledge_base", "user_mcp"],
-            "GET /api/admin/tools lists the five groups", r.text)
-    c.check(all(set(g) == {"id", "available", "reason", "optIn"} for g in groups), "tool group fields", r.text)
-    c.check(groups[0] == {"id": "files", "available": True, "reason": None, "optIn": False},
+                                                                   "knowledge_base", "past_chats", "user_mcp"],
+            "GET /api/admin/tools lists the six groups", r.text)
+    c.check(all(set(g) == {"id", "available", "reason", "optIn", "requires"} for g in groups), "tool group fields",
+            r.text)
+    c.check(groups[0] == {"id": "files", "available": True, "reason": None, "optIn": False, "requires": None},
             "files is always available")
-    c.check(groups[3] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True},
+    c.check(groups[3] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True, "requires": None},
             "the knowledge base is always available, and opt-in", r.text)
-    c.check(groups[4]["id"] == "user_mcp" and groups[4]["optIn"] is True, "users' own MCP servers are opt-in", r.text)
+    c.check(groups[4] == {"id": "past_chats", "available": True, "reason": None, "optIn": True,
+                          "requires": "knowledge_base"},
+            "the past chats are opt-in and need the knowledge base", r.text)
+    c.check(groups[5]["id"] == "user_mcp" and groups[5]["optIn"] is True, "users' own MCP servers are opt-in", r.text)
     c.check(all((g["available"] and g["reason"] is None) or (not g["available"] and g["reason"]) for g in groups),
             "unavailable groups say why", r.text)
     print("        " + ", ".join(f"{g['id']}: {'on' if g['available'] else g['reason']}" for g in groups))

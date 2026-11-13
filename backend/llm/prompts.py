@@ -3,8 +3,8 @@ System prompt for the agent.
 
 The prompt is the identity paragraph (or a persona's prompt in its place),
 followed by one section per enabled tool group, so the file access, graph and
-knowledge base instructions stay when a persona is used. With the knowledge
-base, the agent's memory follows (with_memory()). A conversation's system
+knowledge base and past chat instructions stay when a persona is used. With the
+knowledge base, the agent's memory follows (with_memory()). A conversation's system
 messages come last (with_instructions()).
 """
 import logging
@@ -85,6 +85,19 @@ MEMORY_EMPTY = "Your memory of this user is still empty."
 
 KB_TOOL_NAMES = set(TOOL_GROUPS["knowledge_base"])
 
+# Added when the past chat tools are enabled (docs/past_chats.md); they come only with the knowledge base
+CHAT_PROMPT = r"""## Past Chats:
+You can search and read your earlier conversations with this user: the ones that belong to your memory, this one included. Your memory and notes are summaries; the chats are the source, word for word.
+- Search them when the user refers to an earlier conversation ("like we discussed", "last time", "you said"), asks what you talked about, or you need a detail your memory and notes don't have.
+- chat_search takes a regular expression, case-insensitive. Put alternatives and both languages into one pattern, e.g. "\bmother\b|\bmom\b|mutter|mama"; a part of a word also finds longer words. With many hits, make the pattern more specific or limit it with after and before; with none, try other words before you give up.
+- chat_list shows the conversations by date, e.g. for "what did we talk about last week".
+- Read around a hit with chat_read before you rely on a single line.
+- Say which conversation and date something comes from. If you find nothing, say so instead of guessing.
+- An earlier chat may have been roleplay or fiction, or with another agent: what was said in character is not a fact about the user.
+- What you find that matters beyond this conversation belongs in your memory or a note, as usual."""
+
+CHAT_TOOL_NAMES = set(TOOL_GROUPS["past_chats"])
+
 # Heads a conversation's system messages, after the rest of the prompt
 INSTRUCTIONS_HEADING = "## Instructions for this conversation:"
 
@@ -132,6 +145,8 @@ def build_system_prompt(
         sections.append(GRAPH_PROMPT)
     if names & KB_TOOL_NAMES:
         sections.append(KB_PROMPT)
+    if names & CHAT_TOOL_NAMES:
+        sections.append(CHAT_PROMPT)
 
     return "\n\n".join(sections)
 
