@@ -8,7 +8,7 @@
       "api_key_env": "CORTECS_API_KEY",
       "privacy_tier": "eu",
       "currency": "EUR",
-      "notes": "EU router (Vienna). Account settings: Sovereign Cloud and zero data retention on, Nebius excluded. Prices from api.cortecs.ai/v1/models on 2026-10-30."
+      "notes": "EU router (Vienna). Account settings: Sovereign Cloud and zero data retention on, Nebius excluded. Prices from api.cortecs.ai/v1/models on 2026-11-13."
     },
     {
       "name": "Homelab",
@@ -50,6 +50,7 @@
       "context_window": 524288,
       "input_price_per_mtok": 0.182,
       "output_price_per_mtok": 0.547,
+      "cached_input_price_per_mtok": 0.005,
       "sort_order": 10
     },
     {
@@ -65,6 +66,7 @@
       "max_output_tokens": 64000,
       "input_price_per_mtok": 1.795,
       "output_price_per_mtok": 3.59,
+      "cached_input_price_per_mtok": 0.449,
       "sort_order": 20
     },
     {
@@ -79,6 +81,7 @@
       "context_window": 524288,
       "input_price_per_mtok": 0.687,
       "output_price_per_mtok": 2.11,
+      "cached_input_price_per_mtok": 0.071,
       "sort_order": 30
     },
     {
@@ -108,6 +111,7 @@
       "context_window": 524288,
       "input_price_per_mtok": 0.459,
       "output_price_per_mtok": 1.836,
+      "cached_input_price_per_mtok": 0.138,
       "sort_order": 45
     },
     {
@@ -135,6 +139,7 @@
       "max_output_tokens": 64000,
       "input_price_per_mtok": 4.0,
       "output_price_per_mtok": 20.0,
+      "cached_input_price_per_mtok": 0.2,
       "sort_order": 60
     },
     {
@@ -149,6 +154,7 @@
       "max_output_tokens": 64000,
       "input_price_per_mtok": 2.0,
       "output_price_per_mtok": 10.0,
+      "cached_input_price_per_mtok": 0.1,
       "sort_order": 61
     },
     {
@@ -163,6 +169,7 @@
       "max_output_tokens": 64000,
       "input_price_per_mtok": 0.1,
       "output_price_per_mtok": 0.5,
+      "cached_input_price_per_mtok": 0.01,
       "sort_order": 62
     },
     {

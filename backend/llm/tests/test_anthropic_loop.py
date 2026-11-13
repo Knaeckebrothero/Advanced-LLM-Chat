@@ -238,6 +238,9 @@ async def test_tool_loop_with_thinking_passback():
     assert events[-1][0] == "usage"
     # input = uncached input + cache reads; reasoning from output_tokens_details
     assert (usage.input_tokens, usage.output_tokens, usage.cached_input_tokens, usage.reasoning_tokens) == (290, 60, 150, 12), usage
+    # The cost: the 150 cache reads at their price, the other 140 input tokens at the input price
+    priced = make_config(input_price_per_mtok=4.0, output_price_per_mtok=20.0, cached_input_price_per_mtok=0.2)
+    assert abs(priced.cost(usage) - (140 * 4.0 + 150 * 0.2 + 60 * 20.0) / 1e6) < 1e-12, priced.cost(usage)
 
     # The tool record goes back in a later turn without the thinking blocks (they are only
     # passed back within one answer), as tool_use and tool_result blocks

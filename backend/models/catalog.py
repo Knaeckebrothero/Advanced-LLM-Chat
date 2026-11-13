@@ -83,6 +83,7 @@ class ModelBase(BaseModel):
     privacyTier: Optional[PrivacyTier] = None  # None = inherit from the provider
     inputPricePerMtok: Optional[float] = None  # In the provider's currency
     outputPricePerMtok: Optional[float] = None
+    cachedInputPricePerMtok: Optional[float] = None  # Input read from the provider's cache; None = the input price
     isAuxiliary: bool = False  # Used for titles and speech preprocessing
     availableToGuests: bool = False
     enabled: bool = True
@@ -113,6 +114,7 @@ class ModelUpdate(BaseModel):
     privacyTier: Optional[PrivacyTier] = None
     inputPricePerMtok: Optional[float] = None
     outputPricePerMtok: Optional[float] = None
+    cachedInputPricePerMtok: Optional[float] = None
     isAuxiliary: Optional[bool] = None
     availableToGuests: Optional[bool] = None
     enabled: Optional[bool] = None
@@ -140,6 +142,7 @@ class PublicModel(BaseModel):
     contextWindow: Optional[int] = None
     inputPricePerMtok: Optional[float] = None
     outputPricePerMtok: Optional[float] = None
+    cachedInputPricePerMtok: Optional[float] = None
     currency: Currency
 
 

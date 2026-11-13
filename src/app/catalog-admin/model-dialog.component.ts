@@ -92,6 +92,7 @@ export class ModelDialogComponent {
       contextWindow: [m?.contextWindow ?? null, [Validators.min(1)]],
       inputPricePerMtok: [m?.inputPricePerMtok ?? null, [Validators.min(0)]],
       outputPricePerMtok: [m?.outputPricePerMtok ?? null, [Validators.min(0)]],
+      cachedInputPricePerMtok: [m?.cachedInputPricePerMtok ?? null, [Validators.min(0)]],
       extraBody: [formatJson(m?.extraBody), jsonObjectValidator()],
       // '' is "like the provider" (sent as null): mat-select shows no option for a null value
       privacyTier: [m?.privacyTier ?? ''],
@@ -136,6 +137,7 @@ export class ModelDialogComponent {
       contextWindow: numberOrNull(v.contextWindow),
       inputPricePerMtok: numberOrNull(v.inputPricePerMtok),
       outputPricePerMtok: numberOrNull(v.outputPricePerMtok),
+      cachedInputPricePerMtok: numberOrNull(v.cachedInputPricePerMtok),
       extraBody: parseJsonObject(v.extraBody),
       privacyTier: v.privacyTier || null,
       isAuxiliary: !!v.isAuxiliary,

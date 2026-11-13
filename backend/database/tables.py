@@ -227,6 +227,7 @@ llm_models = Table(
     Column('privacy_tier', Text),  # NULL = inherit from the provider
     Column('input_price_per_mtok', Numeric),
     Column('output_price_per_mtok', Numeric),
+    Column('cached_input_price_per_mtok', Numeric),  # Input read from the provider's cache; NULL = the input price
     Column('is_auxiliary', Boolean, server_default='false'),  # Used for titles and speech preprocessing
     Column('available_to_guests', Boolean, server_default='false'),
     Column('enabled', Boolean, server_default='true'),
