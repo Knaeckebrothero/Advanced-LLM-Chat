@@ -264,8 +264,10 @@ export class ModelsTabComponent {
         return `${value} ${model.currency}`;
       }
     };
-    return this.translate.instant('catalog.admin.models.price', {
+    const cached = model.cachedInputPricePerMtok;
+    return this.translate.instant(cached == null ? 'catalog.admin.models.price' : 'catalog.admin.models.priceCached', {
       input: format(model.inputPricePerMtok),
+      cached: format(cached),
       output: format(model.outputPricePerMtok)
     });
   }

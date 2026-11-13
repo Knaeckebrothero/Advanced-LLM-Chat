@@ -287,7 +287,8 @@ def run_models(c, admin, user, guest, main, env, disabled):
     created = {}
     for name, provider, extra in [
         ("Guest Model", main, {"availableToGuests": True, "sortOrder": 20, "temperature": 0.3,
-                                 "inputPricePerMtok": 0.18, "outputPricePerMtok": 0.55, "supportsVision": True}),
+                                 "inputPricePerMtok": 0.18, "outputPricePerMtok": 0.55,
+                                 "cachedInputPricePerMtok": 0.005, "supportsVision": True}),
         ("Beta Model", main, {"sortOrder": 10, "reasoning": "always", "reasoningPassback": True,
                                 "extraBody": {"provider": {"zdr": True}}, "privacyTier": "untrusted"}),
         ("Alpha Model", main, {"sortOrder": 10}),
@@ -303,8 +304,10 @@ def run_models(c, admin, user, guest, main, env, disabled):
     c.check(guest_model["providerName"] == main["name"] and guest_model["currency"] == "EUR"
             and guest_model["effectivePrivacyTier"] == "eu", "ModelOut joins provider name, currency and tier")
     c.check(created["Beta Model"]["effectivePrivacyTier"] == "untrusted", "model privacy tier overrides provider")
-    c.check(abs(guest_model["temperature"] - 0.3) < 1e-6 and guest_model["inputPricePerMtok"] == 0.18,
-            "temperature and price round-trip as floats", str(guest_model["temperature"]))
+    c.check(abs(guest_model["temperature"] - 0.3) < 1e-6 and guest_model["inputPricePerMtok"] == 0.18
+            and guest_model["cachedInputPricePerMtok"] == 0.005,
+            "temperature and prices round-trip as floats", str(guest_model["temperature"]))
+    c.check(created["Alpha Model"]["cachedInputPricePerMtok"] is None, "no cached price -> null")
     c.check(admin.post("/api/admin/models", json=model_body(main["id"], "Alpha Model")).status_code == 409,
             "duplicate display name per provider -> 409")
     c.check(admin.post("/api/admin/models", json=model_body(999999, "Orphan")).status_code == 400,
@@ -314,7 +317,8 @@ def run_models(c, admin, user, guest, main, env, disabled):
 
     r = admin.put(f"/api/admin/models/{guest_model['id']}", json={"temperature": None, "notes": "smoke ok"})
     c.check(r.status_code == 200 and r.json()["temperature"] is None and r.json()["notes"] == "smoke ok"
-            and r.json()["inputPricePerMtok"] == 0.18, "update: null clears temperature, rest kept", r.text)
+            and r.json()["inputPricePerMtok"] == 0.18 and r.json()["cachedInputPricePerMtok"] == 0.005,
+            "update: null clears temperature, rest kept", r.text)
     r = admin.put(f"/api/admin/models/{guest_model['id']}", json={"displayName": f"{PREFIX} Alpha Model"})
     c.check(r.status_code == 409, "rename to a taken display name -> 409", r.text)
 
@@ -324,7 +328,8 @@ def run_models(c, admin, user, guest, main, env, disabled):
     public = user.get("/api/models").json()[0]
     c.check(set(public) == {"id", "displayName", "description", "providerName", "privacyTier", "supportsTools",
                             "supportsVision", "reasoning", "contextWindow", "inputPricePerMtok",
-                            "outputPricePerMtok", "currency"}, "PublicModel fields", str(sorted(public)))
+                            "outputPricePerMtok", "cachedInputPricePerMtok", "currency"},
+            "PublicModel fields", str(sorted(public)))
     guest_names = [m["displayName"] for m in guest.get("/api/models").json()]
     c.check(guest_names == [f"{PREFIX} Guest Model"], "GET /api/models (guest): only enabled guest models",
             str(guest_names))
@@ -625,6 +630,26 @@ def run_import_export(c, admin, main):
             "export seeds as a catalog file: providers updated, models and personas kept", str(seeded))
     c.check(admin.get("/api/admin/catalog/export").json() == first, "seeding the export changes nothing")
 
+    # Seeding fills in a cached price an existing model lacks, and keeps one it has
+    alpha_entry = next(m for m in first["models"] if m["display_name"] == f"{PREFIX} Alpha Model")
+    c.check(alpha_entry["cached_input_price_per_mtok"] is None, "Alpha Model starts without a cached price")
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "prices.json"
+        path.write_text(json.dumps({"version": 1, "models": [
+            {**alpha_entry, "cached_input_price_per_mtok": 0.25, "description": "from the file"}]}), encoding="utf-8")
+        filled = catalog_file.seed_from_file(path)
+        path.write_text(json.dumps({"version": 1, "models": [
+            {**alpha_entry, "cached_input_price_per_mtok": 0.5}]}), encoding="utf-8")
+        again = catalog_file.seed_from_file(path)
+    alpha_now = next(m for m in admin.get("/api/admin/models").json() if m["displayName"] == f"{PREFIX} Alpha Model")
+    c.check(filled.errors == [] and filled.models.updated == 1 and filled.models.kept == 0,
+            "seeding fills in a missing cached price (counted as updated)", str(filled))
+    c.check(again.models.updated == 0 and again.models.kept == 1 and alpha_now["cachedInputPricePerMtok"] == 0.25,
+            "seeding keeps a cached price the model has", f"{again} {alpha_now['cachedInputPricePerMtok']}")
+    c.check(alpha_now["description"] == alpha_entry["description"],
+            "seeding the cached price changes nothing else", str(alpha_now["description"]))
+    admin.put(f"/api/admin/models/{alpha_now['id']}", json={"cachedInputPricePerMtok": None})
+
     r = admin.post("/api/admin/catalog/import", json={
         "version": 1,
         "colour": "red",
@@ -635,7 +660,8 @@ def run_import_export(c, admin, main):
         ],
         "models": [
             {"provider": main["name"], "display_name": f"{PREFIX} Imported Model", "model_id": "imp-1",
-             "input_price_per_mtok": 1.5, "output_price_per_mtok": 3, "available_to_guests": True, "sort_order": 99,
+             "input_price_per_mtok": 1.5, "output_price_per_mtok": 3, "cached_input_price_per_mtok": 0.15,
+             "available_to_guests": True, "sort_order": 99,
              "colour": "red"},
             {"provider": "No such provider", "display_name": "x", "model_id": "x"},
             {"provider": main["name"], "display_name": f"{PREFIX} No id"},
@@ -671,7 +697,12 @@ def run_import_export(c, admin, main):
         {"provider": main["name"], "display_name": f"{PREFIX} Imported Model", "sort_order": 98}]})
     updated = next(m for m in admin.get("/api/admin/models").json() if m["id"] == imported_model["id"])
     c.check(r.json()["models"] == {"created": 0, "updated": 1} and updated["sortOrder"] == 98
-            and updated["inputPricePerMtok"] == 1.5, "partial upsert changes only the given keys")
+            and updated["inputPricePerMtok"] == 1.5 and updated["cachedInputPricePerMtok"] == 0.15,
+            "partial upsert changes only the given keys")
+    exported = next(m for m in admin.get("/api/admin/catalog/export").json()["models"]
+                    if m["display_name"] == f"{PREFIX} Imported Model")
+    c.check(exported["cached_input_price_per_mtok"] == 0.15, "export writes the cached price as a float",
+            str(exported.get("cached_input_price_per_mtok")))
     c.check(admin.post("/api/admin/catalog/import", json={"version": 2}).status_code == 400,
             "unsupported file version -> 400")
     c.check(admin.post("/api/admin/catalog/import", json={"providers": {}}).status_code == 400,
@@ -861,8 +892,8 @@ def run_resolver(c, models, personas, conversation, user_email):
             and config.currency == "EUR" and config.base_url == "https://example.invalid/v1",
             "ModelConfig fields from model and provider")
     config = resolver.resolve_model(user, model_id=guest_model["id"])
-    c.check(isinstance(config.input_price_per_mtok, float) and config.supports_vision is True,
-            "prices as float, capabilities")
+    c.check(isinstance(config.input_price_per_mtok, float) and config.cached_input_price_per_mtok == 0.005
+            and config.supports_vision is True, "prices as float, capabilities")
     c.check(resolver.get_model_config(disabled["id"]).id == disabled["id"], "get_model_config ignores enabled")
     try:
         resolver.get_model_config(999999)

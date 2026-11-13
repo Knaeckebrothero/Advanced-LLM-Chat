@@ -97,6 +97,7 @@ export interface IModelBase {
   privacyTier?: PrivacyTier | null;  // null = inherit from the provider
   inputPricePerMtok?: number | null;
   outputPricePerMtok?: number | null;
+  cachedInputPricePerMtok?: number | null;  // input read from the provider's cache; null = the input price
   isAuxiliary: boolean;
   availableToGuests: boolean;
   enabled: boolean;
@@ -129,6 +130,7 @@ export interface IPublicModel {
   contextWindow?: number | null;
   inputPricePerMtok?: number | null;
   outputPricePerMtok?: number | null;
+  cachedInputPricePerMtok?: number | null;
   currency: Currency;
 }
 

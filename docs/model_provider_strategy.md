@@ -63,6 +63,8 @@ GLM and other coding-focused models are left out: they are better tested in the 
 
 The smoke test passed with and without passback.
 
+**Update 2026-11-13 (cache prices).** Input the provider reads from its cache costs less (Cortecs' `cache_read_cost`, € per M tokens): DeepSeek V4.1 Flash 0.005, DeepSeek V4 Pro 0.449, Mistral Large 4 0.071, GLM-5.3 0.138. Kimi K3 has no cache price there, so cache hits cost the full input price. Claude reads its cache at $0.20 (Opus 5.5), $0.10 (Sonnet 5.5) and $0.01 (Haiku 5.5). The catalog keeps these as `cached_input_price_per_mtok` (`docs/model_catalog_api.md`, "Cost of an answer").
+
 Accounts:
 
 - **Cortecs**: turn on Sovereign Cloud and ZDR, and exclude Nebius (`eu`).

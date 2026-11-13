@@ -86,7 +86,7 @@ MODEL_EXPORT_COLUMNS = [
     "display_name", "model_id", "description", "supports_tools", "supports_vision",
     "reasoning", "reasoning_passback", "context_window", "max_output_tokens",
     "temperature", "top_p", "reasoning_effort", "extra_body", "privacy_tier",
-    "input_price_per_mtok", "output_price_per_mtok", "is_auxiliary",
+    "input_price_per_mtok", "output_price_per_mtok", "cached_input_price_per_mtok", "is_auxiliary",
     "available_to_guests", "enabled", "sort_order", "notes",
 ]
 PERSONA_EXPORT_COLUMNS = [
@@ -97,7 +97,8 @@ MCP_SERVER_EXPORT_COLUMNS = list(MCP_SERVER_KEYS)
 # Skills (docs/skills.md); natural key name
 SKILL_KEYS = {"name": "name", "description": "description", "content": "content", "enabled": "enabled"}
 SKILL_EXPORT_COLUMNS = list(SKILL_KEYS)
-NUMERIC_COLUMNS = {"temperature", "top_p", "input_price_per_mtok", "output_price_per_mtok"}
+NUMERIC_COLUMNS = {"temperature", "top_p", "input_price_per_mtok", "output_price_per_mtok",
+                   "cached_input_price_per_mtok"}
 
 # Reported once by an import whose file has provider entries
 PROVIDERS_IGNORED = "providers ignored: providers come from the server's catalog file"
@@ -107,7 +108,7 @@ PROVIDERS_IGNORED = "providers ignored: providers come from the server's catalog
 class SeedCounts:
     """What seeding did with the entries of one section."""
     created: int = 0
-    updated: int = 0  # Providers only
+    updated: int = 0  # Providers, and existing models given the cached price they lacked
     kept: int = 0  # Existing models and personas, left unchanged
 
 
@@ -262,8 +263,30 @@ def _import_model(entry: dict, label: str, errors: list, *, create_only: bool) -
     fields["providerId"] = provider["id"]
     fields["displayName"] = display_name
     existing = db.get_llm_model_by_name(provider["id"], display_name)
+    if existing and create_only:
+        return _fill_cached_price(existing, fields, label)
     return _save(existing, ModelCreate, ModelUpdate, service.create_model, service.update_model,
                  fields, {v: k for k, v in MODEL_KEYS.items() if v}, create_only=create_only)
+
+
+def _fill_cached_price(existing: dict, fields: dict, label: str) -> str:
+    """
+    Seeding a model that exists: it stays as it is, except that it takes the file's cached
+    price when it has none (models from before that column, 2026-11-13, would otherwise never
+    get one). A price set in the app is kept.
+
+    Returns:
+        "updated" when the price was filled in, else "kept".
+    """
+    price = fields.get("cachedInputPricePerMtok")
+    if price is None or existing.get("cached_input_price_per_mtok") is not None:
+        return "kept"
+    try:
+        service.update_model(existing["id"], ModelUpdate(cachedInputPricePerMtok=price))
+    except ValidationError as e:
+        raise CatalogError(_validation_message(e, {"cachedInputPricePerMtok": "cached_input_price_per_mtok"})) from e
+    log.info(f"{label}: cached input price {price} taken from the catalog file")
+    return "updated"
 
 
 def _import_persona(entry: dict, label: str, errors: list, *, create_only: bool) -> str:
@@ -514,8 +537,10 @@ def seed_catalog(data: dict) -> SeedResult:
     providers, then create the models and personas that don't exist yet.
 
     Existing models and personas are kept as they are (counted as kept), so
-    changes made in the app are never overwritten. Each entry is saved on its
-    own; a bad entry is reported in errors and the others are still saved.
+    changes made in the app are never overwritten; only a model without a
+    cached price takes the file's (counted as updated, _fill_cached_price()).
+    Each entry is saved on its own; a bad entry is reported in errors and the
+    others are still saved.
 
     Args:
         data: The parsed catalog file (after _apply_environment()).

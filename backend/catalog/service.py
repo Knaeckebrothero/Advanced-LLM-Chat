@@ -93,6 +93,7 @@ MODEL_FIELDS = {
     "privacyTier": "privacy_tier",
     "inputPricePerMtok": "input_price_per_mtok",
     "outputPricePerMtok": "output_price_per_mtok",
+    "cachedInputPricePerMtok": "cached_input_price_per_mtok",
     "isAuxiliary": "is_auxiliary",
     "availableToGuests": "available_to_guests",
     "enabled": "enabled",
@@ -102,7 +103,7 @@ MODEL_FIELDS = {
 MODEL_NULLABLE = {
     "description", "context_window", "max_output_tokens", "temperature", "top_p",
     "reasoning_effort", "extra_body", "privacy_tier", "input_price_per_mtok",
-    "output_price_per_mtok", "notes",
+    "output_price_per_mtok", "cached_input_price_per_mtok", "notes",
 }
 
 PERSONA_FIELDS = {
@@ -301,6 +302,7 @@ def model_out(row: dict) -> ModelOut:
         currency=row.get("currency") or "USD",
         inputPricePerMtok=_float(row.get("input_price_per_mtok")),
         outputPricePerMtok=_float(row.get("output_price_per_mtok")),
+        cachedInputPricePerMtok=_float(row.get("cached_input_price_per_mtok")),
         isAuxiliary=bool(row.get("is_auxiliary")),
         availableToGuests=bool(row.get("available_to_guests")),
         enabled=row.get("enabled") is not False,
@@ -323,6 +325,7 @@ def model_public(row: dict) -> PublicModel:
         contextWindow=row.get("context_window"),
         inputPricePerMtok=_float(row.get("input_price_per_mtok")),
         outputPricePerMtok=_float(row.get("output_price_per_mtok")),
+        cachedInputPricePerMtok=_float(row.get("cached_input_price_per_mtok")),
         currency=row.get("currency") or "USD",
     )
 
