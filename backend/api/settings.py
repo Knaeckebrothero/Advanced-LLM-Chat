@@ -5,6 +5,7 @@ import logging
 import time
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from backend.services.hidden_content import auto_hide_definition_of
 from backend.models.settings import AppSettings, AppSettingsResponse
 from backend.catalog.service import CatalogError, check_model_choice
 from backend.database import db
@@ -26,10 +27,13 @@ OPTIONAL_FIELDS = {
 def _optional_settings(settings: dict) -> dict:
     """The optional fields of a user_settings row, with defaults for rows from before they existed."""
     defaults = AppSettings.model_fields
-    return {
+    fields = {
         field: settings.get(column) if settings.get(column) is not None else defaults[field].default
         for field, column in OPTIONAL_FIELDS.items()
     }
+    # What agents hide on their own: the user's text, else the server's
+    fields["autoHidePrompt"] = auto_hide_definition_of(settings)
+    return fields
 
 
 @router.get("/settings",
@@ -92,6 +96,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         return AppSettingsResponse(
             theme="auto",
             language="en",
+            autoHidePrompt=auto_hide_definition_of(None),  # The server's text, until the user has their own
             lastUpdated=0
         )
 
@@ -154,6 +159,9 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         for field, column in OPTIONAL_FIELDS.items()
         if field in new_settings.model_fields_set
     }
+    if "autoHidePrompt" in new_settings.model_fields_set:
+        prompt = new_settings.autoHidePrompt
+        optional["auto_hide_prompt"] = prompt.strip() if prompt is not None else None
 
     # Upsert settings using CRUD method
     settings = db.upsert_user_settings(

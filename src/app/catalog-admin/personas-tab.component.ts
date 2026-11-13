@@ -14,6 +14,7 @@ import { CatalogAdminStore } from './catalog-admin.store';
 import { CatalogAdminDialogs } from './catalog-admin-dialogs';
 import { PersonaDialogComponent, PersonaDialogData } from './persona-dialog.component';
 import { toolIcon } from './catalog-admin.utils';
+import { FamilyModeService } from '../services/family-mode.service';
 
 /** Agents (personas in the API): a named system prompt with fill-in variables and a set of tools. */
 @Component({
@@ -36,7 +37,7 @@ import { toolIcon } from './catalog-admin.utils';
 
     @if (store.personas$ | async; as personas) {
       <div class="agent-grid">
-        @for (persona of sorted(personas); track persona.id) {
+        @for (persona of sorted(personas, (familyMode.active$ | async) ?? true); track persona.id) {
           <article class="agent-card" [class.is-disabled]="!persona.enabled">
             <div class="agent-head">
               <span class="agent-avatar" aria-hidden="true"><mat-icon>smart_toy</mat-icon></span>
@@ -48,6 +49,10 @@ import { toolIcon } from './catalog-admin.utils';
                   }
                   @if (persona.availableToGuests) {
                     <span class="state-tag state-tag--accent">{{ 'catalog.admin.fields.guests' | translate }}</span>
+                  }
+                  @if (persona.hidden && familyMode.available) {
+                    <mat-icon class="hidden-mark" [title]="'hide.agentHidden' | translate"
+                              [attr.aria-label]="'hide.agentHidden' | translate">visibility_off</mat-icon>
                   }
                 </div>
               </div>
@@ -148,11 +153,14 @@ export class PersonasTabComponent {
     private catalog: CatalogService,
     private chatState: ChatStateService,
     private router: Router,
-    private translate: TranslateService
+    private translate: TranslateService,
+    readonly familyMode: FamilyModeService
   ) {}
 
-  sorted(personas: IPersonaOut[]): IPersonaOut[] {
-    return [...personas].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  /** The agents in their order; without the hidden ones while this device is in family mode. */
+  sorted(personas: IPersonaOut[], familyMode = false): IPersonaOut[] {
+    return personas.filter(persona => !(familyMode && persona.hidden))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
   }
 
   isAvailable(tool: ToolGroup): boolean {

@@ -39,6 +39,7 @@ from backend.llm.tools import MEMORY_TOOL_NAMES
 from backend.catalog.resolver import (
     ModelNotAllowed,
     ModelNotAvailable,
+    conversation_hidden,
     persona_prompt_for_conversation,
     persona_tool_groups,
     persona_vault,
@@ -46,6 +47,7 @@ from backend.catalog.resolver import (
     resolve_model,
 )
 from backend.services import knowledge_base as kb
+from backend.services.hidden_content import auto_hide_definition, family_mode
 from backend.services.mcp.tools import McpToolset, Notice, notice_step, tools_for_answer as mcp_tools_for_answer
 from backend.services.llm import generate_reply
 from backend.llm.tool_record import with_text as record_with_text
@@ -106,14 +108,17 @@ def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
     return build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
 
 
-def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig) -> Optional[ToolRegistry]:
+def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig,
+                 hide: bool = False, hide_definition: str = "") -> Optional[ToolRegistry]:
     """
     The tools for an answer: the tools the server enables, limited to the tool
     groups of the conversation's persona (if it has a selection; the knowledge
     base only comes with a selection). The file tools only see the current
     user's files of this conversation (a vision model gets images themselves),
     the knowledge base tools only their notes (never a guest's): the shared
-    knowledge base, or the persona's own one (persona_vault()).
+    knowledge base, or the persona's own one (persona_vault()). With hide, the device
+    is in family mode, which the knowledge base and past chat tools then leave out;
+    hide_definition is what the agent hides on its own (none without it).
 
     :return: The tools, or None for none (the model doesn't support tools, or
         the persona selected no enabled tool group).
@@ -122,16 +127,20 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
         return None
     tools = tools_for_groups(persona_tool_groups(current_user, conversation), user_id=current_user['user_id'],
                              guest=bool(current_user.get('is_guest')), conversation=conversation,
-                             vault=persona_vault(current_user, conversation), vision=config.supports_vision)
+                             vault=persona_vault(current_user, conversation), vision=config.supports_vision,
+                             family_mode=hide, hide_definition=hide_definition)
     return tools if len(tools) else None
 
 
 def _memory_prompt(system_prompt: str, current_user: dict, conversation: Optional[dict],
-                   tools: Optional[ToolRegistry]) -> str:
-    """The system prompt with the agent's memory, if it has the memory tools (the knowledge base)."""
+                   tools: Optional[ToolRegistry], hide: bool = False) -> str:
+    """
+    The system prompt with the agent's memory, if it has the memory tools (the knowledge base);
+    with hide without its hidden lines.
+    """
     if tools is None or not set(tools.names()) & set(MEMORY_TOOL_NAMES):
         return system_prompt
-    memory = kb.get_memory(current_user['user_id'], persona_vault(current_user, conversation))
+    memory = kb.get_memory(current_user['user_id'], persona_vault(current_user, conversation), family_mode=hide)
     return with_memory(system_prompt, memory['content'] if memory else None)
 
 
@@ -178,7 +187,8 @@ async def _answer_context(
     config: ModelConfig,
     *,
     mcp: bool = True,
-    answer_id: Optional[int] = None
+    answer_id: Optional[int] = None,
+    hide: bool = False
 ) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int, List[Notice]]:
     """
     What an answer in this conversation is built from: the tools, the history builder,
@@ -190,10 +200,15 @@ async def _answer_context(
     (not with mcp=False, which doesn't connect to them); answer_id is the id of the message
     being written, recorded with the files those tools create. With the knowledge base, the
     agent's memory follows (read for every answer, so a change shows in the next one).
-    The conversation's system messages are instructions to the model and come last.
+    The conversation's system messages are instructions to the model and come last. With hide,
+    the device is in family mode: the memory and the tools leave it out.
     """
     conversation = db.get_conversation_by_id(conversation_id)
-    tools = _agent_tools(current_user, conversation, config)
+    # In a hidden conversation hidden content is plainly shown, so its agent sees all of its memory
+    hide = hide and not conversation_hidden(conversation)
+    # What the agent hides on its own: the user's words, else the server's (empty: nothing)
+    hide_definition = auto_hide_definition(current_user.get('user_id')) if config.supports_tools else ""
+    tools = _agent_tools(current_user, conversation, config, hide, hide_definition)
     toolset = McpToolset()
     if mcp:
         tools, toolset = await _mcp_tools(current_user, conversation, config, tools, answer_id)
@@ -202,9 +217,10 @@ async def _answer_context(
     history_builder = ConversationHistoryBuilder(db)
     system_prompt = with_instructions(
         _memory_prompt(
-            with_mcp_servers(build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools),
+            with_mcp_servers(build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools,
+                                                 hide_definition),
                              toolset.servers, toolset.unavailable()),
-            current_user, conversation, tools),
+            current_user, conversation, tools, hide),
         history_builder.system_instructions(conversation_id))
     return (tools, history_builder, system_prompt, history_token_budget(config, system_prompt, tools),
             toolset.notices)
@@ -1126,7 +1142,8 @@ async def send_and_generate_message(
              dependencies=[Depends(rate_limit_guest)])
 async def stream_generate(
     request_body: StreamGenerateRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    hide: bool = Depends(family_mode)
 ):
     """
     Stream agent reasoning steps and final response using Server-Sent Events.
@@ -1219,7 +1236,7 @@ async def stream_generate(
 
         try:
             tools, history_builder, system_prompt, token_budget, mcp_notices = await _answer_context(
-                current_user, request_body.conversationId, config, answer_id=message_id)
+                current_user, request_body.conversationId, config, answer_id=message_id, hide=hide)
             # MCP servers of the agent that give no tools this time (unreachable, or not signed in)
             for notice in mcp_notices:
                 now_ms = int(time.time() * 1000)
@@ -1446,7 +1463,8 @@ async def summarize_conversation(
              })
 async def context_size(
     request_body: ContextSizeRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    hide: bool = Depends(family_mode)
 ) -> ContextSize:
     """
     About how many input tokens the next answer in a conversation sends (the token
@@ -1466,7 +1484,7 @@ async def context_size(
 
     config = _resolve_model_or_503(current_user, conversation_id, request_body.modelId)
     tools, history_builder, system_prompt, token_budget, _ = await _answer_context(
-        current_user, conversation_id, config, mcp=False)
+        current_user, conversation_id, config, mcp=False, hide=hide)
     summary = db.get_conversation_summary(conversation_id)
     entries, _ = await history_builder.build_entries(
         conversation_id, include_latest_attachments=True, supports_vision=config.supports_vision, summary=summary)

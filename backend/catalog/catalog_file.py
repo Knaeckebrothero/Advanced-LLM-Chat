@@ -87,7 +87,7 @@ MODEL_EXPORT_COLUMNS = [
 ]
 PERSONA_EXPORT_COLUMNS = [
     "name", "description", "system_prompt", "variables", "tools", "available_to_guests",
-    "enabled", "sort_order", "own_memory", "mcp_servers",
+    "enabled", "sort_order", "own_memory", "mcp_servers", "hidden",
 ]
 MCP_SERVER_EXPORT_COLUMNS = list(MCP_SERVER_KEYS)
 NUMERIC_COLUMNS = {"temperature", "top_p", "input_price_per_mtok", "output_price_per_mtok"}

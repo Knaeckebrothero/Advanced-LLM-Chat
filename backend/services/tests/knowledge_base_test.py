@@ -21,7 +21,11 @@ export, the API's vault parameter, /vaults and /memory. The memory review
 sends, what it saves (author 'review'), reading every message once, a failure, and which
 conversations are due. The nightly consolidation (backend/services/memory_dream.py) the same way:
 the period, the days and their journal notes, the transcript and the changes it is given, the
-journal it writes (author 'dream'), memory_dreams, nothing to do, and a failure.
+journal it writes (author 'dream'), memory_dreams, nothing to do, and a failure. Family mode
+: notes and #hidden lines hidden from the store, the tools and the API for a device
+that hides them, the hidden lines kept on a save, what a hidden chat writes marked, the own
+knowledge bases of hidden agents, and the consolidation's rule for hidden chats; agents hiding
+content themselves (hide_chat, the hidden parameter) and never changing what the user decided.
 
 It creates the database <POSTGRES_DB>_kb_test if needed (or --database, whose name must contain
 "test") and deletes its own test users, so it never touches the real database:
@@ -51,10 +55,11 @@ from sqlalchemy import delete, func, insert, select  # noqa: E402
 from backend import config  # noqa: E402
 from backend.database.db import Database  # noqa: E402
 from backend.database.tables import (conversations, kb_note_revisions, kb_notes, memory_dreams, messages,  # noqa: E402
-                                     personas, users)
+                                     personas, user_settings, users)
 from backend.llm.tools import TOOL_GROUPS, ToolInputError, tools_for_groups  # noqa: E402
 from backend.services import knowledge_base  # noqa: E402
 from backend.services import knowledge_base_export  # noqa: E402
+from backend.services import hidden_content  # noqa: E402
 from backend.services.knowledge_base import KBConflict, KBNotFound, Writer, link_targets, note_slug, slugify  # noqa: E402
 
 TEST_EMAILS = ("kb-test-1@example.com", "kb-test-2@example.com")
@@ -823,11 +828,259 @@ async def test_memory_dream():
             memory_dream.db, memory_dream.resolve_memory_model, memory_review.db, resolver.db = saved
 
 
+async def test_hidden_lines():
+    content = "## About\n- Sam (2026-11-01)\n- Plans a surprise (2026-11-02) #hidden\n\n## Gifts #HIDDEN\n- a\n### Sub\n- b\n\n## Ongoing\n- c #hidden-art"
+    shown = hidden_content.visible(content)
+    assert shown == "## About\n- Sam (2026-11-01)\n\n## Ongoing\n- c #hidden-art", shown
+    assert hidden_content.restore_hidden(content, shown) == content, "unchanged text gets back exactly what was hidden"
+    # A hidden block goes after the line it followed; if that line was changed, where the change is
+    restored = hidden_content.restore_hidden(content, shown.replace("- Sam (2026-11-01)", "- Sam, 34") + "\n- d")
+    assert restored.split("\n")[:3] == ["## About", "- Sam, 34", "- Plans a surprise (2026-11-02) #hidden"], restored
+    assert "## Gifts #HIDDEN\n- a\n### Sub\n- b" in restored and restored.endswith("- d")
+    assert hidden_content.restore_hidden("x #hidden\ny", "y") == "x #hidden\ny", "a block at the start stays at the start"
+    assert hidden_content.restore_hidden("y\nx #hidden", "") == "\nx #hidden"
+    # Tags: whole, case-insensitive; not headings, rules, table delimiters, code or lines that have it
+    assert hidden_content.has_tag("a #HIDDEN") and not hidden_content.has_tag("a#hidden") and not hidden_content.has_tag("#hiddenx a")
+    assert hidden_content.tag_lines("# H\n- a\n\n---\n|---|\n```\nb\n```\nc #hidden") == \
+        "# H\n- a #hidden\n\n---\n|---|\n```\nb\n```\nc #hidden"
+    assert hidden_content.tag_new_lines("- a\n- b", "- a\n- c\n- b") == "- a\n- c #hidden\n- b"
+
+
+async def test_hidden_store_and_tools():
+    user_id = user_ids[0]
+    writer = Writer(user_id=user_id, author="user")
+    hiding = Writer(user_id=user_id, author="user", family_mode=True)
+    knowledge_base.create_note(writer, "Surprise", "The party plan.", tags=["story"], hidden_note=True)
+    knowledge_base.create_note(writer, "Day", "Breakfast.\nThe gift list #hidden\nLunch. See [[surprise]].", tags=["story"])
+    # Without the switch everything is there, with it the hidden note and line are gone
+    assert {n["slug"] for n in knowledge_base.list_notes(user_id)["notes"]} == {"surprise", "day"}
+    listing = knowledge_base.list_notes(user_id, family_mode=True)
+    assert [n["slug"] for n in listing["notes"]] == ["day"] and listing["total"] == 1
+    assert listing["tags"] == [("story", 1)]
+    assert knowledge_base.count_notes(user_id, family_mode=True) == {"active": 1, "archived": 0}
+    day = knowledge_base.get_note(user_id, "day", family_mode=True)
+    assert day["content"] == "Breakfast.\nLunch. See [[surprise]]." and day["links"] == [], day
+    assert knowledge_base.get_note(user_id, "day")["links"][0]["title"] == "Surprise"
+    try:
+        knowledge_base.get_note(user_id, "surprise", family_mode=True)
+        raise AssertionError("a hidden note is not found while hidden")
+    except KBNotFound:
+        pass
+    assert [h["slug"] for h in knowledge_base.search_notes(user_id, exact=["gift"])] == ["day"]
+    assert knowledge_base.search_notes(user_id, exact=["gift"], family_mode=True) == [], "a hidden line doesn't match"
+    assert knowledge_base.search_notes(user_id, query="party", family_mode=True) == []
+    assert [h["slug"] for h in knowledge_base.search_notes(user_id, query="lunch", family_mode=True)] == ["day"]
+    assert {n["slug"] for n in knowledge_base.all_notes(user_id, family_mode=True)} == {"day"}
+    # A save from a device that hides keeps what it didn't see; a revision shows only what is visible
+    day = knowledge_base.get_note(user_id, "day", family_mode=True)
+    knowledge_base.update_note(hiding, "day", content=day["content"].replace("Lunch.", "Lunch at noon."),
+                               base_version=day["version"])
+    assert knowledge_base.get_note(user_id, "day")["content"] == \
+        "Breakfast.\nThe gift list #hidden\nLunch at noon. See [[surprise]]."
+    revision = knowledge_base.list_revisions(user_id, "day")[0]["id"]
+    assert "gift list" not in knowledge_base.get_revision(user_id, "day", revision, family_mode=True)["content"]
+    # The page marks and unmarks a note; the memory can't be marked as a whole
+    _, changes = knowledge_base.update_note(writer, "surprise", hidden_note=False)
+    assert changes == ["no longer hidden"] and not knowledge_base.get_note(user_id, "surprise", family_mode=True)["hidden"]
+    knowledge_base.update_note(writer, "surprise", hidden_note=True)
+    knowledge_base.memory_add(writer, "Likes tea")
+    try:
+        knowledge_base.update_note(writer, "memory", hidden_note=True)
+        raise AssertionError("the memory can't be hidden")
+    except knowledge_base.KBError as e:
+        assert "#hidden" in str(e)
+
+    # The tools of a device that hides: no hidden note, no tagged line, and a change can't reach one
+    plain = {"id": "kb-test-plain", "persona_id": None}
+    hidden_tools = tools_for_groups(["knowledge_base"], user_id=user_id, conversation=plain, family_mode=True)
+    assert "gift list" not in str(await hidden_tools.call("kb_read", {"note": "day"}))
+    assert "surprise" not in str(await hidden_tools.call("kb_list", {}))
+    assert "There is no note 'surprise'" in await refused(hidden_tools, "kb_read", {"note": "surprise"})
+    knowledge_base.memory_add(writer, "Wants a watch #hidden")
+    assert memory_text().splitlines()[-1].endswith(") #hidden"), "the tag goes after the date"
+    assert "No line of the memory" in await refused(hidden_tools, "memory_remove", {"line": "watch"})
+    await hidden_tools.call("memory_replace", {"line": "tea", "text": "Likes green tea"})
+    assert "Wants a watch" in memory_text() and "green tea" in memory_text()
+    assert knowledge_base.get_memory(user_id, family_mode=True)["content"].count("\n") == 0
+    # A device that hides can't create a note over a hidden one, and doesn't learn its title
+    message = await refused(hidden_tools, "kb_write", {"title": "Surprise", "content": "x"})
+    assert "Surprise" not in message and "exists already" in message, message
+
+    # What a hidden chat writes is marked, whatever the device shows
+    hidden_chat = {"id": "kb-test-hidden", "persona_id": None, "hidden": True}
+    marked = tools_for_groups(["knowledge_base"], user_id=user_id, conversation=hidden_chat)
+    await marked.call("kb_write", {"title": "Party", "content": "What happened."})
+    assert knowledge_base.get_note(user_id, "party")["hidden"], "a new note is hidden"
+    await marked.call("kb_update", {"note": "day", "append": "- dinner\n- dessert"})
+    assert knowledge_base.get_note(user_id, "day")["content"].endswith("- dinner #hidden\n- dessert #hidden")
+    old = knowledge_base.get_note(user_id, "day")["content"]
+    await marked.call("kb_update", {"note": "day", "content": old + "\n- coffee"})
+    assert knowledge_base.get_note(user_id, "day")["content"] == old + "\n- coffee #hidden", "only new lines"
+    assert not knowledge_base.get_note(user_id, "day")["hidden"], "the note itself stays as it was"
+    await marked.call("memory_add", {"text": "Wants more parties"})
+    assert memory_text().splitlines()[-1].endswith(" #hidden")
+    await marked.call("memory_replace", {"line": "green tea", "text": "Likes green tea a lot"})
+    assert "Likes green tea a lot" in memory_text() and hidden_content.has_tag(next(
+        line for line in memory_text().splitlines() if "green tea" in line))
+    # A line replaced from an ordinary chat keeps its tag
+    plain_tools = tools_for_groups(["knowledge_base"], user_id=user_id, conversation=plain)
+    await plain_tools.call("memory_replace", {"line": "watch", "text": "Wants a watch and a strap"})
+    assert next(line for line in memory_text().splitlines() if "strap" in line).endswith("#hidden")
+
+
+async def test_hidden_api_and_agents():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.api import knowledge_base as kb_api
+    from backend.catalog import resolver
+    from backend.security.auth import get_current_user
+    from backend.services import memory_dream
+
+    saved = kb_api.db, resolver.db
+    kb_api.db = resolver.db = db
+    try:
+        app = FastAPI()
+        app.include_router(kb_api.router)
+        app.dependency_overrides[get_current_user] = lambda: {"user_id": user_ids[0], "is_guest": False}
+        client = TestClient(app)
+        hide = {"X-Family-Mode": "1"}
+
+        created = client.post("/api/kb/notes", headers=hide, json={"title": "Gift", "content": "x", "hidden": True})
+        assert created.status_code == 201 and created.json()["hidden"], "the new note comes back once, marked"
+        client.post("/api/kb/notes", json={"title": "Open", "content": "a\nb #hidden"})
+        assert [n["slug"] for n in client.get("/api/kb/notes", headers=hide).json()["notes"]] == ["open"]
+        assert {n["slug"] for n in client.get("/api/kb/notes").json()["notes"]} == {"open", "gift"}
+        assert client.get("/api/kb/notes/gift", headers=hide).status_code == 404
+        assert client.get("/api/kb/notes/open", headers=hide).json()["content"] == "a"
+        assert client.get("/api/kb/search", headers=hide, params={"q": "gift"}).json() == []
+        # An edit from the page keeps the hidden line and can mark the note
+        note = client.get("/api/kb/notes/open", headers=hide).json()
+        edit = {"title": "Open", "content": "a2", "tags": [], "baseVersion": note["version"]}
+        assert client.put("/api/kb/notes/open", headers=hide, json=edit).json()["content"] == "a2"
+        assert client.get("/api/kb/notes/open").json()["content"] == "a2\nb #hidden"
+        # The own knowledge base of a hidden agent is hidden with it
+        companion = add_persona("Party planner", ["knowledge_base"], own_memory=True)
+        with db.connection() as conn:
+            conn.execute(personas.update().where(personas.c.id == companion).values(hidden=True))
+        await tools(vault=companion).call("kb_write", {"title": "Ours", "content": "x"})
+        assert companion in {v["id"] for v in client.get("/api/kb/vaults").json()}
+        assert companion not in {v["id"] for v in client.get("/api/kb/vaults", headers=hide).json()}
+        assert client.get("/api/kb/notes", headers=hide, params={"vault": companion}).status_code == 404
+        assert client.get("/api/kb/notes", params={"vault": companion}).status_code == 200
+        # A version written in a hidden chat doesn't name it while hidden
+        with db.connection() as conn:
+            conn.execute(insert(conversations).values(id="kb-test-party", userId=user_ids[0], name="Party talk",
+                                                      hidden=True))
+        party = tools_for_groups(["knowledge_base"], user_id=user_ids[0],
+                                 conversation={"id": "kb-test-party", "persona_id": None, "hidden": True})
+        await party.call("kb_update", {"note": "open", "append": "c"})
+        revision = client.get("/api/kb/notes/open", headers=hide).json()["revisions"][0]
+        assert revision["conversationId"] is None and revision["conversationName"] is None, revision
+        assert client.get("/api/kb/notes/open").json()["revisions"][0]["conversationName"] == "Party talk"
+        assert hidden_content.hidden_conversations(user_ids[0]) == {"kb-test-party"}
+        assert hidden_content.conversation_is_hidden("kb-test-party") and not hidden_content.conversation_is_hidden(None)
+
+        # The nightly consolidation: hidden chats are labeled, and the rule is there unless the knowledge
+        # base is a hidden agent's own one
+        user = {"user_id": user_ids[0], "email": TEST_EMAILS[0], "is_guest": False}
+        assert memory_dream.HIDE_RULE in memory_dream._system_prompt(user, 0, [{"hidden": True}])
+        assert memory_dream.HIDE_RULE not in memory_dream._system_prompt(user, 0, [{"hidden": False}])
+        assert memory_dream.HIDE_RULE not in memory_dream._system_prompt(user, companion, [{"hidden": True}])
+        from backend.services.conversation_history import ConversationHistoryBuilder
+        transcript = memory_dream._transcript([({"name": "Party talk", "hidden": True}, [])], 1000,
+                                              ConversationHistoryBuilder(db))
+        assert transcript.startswith("### Party talk [hidden]"), transcript
+    finally:
+        kb_api.db, resolver.db = saved
+
+
+async def test_agents_hide_content():
+    from backend.services import memory_review
+    user_id = user_ids[0]
+    with db.connection() as conn:
+        conn.execute(insert(conversations).values(id="kb-test-mark", userId=user_id, name="Story"))
+    chat = {"id": "kb-test-mark", "persona_id": None}
+
+    def mark_of(table, where):
+        with db.connection() as conn:
+            row = conn.execute(select(table.c.hidden, table.c.hidden_by).where(where)).one()
+        return tuple(row)
+
+    # The chat: the agent marks it, takes its own mark back, and leaves the user's decision alone
+    what = "Surprise parties and the gifts for them"
+    agent = tools_for_groups(["knowledge_base", "auto_hide"], user_id=user_id, conversation=chat, hide_definition=what)
+    result = await agent.call("hide_chat", {})
+    assert result.metadata == {"hiddenChat": True} and "Hid the conversation" in result, result
+    assert mark_of(conversations, conversations.c.id == "kb-test-mark") == (True, "agent")
+    assert "already" in await agent.call("hide_chat", {"hidden": True})
+    assert (await agent.call("hide_chat", {"hidden": False})).metadata == {"hiddenChat": False}
+    db.update_conversation("kb-test-mark", hidden=False, hidden_by="user")  # The user said: not hidden
+    assert "user decided" in await agent.call("hide_chat", {})
+    assert mark_of(conversations, conversations.c.id == "kb-test-mark") == (False, "user")
+    db.update_conversation("kb-test-mark", hidden=True, hidden_by=None)  # E.g. imported: not the agent's
+    assert "stays" in await agent.call("hide_chat", {"hidden": False})
+    assert hidden_content.mark_conversation("kb-test-missing")[0] is False
+
+    # Notes: the agent's mark, the user's undo, and the agent leaving it alone afterwards
+    plain = {"id": "kb-test-plain", "persona_id": None}
+    agent = tools_for_groups(["knowledge_base", "auto_hide"], user_id=user_id, conversation=plain, hide_definition=what)
+    await agent.call("kb_write", {"title": "Party two", "content": "x", "hidden": True})
+    assert mark_of(kb_notes, kb_notes.c.slug == "party-two") == (True, "agent")
+    assert "no longer hidden" in await agent.call("kb_update", {"note": "party-two", "hidden": False})
+    await agent.call("kb_update", {"note": "party-two", "hidden": True})
+    page = Writer(user_id=user_id, author="user")
+    knowledge_base.update_note(page, "party-two", hidden_note=False)  # The user's undo
+    assert mark_of(kb_notes, kb_notes.c.slug == "party-two") == (False, "user")
+    assert "user decided" in await refused(agent, "kb_update", {"note": "party-two", "hidden": True})
+    result = await agent.call("kb_update", {"note": "party-two", "append": "more", "hidden": True})
+    assert "the hidden mark stays as the user set it" in result, result
+    assert mark_of(kb_notes, kb_notes.c.slug == "party-two") == (False, "user")
+    knowledge_base.create_note(page, "Mine", "x", hidden_note=True)
+    assert mark_of(kb_notes, kb_notes.c.slug == "mine") == (True, "user")
+    await refused(agent, "kb_update", {"note": "mine", "hidden": False})
+    assert knowledge_base.get_note(user_id, "mine")["hidden"], "the agent can't take the user's mark back"
+
+    # Memory lines: hidden true tags, false keeps a line unmarked even in a hidden chat, replace decides
+    await agent.call("memory_add", {"text": "Likes the party", "hidden": True})
+    assert memory_text().splitlines()[-1].endswith("#hidden")
+    in_hidden_chat = tools_for_groups(["knowledge_base", "auto_hide"], user_id=user_id, hide_definition=what,
+                                    conversation={"id": "kb-test-mark", "persona_id": None, "hidden": True})
+    await in_hidden_chat.call("memory_add", {"text": "Name is Sam", "hidden": False})
+    assert not hidden_content.has_tag(next(line for line in memory_text().splitlines() if "Sam" in line))
+    await in_hidden_chat.call("memory_replace", {"line": "the party", "text": "Likes the second party", "hidden": False})
+    assert not hidden_content.has_tag(next(line for line in memory_text().splitlines() if "second party" in line))
+
+    # The memory review marks in the agent's name: its prompt says what to hide
+    user = {"user_id": user_id, "email": TEST_EMAILS[0], "is_guest": False}
+    prompt = memory_review._system_prompt(user, plain, 0, what)
+    assert f"<what-to-hide>\n{what}\n</what-to-hide>" in prompt and "hide_chat" in prompt
+    assert "hide_chat" not in memory_review._system_prompt(user, plain, 0)
+
+    # What agents hide: the user's text from the settings, else the server's; "" hides nothing
+    saved = hidden_content.AUTO_HIDE_DEFINITION
+    hidden_content.AUTO_HIDE_DEFINITION = "The server's text"
+    try:
+        assert hidden_content.auto_hide_definition(user_id) == "The server's text", "no settings yet"
+        db.upsert_user_settings(user_id, "auto", "en")
+        assert hidden_content.auto_hide_definition(user_id) == "The server's text", "settings without own text"
+        db.upsert_user_settings(user_id, "auto", "en", auto_hide_prompt="  My own words  ")
+        assert hidden_content.auto_hide_definition(user_id) == "My own words"
+        db.upsert_user_settings(user_id, "auto", "en", auto_hide_prompt="")
+        assert hidden_content.auto_hide_definition(user_id) == "", "the user turned it off"
+        db.upsert_user_settings(user_id, "auto", "en", auto_hide_prompt=None)
+        assert hidden_content.auto_hide_definition(user_id) == "The server's text", "back to the server's"
+    finally:
+        hidden_content.AUTO_HIDE_DEFINITION = saved
+        with db.connection() as conn:
+            conn.execute(delete(user_settings).where(user_settings.c.user_id == user_id))
+
+
 TESTS = [test_slugs_and_links, test_write_and_read_back, test_same_slug_is_refused, test_links_and_backlinks,
          test_update, test_search, test_list, test_archive_and_restore, test_users_are_separate, test_revisions,
          test_parallel_tool_calls, test_deleting_a_user_deletes_the_notes, test_tool_results_link_to_their_note,
          test_page_edits_and_versions, test_obsidian_export, test_api, test_memory, test_memory_limits, test_vaults,
-         test_api_vaults_and_memory, test_memory_review, test_memory_dream]
+         test_api_vaults_and_memory, test_memory_review, test_memory_dream, test_hidden_lines,
+         test_hidden_store_and_tools, test_hidden_api_and_agents, test_agents_hide_content]
 
 
 async def run() -> int:
@@ -867,7 +1120,7 @@ def main() -> int:
     # As app_init --prod does: add the columns a test database from an older version lacks, then the schema
     migrate_schema(db.engine, logging.getLogger("kb-test"))
     db.init_tables()
-    knowledge_base.db = db  # The store's database; the tools call the store
+    knowledge_base.db = hidden_content.db = db  # The store's database; the tools call the store
     assert TOOL_GROUPS["knowledge_base"]
     try:
         return asyncio.run(run())

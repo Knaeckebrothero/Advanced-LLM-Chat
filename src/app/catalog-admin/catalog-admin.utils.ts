@@ -101,6 +101,7 @@ const TOOL_ICONS: Record<ToolGroup, string> = {
   knowledge_graph: 'hub',
   knowledge_base: 'menu_book',
   past_chats: 'history',
+  auto_hide: 'visibility_off',
   user_mcp: 'extension'
 };
 

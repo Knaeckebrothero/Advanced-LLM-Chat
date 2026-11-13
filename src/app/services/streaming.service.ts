@@ -6,6 +6,7 @@ import { AgentStep } from '../data/objects/message';
 import { IMessageUsage } from '../data/models/catalog.model';
 import { IConversationSummary } from '../data/models/conversation.model';
 import { ApiService } from './api.service';
+import { FamilyModeService } from './family-mode.service';
 
 /**
  * Types of events that can be received from the SSE stream
@@ -75,7 +76,7 @@ export interface ErrorEventData {
 export class StreamingService {
   private apiUrl = environment.apiUrl;
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService, private familyMode: FamilyModeService) {}
 
   /**
    * Initiates a streaming request for agent response generation.
@@ -127,6 +128,8 @@ export class StreamingService {
       } else {
         console.warn('StreamingService: No CSRF token available');
       }
+      // The agent leaves out hidden content while this device is in family mode
+      Object.assign(headers, this.familyMode.headers());
 
       const response = await fetch(`${this.apiUrl}/api/message/stream-generate`, {
         method: 'POST',

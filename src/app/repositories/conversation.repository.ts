@@ -91,6 +91,11 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     const local = this.cache$.getValue().find(c => c.id === incoming.id);
     if (!local) return;
     incoming.mergeLastMessageAt(local.lastMessageAt);
+    if (local.hiddenPending || incoming.hidden === undefined) {
+      incoming.hidden = local.hidden;
+      incoming.hiddenBy = local.hiddenBy;
+      incoming.hiddenPending = local.hiddenPending;
+    }
     if (local.selectionPending || (incoming.modelId === undefined && incoming.personaId === undefined)) {
       incoming.modelId = local.modelId;
       incoming.personaId = local.personaId;
@@ -155,6 +160,46 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     return conversation;
   }
 
+  /**
+   * Hide a conversation or unhide it: saved locally first, so a device
+   * that is in family mode hides it at once, then sent to the backend (with the next sync if
+   * it can't be reached now).
+   */
+  async setHidden(id: string, hidden: boolean): Promise<Conversation | null> {
+    const conversation = this.cache$.getValue().find(c => c.id === id)
+      ?? await this.dbService.getConversation(id);
+    if (!conversation) return null;
+    conversation.hidden = hidden;
+    conversation.hiddenBy = 'user';  // The user's decision: agents leave it alone from now on
+    conversation.hiddenPending = true;
+    await this.save(conversation);
+    await this.pushHidden(conversation);
+    return conversation;
+  }
+
+  /** An agent marked a conversation (or took its mark back) while answering; the server has it already. */
+  async applyAgentHidden(id: string, hidden: boolean): Promise<Conversation | null> {
+    const conversation = this.cache$.getValue().find(c => c.id === id)
+      ?? await this.dbService.getConversation(id);
+    if (!conversation || conversation.hiddenPending) return null;
+    conversation.hidden = hidden;
+    conversation.hiddenBy = 'agent';
+    await this.save(conversation);
+    return conversation;
+  }
+
+  private async pushHidden(conversation: Conversation): Promise<boolean> {
+    try {
+      await this.apiService.updateConversationHidden(conversation.id, conversation.name, !!conversation.hidden);
+      conversation.hiddenPending = false;
+      await this.save(conversation);
+      return true;
+    } catch (error) {
+      console.warn(`Could not send the hidden mark of conversation ${conversation.id}, will retry:`, error);
+      return false;
+    }
+  }
+
   /** Send a conversation's selection to the backend; clears the pending flag on success. */
   private async pushSelection(conversation: Conversation): Promise<boolean> {
     try {
@@ -171,10 +216,23 @@ export class ConversationRepository extends BaseRepository<Conversation> {
   }
 
   /**
-   * Take the model and persona from the server's copy of a conversation, or send ours if it
-   * changed offline. Returns true when the local conversation was changed.
+   * Take the model, the persona and the hidden mark from the server's copy of a conversation, or
+   * send ours if they changed offline. Returns true when the local conversation was changed.
    */
   private async mergeSelection(localConv: Conversation, serverConv: Conversation): Promise<boolean> {
+    let hiddenChanged = false;
+    if (localConv.hiddenPending) {
+      await this.pushHidden(localConv);
+    } else if (serverConv.hidden !== undefined
+               && (serverConv.hidden !== localConv.hidden || (serverConv.hiddenBy ?? null) !== (localConv.hiddenBy ?? null))) {
+      localConv.hidden = serverConv.hidden;
+      localConv.hiddenBy = serverConv.hiddenBy ?? null;
+      hiddenChanged = true;
+    }
+    return await this.mergeModelSelection(localConv, serverConv) || hiddenChanged;
+  }
+
+  private async mergeModelSelection(localConv: Conversation, serverConv: Conversation): Promise<boolean> {
     if (localConv.selectionPending) {
       await this.pushSelection(localConv);
       return false;

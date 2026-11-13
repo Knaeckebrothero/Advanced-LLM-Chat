@@ -143,7 +143,13 @@
                   <li>
                     <button type="button" class="note-item" [class.is-selected]="item.slug === store.slug() && !creating()"
                             [attr.aria-current]="item.slug === store.slug() ? 'page' : null" (click)="select(item.slug)">
-                      <span class="note-item-title">{{ item.title }}</span>
+                      <span class="note-item-title">
+                        @if (item.hidden) {
+                          <mat-icon class="hidden-mark" [title]="(item.hiddenBy === 'agent' ? 'hide.byAgent' : 'hide.byUser') | translate"
+                                    [attr.aria-label]="(item.hiddenBy === 'agent' ? 'hide.byAgent' : 'hide.byUser') | translate">visibility_off</mat-icon>
+                        }
+                        {{ item.title }}
+                      </span>
                       @if (snippet(item); as text) {
                         <span class="note-item-text">{{ text }}</span>
                       } @else if (item.description) {

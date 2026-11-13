@@ -15,6 +15,7 @@ import { Router } from '@angular/router';
 import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 import { CatalogService } from '../../services/catalog.service';
 import { AuthService } from '../../auth/auth.service';
+import { FamilyModeService } from '../../services/family-mode.service';
 
 
 @Component({
@@ -47,7 +48,8 @@ export class ConversationComponent implements OnInit, OnDestroy {
     private translate: TranslateService,
     private catalog: CatalogService,
     private auth: AuthService,
-    private router: Router
+    private router: Router,
+    private familyMode: FamilyModeService
   ) {}
 
   onSelect(): void {
@@ -220,6 +222,50 @@ export class ConversationComponent implements OnInit, OnDestroy {
         undefined, { duration: 6000 });
     } finally {
       this.reviewingMemory = false;
+    }
+  }
+
+  /** The server offers family mode. */
+  get familyModeAvailable(): boolean {
+    return this.familyMode.available;
+  }
+
+  /** The conversation's agent is hidden, which hides the conversation too; it can't be unhidden alone. */
+  get agentHidden(): boolean {
+    return !!this.catalog.getPersona(this.conversation.personaId)?.hidden;
+  }
+
+  get isHidden(): boolean {
+    return this.familyMode.available && (!!this.conversation.hidden || this.agentHidden);
+  }
+
+  /** Who hid the chat: its agent (the persona), the agent while answering, or the user. */
+  get hiddenHint(): string {
+    if (this.agentHidden) return 'hide.byPersona';
+    return this.conversation.hiddenBy === 'agent' ? 'hide.byAgent' : 'hide.byUser';
+  }
+
+  get hideMenuHint(): string {
+    if (this.agentHidden) return 'hide.agentChatHint';
+    if (this.conversation.hidden && this.conversation.hiddenBy === 'agent') return 'hide.unmarkAgentHint';
+    return 'hide.markHint';
+  }
+
+  /**
+   * Hide the conversation or unhide it. While this device is in family mode, a marked
+   * conversation disappears at once (an open one closes), so the snackbar says so and offers Undo.
+   */
+  async toggleHidden(): Promise<void> {
+    if (this.agentHidden) return;
+    const id = this.conversation.id;
+    const mark = !this.conversation.hidden;
+    await this.chatState.setConversationHidden(id, mark);
+    const hidden = mark && this.familyMode.active;
+    const key = hidden ? 'hide.markedHidden' : mark ? 'hide.marked' : 'hide.unmarked';
+    const snackBar = this.snackBar.open(this.translate.instant(key),
+      hidden ? this.translate.instant('hide.undo') : undefined, { duration: 6000 });
+    if (hidden) {
+      snackBar.onAction().subscribe(() => void this.chatState.setConversationHidden(id, false));
     }
   }
 

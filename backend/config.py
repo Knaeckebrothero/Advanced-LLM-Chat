@@ -135,6 +135,16 @@ MEMORY_REVIEW_MAX_AGE_DAYS = float(os.getenv("MEMORY_REVIEW_MAX_AGE_DAYS", "7"))
 # days in the journal of the nightly consolidation (backend/services/memory_dream.py), e.g. Europe/Berlin
 MEMORY_TIME_ZONE = os.getenv("MEMORY_TIME_ZONE", "UTC")
 
+# Family mode: conversations, agents, notes and lines tagged #hidden can be hidden; a device in family mode
+# (the X-Family-Mode header) doesn't show them, and the agents that answer it leave them out. Off: none of it.
+FAMILY_MODE_ENABLED = os.getenv("FAMILY_MODE_ENABLED", "true").lower() == "true"
+# How a device turns family mode off and on: "settings" (a switch in the settings) or "logo" (five quick
+# taps on the sidebar's logo, nothing in the settings)
+FAMILY_MODE_SWITCH = "logo" if os.getenv("FAMILY_MODE_SWITCH", "settings").strip().lower() == "logo" else "settings"
+# What agents with the tool group auto_hide hide on their own, in words: the users' starting text, which
+# each can change in the settings. Empty (the default): agents hide nothing on their own.
+AUTO_HIDE_DEFINITION = os.getenv("AUTO_HIDE_DEFINITION", "").strip()
+
 # Reasoning effort of the environment fallback model (backend/llm/types.py reads these directly):
 # REASONING_LEVEL is the reasoning_effort of the OpenAI environment model for chat answers,
 # AUXILIARY_REASONING_LEVEL the effort for titles and speech preprocessing (Claude: output_config.effort).

@@ -29,7 +29,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Iterable, Iterator, Optional
 
-from ..config import MCP_ENABLED, MCP_USER_SERVERS, NEO4J_ENABLED
+from ..config import MCP_ENABLED, MCP_USER_SERVERS, NEO4J_ENABLED, FAMILY_MODE_ENABLED
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ TOOL_TITLES = {
     "chat_search": "Searching Past Chats",
     "chat_list": "Listing Past Chats",
     "chat_read": "Reading Past Chat",
+    "hide_chat": "Hiding the Chat",
 }
 
 # Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
@@ -65,6 +66,9 @@ TOOL_GROUPS = {
                        "memory_add", "memory_replace", "memory_remove"),
     # The user's earlier conversations of the agent's memory (docs/past_chats.md); only with the knowledge base
     "past_chats": ("chat_search", "chat_list", "chat_read"),
+    # Agents mark hidden content themselves: the conversation with hide_chat, and with the
+    # knowledge base also notes and memory lines (the hidden parameter of its tools)
+    "auto_hide": ("hide_chat",),
     # The users' own MCP servers: their tools are added per answer (backend/services/mcp/tools.py)
     "user_mcp": (),
 }
@@ -506,27 +510,34 @@ def web_search_tool() -> Tool:
 
 
 def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vault: int = 0,
-                         author: str = "agent") -> list[Tool]:
+                         author: str = "agent", family_mode: bool = False, marking: bool = False) -> list[Tool]:
     """
     The knowledge base tools: the notes of one user, kept across all of their conversations, and
     the memory, which is part of every answer.
 
     Args:
         user_id: The user whose knowledge base it is; not an argument the model sees.
-        conversation: The conversation the agent answers in (id, persona_id), recorded with
+        conversation: The conversation the agent answers in (id, persona_id, hidden), recorded with
             every change of a note.
         vault: 0 for the user's shared knowledge base, else the personas.id of the agent whose
             own knowledge base it is (backend.catalog.resolver.persona_vault()).
         author: Recorded with the changes: 'agent', or 'review' for the memory review.
+        family_mode: The device the answer is for is in family mode: the tools don't
+            see hidden notes and lines, and a change keeps the lines it didn't see. Independent of
+            that, what is written from a hidden conversation is marked (writes_hidden()).
+        marking: The agent marks hidden content itself (the tool group auto_hide): kb_write, kb_update,
+            memory_add and memory_replace get the parameter hidden.
     """
+    from ..catalog.resolver import writes_hidden
     from ..services.knowledge_base import (MAX_CONTENT_CHARS, MAX_DESCRIPTION_CHARS, MAX_TAGS,
                                            MAX_TITLE_CHARS, MEMORY_LINE_CHARS, MEMORY_SECTION_CHARS, Writer)
     from ..services.tools import kb_tools
 
     conversation = conversation or {}
     writer = Writer(user_id=user_id, author=author, conversation_id=conversation.get("id"),
-                    persona_id=conversation.get("persona_id"), vault=vault)
-    reader = {"user_id": user_id, "vault": vault}
+                    persona_id=conversation.get("persona_id"), vault=vault,
+                    from_hidden=writes_hidden(conversation, vault), family_mode=family_mode)
+    reader = {"user_id": user_id, "vault": vault, "family_mode": family_mode}
     line_param = {
         "type": "string",
         "description": "A part of the line to change, copied from the memory in the system prompt (a few words "
@@ -552,6 +563,11 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
         "description": f"One sentence saying what the note is about, shown in lists and search results "
                        f"(at most {MAX_DESCRIPTION_CHARS} characters)",
     }
+
+    def hidden_param(description: str) -> dict:
+        """The parameter hidden, for agents that mark hidden content."""
+        return {"hidden": {"type": "boolean", "description": description}} if marking else {}
+
     return [
         Tool(
             name="kb_search",
@@ -623,6 +639,7 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                                                f"{MAX_CONTENT_CHARS} characters)"},
                     "description": description_param,
                     "tags": tags_param,
+                    **hidden_param("true if the note is hidden, so that devices in family mode hide it"),
                 },
                 "required": ["title", "content"],
             },
@@ -645,6 +662,8 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                     "title": {"type": "string", "description": "A new title (the slug stays)"},
                     "description": description_param,
                     "tags": {**tags_param, "description": "The complete new list of tags; [] removes them"},
+                    **hidden_param("true hides the note, false takes the mark back (a mark the user set "
+                                 "stays). For single hidden lines of a note that isn't, end them with #hidden"),
                 },
                 "required": ["note"],
             },
@@ -685,6 +704,8 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                                                f"{MEMORY_SECTION_CHARS} characters), e.g. \"About the user\", "
                                                f"\"Preferences\", \"Ongoing\" or \"Where things are\". Without "
                                                f"it the line goes before the first heading"},
+                    **hidden_param("true if the line is hidden (it gets the tag #hidden); false if it isn't, also in "
+                                 "a conversation hidden, whose lines are marked otherwise"),
                 },
                 "required": ["text"],
             },
@@ -698,7 +719,9 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
             ),
             parameters={
                 "type": "object",
-                "properties": {"line": line_param, "text": text_param},
+                "properties": {"line": line_param, "text": text_param,
+                               **hidden_param("Whether the new line is hidden; left out, it keeps the mark of the "
+                                            "line it replaces")},
                 "required": ["line", "text"],
             },
             func=_in_thread(functools.partial(kb_tools.memory_replace, writer=writer)),
@@ -715,7 +738,35 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
     ]
 
 
-def past_chats_tools(user_id: int, vault: int = 0) -> list[Tool]:
+def hide_tools(conversation: Optional[dict]) -> list[Tool]:
+    """
+    The tool hide_chat: the agent hides the conversation it answers in, or takes
+    its own mark back. Bound to the conversation; none without one (a conversation not stored yet).
+    """
+    from ..services.tools import hide_tools as tools_module
+
+    conversation_id = (conversation or {}).get("id")
+    if not conversation_id:
+        return []
+    return [Tool(
+        name="hide_chat",
+        description=(
+            "Hide this conversation, so that the user's devices in family mode hide it. Call it "
+            "once the conversation turns to such content; it stays marked. hidden=false takes your own mark back. A mark "
+            "the user set or removed stays as it is."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "hidden": {"type": "boolean", "description": "true (the default) marks it, false takes your mark back"},
+            },
+            "required": [],
+        },
+        func=_in_thread(functools.partial(tools_module.hide_chat, conversation_id=conversation_id)),
+    )]
+
+
+def past_chats_tools(user_id: int, vault: int = 0, family_mode: bool = False) -> list[Tool]:
     """
     The past chat tools: search, list and read the user's earlier conversations of the agent's
     memory, the current one included (docs/past_chats.md).
@@ -725,11 +776,13 @@ def past_chats_tools(user_id: int, vault: int = 0) -> list[Tool]:
         vault: The agent's memory: 0 for the shared knowledge base, else the personas.id of the
             agent whose own knowledge base it is (backend.catalog.resolver.persona_vault()). Only
             the messages that belong to it can be found.
+        family_mode: The device the answer is for is in family mode: hidden conversations can't be
+            found .
     """
     from ..services.past_chats import PATTERN_MAX_CHARS, Scope
     from ..services.tools import chat_tools
 
-    scope = {"scope": Scope(user_id=user_id, vault=vault)}
+    scope = {"scope": Scope(user_id=user_id, vault=vault, family_mode=family_mode)}
     after_param = {"type": "string",
                    "description": "Only messages from this date or time on, e.g. \"2026-11-01\" or "
                                   "\"2026-11-01T18:00\" (the time zone of your memory's dates)"}
@@ -835,6 +888,8 @@ def tool_group_unavailable_reason(group: str) -> Optional[str]:
             return "MCP_USER_SERVERS is off"
     if group == "web_search" and not is_web_search_available():
         return "TAVILY_API_KEY is not set"
+    if group == "auto_hide" and not FAMILY_MODE_ENABLED:
+        return "FAMILY_MODE_ENABLED is off"
     return None
 
 
@@ -853,7 +908,7 @@ def tool_group_status() -> list[dict]:
 
 
 def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: Optional[dict],
-                 vault: int = 0, vision: bool = False) -> list[Tool]:
+                 vault: int = 0, vision: bool = False, family_mode: bool = False, marking: bool = False) -> list[Tool]:
     """The tool definitions of a group, for the user the agent answers for."""
     if group == "files":
         return file_tools(user_id, (conversation or {}).get("id"), vision)
@@ -865,22 +920,29 @@ def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: 
         if user_id is None or guest:
             log.debug("No knowledge base without a signed-in user")
             return []
-        return knowledge_base_tools(user_id, conversation, vault)
+        return knowledge_base_tools(user_id, conversation, vault, family_mode=family_mode, marking=marking)
     if group == "past_chats":
         if user_id is None or guest:
             log.debug("No past chats without a signed-in user")
             return []
-        return past_chats_tools(user_id, vault)
+        return past_chats_tools(user_id, vault, family_mode)
+    if group == "auto_hide":
+        return hide_tools(conversation) if marking else []
     if group == "user_mcp":
         return []  # Added per answer by backend/services/mcp/tools.py
     raise ValueError(f"Unknown tool group '{group}'")
 
 
 def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = False,
-                   conversation: Optional[dict] = None, vault: int = 0, vision: bool = False) -> ToolRegistry:
+                   conversation: Optional[dict] = None, vault: int = 0, vision: bool = False,
+                   family_mode: bool = False, hide_definition: str = "") -> ToolRegistry:
     """The tools of these groups that the configuration enables, in TOOL_GROUPS order."""
     groups = set(groups)
     registry = ToolRegistry()
+    # The agent hides content itself, if it is told what to hide: hide_chat and the parameter hidden
+    # of the knowledge base tools
+    marking = ("auto_hide" in groups and tool_group_unavailable_reason("auto_hide") is None
+               and bool(hide_definition.strip()))
     for group in TOOL_GROUPS:
         if group not in groups:
             continue
@@ -891,13 +953,13 @@ def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = 
         if reason:
             log.debug(f"Tool group {group} disabled: {reason}")
             continue
-        for tool in _group_tools(group, user_id, guest, conversation, vault, vision):
+        for tool in _group_tools(group, user_id, guest, conversation, vault, vision, family_mode, marking):
             registry.add(tool)
     return registry
 
 
 def default_tools(user_id: Optional[int] = None, *, conversation: Optional[dict] = None,
-                  vision: bool = False) -> ToolRegistry:
+                  vision: bool = False, hide_definition: str = "") -> ToolRegistry:
     """
     The tools enabled by the configuration (see tool_group_unavailable_reason()),
     without the opt-in groups (OPT_IN_GROUPS).
@@ -907,15 +969,17 @@ def default_tools(user_id: Optional[int] = None, *, conversation: Optional[dict]
         conversation: The conversation it answers in (id); the file tools only see
             this user's files of this conversation (without either: none at all).
         vision: The model takes images (read_file then gives it images themselves).
+        hide_definition: What the agent hides on its own (auto_hide); empty: nothing.
     """
     registry = _enabled_tools((group for group in TOOL_GROUPS if group not in OPT_IN_GROUPS), user_id,
-                              conversation=conversation, vision=vision)
+                              conversation=conversation, vision=vision, hide_definition=hide_definition)
     log.debug(f"Default tools: {', '.join(registry.names())}")
     return registry
 
 
 def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = None, *, guest: bool = False,
-                     conversation: Optional[dict] = None, vault: int = 0, vision: bool = False) -> ToolRegistry:
+                     conversation: Optional[dict] = None, vault: int = 0, vision: bool = False,
+                     family_mode: bool = False, hide_definition: str = "") -> ToolRegistry:
     """
     The enabled tools of the given tool groups, e.g. a persona's selection.
 
@@ -935,16 +999,20 @@ def tools_for_groups(groups: Optional[Iterable[str]], user_id: Optional[int] = N
             agent's own (backend.catalog.resolver.persona_vault()); also the
             memory whose conversations the past chat tools see.
         vision: The model takes images (read_file then gives it images themselves).
+        family_mode: The device the answer is for is in family mode: the knowledge base and
+            past chat tools leave out hidden content.
+        hide_definition: What the agent hides on its own (auto_hide, the user's text or the
+            server's); empty: the group gives no tools.
 
     Returns:
         The tools; empty for an empty selection.
     """
     if groups is None:
-        return default_tools(user_id, conversation=conversation, vision=vision)
+        return default_tools(user_id, conversation=conversation, vision=vision, hide_definition=hide_definition)
     groups = list(groups)
     unknown = [group for group in groups if group not in TOOL_GROUPS]
     if unknown:
         log.warning(f"Ignoring unknown tool group(s): {', '.join(map(str, unknown))}")
-    selected = _enabled_tools(groups, user_id, guest, conversation, vault, vision)
+    selected = _enabled_tools(groups, user_id, guest, conversation, vault, vision, family_mode, hide_definition)
     log.debug(f"Tools for groups {groups}: {', '.join(selected.names()) or 'none'}")
     return selected

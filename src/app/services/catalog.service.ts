@@ -1,12 +1,13 @@
 // src/app/services/catalog.service.ts
 import { Injectable } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { distinctUntilChanged, map } from 'rxjs/operators';
+import { BehaviorSubject, Observable, combineLatest } from 'rxjs';
+import { distinctUntilChanged, map, shareReplay } from 'rxjs/operators';
 import { ApiService } from './api.service';
 import { AuthService } from '../auth/auth.service';
 import { DBService } from '../data/db.service';
 import { IPublicModel, IPublicPersona } from '../data/models/catalog.model';
+import { FamilyModeService } from './family-mode.service';
 
 /** Models of one provider, in catalog order. */
 export interface ModelGroup {
@@ -30,6 +31,15 @@ export class CatalogService {
 
   public readonly models$: Observable<IPublicModel[]> = this.modelsSubject.asObservable();
   public readonly personas$: Observable<IPublicPersona[]> = this.personasSubject.asObservable();
+  /** The ids of the hidden agents. */
+  public readonly hiddenPersonaIds$: Observable<Set<number>> = this.personas$.pipe(
+    map(personas => FamilyModeService.hiddenPersonaIds(personas)),
+    shareReplay({ bufferSize: 1, refCount: false })
+  );
+  /** The agents to offer: without the hidden ones while this device is in family mode. */
+  public readonly visiblePersonas$: Observable<IPublicPersona[]> = combineLatest([
+    this.personas$, this.familyMode.active$
+  ]).pipe(map(([personas, hide]) => hide ? personas.filter(persona => !persona.hidden) : personas));
 
   /** Models grouped by provider, groups in the order of their first model. */
   public readonly modelGroups$: Observable<ModelGroup[]> = this.models$.pipe(
@@ -45,7 +55,8 @@ export class CatalogService {
   constructor(
     private apiService: ApiService,
     private authService: AuthService,
-    private dbService: DBService
+    private dbService: DBService,
+    private familyMode: FamilyModeService
   ) {
     // Load once auth is ready, and again for every new user (login, logout, guest session)
     this.authService.currentUser$.pipe(

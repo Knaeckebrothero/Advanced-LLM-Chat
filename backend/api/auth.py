@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from fastapi.responses import RedirectResponse
 from backend.config import (AUTH_MODE, FRONTEND_URL, GUEST_MAX_HOURS, GUEST_SESSION_TIMEOUT_HOURS,
-                            OIDC_DISPLAY_NAME, OIDC_REDIRECT_URI, SESSION_TIMEOUT_HOURS)
+                            FAMILY_MODE_ENABLED, FAMILY_MODE_SWITCH, OIDC_DISPLAY_NAME, OIDC_REDIRECT_URI, SESSION_TIMEOUT_HOURS)
 from backend.models.auth import MockLoginRequest, LoginResponse
 from backend.security import oidc
 from backend.security.auth import (
@@ -60,12 +60,15 @@ def set_session_cookies(response: Response, session_key: str, csrf_token: str, m
 async def auth_config():
     """
     Tells the login page how users log in: through the OIDC provider (`providerName` is
-    shown on its button), with the development mock login, or not at all.
+    shown on its button), with the development mock login, or not at all. `familyModeAvailable`
+    tells the app whether it offers family mode (FAMILY_MODE_ENABLED), `familyModeSwitch` how a
+    device turns it off and on (FAMILY_MODE_SWITCH: "settings" or "logo").
 
-    :return: The mode and, for oidc, the provider's display name.
+    :return: The mode, for oidc the provider's display name, and familyModeAvailable.
     :rtype: dict
     """
-    return {"mode": AUTH_MODE, "providerName": OIDC_DISPLAY_NAME if AUTH_MODE == "oidc" else None}
+    return {"mode": AUTH_MODE, "providerName": OIDC_DISPLAY_NAME if AUTH_MODE == "oidc" else None,
+            "familyModeAvailable": FAMILY_MODE_ENABLED, "familyModeSwitch": FAMILY_MODE_SWITCH}
 
 
 @router.post("/guest-login",

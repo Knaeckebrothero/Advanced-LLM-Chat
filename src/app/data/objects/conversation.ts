@@ -7,6 +7,7 @@
  */
 
 import { IConversation, IConversationSelection, PersonaValues } from '../models';
+import { HiddenBy } from '../models/conversation.model';
 
 /**
  * Conversation class that implements IConversation interface.
@@ -30,6 +31,10 @@ export class Conversation implements IConversation {
   personaId?: number | null;
   personaValues?: PersonaValues | null;
   selectionPending?: boolean;
+  // Hidden; undefined = not sent by the backend. hiddenPending: not sent yet
+  hidden?: boolean;
+  hiddenBy?: HiddenBy | null;  // Who set it: the user (agents leave it alone) or an agent
+  hiddenPending?: boolean;
 
   constructor(
     id: string,
@@ -127,6 +132,8 @@ export class Conversation implements IConversation {
   }
 
   private static readSelection(conv: Conversation, data: any): void {
+    if (typeof data.hidden === 'boolean') conv.hidden = data.hidden;
+    if (data.hiddenBy !== undefined) conv.hiddenBy = data.hiddenBy;
     if (data.modelId !== undefined) conv.modelId = data.modelId;
     if (data.personaId !== undefined) conv.personaId = data.personaId;
     if (data.personaValues !== undefined) {
@@ -188,6 +195,9 @@ export class Conversation implements IConversation {
     if (data.selectionPending) {
       conv.selectionPending = true;
     }
+    if (data.hiddenPending) {
+      conv.hiddenPending = true;
+    }
     return conv;
   }
 
@@ -213,7 +223,10 @@ export class Conversation implements IConversation {
       modelId: this.modelId,
       personaId: this.personaId,
       personaValues: this.personaValues,
-      selectionPending: this.selectionPending
+      selectionPending: this.selectionPending,
+      hidden: this.hidden,
+      hiddenBy: this.hiddenBy,
+      hiddenPending: this.hiddenPending
     };
   }
 }

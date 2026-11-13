@@ -115,6 +115,7 @@ PERSONA_FIELDS = {
     "sortOrder": "sort_order",
     "ownMemory": "own_memory",
     "mcpServers": "mcp_servers",
+    "hidden": "hidden",
 }
 # tools: NULL = every enabled tool, so null in an update selects all tools again; mcp_servers: NULL = none
 PERSONA_NULLABLE = {"description", "variables", "tools", "mcp_servers"}
@@ -350,6 +351,7 @@ def persona_out(row: dict) -> PersonaOut:
         sortOrder=row.get("sort_order") or 0,
         ownMemory=bool(row.get("own_memory")),
         mcpServers=list(row["mcp_servers"]) if row.get("mcp_servers") else None,
+        hidden=bool(row.get("hidden")),
     )
 
 
@@ -362,6 +364,7 @@ def persona_public(row: dict) -> PublicPersona:
         systemPrompt=row["system_prompt"],
         variables=_variables(row),
         tools=_tools(row),
+        hidden=bool(row.get("hidden")),
     )
 
 

@@ -48,11 +48,11 @@ def _clamp(value: Optional[int], default: int, maximum: int) -> int:
 
 
 def kb_search(query: Optional[str] = None, exact: Optional[List[str]] = None, tags: Optional[List[str]] = None,
-              max_results: Optional[int] = None, *, user_id: int, vault: int = 0) -> str:
+              max_results: Optional[int] = None, *, user_id: int, vault: int = 0, family_mode: bool = False) -> str:
     """Search the active notes; see knowledge_base.search_notes()."""
     try:
         hits = kb.search_notes(user_id, query=query, exact=exact, tags=tags,
-                               limit=_clamp(max_results, 10, MAX_SEARCH_RESULTS), vault=vault)
+                               limit=_clamp(max_results, 10, MAX_SEARCH_RESULTS), vault=vault, family_mode=family_mode)
     except KBError as e:
         raise _refused(e)
     if not hits:
@@ -68,10 +68,12 @@ def kb_search(query: Optional[str] = None, exact: Optional[List[str]] = None, ta
     return "\n".join(lines)
 
 
-def kb_list(tag: Optional[str] = None, max_results: Optional[int] = None, *, user_id: int, vault: int = 0) -> str:
+def kb_list(tag: Optional[str] = None, max_results: Optional[int] = None, *, user_id: int, vault: int = 0,
+            family_mode: bool = False) -> str:
     """List the active notes, newest first, and the tags in use."""
     try:
-        result = kb.list_notes(user_id, tag=tag, limit=_clamp(max_results, 50, MAX_LIST_RESULTS), vault=vault)
+        result = kb.list_notes(user_id, tag=tag, limit=_clamp(max_results, 50, MAX_LIST_RESULTS), vault=vault,
+                               family_mode=family_mode)
     except KBError as e:
         raise _refused(e)
     notes, total = result["notes"], result["total"]
@@ -89,10 +91,10 @@ def kb_list(tag: Optional[str] = None, max_results: Optional[int] = None, *, use
     return "\n".join(lines)
 
 
-def kb_read(note: str, *, user_id: int, vault: int = 0) -> str:
+def kb_read(note: str, *, user_id: int, vault: int = 0, family_mode: bool = False) -> str:
     """A note in full, with the notes it links to and the notes that link to it."""
     try:
-        found = kb.get_note(user_id, note, vault=vault)
+        found = kb.get_note(user_id, note, vault=vault, family_mode=family_mode)
     except KBError as e:
         raise _refused(e)
     lines = [f"# {found['title']}",
@@ -125,10 +127,10 @@ def _length_hint(content: str) -> str:
 
 
 def kb_write(title: str, content: str, description: Optional[str] = None, tags: Optional[List[str]] = None,
-             *, writer: Writer) -> str:
-    """Create a note."""
+             hidden: Optional[bool] = None, *, writer: Writer) -> str:
+    """Create a note (hidden: the note is hidden)."""
     try:
-        note = kb.create_note(writer, title, content, description=description, tags=tags)
+        note = kb.create_note(writer, title, content, description=description, tags=tags, hidden_note=bool(hidden))
     except KBError as e:
         raise _refused(e)
     return _about(note, f"Created note **{note['slug']}** (\"{note['title']}\", tags: {_tags(note['tags'])}). "
@@ -138,11 +140,12 @@ def kb_write(title: str, content: str, description: Optional[str] = None, tags: 
 
 
 def kb_update(note: str, content: Optional[str] = None, append: Optional[str] = None, title: Optional[str] = None,
-              description: Optional[str] = None, tags: Optional[List[str]] = None, *, writer: Writer) -> str:
-    """Change a note."""
+              description: Optional[str] = None, tags: Optional[List[str]] = None, hidden: Optional[bool] = None,
+              *, writer: Writer) -> str:
+    """Change a note (hidden: hide it or take the mark back, unless the user decided)."""
     try:
         updated, changes = kb.update_note(writer, note, content=content, append=append, title=title,
-                                          description=description, tags=tags)
+                                          description=description, tags=tags, hidden_note=hidden)
     except KBError as e:
         raise _refused(e)
     if not changes:
@@ -165,10 +168,10 @@ def kb_archive(note: str, reason: Optional[str] = None, *, writer: Writer) -> st
                             f"to it, change or remove that line.", writer.vault)
 
 
-def memory_add(text: str, section: Optional[str] = None, *, writer: Writer) -> str:
-    """Add a line to the memory."""
+def memory_add(text: str, section: Optional[str] = None, hidden: Optional[bool] = None, *, writer: Writer) -> str:
+    """Add a line to the memory (hidden: the line is hidden and gets the tag #hidden)."""
     try:
-        memory, changed = kb.memory_add(writer, text, section=section)
+        memory, changed = kb.memory_add(writer, text, section=section, hidden_line=hidden)
     except KBError as e:
         raise _refused(e)
     if not changed:
@@ -177,10 +180,10 @@ def memory_add(text: str, section: Optional[str] = None, *, writer: Writer) -> s
     return _about(memory, f"Added the line{where}. {kb.memory_status(memory['content'])}", writer.vault)
 
 
-def memory_replace(line: str, text: str, *, writer: Writer) -> str:
-    """Replace a line of the memory."""
+def memory_replace(line: str, text: str, hidden: Optional[bool] = None, *, writer: Writer) -> str:
+    """Replace a line of the memory (hidden: whether the new line is hidden; left out, it keeps the old line's mark)."""
     try:
-        memory = kb.memory_replace(writer, line, text)
+        memory = kb.memory_replace(writer, line, text, hidden_line=hidden)
     except KBError as e:
         raise _refused(e)
     return _about(memory, f"Replaced the line. {kb.memory_status(memory['content'])}", writer.vault)

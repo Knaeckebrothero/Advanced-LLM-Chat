@@ -379,3 +379,24 @@ h2 {
     display: none;
   }
 }
+
+// What agents hide on their own (family mode)
+.setting-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 84px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: var(--theme-input-bg, var(--theme-surface));
+  color: var(--theme-text);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: var(--theme-primary);
+  }
+}

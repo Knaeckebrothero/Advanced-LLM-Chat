@@ -14,6 +14,9 @@ import { ChatUiMessageComponent } from './chat-ui-message/chat-ui-message.compon
 import { IPublicModel } from '../data/models/catalog.model';
 import { IContextSize, IConversationSummary } from '../data/models/conversation.model';
 import { ApiService } from '../services/api.service';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { TranslateService } from '@ngx-translate/core';
+import { FamilyModeService } from '../services/family-mode.service';
 
 
 @Component({
@@ -162,10 +165,23 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     private themeService: ThemeService,
     private settingsState: SettingsStateService,
     private apiService: ApiService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private snackBar: MatSnackBar,
+    private translate: TranslateService,
+    private familyMode: FamilyModeService
   ) { }
 
   ngOnInit() {
+    // An agent hid its chat while answering : say so, and let the user take it back
+    this.destroy$.add(
+      this.chatState.agentHideMarks$.subscribe(({ conversationId, hidden }) => {
+        if (!hidden || !this.familyMode.available) return;
+        const key = this.familyMode.active ? 'hide.agentMarkedHidden' : 'hide.agentMarked';
+        this.snackBar.open(this.translate.instant(key), this.translate.instant('hide.undo'), { duration: 10000 })
+          .onAction().subscribe(() => void this.chatState.setConversationHidden(conversationId, false));
+      })
+    );
+
     // Add this block to subscribe to theme changes
     this.themeSubscription = this.themeService.theme$.subscribe(() => {
       this.isDarkMode = this.themeService.getCurrentEffectiveTheme() === 'dark';

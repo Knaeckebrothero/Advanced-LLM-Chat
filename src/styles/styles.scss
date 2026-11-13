@@ -246,6 +246,18 @@ body.theme-initialized {
   --mat-slide-toggle-label-text-color: var(--theme-text);
 }
 
+// The mark of hidden content while this device shows it: a small eye-off icon on
+// chats, agents and notes, its tooltip says who hid it
+.mat-icon.hidden-mark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  font-size: 14px;
+  line-height: 14px;
+  color: var(--theme-text-secondary);
+  vertical-align: middle;
+}
+
 // Tooltips with line breaks (model picker, usage of a message)
 .multiline-tooltip {
   white-space: pre-line;

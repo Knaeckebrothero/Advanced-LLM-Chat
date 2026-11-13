@@ -15,6 +15,8 @@ export interface IKBNoteSummary {
   tags: string[];
   status: NoteStatus;
   updatedAt: string | null;
+  hidden?: boolean;  // Hidden
+  hiddenBy?: 'user' | 'agent' | null;  // Who set it: the user (agents leave it alone) or an agent
 }
 
 export interface IKBTagCount {
@@ -76,6 +78,7 @@ export interface IKBNoteWrite {
   content: string;
   description: string | null;
   tags: string[];
+  hidden?: boolean;  // Hide the note or not; left out keeps it (the memory can't be marked)
 }
 
 export interface IKBNoteUpdate extends IKBNoteWrite {

@@ -22,6 +22,7 @@ import {
   DoneEventData
 } from './streaming.service';
 import { CatalogService } from './catalog.service';
+import { FamilyModeService } from './family-mode.service';
 import {
   IConversationSelection,
   IPublicModel,
@@ -150,6 +151,26 @@ export class ChatStateService implements OnDestroy {
     shareReplay(1)
   );
 
+  /**
+   * The open conversation its agent hidden during an answer: it stays open and listed while the
+   * user is in it, even where hidden content is hidden, and is hidden once they leave it.
+   */
+  private keptOpenHidden$ = new BehaviorSubject<string | null>(null);
+
+  /** An agent hid a conversation, or took its mark back, while answering (the chat offers Undo). */
+  public readonly agentHideMarks$ = new Subject<{ conversationId: string; hidden: boolean }>();
+
+  /** The conversations to show: without the hidden ones while this device is in family mode. */
+  public visibleConversations$: Observable<Conversation[]> = combineLatest([
+    this.conversations$, this.familyMode.active$, this.catalogService.hiddenPersonaIds$, this.keptOpenHidden$
+  ]).pipe(
+    map(([conversations, hide, hiddenPersonas, keptOpen]) => hide
+      ? conversations.filter(conversation => conversation.id === keptOpen
+          || !FamilyModeService.isConversationHidden(conversation, hiddenPersonas))
+      : conversations),
+    shareReplay(1)
+  );
+
   // Sync status
   public isSyncing$ = combineLatest([
     this.conversationRepository.syncing$,
@@ -196,16 +217,18 @@ export class ChatStateService implements OnDestroy {
     private http: HttpClient,
     private dbService: DBService,
     private catalogService: CatalogService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private familyMode: FamilyModeService
   ) {
     this.initializeService();
     this.listenToAuthChanges();
     this.watchSummary();
+    this.closeHiddenConversation();
   }
 
   private async initializeService(): Promise<void> {
     // Load initial conversation
-    const conversations = await firstValueFrom(this.conversations$);
+    const conversations = await firstValueFrom(this.visibleConversations$);
     if (conversations.length > 0) {
       await this.loadConversation(conversations[0].id);
     } else {
@@ -230,6 +253,55 @@ export class ChatStateService implements OnDestroy {
           this.loadSummary(this.activeConversationId$.getValue());
         }
       });
+  }
+
+  /**
+   * An open hidden conversation closes into a new chat once this device is in family mode: when
+   * the switch goes off, when the chat (or its agent) is marked, or when a link opens one. A new
+   * chat's hidden agent is dropped the same way.
+   */
+  private closeHiddenConversation(): void {
+    // A conversation kept open after its agent marked it is hidden once the user opens another
+    this.activeConversationId$.pipe(distinctUntilChanged(), takeUntil(this.destroy$)).subscribe(id => {
+      if (this.keptOpenHidden$.getValue() !== null && id !== this.keptOpenHidden$.getValue()) {
+        this.keptOpenHidden$.next(null);
+      }
+    });
+    combineLatest([this.activeConversation$, this.draftSelection$, this.familyMode.active$,
+                   this.catalogService.hiddenPersonaIds$])
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(([conversation, draft, hide, hiddenPersonas]) => {
+        if (!hide || !conversation || conversation.id === this.keptOpenHidden$.getValue()) return;
+        if (conversation.id !== '0' && conversation.id === this.activeConversationId$.getValue()
+            && FamilyModeService.isConversationHidden(conversation, hiddenPersonas)) {
+          // After this emission: switching the active conversation from inside a stream that
+          // derives from it would let the old conversation's values arrive last
+          const id = conversation.id;
+          queueMicrotask(() => {
+            if (this.activeConversationId$.getValue() === id) void this.createNewConversation();
+          });
+        } else if (conversation.id === '0' && draft.personaId != null && hiddenPersonas.has(draft.personaId)) {
+          this.draftSelection$.next(EMPTY_DRAFT);
+        }
+      });
+  }
+
+  /**
+   * An answer's tool result says its agent hid the conversation (hide_chat) or took the mark
+   * back: take it over at once, keep the open conversation open, and let the chat offer Undo.
+   */
+  private async onAgentHide(conversationId: string, hidden: boolean): Promise<void> {
+    if (hidden && conversationId === this.activeConversationId$.getValue()) {
+      this.keptOpenHidden$.next(conversationId);
+    }
+    if (await this.conversationRepository.applyAgentHidden(conversationId, hidden)) {
+      this.agentHideMarks$.next({ conversationId, hidden });
+    }
+  }
+
+  /** Hide a conversation or unhide it; hidden at once if this device is in family mode. */
+  async setConversationHidden(conversationId: string, hidden: boolean): Promise<void> {
+    await this.conversationRepository.setHidden(conversationId, hidden);
   }
 
   /** Load the summary of every conversation that becomes active (a new one has none). */
@@ -632,6 +704,11 @@ export class ChatStateService implements OnDestroy {
         // A step with a known id replaces the earlier one (e.g. the reasoning step, sent
         // empty at its start and complete at its end); otherwise it is a new step
         const step = event.data as AgentStep;
+        // The agent hid its conversation, or took the mark back 
+        const hiddenChat = (step.metadata as Record<string, unknown> | undefined)?.['hiddenChat'];
+        if (typeof hiddenChat === 'boolean' && message.conversationId) {
+          void this.onAgentHide(message.conversationId, hiddenChat);
+        }
         const steps = message.content.steps;
         const index = steps.findIndex(s => s.id === step.id);
         if (index >= 0) {
