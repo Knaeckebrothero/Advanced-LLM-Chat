@@ -36,6 +36,17 @@ MODEL_IMAGE_MAX_BYTES = 3 * 1024 * 1024  # As it is only below this (the APIs li
 # Longest edge of the previews the chat shows
 THUMBNAIL_EDGES = {"small": 256, "large": 1024}
 
+# Most pixels of an image that are decoded, for a preview or for a model. A few hundred KB of
+# PNG can claim any size, and Pillow keeps 4 bytes per pixel (twice that for a moment when the
+# image has transparency): 25 megapixels are 100 to 200 MB. That is more than a 6K screenshot
+# (20 megapixels); a larger image is stored and served, but has no preview. Photos of any size
+# have one: a camera's JPEG is decoded at a fraction of its size (_scaled())
+MAX_IMAGE_PIXELS = 25_000_000
+
+# Images decoded at once, so that their memory doesn't add up: previews are asked for in parallel
+MAX_IMAGE_DECODES = 2
+_decoding = threading.BoundedSemaphore(MAX_IMAGE_DECODES)
+
 # Longest details of a tool's file (the call's arguments)
 MAX_DETAILS_CHARS = 2000
 
@@ -105,12 +116,19 @@ def extension_for(mime_type: Optional[str], name: Optional[str] = None) -> str:
 
 
 def image_size(data: bytes) -> Optional[tuple[int, int]]:
-    """An image's width and height in pixels as it is shown (EXIF rotation applied), or None."""
+    """
+    An image's width and height in pixels as it is shown (EXIF rotation applied), or None.
+
+    Only its header is read: this runs for every stored image, whatever size it claims.
+    """
     try:
         from PIL import Image
         with Image.open(io.BytesIO(data)) as image:
             width, height = image.size
-            if image.getexif().get(0x0112) in (5, 6, 7, 8):  # Rotated by a quarter turn
+            # Not for a PNG without EXIF data in its header: Pillow decodes the whole image then,
+            # to look for EXIF data behind the pixels
+            exif = image.getexif() if image.format != "PNG" or "exif" in image.info else {}
+            if exif.get(0x0112) in (5, 6, 7, 8):  # Rotated by a quarter turn
                 width, height = height, width
             return width, height
     except Exception:
@@ -199,12 +217,13 @@ def save_tool_file(data: bytes, *, user_id: int, conversation_id: str, mime_type
         row = store(data, user_id, name=name, mime_type=mime_type, conversation_id=conversation_id,
                     message_id=message_id, source=SOURCE_TOOL, origin=origin, details=details)
     if row.get("mime_type") == "application/pdf":
-        # Like an uploaded PDF: its text and pages, for read_file and the chat's preview
-        try:
-            from backend.services.document_handler import process_pdf
-            process_pdf(row["path"], row["file_id"])
-        except Exception as e:
-            log.warning(f"Could not process the PDF {row['file_id']}: {e}")
+        # Like an uploaded PDF: its text and pages, for read_file and the chat's preview. In a
+        # process of its own with limits, as a tool's PDF is no more trusted than a user's. This
+        # blocks until the PDF is done: tools save their files in a thread (mcp/tools.py)
+        from backend.services.document_handler import process_pdf_safely
+        result = process_pdf_safely(row["path"], row["file_id"])
+        if result.get("error"):
+            log.warning(f"Could not process the PDF {row['file_id']}: {result['error']}")
     return row
 
 
@@ -295,13 +314,68 @@ def file_ref(row: dict) -> dict:
 # Images
 # =========================================================================
 
-def _open_image(path: Path) -> tuple[Any, Optional[str]]:
-    """An image as shown (the first frame, EXIF rotation applied) and its format ("JPEG", "PNG", ...)."""
-    from PIL import Image, ImageOps
-    image = Image.open(path)
-    image_format = image.format
-    image.seek(0)
-    return ImageOps.exif_transpose(image), image_format
+def _jpeg_in_one_pass(path: Path) -> bool:
+    """
+    Whether libjpeg decodes a JPEG row by row: a baseline JPEG with all its components in the
+    first scan, as cameras write them. Only then does a reduced size (Image.draft()) make
+    decoding cheap. Any other JPEG (progressive, or one scan per component) it first reads as a
+    whole, at 2 bytes per sample, up to 6 per pixel, whatever size is asked for.
+
+    Reads the segments up to the first scan, as libjpeg decides it; anything unexpected is a no.
+    """
+    try:
+        with open(path, "rb") as file:
+            if file.read(2) != b"\xff\xd8":
+                return False
+            components = None
+            for _ in range(1000):
+                if file.read(1) != b"\xff":
+                    return False
+                marker = file.read(1)
+                while marker == b"\xff":  # Fill bytes before a marker
+                    marker = file.read(1)
+                if not marker or marker[0] == 0x01 or 0xD0 <= marker[0] <= 0xD9:
+                    return False  # The file's end, or a marker without a segment: none belongs here
+                kind = marker[0]
+                length = int.from_bytes(file.read(2), "big")
+                segment = file.read(max(length - 2, 0))
+                if length < 2 or len(segment) != length - 2:
+                    return False
+                if kind in (0xC0, 0xC1):  # Start of frame, baseline or extended sequential
+                    if components is not None or len(segment) < 6:
+                        return False
+                    components = segment[5]
+                elif 0xC2 <= kind <= 0xCF and kind not in (0xC4, 0xC8, 0xCC):
+                    return False  # Any other frame: progressive, lossless, arithmetic coding
+                elif kind == 0xDA:  # Start of scan
+                    return components is not None and len(segment) >= 1 and segment[0] == components
+            return False
+    except OSError:
+        return False
+
+
+def _scaled(path: Path, image, edge: int):
+    """
+    An opened image as shown (the first frame, EXIF rotation applied), scaled to at most `edge`
+    pixels on its longer edge. This is where images are decoded.
+
+    Raises:
+        ValueError: More than MAX_IMAGE_PIXELS pixels would have to be decoded.
+    """
+    from PIL import ImageOps
+    pixels = image.width * image.height
+    longest = max(image.size)
+    if longest > edge:
+        # A JPEG can be decoded at 1/2, 1/4 or 1/8 of its size: the smallest that still covers
+        # the result, so a camera's 50 megapixels cost what 3 do. Other formats ignore this
+        image.draft(None, (max(1, image.width * edge // longest), max(1, image.height * edge // longest)))
+        if image.format in ("JPEG", "MPO") and _jpeg_in_one_pass(path):
+            pixels = image.width * image.height  # The reduced size is all that is decoded
+    if pixels > MAX_IMAGE_PIXELS:
+        raise ValueError(f"{pixels} pixels to decode, more than {MAX_IMAGE_PIXELS}")
+    # Scaled before it is turned: turning a full-size image would copy it at full size
+    image.thumbnail((edge, edge))
+    return ImageOps.exif_transpose(image)
 
 
 def _has_alpha(image) -> bool:
@@ -314,7 +388,8 @@ def thumbnail(file_id: str, size: str) -> Optional[Path]:
     as WebP. Made once and kept next to the file (<file ID>_thumb_<size>.webp, deleted with it).
 
     Returns:
-        The preview's path, or None if the file is missing or no image Pillow can read.
+        The preview's path, or None if the file is missing, no image Pillow can read, or an
+        image with more pixels than are decoded (MAX_IMAGE_PIXELS).
     """
     edge = THUMBNAIL_EDGES[size]
     path = get_file_path(file_id)
@@ -324,15 +399,16 @@ def thumbnail(file_id: str, size: str) -> Optional[Path]:
     if preview.is_file():
         return preview
     try:
-        image, _ = _open_image(path)
-        image.thumbnail((edge, edge))
-        if image.mode not in ("RGB", "RGBA"):
-            image = image.convert("RGBA" if _has_alpha(image) else "RGB")
-        # Written under another name first: a reader never gets half a file
-        partial = preview.with_name(f"{preview.name}.{secrets.token_hex(4)}.part")
-        image.save(partial, "WEBP", quality=82, method=4)
-        partial.replace(preview)
-        return preview
+        from PIL import Image
+        with _decoding, Image.open(path) as source:
+            image = _scaled(path, source, edge)
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGBA" if _has_alpha(image) else "RGB")
+            # Written under another name first: a reader never gets half a file
+            partial = preview.with_name(f"{preview.name}.{secrets.token_hex(4)}.part")
+            image.save(partial, "WEBP", quality=82, method=4)
+            partial.replace(preview)
+            return preview
     except Exception as e:
         log.info(f"No preview of {file_id}: {type(e).__name__}: {e}")
         return None
@@ -344,24 +420,25 @@ def image_for_model(file_id: str) -> Optional[tuple[bytes, str]]:
     JPEG (PNG with transparency). A JPEG that is small enough goes as it is.
 
     Returns:
-        (data, MIME type), or None if the file is missing or no image Pillow can read.
+        (data, MIME type), or None if the file is missing, no image Pillow can read, or an
+        image with more pixels than are decoded (MAX_IMAGE_PIXELS).
     """
     path = get_file_path(file_id)
     if path is None:
         return None
     try:
-        image, image_format = _open_image(path)
-        fits = max(image.size) <= MODEL_IMAGE_EDGE
-        if fits and image_format == "JPEG" and path.stat().st_size <= MODEL_IMAGE_MAX_BYTES:
-            return path.read_bytes(), "image/jpeg"
-        if not fits:
-            image.thumbnail((MODEL_IMAGE_EDGE, MODEL_IMAGE_EDGE))
-        output = io.BytesIO()
-        if _has_alpha(image):
-            image.convert("RGBA").save(output, "PNG", optimize=True)
-            return output.getvalue(), "image/png"
-        image.convert("RGB").save(output, "JPEG", quality=88)
-        return output.getvalue(), "image/jpeg"
+        from PIL import Image
+        with _decoding, Image.open(path) as source:
+            fits = max(source.size) <= MODEL_IMAGE_EDGE
+            if fits and source.format == "JPEG" and path.stat().st_size <= MODEL_IMAGE_MAX_BYTES:
+                return path.read_bytes(), "image/jpeg"
+            image = _scaled(path, source, MODEL_IMAGE_EDGE)
+            output = io.BytesIO()
+            if _has_alpha(image):
+                image.convert("RGBA").save(output, "PNG", optimize=True)
+                return output.getvalue(), "image/png"
+            image.convert("RGB").save(output, "JPEG", quality=88)
+            return output.getvalue(), "image/jpeg"
     except Exception as e:
         log.warning(f"Image {file_id} can't be prepared for the model: {type(e).__name__}: {e}")
         return None

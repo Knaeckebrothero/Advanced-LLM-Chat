@@ -72,6 +72,14 @@ All under `/api/files`, for the file's owner only (404 otherwise):
 - `GET /{id}/text`: a document's extracted text, or an audio file's transcript.
 - `DELETE /{id}`: the file with everything derived from it.
 
+## Limits
+
+A file comes from anybody (a guest, an MCP server), so nothing that reads one may cost more than a fixed amount, whatever the file claims to be.
+
+- **PDFs** are read in a process of their own, never in the server (`document_handler.process_pdf_safely()`, `backend/services/pdf_worker.py`): at most 60 seconds, at most 512 MB allocated by the worker and by the `pdftoppm` it starts, at most 2 at once. Up to 4 more wait their turn; beyond that a PDF is not processed. Of a PDF, the first 20 pages are rendered, each scaled to 1754 pixels on its longer edge (an A4 page at 150 dpi) whatever its size on paper, and at most 500,000 characters of text are kept. The page images of one PDF may take 32 MB together; the pages past that are not kept (pages of text take a few hundred KB each). A PDF that takes too long, or whose text needs more memory than that, is still stored, but without text and pages; one that only `pdftoppm` fails on keeps its text. The worker gets none of the server's settings (no keys, no passwords), only where programs are and the language. It is limited, not locked in: it runs as the server's user. The call blocks, so it runs in a thread (`asyncio.to_thread`). In the backend image `tini` is the first process, so the `pdftoppm` of a worker that was killed doesn't stay behind as a dead process.
+- **Images** are decoded only up to 25 megapixels (`file_store.MAX_IMAGE_PIXELS`), two at a time. A larger one is stored and served, but has no preview and is not shown to a model. A camera's JPEG is the exception: it is decoded at a fraction of its size, so photos of any size get both. Reading an image's size (`image_size()`) never decodes it.
+- **Audio:** the local Whisper model is loaded into the server and transcribes on its CPU for as long as the audio takes, one file at a time in a thread of its own. `WHISPER_LOCAL_FALLBACK=false` keeps a failed API transcription from starting it; a public deployment should set that.
+
 ## Data
 
 `uploaded_files`: `file_id`, `user_id`, `created_at`, `conversation_id` (null: in no conversation), `message_id` (the message it came with: the user's, or the answer a tool made it in), `name`, `mime_type`, `size_bytes`, `width`, `height`, `source` (`upload` or `tool`), `origin` and `details` (files of tools).
@@ -80,6 +88,7 @@ All under `/api/files`, for the file's owner only (404 otherwise):
 
 - `python -m backend.llm.tests.run_all`: the file tools on a fake file table (the conversation's files only, names and IDs, a vision model gets the scaled image, a text-only model the description, `show_file`), lists that models send as text, the vision helper's errors not cached, and images in tool results for both adapters.
 - `python backend/services/tests/mcp_test.py` (`test_files`, `test_media`): against a real Postgres and real MCP servers: images of a result saved with unique names, linked resources, the download fallback and its limits, uploads linked and unlinked with their messages, the migration's backfill, previews, the files API.
+- `python backend/services/tests/upload_safety_test.py`: the limits above, offline, with files it builds itself: PDFs with pages of 200 inches, PDFs that take poppler minutes or pdfminer gigabytes, PNGs that claim millions of pixels, a camera's JPEG, the local Whisper model as a fake.
 
 ## Not built yet
 
