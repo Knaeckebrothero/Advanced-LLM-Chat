@@ -63,6 +63,22 @@ SUMMARY_LEAD_IN = (
 )
 SUMMARY_CONTINUE = "Continue the conversation from there. Do not mention or recap this summary."
 
+# Sent in the user's place when the history ends with the model's own message (Generate after an
+# answer, manual editing). No provider answers such a history as it is: Anthropic takes the last
+# message as the start of the answer or refuses it, others demand that a user message comes last
+CONTINUE_NOTE = ("[No new message from the user. Continue from where your last message ended, "
+                 "without mentioning this note.]")
+
+
+def needs_continue_note(messages: List[dict]) -> bool:
+    """The history ends with the model's own message, so it has to be asked to go on (CONTINUE_NOTE)."""
+    return bool(messages) and messages[-1].get("role") == "assistant"
+
+
+def continue_message() -> dict:
+    """CONTINUE_NOTE as the message that follows the model's own."""
+    return {"role": "user", "content": CONTINUE_NOTE}
+
 # Token estimate without a tokenizer: about 3 characters per token errs on the
 # safe side for most tokenizers and languages (English text is closer to 4)
 CHARS_PER_TOKEN = 3

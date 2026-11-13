@@ -28,7 +28,7 @@ import {
   IToolStatus,
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
-import { IContextSize, IConversationSummary } from '../data/models/conversation.model';
+import { IContextSize, ISystemPrompt, IConversationSummary } from '../data/models/conversation.model';
 import { FilePreviewSize, IFileRef } from '../data/models/file.model';
 import {
   IKBMemory,
@@ -606,6 +606,26 @@ export class ApiService {
     return await lastValueFrom(
       this.http.post<IContextSize>(
         `${this.baseUrl}/api/message/context-size`, { conversationId, modelId: modelId ?? null }, this.getHttpOptions())
+    );
+  }
+
+  /** The system prompt the next answer gets, as its model gets it, for the conversation's model or modelId. */
+  async getSystemPrompt(conversationId: string, modelId?: number | null): Promise<ISystemPrompt> {
+    const params: Record<string, string> = { conversationId };
+    if (modelId !== null && modelId !== undefined) params['modelId'] = String(modelId);
+    return await lastValueFrom(
+      this.http.get<ISystemPrompt>(`${this.baseUrl}/api/message/system-prompt`, { ...this.getHttpOptions(), params })
+    );
+  }
+
+  /**
+   * Sets a conversation's own system prompt, which its answers then get as it is: '' sends none,
+   * null goes back to the one built from the conversation's agent. Returns what the next answer gets.
+   */
+  async setSystemPrompt(conversationId: string, content: string | null, modelId?: number | null): Promise<ISystemPrompt> {
+    return await lastValueFrom(
+      this.http.put<ISystemPrompt>(
+        `${this.baseUrl}/api/message/system-prompt`, { conversationId, content, modelId: modelId ?? null }, this.getHttpOptions())
     );
   }
 

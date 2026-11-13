@@ -4,6 +4,7 @@ Message API endpoints.
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import Dict, AsyncGenerator, Iterable, List, Optional, Tuple
 from fastapi import APIRouter, Request, Response, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
@@ -22,6 +23,8 @@ from backend.models.message import (
     SummarizeRequest,
     ContextSizeRequest,
     ContextSize,
+    SystemPrompt,
+    SystemPromptUpdate,
     MessageStartEvent,
     ConversationSummary,
     AgentStep
@@ -35,6 +38,7 @@ from backend.llm import (
     ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, skill_tools, tools_for_groups,
     with_instructions, with_mcp_servers, with_memory, with_skills
 )
+from backend.llm.prompts import hide_section, without_hide_section
 from backend.llm.tools import MEMORY_TOOL_NAMES
 from backend.catalog.resolver import (
     ModelNotAllowed,
@@ -48,12 +52,13 @@ from backend.catalog.resolver import (
     resolve_model,
 )
 from backend.services import knowledge_base as kb
-from backend.services.hidden_content import auto_hide_definition, family_mode
+from backend.services.hidden_content import auto_hide_definition, family_mode, restore_hidden, visible
 from backend.services.mcp.tools import McpToolset, Notice, notice_step, tools_for_answer as mcp_tools_for_answer
 from backend.services.llm import generate_reply
 from backend.llm.tool_record import with_text as record_with_text
 from backend.services.conversation_history import (
-    ConversationHistoryBuilder, HistoryEntry, entry_tokens, estimate_tokens, history_token_budget, summary_message
+    CONTINUE_NOTE, ConversationHistoryBuilder, HistoryEntry, continue_message, entry_tokens, estimate_tokens,
+    history_token_budget, needs_continue_note, summary_message
 )
 from backend.config import DEFAULT_CONTEXT_WINDOW
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
@@ -103,9 +108,27 @@ def _resolve_model(current_user: dict, conversation_id: str, model_id: Optional[
         raise NoModelAvailableError(str(e) or NO_MODEL_MESSAGE)
 
 
+def _own_system_prompt(conversation: Optional[dict], hide: bool = False) -> Optional[str]:
+    """
+    The conversation's own system prompt, set in manual editing: it is sent as it is, in place
+    of the one built from the conversation's agent. None without one ('' sends none). With
+    hide (a device in family mode) without its hidden lines, like the memory.
+    """
+    own = (conversation or {}).get('system_prompt')
+    if own is None:
+        return None
+    return (visible(own) or "") if hide else own
+
+
 def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
-    """The system prompt for a conversation: its persona (if any) plus the tool instructions."""
+    """
+    The system prompt for a conversation: its own if it has one, else its persona (if any) plus
+    the tool instructions.
+    """
     conversation = db.get_conversation_by_id(conversation_id)
+    own = _own_system_prompt(conversation)
+    if own is not None:
+        return own
     return build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
 
 
@@ -185,6 +208,21 @@ async def _mcp_tools(current_user: dict, conversation: Optional[dict], config: M
     return (registry if len(registry) else None), toolset
 
 
+@dataclass
+class AnswerParts:
+    """What an answer in a conversation is built from, its system prompt still in its two parts."""
+    tools: Optional[ToolRegistry]
+    history_builder: ConversationHistoryBuilder
+    base_prompt: str            # The system prompt without the conversation's system messages
+    own_prompt: bool            # base_prompt is the conversation's own, not built from its agent
+    instructions: List[str]     # The conversation's system messages, which follow it
+    notices: List[Notice]       # The MCP servers that gave no tools
+
+    @property
+    def system_prompt(self) -> str:
+        return with_instructions(self.base_prompt, self.instructions)
+
+
 async def _answer_context(
     current_user: dict,
     conversation_id: str,
@@ -195,9 +233,28 @@ async def _answer_context(
     hide: bool = False
 ) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int, List[Notice]]:
     """
-    What an answer in this conversation is built from: the tools, the history builder,
-    the system prompt, the token budget of the history, and the MCP servers that gave
-    no tools (to show as steps).
+    What an answer in this conversation is built from (_answer_parts()): the tools, the
+    history builder, the system prompt, the token budget of the history, and the MCP servers
+    that gave no tools (to show as steps).
+    """
+    parts = await _answer_parts(current_user, conversation_id, config, mcp=mcp, answer_id=answer_id, hide=hide)
+    system_prompt = parts.system_prompt
+    return (parts.tools, parts.history_builder, system_prompt,
+            history_token_budget(config, system_prompt, parts.tools), parts.notices)
+
+
+async def _answer_parts(
+    current_user: dict,
+    conversation_id: str,
+    config: ModelConfig,
+    *,
+    mcp: bool = True,
+    answer_id: Optional[int] = None,
+    hide: bool = False
+) -> AnswerParts:
+    """
+    What an answer in this conversation is built from: the tools, the history builder and
+    the system prompt.
 
     The persona decides the prompt and which tools the model gets; the prompt only
     describes the tools it really has. Its skills are listed next (docs/skills.md), for a
@@ -207,6 +264,9 @@ async def _answer_context(
     agent's memory follows (read for every answer, so a change shows in the next one).
     The conversation's system messages are instructions to the model and come last. With hide,
     the device is in family mode: the memory and the tools leave it out.
+
+    A conversation with its own system prompt (manual editing, _own_system_prompt()) sends that
+    in place of all of this but its system messages. The tools stay as they are.
     """
     conversation = db.get_conversation_by_id(conversation_id)
     # In a hidden conversation hidden content is plainly shown, so its agent sees all of its memory
@@ -222,15 +282,16 @@ async def _answer_context(
     if tools is not None and current_user.get('is_guest'):
         tools.hide_errors = True  # A guest sees that a tool failed, not the text of an unexpected error
     history_builder = ConversationHistoryBuilder(db)
-    system_prompt = with_instructions(
-        _memory_prompt(
+    base_prompt = _own_system_prompt(conversation, hide)
+    own_prompt = base_prompt is not None
+    if base_prompt is None:
+        base_prompt = _memory_prompt(
             with_mcp_servers(with_skills(build_system_prompt(persona_prompt_for_conversation(current_user, conversation),
                                                              tools, hide_definition), skills),
                              toolset.servers, toolset.unavailable()),
-            current_user, conversation, tools, hide),
-        history_builder.system_instructions(conversation_id))
-    return (tools, history_builder, system_prompt, history_token_budget(config, system_prompt, tools),
-            toolset.notices)
+            current_user, conversation, tools, hide)
+    return AnswerParts(tools, history_builder, base_prompt, own_prompt,
+                       history_builder.system_instructions(conversation_id), toolset.notices)
 
 
 async def _fold_into_summary(
@@ -275,6 +336,15 @@ def _summary_step(step_id: str, started_ms: int, count: int, state: str, detail:
     now_ms = int(time.time() * 1000)
     step = AgentStep(id=step_id, type="observation", title=title, content=content, timestamp=started_ms,
                      duration=now_ms - started_ms if state != "running" else None)
+    return _step_to_dict(step)
+
+
+def _continue_step(step_id: str) -> dict:
+    """The step that shows that the model was asked to go on after its own message, and with which words."""
+    step = AgentStep(id=step_id, type="observation", title="Asked to go on",
+                     content="The conversation ended with an answer, so the model got this note in place of a "
+                             f"message from you: {CONTINUE_NOTE}",
+                     timestamp=int(time.time() * 1000), duration=0)
     return _step_to_dict(step)
 
 
@@ -1292,6 +1362,12 @@ async def stream_generate(
                 }
                 return
 
+            # Generate after an answer (manual editing): a note in the user's place asks the model
+            # to go on, and a step shows that it got one
+            if needs_continue_note(history_messages):
+                history_messages.append(continue_message())
+                yield step_event(_continue_step(f"continue-{message_id}"))
+
             if not any(message.get('role') == 'user' for message in history_messages):
                 yield {
                     "event": "error",
@@ -1516,6 +1592,87 @@ async def context_size(
         leftOutCount=len(entries) - message_count,
         summarizes=messages_to_summarize(entries, summary, token_budget) > 0,
     )
+
+
+def _shown_system_prompt(parts: AnswerParts, in_family_mode: bool) -> SystemPrompt:
+    """The system prompt as the chat shows it: a device in family mode doesn't get the section on hidden content."""
+    content = without_hide_section(parts.base_prompt) if in_family_mode else parts.base_prompt
+    return SystemPrompt(content=content, custom=parts.own_prompt, tokens=estimate_tokens(content))
+
+
+@router.get("/system-prompt",
+            response_model=SystemPrompt,
+            responses={
+                status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse, "description": "No model configured"}
+            })
+async def get_system_prompt(
+    conversationId: str,
+    modelId: Optional[int] = None,
+    current_user: dict = Depends(get_current_user),
+    hide: bool = Depends(family_mode)
+) -> SystemPrompt:
+    """
+    The system prompt the next answer in a conversation gets, as its model gets it. Manual
+    editing shows it as the conversation's first message.
+
+    Built as stream-generate builds it, for the conversation's model (or modelId) and with
+    the agent's MCP servers, but without the conversation's system messages: they follow it,
+    and the chat shows them where they are. Nothing is sent to a model.
+
+    :raises HTTPException: 403 without access to the conversation or the model, 503 without a model.
+    """
+    if not verify_conversation_ownership(conversationId, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+    config = _resolve_model_or_503(current_user, conversationId, modelId)
+    return _shown_system_prompt(await _answer_parts(current_user, conversationId, config, hide=hide), hide)
+
+
+@router.put("/system-prompt",
+            response_model=SystemPrompt,
+            responses={
+                status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse, "description": "No model configured"}
+            },
+            dependencies=[Depends(guest_write)])
+async def set_system_prompt(
+    request_body: SystemPromptUpdate,
+    current_user: dict = Depends(get_current_user),
+    hide: bool = Depends(family_mode)
+) -> SystemPrompt:
+    """
+    Set a conversation's own system prompt (manual editing): from now on its answers get this
+    text as it is, in place of the prompt built from the conversation's agent, so the memory,
+    the tool notes and the date in it no longer change. '' sends no system prompt; None goes
+    back to the built one. The conversation's system messages still follow it, and the tools
+    stay as they are.
+
+    Returns the prompt the next answer gets.
+
+    :raises HTTPException: 403 without access to the conversation or the model, 503 without a model.
+    """
+    conversation_id = request_body.conversationId
+    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+    config = _resolve_model_or_503(current_user, conversation_id, request_body.modelId)
+
+    content = request_body.content
+    if content is not None and hide:
+        # A device in family mode was shown the prompt without its hidden lines and without the
+        # section on hidden content: a save keeps what the device didn't see
+        previous = (db.get_conversation_by_id(conversation_id) or {}).get('system_prompt')
+        if previous is None:
+            previous = (await _answer_parts(current_user, conversation_id, config, mcp=False, hide=hide)).base_prompt
+        else:
+            content = restore_hidden(previous, content)
+        section = hide_section(previous)
+        if section and not hide_section(content):
+            content = f"{content.rstrip()}\n\n{section}" if content.strip() else section
+
+    db.update_conversation(conversation_id, current_user['user_id'], system_prompt=content)
+    crud_logger.info(f"System prompt of conversation {conversation_id} "
+                     f"{'reset' if content is None else f'set ({len(content)} characters)'}")
+    return _shown_system_prompt(await _answer_parts(current_user, conversation_id, config, hide=hide), hide)
 
 
 @router.post("/tts/{conversation_id}/{message_id}",

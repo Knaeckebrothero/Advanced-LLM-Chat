@@ -31,6 +31,7 @@
     "sendsAfterUpload": "Sends as soon as the files are uploaded",
     "stop": "Stop answering",
     "generate": "Generate an answer",
+    "generateMore": "Generate another answer (the agent goes on)",
     "context": {
       "total": "About {{count}} of {{window}} input tokens ({{percent}} %)",
       "parts": "System prompt {{system}} · tools {{tools}} · history {{history}} ({{messages}} messages)",
@@ -539,7 +540,7 @@
     "guided": "Guided",
     "manual": "Manual",
     "guidedHint": "You edit your own messages, and an edited message is answered again.",
-    "manualHint": "You edit any message, the answers too, and insert messages anywhere. Nothing is answered on its own: “Generate an answer” in the input field answers your newest message."
+    "manualHint": "You edit any message, the answers too, and insert messages anywhere, and none of that is answered on its own. “Generate an answer” in the empty input field answers the chat as it stands, also after an answer."
   },
   "hide": {
     "familyMode": "Family mode",
@@ -593,6 +594,29 @@
     "options": "More options",
     "deleteConfirm": "Delete this conversation?",
     "exportFailed": "The conversation could not be exported: {{error}}"
+  },
+  "systemPrompt": {
+    "title": "System prompt",
+    "state": {
+      "built": "Built from the agent",
+      "custom": "Edited for this chat",
+      "none": "None"
+    },
+    "hint": {
+      "built": "What the next answer gets as its system message. System messages in this chat are added after it.",
+      "custom": "Sent exactly as it is: the memory, the notes on tools and the date in it no longer change.",
+      "none": "This chat sends no system prompt. System messages in it are still sent."
+    },
+    "tokens": "about {{count}} tokens",
+    "showAll": "Show all",
+    "showLess": "Show less",
+    "edit": "Edit the system prompt",
+    "remove": "Send no system prompt",
+    "reset": "Back to the agent's prompt",
+    "editHint": "Saving makes this the chat's own system prompt: it is sent exactly as written here until you go back to the agent's prompt.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saveFailed": "The system prompt couldn't be saved."
   },
   "summary": {
     "title": "{{count}} earlier messages summarized",

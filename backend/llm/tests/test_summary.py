@@ -28,11 +28,13 @@ import httpx
 from backend.llm.tests.fake_openai_server import (
     FakeOpenAIServer, chunk, completion, tool_call_delta, usage_chunk,
 )
-from backend.llm.tests.test_history import LONG_ROWS, FakeDB, assistant, user
+from backend.llm.prompts import IDENTITY_PROMPT, INSTRUCTIONS_HEADING, hide_prompt
+from backend.llm.tests.test_history import LONG_ROWS, FakeDB, assistant, system, user
 from backend.llm.tools import Tool, ToolRegistry
 from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
 from backend.services import conversation_summary
 from backend.services.conversation_history import (
+    CONTINUE_NOTE,
     SUMMARY_CONTINUE,
     SUMMARY_LEAD_IN,
     TOOL_RECORD_KEY,
@@ -254,9 +256,14 @@ class EndpointDB(FakeDB):
         super().__init__(rows)
         self.summary = summary
         self.answers = []
+        self.conversation = {}  # What update_conversation() set
 
     def get_conversation_by_id(self, conversation_id, user_id=None):
-        return {"id": conversation_id, "persona_id": None}
+        return {"id": conversation_id, "persona_id": None, **self.conversation}
+
+    def update_conversation(self, conversation_id, user_id=None, **values):
+        self.conversation.update(values)
+        return self.get_conversation_by_id(conversation_id)
 
     def get_conversation_summary(self, conversation_id):
         return self.summary
@@ -280,12 +287,12 @@ def message_api(fake_db, config):
     from fastapi import FastAPI
     from backend.api import messages
     from backend.security.auth import get_current_user
-    from backend.security.guest_limits import rate_limit_guest
+    from backend.security.guest_limits import guest_write, rate_limit_guest
 
     app = FastAPI()
     app.include_router(messages.router)
     app.dependency_overrides[get_current_user] = lambda: {"user_id": 1, "email": "a@example.com", "is_guest": False}
-    app.dependency_overrides[rate_limit_guest] = lambda: None
+    app.dependency_overrides[rate_limit_guest] = app.dependency_overrides[guest_write] = lambda: None
     saved = messages.db, messages._resolve_model, messages.verify_conversation_ownership
     messages.db = fake_db
     messages._resolve_model = lambda user, conversation_id, model_id=None: config
@@ -613,12 +620,106 @@ async def test_every_request_continues_the_one_before(server):
          messages.persona_vault) = saved
 
 
+async def test_system_prompt_is_shown_and_can_be_replaced(server):
+    # Manual editing shows the system prompt as the conversation's first message, and can replace it
+    from backend.services import hidden_content
+    rows = [user(1000, 1, "Hi"), assistant(1500, 1, "Hello!"), system(1600, 2, "Be brief."), user(2000, 2, "And now?")]
+    fake_db = EndpointDB(rows)
+    config = make_config(server.base_url, context_window=128000, supports_tools=False)
+    instructions = f"{INSTRUCTIONS_HEADING}\nBe brief."
+    generate = {"conversationId": "c", "aiParticipant": "Assistant"}
+    where = {"conversationId": "c"}
+
+    async def sent_system(client, headers=None):
+        """The system message of the request an answer makes; None without one."""
+        server.script(summary_or_answer)
+        response = await client.post("/api/message/stream-generate", json=generate, headers=headers)
+        assert response.status_code == 200 and "event: done" in response.text, response.text
+        first = server.requests[-1]["messages"][0]
+        return first["content"] if first["role"] == "system" else None
+
+    with message_api(fake_db, config) as client:
+        # Built from the agent: shown without the conversation's system messages, which follow it
+        shown = (await client.get("/api/message/system-prompt", params=where)).json()
+        assert shown == {"content": IDENTITY_PROMPT, "custom": False, "tokens": estimate_tokens(IDENTITY_PROMPT)}, shown
+        assert await sent_system(client) == f"{IDENTITY_PROMPT}\n\n{instructions}"
+
+        # The conversation's own: sent as it is
+        response = await client.put("/api/message/system-prompt", json={**where, "content": "You are a pirate."})
+        assert response.status_code == 200 and response.json()["custom"] is True, response.text
+        assert response.json()["content"] == "You are a pirate." and fake_db.conversation == {"system_prompt": "You are a pirate."}
+        assert (await client.get("/api/message/system-prompt", params=where)).json()["content"] == "You are a pirate."
+        assert await sent_system(client) == f"You are a pirate.\n\n{instructions}"
+
+        # None at all: the system messages are all of it, and without them there is no system message
+        response = await client.put("/api/message/system-prompt", json={**where, "content": ""})
+        assert response.json() == {"content": "", "custom": True, "tokens": 0}, response.text
+        assert await sent_system(client) == instructions
+        fake_db.rows = [row for row in rows if row["roleName"] != "system"]
+        assert await sent_system(client) is None
+        fake_db.rows = rows
+
+        # Back to the one built from the agent
+        response = await client.put("/api/message/system-prompt", json={**where, "content": None})
+        assert response.json()["custom"] is False and response.json()["content"] == IDENTITY_PROMPT, response.text
+        assert fake_db.conversation == {"system_prompt": None}
+        assert (await client.put("/api/message/system-prompt", json={**where, "content": "x" * 200_001})).status_code == 422
+
+        # A device in family mode isn't shown hidden lines or the section on hidden content, and a
+        # save from it keeps both; its answers get the section, but not the hidden lines
+        section = hide_prompt("surprise parties", with_knowledge_base=False)
+        own = f"You are a pirate.\n\n{section}\n\n## Your memory:\n- likes tea\n- plans a surprise party #hidden"
+        fake_db.conversation = {"system_prompt": own}
+        family = {hidden_content.HEADER: "1"}
+        saved_enabled, hidden_content.FAMILY_MODE_ENABLED = hidden_content.FAMILY_MODE_ENABLED, True
+        try:
+            assert (await client.get("/api/message/system-prompt", params=where)).json()["content"] == own
+            shown = (await client.get("/api/message/system-prompt", params=where, headers=family)).json()["content"]
+            assert shown == "You are a pirate.\n\n## Your memory:\n- likes tea", shown
+            sent = await sent_system(client, family)
+            assert "<what-to-hide>" in sent and "likes tea" in sent and "surprise party #hidden" not in sent, sent
+            response = await client.put("/api/message/system-prompt", headers=family,
+                                        json={**where, "content": shown.replace("pirate", "sailor")})
+            assert response.json()["content"] == shown.replace("pirate", "sailor"), response.text
+            stored = fake_db.conversation["system_prompt"]
+            assert stored.startswith("You are a sailor.") and "- plans a surprise party #hidden" in stored, stored
+            assert stored.endswith(section), stored
+        finally:
+            hidden_content.FAMILY_MODE_ENABLED = saved_enabled
+
+
+async def test_generate_after_an_answer_asks_the_model_to_go_on(server):
+    # Generate after an answer (manual editing): the model gets a note in the user's place, shown as a step
+    rows = [user(1000, 1, "Tell me a story."), assistant(1500, 1, "Once upon a time there was a fox.")]
+    fake_db = EndpointDB(rows)
+    config = make_config(server.base_url, context_window=128000, supports_tools=False)
+    with message_api(fake_db, config) as client:
+        server.script(summary_or_answer)
+        response = await client.post("/api/message/stream-generate",
+                                     json={"conversationId": "c", "aiParticipant": "Assistant"})
+        assert response.status_code == 200 and "event: done" in response.text, response.text
+        sent = [(message["role"], message["content"]) for message in server.requests[-1]["messages"]]
+        assert sent[-2:] == [("assistant", "Once upon a time there was a fox."), ("user", CONTINUE_NOTE)], sent
+        steps = [json.loads(data) for event, data in sse_events(response.text) if event == "step"]
+        assert [step["title"] for step in steps] == ["Asked to go on"] and CONTINUE_NOTE in steps[0]["content"], steps
+        assert fake_db.answers[-1]["steps"][0]["title"] == "Asked to go on", "the step is stored with the answer"
+
+        # After a message of the user nothing is added
+        fake_db.rows = rows + [user(2000, 2, "And then?")]
+        server.script(summary_or_answer)
+        response = await client.post("/api/message/stream-generate",
+                                     json={"conversationId": "c", "aiParticipant": "Assistant"})
+        assert server.requests[-1]["messages"][-1] == {"role": "user", "content": "And then?"}
+        assert not [event for event, _ in sse_events(response.text) if event == "step"]
+
+
 TESTS = [test_summarizes_only_past_the_trigger, test_latest_question_is_never_summarized,
          test_fold_in_chunks_merges_prior_summary, test_bad_reply_is_retried, test_failure_keeps_usage,
          test_summary_must_be_smaller, test_on_request_scales_the_length, test_oversized_message_is_split,
          test_history_starts_with_summary, test_stream_generate_summarizes_past_the_trigger,
          test_summarize_on_request, test_tool_calls_are_summarized_with_the_answer,
-         test_stream_generate_keeps_and_replays_tool_calls, test_every_request_continues_the_one_before]
+         test_stream_generate_keeps_and_replays_tool_calls, test_every_request_continues_the_one_before,
+         test_system_prompt_is_shown_and_can_be_replaced, test_generate_after_an_answer_asks_the_model_to_go_on]
 
 
 async def main() -> int:

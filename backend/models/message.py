@@ -492,6 +492,36 @@ class ContextSizeRequest(BaseModel):
     modelId: Optional[int] = None
 
 
+class SystemPrompt(BaseModel):
+    """
+    The system prompt the next answer in a conversation gets (GET /api/message/system-prompt),
+    which manual editing shows as the conversation's first message.
+
+    :ivar content: The prompt as the model gets it, without the conversation's system messages
+        (they follow it, and the chat shows them where they are). '' for none.
+    :ivar custom: It is the conversation's own prompt, set in manual editing, and not built from
+        its agent: it is sent as it is, so its memory, tool notes and date don't change any more.
+    :ivar tokens: About how many tokens it is.
+    """
+    content: str
+    custom: bool
+    tokens: int
+
+
+class SystemPromptUpdate(BaseModel):
+    """
+    Sets a conversation's own system prompt (PUT /api/message/system-prompt).
+
+    :ivar conversationId: UUID of the conversation.
+    :ivar content: The prompt to send from now on; '' sends none; None goes back to the one
+        built from the conversation's agent.
+    :ivar modelId: The catalog model the returned prompt is built for (as in the request for it).
+    """
+    conversationId: str  # UUID
+    content: Optional[str] = Field(None, max_length=200_000)
+    modelId: Optional[int] = None
+
+
 class ContextSize(BaseModel):
     """
     About how many input tokens the next answer in a conversation sends, as stream-generate
