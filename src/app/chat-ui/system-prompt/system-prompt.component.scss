@@ -1,0 +1,217 @@
+// The system prompt as the first message of a conversation (manual editing)
+
+:host {
+  display: block;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto 20px;
+}
+
+.system-prompt {
+  padding: 10px 14px 12px;
+  border: 1px dashed var(--theme-border);
+  border-radius: 12px;
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
+
+  // The conversation's own prompt: it is what is sent, whatever the agent says
+  &.is-custom {
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--theme-primary) 55%, var(--theme-border));
+  }
+}
+
+.system-prompt-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 36px;
+}
+
+.system-prompt-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
+  color: var(--theme-text-secondary);
+}
+
+.system-prompt-title {
+  font-weight: 600;
+}
+
+.system-prompt-state {
+  padding: 1px 8px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+
+  .is-custom & {
+    border-color: var(--theme-primary);
+    color: var(--theme-primary);
+  }
+}
+
+.system-prompt-tokens {
+  font-size: 0.8rem;
+  color: var(--theme-text-secondary);
+}
+
+.system-prompt-actions {
+  display: inline-flex;
+  margin-left: auto;
+
+  button {
+    --mdc-icon-button-state-layer-size: 36px;
+    --mat-icon-button-state-layer-size: 36px;
+    width: 36px;
+    height: 36px;
+    padding: 6px;
+    color: var(--theme-text-secondary);
+  }
+
+  mat-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+  }
+}
+
+.system-prompt-hint {
+  margin: 2px 0 8px;
+  font-size: 0.8rem;
+  color: var(--theme-text-secondary);
+}
+
+.system-prompt-text {
+  margin: 0;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  // The start of a long prompt, fading out
+  &.is-cut {
+    max-height: 9em;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+    mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  }
+}
+
+.system-prompt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 2px 4px 2px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--theme-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
+
+  &:hover {
+    background-color: var(--theme-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+  }
+}
+
+.system-prompt-editor {
+  textarea {
+    display: block;
+    width: 100%;
+    min-height: 160px;
+    padding: 10px 12px;
+    box-sizing: border-box;
+    border: 1px solid var(--theme-border);
+    border-radius: 8px;
+    background-color: var(--theme-background);
+    color: var(--theme-text);
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    resize: vertical;
+
+    &:focus-visible {
+      outline: 2px solid var(--theme-primary);
+      outline-offset: 1px;
+    }
+  }
+
+  .system-prompt-hint {
+    margin: 8px 0;
+  }
+}
+
+.system-prompt-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.system-prompt-button {
+  min-height: 36px;
+  padding: 6px 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 18px;
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--theme-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  &--primary {
+    border-color: var(--theme-primary);
+    background-color: var(--theme-primary);
+    color: var(--theme-primary-contrast);
+
+    &:hover:not(:disabled) {
+      background-color: color-mix(in srgb, var(--theme-primary) 88%, #000);
+    }
+  }
+}
+
+.system-prompt-error {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: #ef4444;
+}
+
+@media (max-width: 600px) {
+  :host {
+    margin-bottom: 14px;
+  }
+
+  .system-prompt {
+    padding: 8px 10px 10px;
+  }
+}

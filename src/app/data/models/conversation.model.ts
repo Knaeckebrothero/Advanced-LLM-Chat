@@ -65,6 +65,16 @@ export interface IContextSize {
   summarizes: boolean;     // the next answer first folds the oldest messages into the summary
 }
 
+/**
+ * The system prompt the next answer in a conversation gets (GET /api/message/system-prompt), which
+ * manual editing shows as the conversation's first message.
+ */
+export interface ISystemPrompt {
+  content: string;   // as the model gets it, without the conversation's system messages; '' for none
+  custom: boolean;   // the conversation's own, sent as it is, and not built from its agent
+  tokens: number;    // about how many tokens it is
+}
+
 /** The token estimate of the backend (backend/services/conversation_history.py CHARS_PER_TOKEN). */
 export const CHARS_PER_TOKEN = 3;
 

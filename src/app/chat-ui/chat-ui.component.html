@@ -12,6 +12,10 @@
         <p class="empty-state-hint">{{ 'message.emptyHint' | translate }}</p>
       </div>
     </div>
+    <!-- Manual editing: the system prompt the next answer gets, as the conversation's first message -->
+    <app-system-prompt *ngIf="systemPrompt$ | async as systemPrompt" [prompt]="systemPrompt"
+                       [busy]="systemPromptBusy" [failed]="systemPromptFailed"
+                       (save)="saveSystemPrompt($event)"></app-system-prompt>
     <ng-container *ngIf="{ divider: summaryDivider$ | async } as view">
       <ng-container *ngFor="let message of messages | async; let i = index">
         <app-chat-ui-message [message]="message"
@@ -52,6 +56,7 @@
     [isMobile]="isMobileDevice()"
     [isStreaming]="(isStreaming$ | async) ?? false"
     [canGenerate]="(canGenerate$ | async) ?? false"
+    [generateContinues]="(generateKind$ | async) === 'continue'"
     [contextSize]="contextSize$ | async"
     (generateRequested)="generateAnswer()"
     (messageSent)="onMessageSent($event)"

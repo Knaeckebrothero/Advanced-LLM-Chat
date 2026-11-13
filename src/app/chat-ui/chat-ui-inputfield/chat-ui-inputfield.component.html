@@ -198,14 +198,14 @@
         <mat-icon>mic</mat-icon>
       </button>
 
-      <!-- Generate button (manual editing): the newest message is the user's and has no answer yet -->
+      <!-- Generate button (manual editing): the model answers the conversation as it stands -->
       <button
         *ngIf="!hasContent && !isStreaming && canGenerate"
         mat-icon-button
         class="action-button send-button generate-button"
         (click)="generateRequested.emit()"
-        [attr.aria-label]="'composer.generate' | translate"
-        [matTooltip]="'composer.generate' | translate">
+        [attr.aria-label]="(generateContinues ? 'composer.generateMore' : 'composer.generate') | translate"
+        [matTooltip]="(generateContinues ? 'composer.generateMore' : 'composer.generate') | translate">
         <mat-icon>auto_awesome</mat-icon>
       </button>
     </div>

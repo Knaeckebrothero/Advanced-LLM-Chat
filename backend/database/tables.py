@@ -60,6 +60,8 @@ conversations = Table(
     Column('memory_review_failed_at', DateTime),  # The last failed review (naive UTC), NULL after a success
     Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden
     Column('hidden_by', Text),  # Who set hidden: 'user' (agents leave it alone) or 'agent', None = nobody
+    # The conversation's own system prompt (manual editing): None = built from its agent, '' = none
+    Column('system_prompt', Text),
 )
 
 # Messages table

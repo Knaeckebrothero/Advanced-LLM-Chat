@@ -1069,7 +1069,7 @@ export class ChatStateService implements OnDestroy {
 
   /**
    * Answer the conversation as it is stored, without sending a new message (manual editing:
-   * Generate in the composer once the newest message is the user's and nothing has answered it).
+   * Generate in the composer). After an answer the server asks the model to go on from it.
    */
   async answerLatestMessage(): Promise<void> {
     if (this.isStreaming$.getValue()) {
