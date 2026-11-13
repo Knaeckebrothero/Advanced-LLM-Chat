@@ -29,7 +29,7 @@ import {
 } from '../data/models/catalog.model';
 import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } from '../data/models/api.model';
 import { IContextSize, IConversationSummary } from '../data/models/conversation.model';
-import { FilePreviewSize } from '../data/models/file.model';
+import { FilePreviewSize, IFileRef } from '../data/models/file.model';
 import {
   IKBMemory,
   IKBNote,
@@ -633,7 +633,17 @@ export class ApiService {
     }
   }
 
-  /** A preview of an image file (WebP, see FilePreviewSize); 404 for a file that is no image. */
+  /** The files of a conversation, oldest first: its messages' attachments and what tools created in it. */
+  async getConversationFiles(conversationId: string): Promise<IFileRef[]> {
+    return await lastValueFrom(
+      this.http.get<IFileRef[]>(`${this.baseUrl}/api/files`, {
+        ...this.getHttpOptions(),
+        params: { conversationId }
+      })
+    );
+  }
+
+  /** A preview of an image file or a PDF's first page (WebP, see FilePreviewSize); 404 for any other file. */
   async getFileThumbnail(fileId: string, size: FilePreviewSize): Promise<Blob> {
     return await lastValueFrom(
       this.http.get(`${this.baseUrl}/api/files/${encodeURIComponent(fileId)}/thumbnail`, {

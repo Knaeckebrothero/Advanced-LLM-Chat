@@ -55,6 +55,30 @@
 }
 
 // ============================================
+// DROPPING FILES
+// ============================================
+// While files are dragged over the window, the composer says that they can be dropped
+.input-field-container.is-drop-target {
+  border-color: var(--theme-primary);
+  border-style: dashed;
+}
+
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: inherit;
+  background-color: color-mix(in srgb, var(--theme-surface) 92%, var(--theme-primary));
+  color: var(--theme-primary);
+  font-weight: 500;
+  pointer-events: none;
+}
+
+// ============================================
 // FILE PREVIEW AREA
 // ============================================
 .file-preview-area {
@@ -109,18 +133,25 @@ a.file-preview-item {
     border-color: var(--theme-primary);
   }
 
-  // Styles for square image previews
+  // Still on its way to the server
+  &.is-uploading .file-thumbnail {
+    opacity: 0.55;
+  }
+
+  // An image preview is as high as the row and as wide as the image's shape makes it, so the
+  // whole image shows. Very long and very wide images stay within the widths below
   &.is-image {
-    min-width: 80px;
-    max-width: 80px;
-    min-height: 80px;
-    max-height: 80px;
+    --preview-height: 80px;
+    min-width: 0;
+    max-width: none;
+    height: var(--preview-height);
+    max-height: none;
     padding: 0;
     gap: 0;
     border-radius: 12px;
 
     .file-thumbnail {
-      width: 100%;
+      width: auto;
       height: 100%;
       border-radius: 11px;
     }
@@ -140,10 +171,25 @@ a.file-preview-item {
   flex-shrink: 0;
   position: relative;
 
-  img {
+  .file-thumbnail-image {
+    position: relative;
+    display: block;
+    width: auto;
+    height: 100%;
+    min-width: 56px;  // Room for the remove button
+    max-width: calc(var(--preview-height, 48px) * 2);
+    object-fit: contain;
+  }
+
+  .file-thumbnail-backdrop {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    filter: blur(8px);
+    transform: scale(1.3);
+    opacity: 0.55;
   }
 }
 
@@ -697,10 +743,10 @@ a.file-preview-item {
     padding: 8px 12px;
 
     &.is-image {
-      min-width: 70px;
-      max-width: 70px;
-      min-height: 70px;
-      max-height: 70px;
+      --preview-height: 70px;
+      min-width: 0;
+      max-width: none;
+      padding: 0;
     }
   }
 

@@ -832,14 +832,14 @@ async def test_files():
     me, other = user_ids[0], user_ids[1]
 
     # An agent with the file tools: the image is saved, the chat gets it as a preview, the model its name
-    toolset = await mcp_tools.tools_for_answer(user(0), {**persona, "id": one}, {"show_file"}, answer_id=5000)
+    toolset = await mcp_tools.tools_for_answer(user(0), {**persona, "id": one}, {"read_file"}, answer_id=5000)
     painter = ToolRegistry(toolset.tools)
     result = await painter.call("t_paint__paint", {"prompt": "a fox"})
     assert isinstance(result, ToolText) and result.startswith(
         'Painted a fox.\n\n[Image saved as file "t_paint-1.png" (64×48 px, '), result
-    assert "Call show_file" in result and "read_file" in result, result
+    assert "write ![what it shows](t_paint-1.png) on a line of its own" in result and "read_file" in result, result
     (ref,) = result.metadata["files"]
-    assert "shownFiles" not in result.metadata, "the agent shows them itself"
+    assert "shownFiles" not in result.metadata, "the agent places them in its answer itself"
     assert (ref["name"], ref["mimeType"], ref["width"], ref["height"]) == ("t_paint-1.png", "image/png", 64, 48), ref
     stored = db.get_file(ref["fileId"])
     assert (stored["user_id"], stored["conversation_id"], stored["message_id"]) == (me, one, 5000), stored
@@ -848,7 +848,7 @@ async def test_files():
     # Names are unique in the conversation, also for several images of one result
     result = await painter.call("t_paint__paint", {"prompt": "two wolves", "count": 2})
     assert [ref["name"] for ref in result.metadata["files"]] == ["t_paint-2.png", "t_paint-3.png"], result.metadata
-    # An agent without the file tools can't show them itself: all are shown
+    # An agent without the file tools isn't told how to place them: all are shown
     toolset = await mcp_tools.tools_for_answer(user(0), {**persona, "id": two}, set(), answer_id=6000)
     result = await ToolRegistry(toolset.tools).call("t_paint__paint", {"prompt": "a cat"})
     assert result.metadata["shownFiles"] == result.metadata["files"] and len(result.metadata["files"]) == 1
@@ -901,8 +901,6 @@ async def test_files():
     assert listing.startswith("4 files in this conversation") and "created by Painter: Paint it" in listing, listing
     seen = await files.call("read_file", {"file": "t_paint-1.png"})
     assert len(seen.images) == 1 and '[Made with these arguments: {"prompt": "a fox"}]' in seen, seen
-    shown = await files.call("show_file", {"files": ["t_paint-2.png"]})
-    assert [ref["name"] for ref in shown.metadata["shownFiles"]] == ["t_paint-2.png"]
     elsewhere = tools_for_groups(["files"], user_id=me, conversation={"id": two})
     assert (await elsewhere.call("list_files", {})).startswith("1 file in this conversation")
     assert "No file" in await expect(ToolInputError, elsewhere.call("read_file", {"file": "t_paint-2.png"}))
@@ -972,6 +970,12 @@ async def test_files():
             assert "immutable" in response.headers["cache-control"]
             assert client.get(f"/api/files/{picture}/thumbnail", params={"size": "huge"}).status_code == 422
             assert client.get(f"/api/files/{notes['file_id']}/thumbnail").status_code == 404
+            # The conversation's files, in which the chat finds the files an answer places in its text
+            listed = client.get("/api/files", params={"conversationId": two}).json()
+            assert [ref["fileId"] for ref in listed] == [row["file_id"] for row in db.get_conversation_files(two, me)]
+            assert listed[0]["fileId"] == picture and (listed[0]["name"], listed[0]["width"], listed[0]["height"]) == \
+                ("t_paint-1.png", 64, 48), listed
+            assert client.get("/api/files").status_code == 422
             uploaded = client.post("/api/files/upload", files=[("files", ("shot.png", png(30, 20), "image/png"))])
             assert uploaded.status_code == 201, uploaded.text
             row = db.get_file(uploaded.json()[0]["fileId"])
@@ -980,6 +984,7 @@ async def test_files():
             current["user"] = user(1)
             assert client.get(f"/api/files/{picture}").status_code == 404
             assert client.get(f"/api/files/{picture}/thumbnail").status_code == 404
+            assert client.get("/api/files", params={"conversationId": two}).json() == []
             # Deleting a file deletes its previews too
             current["user"] = user(0)
             assert client.delete(f"/api/files/{picture}").status_code == 204

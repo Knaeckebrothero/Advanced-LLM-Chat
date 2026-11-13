@@ -1,5 +1,11 @@
 <!-- Input field container with background visualization -->
-<div #composer class="input-field-container" [class.recording-mode]="isRecording">
+<div #composer class="input-field-container" [class.recording-mode]="isRecording" [class.is-drop-target]="draggingFiles">
+  <!-- Files dragged over the window: they can be dropped anywhere -->
+  <div class="drop-hint" *ngIf="draggingFiles" aria-hidden="true">
+    <mat-icon>upload_file</mat-icon>
+    <span>{{ 'composer.dropFiles' | translate }}</span>
+  </div>
+
   <!-- Background waveform canvas (always present but only visible when recording).
        Its pixel size is set in code (updateCanvasDimensions), not bound here: it is measured after the first render. -->
   <canvas #waveformCanvas
@@ -15,11 +21,13 @@
        [download]="preview.type !== 'image' && preview.file ? preview.name : null"
        (click)="onAttachmentClick($event, preview)"
        class="file-preview-item"
-       [class.is-image]="preview.type === 'image'">
+       [class.is-image]="preview.type === 'image'"
+       [class.is-uploading]="preview.uploadStatus === 'uploading'">
 
-      <!-- Image preview -->
+      <!-- Image preview: the whole image, a blurred copy behind a very long or wide one -->
       <div class="file-thumbnail" *ngIf="preview.type === 'image' && preview.preview">
-        <img [src]="preview.preview" [alt]="preview.name">
+        <img class="file-thumbnail-backdrop" [src]="preview.preview" alt="" aria-hidden="true">
+        <img class="file-thumbnail-image" [src]="preview.preview" [alt]="preview.name">
         <div class="file-info-overlay">
           {{ preview.name }}
         </div>
@@ -66,6 +74,7 @@
               [(ngModel)]="messageText"
               (input)="onTextareaInput()"
               (keydown)="handleKeyPress($event)"
+              (paste)="onPaste($event)"
               class="message-textarea"
               [placeholder]="'Type your message...' | translate"
               rows="1"
@@ -156,9 +165,10 @@
         mat-icon-button
         class="action-button send-button"
         (click)="sendMessage()"
-        [attr.aria-label]="'composer.send' | translate"
-        [matTooltip]="'composer.send' | translate">
-        <mat-icon>send</mat-icon>
+        [class.is-queued]="sendQueued"
+        [attr.aria-label]="(sendQueued ? 'composer.sendsAfterUpload' : 'composer.send') | translate"
+        [matTooltip]="(sendQueued ? 'composer.sendsAfterUpload' : 'composer.send') | translate">
+        <mat-icon>{{ sendQueued ? 'schedule_send' : 'send' }}</mat-icon>
       </button>
 
       <!-- Stop button when AI is streaming -->

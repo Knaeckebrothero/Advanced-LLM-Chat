@@ -44,7 +44,7 @@ from backend.services import file_store, file_utils, past_chats
 from backend.services.file_retrieval_service import get_file_retrieval_service
 from backend.services.tools import web_search_tools
 
-FILE_TOOLS = ["list_files", "read_file", "show_file"]
+FILE_TOOLS = ["list_files", "read_file"]
 GRAPH_TOOLS = ["get_graph_schema", "search_graph", "query_graph"]
 KB_TOOLS = ["kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
             "memory_add", "memory_replace", "memory_remove"]
@@ -379,28 +379,29 @@ async def test_file_tools_see_only_the_conversation():
         assert len(again.images) == 1 and len(asked) == 2, (again, asked)
         assert "query" in seeing.get("read_file").parameters["properties"], "still there for PDFs"
 
-        # show_file puts files into the answer: the result carries them for the chat
-        shown = await mine.call("show_file", {"files": ["civitai-1.png", "nope.png", "civitai-1.png"]})
-        assert shown.metadata == {"shownFiles": [{"fileId": "file_4_dd", "name": "civitai-1.png", "mimeType": "image/png",
-                                                  "size": os.path.getsize(os.path.join(files_dir, "file_4_dd.png")),
-                                                  "width": 3136, "height": 1568}]}, shown.metadata
-        assert shown.startswith("Shown to the user above your answer: civitai-1.png.") and "Not shown: No file 'nope.png'" in shown
-        # Models send a list as its JSON text, or just the one name: both are taken as the list
-        for files in ("notes.txt", '["notes.txt"]'):
-            one = await mine.call("show_file", {"files": files})
-            assert [ref["name"] for ref in one.metadata["shownFiles"]] == ["notes.txt"], files
+        # No tool shows a file: the agent places it in its answer's text, and is told how
+        assert mine.get("show_file") is None
+        assert "![A red fox in the snow](fox-1.png)" in FILE_ACCESS_PROMPT and "show_file" not in FILE_ACCESS_PROMPT
+        # A file as the chat gets it (a step's metadata, the list of a conversation's files)
+        assert file_store.file_ref(file_store.find_file("conv-1", 1, "civitai-1.png")) == {
+            "fileId": "file_4_dd", "name": "civitai-1.png", "mimeType": "image/png",
+            "size": os.path.getsize(os.path.join(files_dir, "file_4_dd.png")), "width": 3136, "height": 1568}
+        # A PDF's preview is its first page as it was rendered at the upload; without one it has none
+        from PIL import Image
+        for name, data in (("file_7_aa.pdf", b"%PDF-1.4"), ("file_7_aa_page_1.png", png(1240, 1754)),
+                           ("file_8_bb.pdf", b"%PDF-1.4")):
+            with open(os.path.join(files_dir, name), "wb") as f:
+                f.write(data)
+        page = file_store.thumbnail("file_7_aa", "small")
+        assert page is not None and page.name == "file_7_aa_thumb_small.webp" and Image.open(page).size == (181, 256), page
+        assert file_store.thumbnail("file_8_bb", "small") is None
+        assert Image.open(file_store.thumbnail("file_4_dd", "small")).size == (256, 128)
         try:
             await mine.call("read_file", {"file": "notes.txt", "pages": "first"})
             raise AssertionError("took a word as a list of pages")
         except ToolInputError as e:
             assert "must be of type array" in str(e), e
         assert await mine.call("read_file", {"file": "notes.txt", "pages": "[1, 2]"}) == "My notes"
-        for missing in ({"files": ["other.txt"]}, {"files": []}):
-            try:
-                await mine.call("show_file", missing)
-                raise AssertionError(f"showed {missing}")
-            except ToolInputError:
-                pass
 
         # Files with the same name: listed with their IDs, read by ID
         twins = tools_for_groups(["files"], user_id=1, conversation={"id": "conv-3"})

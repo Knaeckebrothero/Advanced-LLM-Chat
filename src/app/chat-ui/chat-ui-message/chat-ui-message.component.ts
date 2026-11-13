@@ -15,7 +15,11 @@ import { Observable } from 'rxjs';
 import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 import { NOTE_ROUTE, noteMarkdown, noteSlugFromHref } from '../../knowledge-base/kb-markdown';
 import { FilePreviewsService } from '../../services/file-previews.service';
+import { ConversationFilesService } from '../../services/conversation-files.service';
 import { MessageWithSyncStatus } from '../../repositories/message.repository';
+import { IFileRef } from '../../data/models/file.model';
+import { stepFiles } from './answer-files/answer-files.component';
+import { AnswerPart, FILE_LINK, answerParts, findFile } from './answer-parts';
 
 // The IDs the server gives stored files (backend FILE_ID_PATTERN); a file not uploaded yet has another
 const SERVER_FILE_ID = /^file_\d+_[0-9a-f]+$/;
@@ -66,9 +70,12 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   copied = false;
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // The agent's answer with links to knowledge base notes, computed again only when the answer changes
-  private answerSource: string | null = null;
-  private answerMarkdown = '';
+  // The message's text as parts (Markdown, and the files placed in it), worked out again only
+  // when the text, the answer's steps or the known files change
+  private partsSource: string | null = null;
+  private partsState = '';
+  private parts: AnswerPart[] = [];
+  private placed: ReadonlySet<string> = new Set<string>();
 
   // Model catalog: per-message model and usage
   showUsage = false;
@@ -84,22 +91,25 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     private catalogService: CatalogService,
     private translate: TranslateService,
     private router: Router,
-    private filePreviews: FilePreviewsService
+    private filePreviews: FilePreviewsService,
+    private conversationFiles: ConversationFilesService
   ) {
     this.catalogModels$ = this.catalogService.models$;
   }
 
-  // The server's previews of this message's uploaded images, by file ID
+  // The server's previews of this message's uploaded files, by file ID
   private serverPreviews = new Map<string, string>();
   private requestedPreviews = new Set<string>();
 
   /**
-   * The server's preview of an attached image that has none in the browser: a message that
-   * came from the server (another device, or after the browser's data was cleared). Asked for
-   * once; null until it is there, and for a file the server has no preview of.
+   * The server's preview of an attachment: of an image that has none in the browser (a message
+   * that came from the server: another device, or after the browser's data was cleared), and
+   * the first page of a PDF. Asked for once; null until it is there, and for a file the server
+   * has no preview of.
    */
   serverPreview(attachment: FilePreview): string | null {
-    if (attachment.type !== 'image' || attachment.preview || !SERVER_FILE_ID.test(attachment.id)) {
+    const wanted = attachment.type === 'image' ? !attachment.preview : attachment.mimeType === 'application/pdf';
+    if (!wanted || !SERVER_FILE_ID.test(attachment.id)) {
       return null;
     }
     if (!this.requestedPreviews.has(attachment.id)) {
@@ -157,21 +167,67 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     if (this.message && this.message.isText()) {
       const textContent = this.message.getDisplayContent();
       // Apply user/AI name replacements - markdown will be parsed by ngx-markdown
-      this.messageTextContent = noteMarkdown(textContent
+      this.messageTextContent = textContent
         .replace(/\{\{user\}\}/g, this.chatUI.userName)
         .replace(this.chatUI.aiName + ':', '')
-        .replace(/"/ + this.chatUI.aiName + ':' + /"/, ''));
+        .replace(/"/ + this.chatUI.aiName + ':' + /"/, '');
     }
   }
 
-  // The agent's answer for ngx-markdown: [[note]] links open the note on the Knowledge base page
-  get agentResponseContent(): string {
-    const content = this.message?.isAgent() ? this.message.content?.content || '' : '';
-    if (content !== this.answerSource) {
-      this.answerSource = content;
-      this.answerMarkdown = noteMarkdown(content);
+  /**
+   * The message's text for the chat: its Markdown ([[note]] links open the note on the Knowledge
+   * base page), and between that the files it places in its text (answer-parts.ts): an agent's
+   * answer shows files of the conversation that way. While an answer is written only its last
+   * part changes, so what stands above it is not drawn again.
+   */
+  get textParts(): AnswerPart[] {
+    if (!this.message) return [];
+    const answer = this.message.isAgent() ? this.message.content : null;
+    const content = answer ? answer.content || '' : this.messageTextContent;
+    const streaming = answer?.status === 'responding';
+    const steps = answer?.steps ?? [];
+    const state = `${streaming}:${steps.length}:${this.conversationFiles.version}`;
+    if (content === this.partsSource && state === this.partsState) return this.parts;
+    this.partsSource = content;
+    this.partsState = state;
+
+    const conversationId = this.message.conversationId;
+    // The message's own files come first: what the answer's tools created, or what a message attaches
+    const own: IFileRef[] = answer
+      ? steps.flatMap(step => [...stepFiles(step, 'files'), ...stepFiles(step, 'shownFiles')])
+      : (this.message.attachments ?? []).filter(attachment => SERVER_FILE_ID.test(attachment.id)).map(attachment => (
+        { fileId: attachment.id, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size }));
+    const parts = answerParts(
+      content,
+      reference => {
+        const file = findFile(reference, own, this.conversationFiles.files(conversationId), this.message.id);
+        // Not in the list: the file may be newer than it
+        return file === null && this.conversationFiles.retry(conversationId, reference) ? undefined : file;
+      },
+      streaming,
+      name => this.translate.instant('files.notFound', { name: '`' + name.replace(/`/g, '') + '`' })
+    );
+    for (const part of parts) {
+      if (part.type === 'text') part.text = noteMarkdown(part.text);
     }
-    return this.answerMarkdown;
+    this.parts = parts;
+    this.placed = new Set(parts.flatMap(part => part.items.map(item => item.file?.fileId ?? '')));
+    return parts;
+  }
+
+  /** The files the answer places in its text (their IDs): they are not shown again above it. */
+  get placedFileIds(): ReadonlySet<string> {
+    void this.textParts;  // Worked out with the parts, whichever the template asks for first
+    return this.placed;
+  }
+
+  /** The parts keep their place while the answer grows, so only the last one is drawn again. */
+  trackPart(index: number, part: AnswerPart): string {
+    return `${index}:${part.type}`;
+  }
+
+  trackPlaced(index: number, item: { reference: string }): string {
+    return `${index}:${item.reference}`;
   }
 
   /** Once the Markdown is rendered: links to notes get their look, web links open in a new tab. */
@@ -187,18 +243,59 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     });
   }
 
-  /** A link to a note opens it in the app instead of loading the page again. */
+  /**
+   * A link to a note opens it in the app instead of loading the page again; a link to a file
+   * of the conversation (one placed in a table) opens the file.
+   */
   onBodyClick(event: MouseEvent): void {
     if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
       return;
     }
     const anchor = (event.target as HTMLElement | null)?.closest('a');
-    const slug = noteSlugFromHref(anchor?.getAttribute('href') ?? null);
+    const href = anchor?.getAttribute('href') ?? '';
+    if (href.startsWith(FILE_LINK)) {
+      event.preventDefault();
+      const fileId = href.slice(FILE_LINK.length);
+      const file = this.conversationFiles.files(this.message.conversationId)?.find(known => known.fileId === fileId)
+        ?? this.ownFile(fileId);
+      if (file) this.openFile(file);
+      return;
+    }
+    const slug = noteSlugFromHref(href || null);
     if (!anchor || !slug) {
       return;
     }
     event.preventDefault();
     this.router.navigate([NOTE_ROUTE, slug]);
+  }
+
+  /** A file of this answer's steps, by its ID. */
+  private ownFile(fileId: string): IFileRef | undefined {
+    if (!this.message.isAgent()) return undefined;
+    return this.message.content.steps
+      .flatMap(step => [...stepFiles(step, 'files'), ...stepFiles(step, 'shownFiles')])
+      .find(file => file.fileId === fileId);
+  }
+
+  /** Open a stored file in the preview dialog. */
+  private openFile(file: IFileRef): void {
+    const type = FilePreviewUtil.getFileType(file.mimeType);
+    const data: FilePreviewDialogData = {
+      fileId: file.fileId,
+      fileName: file.name,
+      fileSize: file.size ? FilePreviewUtil.formatFileSize(file.size) : undefined,
+      fileType: type,
+      mimeType: file.mimeType
+    };
+    this.dialog.open(FilePreviewDialogComponent, {
+      data,
+      panelClass: 'file-preview-dialog-panel',
+      hasBackdrop: false,  // The dialog has its own
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      width: '100vw',
+      height: '100vh'
+    });
   }
 
   getAttachmentIcon(type: FileType): string {

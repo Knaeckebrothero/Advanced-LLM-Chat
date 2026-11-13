@@ -30,6 +30,25 @@
   </form>
 </ng-template>
 
+<!-- The message's text: its Markdown, and between that the files placed in it (answer-parts.ts) -->
+<ng-template #messageParts let-cssClass="cssClass">
+  <ng-container *ngFor="let part of textParts; trackBy: trackPart">
+    <markdown *ngIf="part.type === 'text'" [class]="cssClass"
+      [data]="part.text"
+      (ready)="decorateLinks()"
+      clipboard>
+    </markdown>
+    <div *ngIf="part.type === 'files'" class="placed-files" [class.is-single]="part.items.length === 1"
+      role="group" [attr.aria-label]="'files.shown' | translate">
+      <ng-container *ngFor="let item of part.items; trackBy: trackPlaced">
+        <app-file-tile *ngIf="item.file as file; else loadingFile" [file]="file" [label]="item.label"
+          size="large"></app-file-tile>
+        <ng-template #loadingFile><span class="placed-file-loading" aria-hidden="true"></span></ng-template>
+      </ng-container>
+    </div>
+  </ng-container>
+</ng-template>
+
 <ng-container *ngIf="inserting && insertPosition === 'before'" [ngTemplateOutlet]="insertComposer"></ng-container>
 
 <div class="message-row" [class.message-row--user]="message.roleName === 'user'"
@@ -105,10 +124,12 @@
               [class.is-synced]="!attachment.file && !attachment.preview && !serverPreview(attachment)"
               [class.has-error]="attachment.error">
 
-              <!-- Image with a preview: the browser's own of a file just attached, else the server's -->
+              <!-- Image with a preview: the browser's own of a file just attached, else the server's.
+                   Shown whole; a blurred copy fills what a very long or wide one leaves of the tile -->
               <div class="attachment-thumbnail"
                 *ngIf="attachment.type === 'image' && (attachment.preview || serverPreview(attachment)) as preview">
-                <img [src]="preview" [alt]="attachment.name">
+                <img class="attachment-backdrop" [src]="preview" alt="" aria-hidden="true">
+                <img class="attachment-image" [src]="preview" [alt]="attachment.name">
                 <div class="attachment-info-overlay">
                   {{ attachment.name }}
                 </div>
@@ -124,9 +145,14 @@
 
               <!-- Non-image, non-audio files -->
               <ng-container *ngIf="attachment.type !== 'image'">
-                <div class="attachment-icon">
-                  <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
-                </div>
+                <!-- A PDF shows its first page once the server has it, any other file its icon -->
+                <img *ngIf="serverPreview(attachment) as page; else attachmentIcon" class="attachment-page"
+                  [src]="page" alt="" aria-hidden="true">
+                <ng-template #attachmentIcon>
+                  <div class="attachment-icon">
+                    <mat-icon>{{ getAttachmentIcon(attachment.type) }}</mat-icon>
+                  </div>
+                </ng-template>
                 <div class="attachment-info">
                   <span class="attachment-name">{{ attachment.name }}</span>
                   <span class="attachment-size">{{ attachment.sizeFormatted }}</span>
@@ -142,12 +168,9 @@
         </div>
 
         <!-- Display formatted message when not editing (only if not a voice message with just transcript) -->
-        <markdown *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()"
-          class="message-text"
-          [data]="messageTextContent"
-          (ready)="decorateLinks()"
-          clipboard>
-        </markdown>
+        <ng-container *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()">
+          <ng-container *ngTemplateOutlet="messageParts; context: { cssClass: 'message-text' }"></ng-container>
+        </ng-container>
 
         <!-- Edit mode -->
         <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv
@@ -175,16 +198,13 @@
             (expandedChange)="onStepsExpandedChange($event)">
           </app-agent-steps>
 
-          <!-- The files of the answer: what the agent shows, and what its tools created -->
-          <app-answer-files *ngIf="message.content.steps.length > 0" [steps]="message.content.steps"></app-answer-files>
+          <!-- The files of the answer that it doesn't place in its text: what its tools created -->
+          <app-answer-files *ngIf="message.content.steps.length > 0" [steps]="message.content.steps"
+            [placed]="placedFileIds"></app-answer-files>
 
-          <!-- Final response with streaming cursor -->
+          <!-- Final response with streaming cursor: its text, and the files the agent places in it -->
           <div class="agent-response" *ngIf="!editing && (message.content.content || message.content.status === 'responding')">
-            <markdown class="response-text"
-              [data]="agentResponseContent"
-              (ready)="decorateLinks()"
-              clipboard>
-            </markdown>
+            <ng-container *ngTemplateOutlet="messageParts; context: { cssClass: 'response-text' }"></ng-container>
             <span class="streaming-cursor" *ngIf="message.content.status === 'responding'"></span>
           </div>
 

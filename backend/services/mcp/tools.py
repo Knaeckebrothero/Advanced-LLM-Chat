@@ -241,8 +241,10 @@ def _files_note(saved: list[dict], file_tools: bool) -> str:
     """What the model is told about the files kept from a result: where the user sees them."""
     names = ", ".join(file_store.file_name(row) for row in saved)
     if file_tools:
-        return (f"[Saved to this conversation: {names}. The user sees only a small preview so far. Call show_file "
-                f"to show the ones worth looking at in your answer, and read_file to look at one yourself.]")
+        example = file_store.file_name(saved[0])
+        return (f"[Saved to this conversation: {names}. The user sees only a small preview so far. To show one "
+                f"in your answer, write ![what it shows]({example}) on a line of its own where you talk about "
+                f"it. read_file lets you look at one yourself.]")
     return f"[Saved to this conversation and shown to the user with your answer: {names}.]"
 
 
@@ -251,7 +253,7 @@ class AnswerScope:
     """Where the files of an answer's tool results go, and what its agent can do with them."""
     conversation_id: Optional[str] = None
     answer_id: Optional[int] = None     # The id of the message being written
-    file_tools: bool = False            # The agent has show_file and read_file
+    file_tools: bool = False            # The agent has the file tools: it places files in its answer itself
 
 
 def _make_tool(row: dict, spec: ServerSpec, mcp_tool, name: str, user: dict,
@@ -301,7 +303,7 @@ def _make_tool(row: dict, spec: ServerSpec, mcp_tool, name: str, user: dict,
         refs = [file_store.file_ref(row) for row in saved]
         metadata = {"files": refs}
         if not scope.file_tools:
-            metadata["shownFiles"] = refs  # An agent that can't show them itself: all are shown
+            metadata["shownFiles"] = refs  # An agent that isn't told how to place them: all are shown
         return ToolText(f"{text}\n\n{_files_note(saved, scope.file_tools)}", metadata)
 
     return Tool(name=name, description=description, parameters=_parameters(mcp_tool.input_schema), func=call,
@@ -335,7 +337,7 @@ async def tools_for_answer(user: dict, conversation: Optional[dict], taken: set,
         answer_id: The id of the message being written; recorded with the files its tools create.
     """
     toolset = McpToolset()
-    scope = AnswerScope((conversation or {}).get("id"), answer_id, file_tools="show_file" in taken)
+    scope = AnswerScope((conversation or {}).get("id"), answer_id, file_tools="read_file" in taken)
     rows = await asyncio.to_thread(answer_servers, user, conversation)
     if not rows:
         return toolset

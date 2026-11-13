@@ -9,10 +9,17 @@ import { FilePreviewUtil } from '../../data/objects/message';
 import { FilePreviewsService } from '../../services/file-previews.service';
 import { FilePreviewDialogComponent, FilePreviewDialogData } from '../file-preview-dialog/file-preview-dialog.component';
 
+// A picture's tile is at most this much wider than high, or higher than wide
+const MAX_RATIO = 3;
+
 /**
  * One stored file in the chat (docs/files.md): an image as its preview, any other file as a card
- * with its name. A click opens the file in the preview dialog, where it can be downloaded.
- * Its parent sets the height (--file-tile-height); an image takes its width from its shape.
+ * with its name (a PDF with its first page). A click opens the file in the preview dialog, where
+ * it can be downloaded.
+ *
+ * Its parent sets the height (--file-tile-height). A picture takes its width from its shape and
+ * is always shown whole: where the column is narrower than that, the tile gets lower instead of
+ * cropping, and a panorama or a long strip sits inside a 3:1 tile over a blurred copy of itself.
  */
 @Component({
   selector: 'app-file-tile',
@@ -25,6 +32,8 @@ export class FileTileComponent implements OnChanges {
   @Input({ required: true }) file!: IFileRef;
   /** Which preview to load: small for a row of thumbnails, large for the files of an answer. */
   @Input() size: FilePreviewSize = 'small';
+  /** What the picture shows, for screen readers and the tooltip (else the file's name). */
+  @Input() label = '';
 
   url: string | null = null;
   failed = false;
@@ -37,8 +46,9 @@ export class FileTileComponent implements OnChanges {
     const fileId = this.shownFileId = this.file.fileId;
     this.url = null;
     this.failed = false;
-    if (!this.isImage) return;
-    this.previews.url(fileId, this.size).then(
+    if (!this.isImage && !this.isPdf) return;
+    // A PDF's card only has room for a small picture of its first page
+    this.previews.url(fileId, this.isImage ? this.size : 'small').then(
       url => { if (this.shownFileId === fileId) this.url = url; },
       () => { if (this.shownFileId === fileId) this.failed = true; }
     );
@@ -46,6 +56,10 @@ export class FileTileComponent implements OnChanges {
 
   get isImage(): boolean {
     return this.file.mimeType.startsWith('image/');
+  }
+
+  get isPdf(): boolean {
+    return this.file.mimeType === 'application/pdf';
   }
 
   /** Shown as a picture: an image whose preview loaded or is still loading. */
@@ -59,13 +73,23 @@ export class FileTileComponent implements OnChanges {
     return this.size === 'small';
   }
 
-  /** A picture keeps its shape while it loads; panoramas and tall strips are cropped to 3:1. */
-  @HostBinding('style.aspect-ratio')
-  get aspectRatio(): string | null {
-    if (!this.isPicture) return null;
+  /** The picture's own shape (width / height); null when its size is unknown. */
+  private get shape(): number | null {
     const { width, height } = this.file;
-    if (!width || !height) return '1';
-    return String(Math.min(3, Math.max(1 / 3, width / height)));
+    return width && height ? width / height : null;
+  }
+
+  /** The tile's shape, known before the picture loads: the picture's, within 1:3 and 3:1. */
+  @HostBinding('style.--file-tile-ratio')
+  get ratio(): string | null {
+    if (!this.isPicture) return null;
+    return String(Math.min(MAX_RATIO, Math.max(1 / MAX_RATIO, this.shape ?? 1)));
+  }
+
+  /** The picture doesn't fill its tile (longer or wider than the tile, or of unknown size). */
+  get letterboxed(): boolean {
+    const shape = this.shape;
+    return shape === null || shape > MAX_RATIO || shape < 1 / MAX_RATIO;
   }
 
   get type(): FileType {

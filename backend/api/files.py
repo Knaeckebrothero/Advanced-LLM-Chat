@@ -220,6 +220,26 @@ def _get_media_type(file_path: Path) -> str:
     return extension_to_media_type.get(file_path.suffix.lower(), 'application/octet-stream')
 
 
+@router.get("",
+            responses={
+                status.HTTP_200_OK: {"description": "The conversation's files, oldest first"},
+                status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "Not authenticated"}
+            })
+async def list_conversation_files(
+        conversationId: str,
+        current_user: dict = Depends(get_current_user)
+) -> List[dict]:
+    """
+    The files of a conversation, oldest first: what its messages attach and what tools created
+    in it, each as {fileId, name, mimeType, size, width, height} (file_store.file_ref()). The
+    chat finds in it the files an answer places in its text (docs/files.md, "In the chat").
+
+    Only the user's own files: a conversation of somebody else has none, like a missing one.
+    """
+    rows = await asyncio.to_thread(file_store.conversation_files, conversationId, current_user['user_id'])
+    return [file_store.file_ref(row) for row in rows]
+
+
 @router.get("/{file_id}",
             responses={
                 status.HTTP_200_OK: {"description": "File content"},
@@ -256,9 +276,9 @@ async def get_file(
 
 @router.get("/{file_id}/thumbnail",
             responses={
-                status.HTTP_200_OK: {"description": "A preview of the image (WebP)"},
+                status.HTTP_200_OK: {"description": "A preview of the image or the PDF's first page (WebP)"},
                 status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "Not authenticated"},
-                status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "File not found, or no image"}
+                status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "File not found, or no image or PDF"}
             })
 async def get_file_thumbnail(
         file_id: str,
@@ -266,9 +286,9 @@ async def get_file_thumbnail(
         current_user: dict = Depends(get_current_user)
 ):
     """
-    A preview of an image for the chat: at most 256 (small) or 1024 (large) pixels
-    on its longer edge, as WebP. Made on the first request and kept with the file.
-    Only the file's owner gets it; a file that is no image is a 404.
+    A preview of an image, or of a PDF's first page, for the chat: at most 256 (small)
+    or 1024 (large) pixels on its longer edge, as WebP. Made on the first request and
+    kept with the file. Only the file's owner gets it; any other file is a 404.
     """
     _own_file_path(file_id, current_user)
     preview = await asyncio.to_thread(file_store.thumbnail, file_id, size)

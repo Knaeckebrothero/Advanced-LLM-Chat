@@ -40,7 +40,6 @@ log = logging.getLogger(__name__)
 TOOL_TITLES = {
     "list_files": "Listing Files",
     "read_file": "Reading File",
-    "show_file": "Showing File",
     "web_search": "Searching the Web",
     "get_graph_schema": "Inspecting Knowledge Graph",
     "search_graph": "Searching Knowledge Graph",
@@ -63,7 +62,7 @@ TOOL_TITLES = {
 
 # Tool groups a persona can select (backend.models.catalog.ToolGroup), with their tools
 TOOL_GROUPS = {
-    "files": ("list_files", "read_file", "show_file"),
+    "files": ("list_files", "read_file"),
     "web_search": ("web_search",),
     "knowledge_graph": ("get_graph_schema", "search_graph", "query_graph"),
     "knowledge_base": ("kb_search", "kb_list", "kb_read", "kb_write", "kb_update", "kb_archive",
@@ -346,7 +345,8 @@ def _in_thread(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
 
 def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = None, vision: bool = False) -> list[Tool]:
     """
-    list_files, read_file, show_file: the files of the conversation (docs/files.md).
+    list_files, read_file: the files of the conversation (docs/files.md). The agent shows a
+    file by placing it in its answer's text (FILE_ACCESS_PROMPT), which needs no tool.
 
     Args:
         user_id: The user the agent answers for.
@@ -404,27 +404,6 @@ def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = N
                 "required": ["file"],
             },
             func=functools.partial(tools.read_file, vision=vision, **scope),
-        ),
-        Tool(
-            name="show_file",
-            description=(
-                "Show files of this conversation to the user: they appear above the text of your answer, images "
-                "large, other files as a card to open. Use it for the images you want the user to look at (an "
-                "image a tool created is only a small preview for them until you show it) and when the user "
-                "asks to see a file again. Several files go in one call."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "files": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "The names (or fileIds) of the files to show, e.g. [\"fox-1.png\", \"fox-2.png\"]",
-                    },
-                },
-                "required": ["files"],
-            },
-            func=_in_thread(functools.partial(tools.show_file, **scope)),
         ),
     ]
 

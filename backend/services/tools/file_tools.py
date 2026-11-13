@@ -1,7 +1,8 @@
 # backend/services/tools/file_tools.py
 """
-File tools for the agent: list, read and show the files of the conversation it answers in
+File tools for the agent: list and read the files of the conversation it answers in
 (docs/files.md): what the user attached and what tools created, e.g. generated images.
+The agent shows a file by placing it in the text of its answer, without a tool.
 
 The schemas the model sees are defined in backend/llm/tools.py, which binds the user and the
 conversation (not arguments the model sees), so the model can't reach the files of another
@@ -11,13 +12,11 @@ ToolInputError with a message for the model, so the step shows as failed.
 - list_files: the conversation's files with name, type, size and origin.
 - read_file: a file's content as text. A vision model gets an image itself (ToolText.images);
   a text-only model gets what the vision helper says about it, or its answer to a query.
-- show_file: puts files into the answer for the user. The result carries them as
-  {"shownFiles": [...]} (file_store.file_ref()), which the chat shows above the answer's text.
 """
 import asyncio
 import base64
 import logging
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from backend.llm.tools import ToolInputError, ToolText
 from backend.services import file_store
@@ -133,36 +132,3 @@ async def read_file(
         return f"[No content found in {file_store.file_name(row)}]"
     return "\n".join(parts) + made_with
 
-
-def show_file(files: Union[str, List[str]], *, user_id: Optional[int] = None,
-              conversation_id: Optional[str] = None) -> ToolText:
-    """
-    Show files of the conversation to the user, above the text of the answer.
-
-    Args:
-        files: The files' names or file IDs (one, or a list).
-        user_id: The user the agent answers for, bound by the tool registry.
-        conversation_id: The conversation it answers in, bound by the tool registry.
-
-    Returns:
-        What is shown, with {"shownFiles": [file_store.file_ref(), ...]} for the chat.
-    """
-    references = [files] if isinstance(files, str) else [name for name in files if isinstance(name, str)]
-    if not references:
-        raise ToolInputError("Give the names of the files to show")
-    shown, missing = [], []
-    for reference in references:
-        try:
-            row = file_store.find_file(conversation_id, user_id, reference)
-        except FileStoreError as e:
-            missing.append(str(e))
-            continue
-        if all(row["file_id"] != other["file_id"] for other in shown):
-            shown.append(row)
-    if not shown:
-        raise ToolInputError(" ".join(missing))
-    text = (f"Shown to the user above your answer: {', '.join(file_store.file_name(row) for row in shown)}. "
-            f"Refer to them by what they show; don't add links or file names for them.")
-    if missing:
-        text += "\nNot shown: " + " ".join(missing)
-    return ToolText(text, {"shownFiles": [file_store.file_ref(row) for row in shown]})

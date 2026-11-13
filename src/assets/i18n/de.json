@@ -26,6 +26,9 @@
     "chooseFile": "Datei auswählen",
     "shareLocation": "Standort teilen",
     "send": "Nachricht senden",
+    "fileTooLarge": "Nicht angehängt, größer als {{size}} MB: {{names}}",
+    "dropFiles": "Dateien ablegen, um sie anzuhängen",
+    "sendsAfterUpload": "Wird gesendet, sobald die Dateien hochgeladen sind",
     "stop": "Antwort abbrechen",
     "generate": "Antwort generieren",
     "context": {
@@ -66,6 +69,7 @@
   },
   "files": {
     "open": "{{name}} öffnen",
+    "notFound": "(Datei nicht gefunden: {{name}})",
     "shown": "Dateien dieser Antwort",
     "created": "Weitere in dieser Antwort erstellte Dateien"
   },

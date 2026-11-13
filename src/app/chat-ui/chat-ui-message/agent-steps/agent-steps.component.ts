@@ -200,8 +200,8 @@ export class AgentStepsComponent {
 
   /**
    * The files of a tool's result (docs/files.md): the ones it created, or the ones show_file
-   * shows; shown in the step in place of the metadata. The arrays are the metadata's own, so
-   * the template gets the same ones at every check.
+   * showed (a tool of older answers); shown in the step in place of the metadata. The arrays
+   * are the metadata's own, so the template gets the same ones at every check.
    */
   filesOf(step: IAgentStep): IFileRef[] | null {
     const created = stepFiles(step, 'files');
