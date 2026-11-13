@@ -1,6 +1,6 @@
 ---
 name: image-generation
-description: Writes prompts for image models and generates images with open-weight diffusion models (Illustrious, NoobAI, Pony, SDXL, SD 1.5, Flux, Qwen-Image, Z-Image, Chroma and others), for example with Civitai's generation tools. It picks the base model and the LoRAs that fit the request, sets sampler, steps, guidance (CFG), size and seed, and writes the prompt and negative prompt in the style the model family understands (booru tags or prose), then checks the result and improves it. Use whenever the user wants an image, a picture, a drawing, art, a portrait, a wallpaper or a scene generated, wants an image prompt written or improved, wants an image changed or redone, or asks about a checkpoint, a LoRA or generation settings.
+description: Writes prompts for image models and generates images with open-weight diffusion models (Illustrious, NoobAI, Pony, SDXL, SD 1.5, Flux, Qwen-Image, Z-Image, Chroma and others), for example with Civitai's generation tools. It picks the base model and the LoRAs that fit the request, sets sampler, steps, guidance (CFG), size and seed, and writes the prompt and negative prompt in the style the model family understands (booru tags or prose), then looks at every image before showing it and improves it. Use whenever the user wants an image, a picture, a drawing, art, a portrait, a wallpaper or a scene generated, wants an image prompt written or improved, wants an image changed or redone, or asks about a checkpoint, a LoRA or generation settings.
 ---
 
 # Image generation with open-weight models
@@ -172,15 +172,25 @@ Then add what you actually saw go wrong (`extra arms`, `2girls` when you wanted 
    - Cost grows with pixels × steps × quantity.
    - On Flux-type models a CFG other than 1 doubles the price.
    - The user may be asked to confirm the Buzz.
-4. **Run it:** `run_step` with `stepType` `imageGen` and the `input`. You get back `images` with signed web addresses, which expire, and each image's content level. The images arrive as files of this conversation: show the user the good ones, as your instructions for files say.
+4. **Run it:** `run_step` with `stepType` `imageGen` and the `input`. Each image is saved as a file of this conversation, and the result names it (`[image saved as file "…"]`). Don't show or describe any of them yet: look at them first (section 8).
 5. **When it fails:**
    - **Validation error:** read the message, which names the valid fields, fix the input and try again.
    - **Failure with the reason `blocked`:** never retry the same input. Repeated blocks get the account muted. Tell the user.
    - **A job that takes long** (video): run it without waiting (`waitForCompletion: false`) and check it with `get_workflow`.
 
-## 8. Look, then improve
+## 8. Look at every image before you show it
 
-**Look at the result** when you can (`read_file` gives you the image or a description of it). Compare it with the request: the subject, how many people, the style, the composition, the hands and faces, any text. Fix one thing at a time, and keep the seed while comparing:
+Image models get things wrong often (an extra arm, two people instead of one, the lantern missing), and the prompt says nothing about what really came out. You can see your results: `read_file` with the file's name gives you the image itself, or, if your model doesn't take images, a description of it by a vision model. In that case ask about what matters: `read_file(file="…", query="How many people are there? Are hands and faces intact? Is there text, and what does it say? Does it show an elf hanging lanterns in an autumn forest?")`.
+
+Before you show an image or say anything about how it turned out:
+
+1. **Open every image of the run** with `read_file`.
+2. **Check it against the request:** the subject, how many people, pose and action, the style, the composition, hands and faces, any text, and whatever the user asked for in particular.
+3. **When an image clearly misses** (a wrong count, broken anatomy, the subject missing, unreadable text), find the cause in the table below, fix it, and run once more; keep the seed if only a setting changed. Each run may ask the user to confirm the Buzz.
+4. **Show the images that pass,** placed in your answer as your instructions for files say. If none passes after the second run, show the best one, say plainly what is still wrong and what you would change, and ask before generating more.
+5. **Describe only what you saw,** never what the prompt asked for. Never call an image done or say it turned out well without having looked at it.
+
+Fix one thing at a time, and keep the seed while comparing:
 
 | You see | Likely cause | Fix |
 |---|---|---|
