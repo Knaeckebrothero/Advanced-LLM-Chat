@@ -277,6 +277,17 @@ class EndpointDB(FakeDB):
     def create_agent_message(self, **message):
         self.answers.append(message)
 
+    # The memory a conversation's prompt shows (backend/services/memory_snapshot.py)
+    def get_memory_snapshot(self, conversation_id):
+        return getattr(self, "memory_snapshot", None)
+
+    def save_memory_snapshot(self, conversation_id, vault, family_mode, content, day):
+        self.memory_snapshot = {"conversation_id": conversation_id, "vault": vault, "family_mode": family_mode,
+                                "content": content, "day": day}
+
+    def last_answer_time(self, conversation_id):
+        return max((row["id"] for row in self.rows if row.get("type") == "agent"), default=None)
+
 
 @contextmanager
 def message_api(fake_db, config):
@@ -286,6 +297,7 @@ def message_api(fake_db, config):
     """
     from fastapi import FastAPI
     from backend.api import messages
+    from backend.services import memory_snapshot
     from backend.security.auth import get_current_user
     from backend.security.guest_limits import guest_write, rate_limit_guest
 
@@ -293,14 +305,14 @@ def message_api(fake_db, config):
     app.include_router(messages.router)
     app.dependency_overrides[get_current_user] = lambda: {"user_id": 1, "email": "a@example.com", "is_guest": False}
     app.dependency_overrides[rate_limit_guest] = app.dependency_overrides[guest_write] = lambda: None
-    saved = messages.db, messages._resolve_model, messages.verify_conversation_ownership
-    messages.db = fake_db
+    saved = messages.db, messages._resolve_model, messages.verify_conversation_ownership, memory_snapshot.db
+    messages.db = memory_snapshot.db = fake_db
     messages._resolve_model = lambda user, conversation_id, model_id=None: config
     messages.verify_conversation_ownership = lambda conversation_id, user_id: True
     try:
         yield httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     finally:
-        messages.db, messages._resolve_model, messages.verify_conversation_ownership = saved
+        messages.db, messages._resolve_model, messages.verify_conversation_ownership, memory_snapshot.db = saved
 
 
 def summary_or_answer(body):
@@ -525,7 +537,9 @@ async def test_every_request_continues_the_one_before(server):
     """
     How Kimi K3 answers (its reasoning passed back, two rounds of tools, the memory in the system
     prompt), through stream-generate: every model call of an answer, and the first one of the
-    next answer, continues the request before it, so the provider's prompt cache can hit.
+    next answer, continues the request before it, so the provider's prompt cache can hit. When the
+    memory changes, the system prompt keeps its snapshot and the change goes in a note with the
+    newest message (backend/services/memory_snapshot.py), so only the last exchange is new.
     """
     from backend.api import messages
     from backend.services.mcp.tools import McpToolset
@@ -544,8 +558,10 @@ async def test_every_request_continues_the_one_before(server):
     ])
 
     class Memory:
+        content = "## About the user\n- Likes foxes."
+
         def get_memory(self, user_id, vault, family_mode=False):
-            return {"content": "## About the user\n- Likes foxes."}
+            return {"content": self.content}
 
     async def no_mcp(current_user, conversation, config, tools, answer_id=None):
         return tools, McpToolset()
@@ -578,8 +594,8 @@ async def test_every_request_continues_the_one_before(server):
     messages._agent_tools = lambda current_user, conversation, config, *rest: tools
     messages._mcp_tools = no_mcp
     messages.auto_hide_definition = lambda user_id: ""  # No database here
-    messages.kb = Memory()
-    messages.persona_vault = lambda current_user, conversation: None
+    memory = messages.kb = Memory()
+    messages.persona_vault = lambda current_user, conversation: 0
     try:
         with message_api(fake_db, config) as client:
             # An answer with two rounds of tools: three model calls
@@ -611,9 +627,38 @@ async def test_every_request_continues_the_one_before(server):
             server.script(answers("You're welcome."))
             response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
             assert response.status_code == 200 and "event: done" in response.text, response.text
-            assert continued(second, server.requests[-1]) == [
+            third = server.requests[-1]
+            assert continued(second, third) == [
                 {"role": "assistant", "content": "Gamma is unknown."},
-                {"role": "user", "content": "Thanks."}], server.requests[-1]["messages"]
+                {"role": "user", "content": "Thanks."}], third["messages"]
+
+            # The memory changed (the agent saved a line, or the review ran): the system prompt keeps
+            # its snapshot, the line goes in a note at the start of the newest message
+            memory.content += "\n- Has a cat."
+            await asks("Bye.")
+            server.script(answers("Bye!"))
+            response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+            assert response.status_code == 200 and "event: done" in response.text, response.text
+            fourth = server.requests[-1]
+            added = continued(third, fourth)
+            assert added[0] == {"role": "assistant", "content": "You're welcome."}, added
+            note, question = added[1]["content"].split("\n\n", 1)
+            assert note.startswith("<memory-update>") and "Added:\n- Has a cat." in note, note
+            assert question == "Bye." and "Has a cat" not in fourth["messages"][0]["content"]
+
+            # The next request starts like that one up to its newest message: the note moved on,
+            # it was never stored
+            await asks("One more thing.")
+            server.script(answers("Yes?"))
+            response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+            assert response.status_code == 200 and "event: done" in response.text, response.text
+            fifth = server.requests[-1]
+            assert fifth["messages"][:len(fourth["messages"]) - 1] == fourth["messages"][:-1]
+            assert fifth["messages"][len(fourth["messages"]) - 1:-1] == [
+                {"role": "user", "content": "Bye."}, {"role": "assistant", "content": "Bye!"}], fifth["messages"]
+            assert fifth["messages"][-1]["content"].endswith("\n\nOne more thing.") and \
+                "- Has a cat." in fifth["messages"][-1]["content"]
+            assert all("<memory-update>" not in row["content"] for row in fake_db.rows), "never stored"
             assert not server.errors, server.errors
     finally:
         (messages._agent_tools, messages._mcp_tools, messages.auto_hide_definition, messages.kb,

@@ -52,6 +52,7 @@ from backend.catalog.resolver import (
     resolve_model,
 )
 from backend.services import knowledge_base as kb
+from backend.services import memory_snapshot
 from backend.services.hidden_content import auto_hide_definition, family_mode, restore_hidden, visible
 from backend.services.mcp.tools import McpToolset, Notice, notice_step, tools_for_answer as mcp_tools_for_answer
 from backend.services.llm import generate_reply
@@ -160,15 +161,25 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
 
 
 def _memory_prompt(system_prompt: str, current_user: dict, conversation: Optional[dict],
-                   tools: Optional[ToolRegistry], hide: bool = False) -> str:
+                   tools: Optional[ToolRegistry], hide: bool = False) -> Tuple[str, Optional[str]]:
     """
-    The system prompt with the agent's memory, if it has the memory tools (the knowledge base);
-    with hide without its hidden lines.
+    The system prompt with the agent's memory, if it has the memory tools (the knowledge base),
+    and the note on what changed in the memory since: the prompt shows the conversation's
+    snapshot of it (memory_snapshot.prompt_memory()), which stays the same while the conversation
+    goes on, so the provider's prompt cache keeps working. With hide without its hidden lines.
+
+    Returns:
+        (the system prompt, the note for the newest user message or None)
     """
     if tools is None or not set(tools.names()) & set(MEMORY_TOOL_NAMES):
-        return system_prompt
-    memory = kb.get_memory(current_user['user_id'], persona_vault(current_user, conversation), family_mode=hide)
-    return with_memory(system_prompt, memory['content'] if memory else None)
+        return system_prompt, None
+    vault = persona_vault(current_user, conversation)
+    memory = kb.get_memory(current_user['user_id'], vault, family_mode=hide)
+    content = memory['content'] if memory else None
+    if not (conversation or {}).get('id'):
+        return with_memory(system_prompt, content), None  # No conversation to keep a snapshot for
+    shown = memory_snapshot.prompt_memory(conversation['id'], content, vault, hide)
+    return with_memory(system_prompt, shown.content, today=shown.day), shown.note
 
 
 def _resolve_model_or_503(current_user: dict, conversation_id: str, model_id: Optional[int] = None) -> ModelConfig:
@@ -217,6 +228,7 @@ class AnswerParts:
     own_prompt: bool            # base_prompt is the conversation's own, not built from its agent
     instructions: List[str]     # The conversation's system messages, which follow it
     notices: List[Notice]       # The MCP servers that gave no tools
+    memory_note: Optional[str] = None  # What changed in the memory since the prompt's snapshot (memory_snapshot)
 
     @property
     def system_prompt(self) -> str:
@@ -231,16 +243,17 @@ async def _answer_context(
     mcp: bool = True,
     answer_id: Optional[int] = None,
     hide: bool = False
-) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int, List[Notice]]:
+) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int, List[Notice], Optional[str]]:
     """
     What an answer in this conversation is built from (_answer_parts()): the tools, the
-    history builder, the system prompt, the token budget of the history, and the MCP servers
-    that gave no tools (to show as steps).
+    history builder, the system prompt, the token budget of the history, the MCP servers
+    that gave no tools (to show as steps), and the note on what changed in the memory since
+    the prompt's snapshot of it (for the newest user message, memory_snapshot.with_note()).
     """
     parts = await _answer_parts(current_user, conversation_id, config, mcp=mcp, answer_id=answer_id, hide=hide)
     system_prompt = parts.system_prompt
     return (parts.tools, parts.history_builder, system_prompt,
-            history_token_budget(config, system_prompt, parts.tools), parts.notices)
+            history_token_budget(config, system_prompt, parts.tools), parts.notices, parts.memory_note)
 
 
 async def _answer_parts(
@@ -261,7 +274,9 @@ async def _answer_parts(
     model with tools. The tools of the agent's MCP servers come next
     (not with mcp=False, which doesn't connect to them); answer_id is the id of the message
     being written, recorded with the files those tools create. With the knowledge base, the
-    agent's memory follows (read for every answer, so a change shows in the next one).
+    agent's memory follows: the conversation's snapshot of it (backend/services/memory_snapshot.py),
+    the same for every answer while the conversation goes on, and what changed since as a note
+    for the newest user message (memory_note).
     The conversation's system messages are instructions to the model and come last. With hide,
     the device is in family mode: the memory and the tools leave it out.
 
@@ -284,14 +299,15 @@ async def _answer_parts(
     history_builder = ConversationHistoryBuilder(db)
     base_prompt = _own_system_prompt(conversation, hide)
     own_prompt = base_prompt is not None
+    memory_note = None
     if base_prompt is None:
-        base_prompt = _memory_prompt(
+        base_prompt, memory_note = _memory_prompt(
             with_mcp_servers(with_skills(build_system_prompt(persona_prompt_for_conversation(current_user, conversation),
                                                              tools, hide_definition), skills),
                              toolset.servers, toolset.unavailable()),
             current_user, conversation, tools, hide)
     return AnswerParts(tools, history_builder, base_prompt, own_prompt,
-                       history_builder.system_instructions(conversation_id), toolset.notices)
+                       history_builder.system_instructions(conversation_id), toolset.notices, memory_note)
 
 
 async def _fold_into_summary(
@@ -1313,7 +1329,7 @@ async def stream_generate(
             return
 
         try:
-            tools, history_builder, system_prompt, token_budget, mcp_notices = await _answer_context(
+            tools, history_builder, system_prompt, token_budget, mcp_notices, memory_note = await _answer_context(
                 current_user, request_body.conversationId, config, answer_id=message_id, hide=hide)
             # MCP servers of the agent that give no tools this time (unreachable, or not signed in)
             for notice in mcp_notices:
@@ -1374,6 +1390,10 @@ async def stream_generate(
                     "data": json.dumps({"error": "No user message found in conversation"})
                 }
                 return
+
+            # What changed in the memory since the prompt's snapshot: a note at the start of the
+            # newest user message, so the start of the request stays the same (memory_snapshot)
+            history_messages = memory_snapshot.with_note(history_messages, memory_note)
 
             # Log the attachments of the conversation (full content for the latest message only)
             if available_attachments:
@@ -1511,7 +1531,7 @@ async def summarize_conversation(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
 
     config = _resolve_model_or_503(current_user, conversation_id)
-    _, history_builder, _, token_budget, _ = await _answer_context(current_user, conversation_id, config, mcp=False)
+    _, history_builder, _, token_budget, _, _ = await _answer_context(current_user, conversation_id, config, mcp=False)
     summary = db.get_conversation_summary(conversation_id)
     # Placeholders for all attachments: the summary keeps their file names and ids
     entries, _ = await history_builder.build_entries(
@@ -1567,7 +1587,7 @@ async def context_size(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
 
     config = _resolve_model_or_503(current_user, conversation_id, request_body.modelId)
-    tools, history_builder, system_prompt, token_budget, _ = await _answer_context(
+    tools, history_builder, system_prompt, token_budget, _, memory_note = await _answer_context(
         current_user, conversation_id, config, mcp=False, hide=hide)
     summary = db.get_conversation_summary(conversation_id)
     entries, _ = await history_builder.build_entries(
@@ -1579,6 +1599,8 @@ async def context_size(
     history_tokens = sum(entry_tokens(message) for message in kept)
     if summary:
         history_tokens += estimate_tokens(summary_message(summary['content'])["content"])
+    if memory_note:
+        history_tokens += estimate_tokens(memory_note)  # Goes with the newest user message
     message_count = len(kept)
     return ContextSize(
         modelId=config.id,

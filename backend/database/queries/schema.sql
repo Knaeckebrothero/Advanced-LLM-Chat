@@ -84,6 +84,20 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
     created_at BIGINT NOT NULL       -- unix seconds
 );
 
+-- name: create_conversation_memory_snapshots_table
+-- The agent's memory as a conversation's system prompt shows it (backend/services/memory_snapshot.py):
+-- taken at its first answer and again after a pause, kept while the conversation goes on, so that every
+-- request starts like the one before and the provider's prompt cache keeps working. What changed since
+-- goes to the model as a note in the newest user message.
+CREATE TABLE IF NOT EXISTS conversation_memory_snapshots (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    vault INTEGER NOT NULL,          -- the knowledge base of the memory (0: the user's shared one, else the persona's id)
+    family_mode BOOLEAN NOT NULL,    -- taken for a device in family mode, without the hidden lines
+    content TEXT NOT NULL,           -- the memory as the prompt shows it ('' = empty)
+    day DATE NOT NULL,               -- the day the prompt calls today
+    taken_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- name: create_sessions_table
 CREATE TABLE IF NOT EXISTS sessions (
     session_key TEXT PRIMARY KEY,
