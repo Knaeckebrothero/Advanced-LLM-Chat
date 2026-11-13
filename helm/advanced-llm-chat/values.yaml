@@ -21,6 +21,17 @@ frontend:
   service:
     type: ClusterIP
     port: 80
+  # The stock nginx image starts as root, opens port 80 and runs its workers as the user nginx.
+  # It keeps only the capabilities for that: CHOWN (its cache directories), SETGID and SETUID (the
+  # workers) and NET_BIND_SERVICE (port 80, where the container runtime reserves low ports for root).
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+      add: [CHOWN, SETGID, SETUID, NET_BIND_SERVICE]
   resources: {}
   podAnnotations: {}
   nodeSelector: {}
@@ -41,7 +52,8 @@ backend:
   # seeds the model catalog (providers are updated, existing models and agents are kept)
   migrate: true
   # Further settings as environment variables (see .env.example), e.g. ADMIN_EMAILS, LOG_LEVEL,
-  # MODEL_ROUTER_API, NEO4J_ENABLED, WHISPER_BASE_URL, GUEST_SESSION_TIMEOUT_HOURS
+  # MODEL_ROUTER_API, NEO4J_ENABLED, WHISPER_BASE_URL, GUEST_SESSION_TIMEOUT_HOURS, and what guests
+  # may use per client address (GUEST_MAX_ANSWERS, GUEST_MAX_UPLOADS, ...: docs/authentication.md)
   env: {}
   # Secret settings (API keys such as CORTECS_API_KEY, ANTHROPIC_API_KEY, MODEL_ROUTER_KEY,
   # TAVILY_API_KEY, OIDC_CLIENT_SECRET): the name of an existing Secret whose keys become
@@ -67,9 +79,29 @@ backend:
     storageClass: ""
     accessMode: ReadWriteOnce
     size: 5Gi
-  # Guests are rate-limited by IP address; the ingress or tunnel in front must be trusted to
-  # pass the client's address in X-Forwarded-For (uvicorn's FORWARDED_ALLOW_IPS)
-  forwardedAllowIps: "*"
+  # The backend runs as the image's user "app" (uid and gid 10001), not as root. fsGroup lets it
+  # read and write the volume, also the files an earlier version wrote as root; volumes that
+  # ignore fsGroup (hostPath, most NFS) need one more step, see "Upgrading" in the README.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  # For every container with the backend's image or in its pod (also the init containers and
+  # the memoryDream job)
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+  # Guests are limited per client address. The backend takes it from X-Forwarded-For only if the
+  # request comes from one of these addresses or ranges (uvicorn's FORWARDED_ALLOW_IPS,
+  # comma-separated): set the address or range of the proxy in front (ingress controller, tunnel).
+  # The default is the private ranges, for a proxy inside the cluster. "*" trusts whatever address
+  # the client claims, so use it only behind a proxy that overwrites the header.
+  forwardedAllowIps: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
   # The nightly consolidation of the agents' memory (docs/knowledge_base.md): a CronJob that goes
   # over every knowledge base with conversations since its last run, writes a journal per week,
   # tidies the memory up and keeps the patterns it sees. Only here: docker compose doesn't schedule it.
@@ -157,6 +189,32 @@ keycloak:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+# NetworkPolicies for the release's pods (the cluster's network plugin must enforce them).
+# Enabled: the pods accept connections only from each other, and the HTTP ports of the frontend,
+# the backend and the bundled Keycloak from ingressFrom.
+networkPolicy:
+  enabled: false
+  # Who may reach the HTTP ports: a list of NetworkPolicy peers, e.g. the ingress controller's
+  # namespace. Empty: anyone.
+  # - namespaceSelector:
+  #     matchLabels:
+  #       kubernetes.io/metadata.name: ingress-nginx
+  ingressFrom: []
+  # Also limit what the pods may reach: the cluster's DNS, each other, and the internet without
+  # the private address ranges. A backend that was taken over can then still call the model
+  # providers, but not other workloads, the Kubernetes API, the nodes or the local network.
+  restrictEgress: false
+  # Further egress rules when restrictEgress is on, for what the backend needs on a private
+  # address: a model server in the cluster, an OIDC provider on the local network, an external
+  # Postgres. Also the DNS if it isn't the pods k8s-app=kube-dns in kube-system.
+  # - to:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           kubernetes.io/metadata.name: models
+  #   ports:
+  #     - port: 8080
+  extraEgress: []
 
 ingress:
   enabled: false

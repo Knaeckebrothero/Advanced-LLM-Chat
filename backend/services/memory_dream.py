@@ -15,7 +15,7 @@ It runs as a Kubernetes CronJob (Helm chart, backend.memoryDream) and can be run
 
     python -m backend.services.memory_dream [--user ID [--vault N]] [--hours 24]
 
-Docker compose doesn't schedule it (docker compose exec backend python -m backend.services.memory_dream
+Docker compose doesn't schedule it (docker compose exec -u app backend python -m backend.services.memory_dream
 runs it once). memory_dreams keeps, per user and knowledge base, the end of the last period it went
 over; a first run looks back --hours, never more than MAX_LOOKBACK_DAYS. A failed run is tried again
 with the next one, over the same period and what came since.

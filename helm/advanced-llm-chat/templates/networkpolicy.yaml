@@ -1,0 +1,92 @@
+{{- /*
+Optional NetworkPolicies (networkPolicy.enabled). The first one covers every pod of the release:
+they accept connections only from each other (the backend and the memory-dream job reach Postgres
+and the bundled Keycloak, Keycloak reaches Postgres), and with restrictEgress they reach only the
+DNS, each other and public addresses. One more per component opens its HTTP port to ingressFrom.
+*/}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $fullname := include "llmchat.fullname" . }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "llmchat.releaseLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    {{- if .Values.networkPolicy.restrictEgress }}
+    - Egress
+    {{- end }}
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "llmchat.releaseLabels" . | nindent 14 }}
+  {{- if .Values.networkPolicy.restrictEgress }}
+  egress:
+    # The cluster's DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # The release's own pods
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "llmchat.releaseLabels" . | nindent 14 }}
+    # The internet (model providers, web search, MCP servers), but no private address: not other
+    # workloads, the Kubernetes API, the nodes or the local network
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+{{- /* The HTTP ports the ingress or tunnel reaches (the containers' ports) */}}
+{{- $http := dict "frontend" 80 "backend" .Values.backend.service.port }}
+{{- if .Values.keycloak.enabled }}
+{{- $_ := set $http "keycloak" 8080 }}
+{{- end }}
+{{- range $component, $port := $http }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-{{ $component }}
+  labels:
+    {{- include "llmchat.labels" (dict "ctx" $ "component" $component) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "llmchat.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: {{ $port }}
+      {{- with $.Values.networkPolicy.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}
