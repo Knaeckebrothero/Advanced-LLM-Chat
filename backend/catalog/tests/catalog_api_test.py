@@ -54,7 +54,7 @@ ROUTER_URL_ENV = "ZZ_CATALOG_TEST_URL"
 TOGGLE_KEY_ENV = "ZZ_CATALOG_TOGGLE_API_KEY"
 
 PROVIDER_OUT_FIELDS = {"id", "name", "kind", "baseUrl", "apiKeyEnv", "apiKeySet", "privacyTier", "currency",
-                       "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
+                       "reportedCostUnit", "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
 PERSONA_OUT_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "availableToGuests",
                       "enabled", "sortOrder", "ownMemory", "mcpServers", "skills", "hidden"}
 PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "hidden"}
@@ -156,7 +156,7 @@ def providers_by_name(admin):
 
 
 MAIN_PROVIDER = provider_entry("Main", base_url="https://example.invalid/v1", api_key_env=KEY_ENV, notes="test",
-                               default_headers={"X-Test": "1"})
+                               default_headers={"X-Test": "1"}, reported_cost_unit=0.000001)
 
 
 def model_body(provider_id, name, **extra):
@@ -227,7 +227,8 @@ def run_providers(c, admin):
     unset_env, disabled = providers[f"{PREFIX} Unset env"], providers[f"{PREFIX} Disabled"]
     c.check(set(main) == PROVIDER_OUT_FIELDS, "ProviderOut fields", str(sorted(main)))
     c.check(main["baseUrl"] == "https://example.invalid/v1" and main["apiKeyEnv"] == KEY_ENV
-            and main["currency"] == "EUR" and main["defaultHeaders"] == {"X-Test": "1"} and main["notes"] == "test",
+            and main["currency"] == "EUR" and main["defaultHeaders"] == {"X-Test": "1"} and main["notes"] == "test"
+            and main["reportedCostUnit"] == 0.000001 and env["reportedCostUnit"] is None,
             "provider fields from the file", str(main))
     c.check(main["apiKeySet"] is True, f"apiKeySet true when {KEY_ENV} is set in the backend",
             f"(start the backend with {KEY_ENV}=...)")
@@ -889,7 +890,8 @@ def run_resolver(c, models, personas, conversation, user_email):
     config = resolver.resolve_model(user, model_id=beta["id"])
     c.check(config.reasoning == "always" and config.reasoning_passback is True
             and config.extra_body == {"provider": {"zdr": True}} and config.privacy_tier == "untrusted"
-            and config.currency == "EUR" and config.base_url == "https://example.invalid/v1",
+            and config.currency == "EUR" and config.base_url == "https://example.invalid/v1"
+            and config.reported_cost_unit == 0.000001,
             "ModelConfig fields from model and provider")
     config = resolver.resolve_model(user, model_id=guest_model["id"])
     c.check(isinstance(config.input_price_per_mtok, float) and config.cached_input_price_per_mtok == 0.005

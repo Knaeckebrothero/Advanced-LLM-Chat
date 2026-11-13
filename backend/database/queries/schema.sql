@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS llm_providers (
     api_key_env TEXT,                        -- name of the environment variable holding the key
     privacy_tier TEXT NOT NULL,              -- 'local' | 'eu' | 'trusted' | 'untrusted'
     currency TEXT NOT NULL DEFAULT 'USD',    -- currency of the model prices: 'USD' | 'EUR'
+    reported_cost_unit NUMERIC,              -- one unit of a response's usage.cost in that currency, NULL = not used
     default_headers JSONB,                   -- extra HTTP headers, e.g. OpenRouter's HTTP-Referer
     notes TEXT,                              -- jurisdiction, retention, account settings
     enabled BOOLEAN DEFAULT TRUE,
@@ -287,8 +288,9 @@ ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS origin TEXT;
 ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS details TEXT;
 
 -- name: add_model_price_columns
--- Databases from before the price of cache reads (the CREATE TABLE above has it)
+-- Databases from before the price of cache reads and the providers' own costs (the CREATE TABLEs above have them)
 ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS cached_input_price_per_mtok NUMERIC;
+ALTER TABLE llm_providers ADD COLUMN IF NOT EXISTS reported_cost_unit NUMERIC;
 
 -- name: create_mcp_servers_table
 -- MCP servers (docs/mcp.md): the admins' servers, which agents pick (user_id NULL), and users' own

@@ -42,6 +42,7 @@ class ModelConfig:
     default_headers: dict = field(default_factory=dict)
     privacy_tier: str = "trusted"       # the model's override, else the provider's tier
     currency: str = "USD"               # currency of the prices below
+    reported_cost_unit: Optional[float] = None  # one unit of a response's usage.cost in that currency; None = not used
 
     # Capabilities
     supports_tools: bool = True
@@ -66,10 +67,15 @@ class ModelConfig:
         """
         Cost of a usage record in this model's currency, or None without prices.
 
-        Input read from the cache (usage.cached_input_tokens, part of input_tokens)
-        costs the cached price when the model has one, else the input price.
-        Cache writes are counted at the input price (Anthropic charges 1.25 times).
+        What the provider billed, when it reports that (reported_cost_unit) and every model
+        call of the record reported it: the price of the host that served each call, cache
+        reads and writes included. Otherwise computed from the model's prices: input read
+        from the cache (usage.cached_input_tokens, part of input_tokens) costs the cached
+        price when the model has one, else the input price; cache writes are counted at the
+        input price (Anthropic charges 1.25 times).
         """
+        if self.reported_cost_unit is not None and usage.calls and usage.reported_calls == usage.calls:
+            return usage.reported_cost * self.reported_cost_unit
         if self.input_price_per_mtok is None or self.output_price_per_mtok is None:
             return None
         cached = 0
@@ -88,11 +94,19 @@ class Usage:
     output_tokens: int = 0              # includes reasoning tokens
     reasoning_tokens: Optional[int] = None
     cached_input_tokens: Optional[int] = None
+    # The model calls counted here, and the provider's own cost of those that reported one
+    # (usage.cost, in the provider's unit: ModelConfig.reported_cost_unit)
+    calls: int = 0
+    reported_calls: int = 0
+    reported_cost: float = 0.0
 
     def add(self, other: "Usage") -> None:
-        """Add another usage record (one model call) to this one."""
+        """Add another usage record (one model call, or the sum of several) to this one."""
         self.input_tokens += other.input_tokens
         self.output_tokens += other.output_tokens
+        self.calls += other.calls
+        self.reported_calls += other.reported_calls
+        self.reported_cost += other.reported_cost
         if other.reasoning_tokens is not None:
             self.reasoning_tokens = (self.reasoning_tokens or 0) + other.reasoning_tokens
         if other.cached_input_tokens is not None:
