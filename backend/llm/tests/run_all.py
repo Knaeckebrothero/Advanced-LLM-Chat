@@ -9,7 +9,7 @@ import logging
 import sys
 
 MODULES = ("test_openai_loop", "test_anthropic_loop", "test_history", "test_summary", "test_tools",
-           "test_memory_snapshot")
+           "test_memory_snapshot", "test_web_fetch")
 
 
 def main() -> int:

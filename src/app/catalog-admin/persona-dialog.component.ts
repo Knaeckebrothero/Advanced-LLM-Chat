@@ -186,6 +186,7 @@ export class PersonaDialogComponent {
   optInHint(id: ToolGroup): string {
     if (id === 'user_mcp') return 'catalog.admin.personas.toolOptInUserMcp';
     if (id === 'past_chats') return 'catalog.admin.personas.toolOptInPastChats';
+    if (id === 'web_fetch') return 'catalog.admin.personas.toolOptInWebFetch';
     return 'catalog.admin.personas.toolOptIn';
   }
 

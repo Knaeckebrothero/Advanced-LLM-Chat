@@ -7,16 +7,19 @@ FILES_DIR as <file ID><extension> and has a row in uploaded_files: its owner, an
 conversation it belongs to. The owner reads it through the files API; the conversation's agent
 through the file tools (backend/services/tools/file_tools.py), which find files here.
 
-Also here: the previews of images for the chat (thumbnail()) and the scaled copy a vision model
-gets (image_for_model()).
+Also here: the previews of images for the chat (thumbnail()), the scaled copy a vision model
+gets (image_for_model()) and a part of an image at its own resolution, to look closer
+(image_part_for_model()).
 """
 import io
 import json
 import logging
+import math
 import re
 import secrets
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -29,8 +32,11 @@ from backend.services.file_utils import get_file_path, is_file_id
 
 log = logging.getLogger(__name__)
 
-# Largest file the store takes, for uploads and for tools' files
+# Largest file a user uploads
 MAX_FILE_SIZE = 10 * 1024 * 1024
+# Largest file a tool brings in (an MCP server's image, a file fetched from the web): the
+# original of a generated image is often a PNG of 15 MB and more, and it is the one worth keeping
+MAX_TOOL_FILE_SIZE = 32 * 1024 * 1024
 
 # Longest edge of an image a vision model gets; larger ones only cost tokens and upload time
 MODEL_IMAGE_EDGE = 1568
@@ -62,6 +68,7 @@ EXTENSIONS = {
     "image/jpeg": ".jpg",
     "image/jpg": ".jpg",
     "image/webp": ".webp",
+    "image/avif": ".avif",
     "image/gif": ".gif",
     "image/svg+xml": ".svg",
     "audio/mpeg": ".mp3",
@@ -81,6 +88,7 @@ EXTENSIONS = {
 }
 TYPES_BY_EXTENSION = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif",
+    ".avif": "image/avif",
     ".svg": "image/svg+xml", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".m4a": "audio/mp4",
     ".mp4": "video/mp4", ".pdf": "application/pdf", ".json": "application/json", ".txt": "text/plain",
     ".md": "text/markdown", ".csv": "text/csv",
@@ -143,7 +151,7 @@ def store(data: bytes, user_id: int, *, name: Optional[str], mime_type: Optional
     Store a file and record it for its owner.
 
     Args:
-        data: The file's content, at most MAX_FILE_SIZE.
+        data: The file's content, at most MAX_FILE_SIZE (a tool's file, source "tool": MAX_TOOL_FILE_SIZE).
         user_id: The owner.
         name: The file's name; its extension becomes the stored file's.
         mime_type: The file's type.
@@ -155,8 +163,9 @@ def store(data: bytes, user_id: int, *, name: Optional[str], mime_type: Optional
     Raises:
         FileStoreError: The file is too large.
     """
-    if len(data) > MAX_FILE_SIZE:
-        raise FileStoreError(f"larger than {format_size(MAX_FILE_SIZE)}")
+    limit = MAX_TOOL_FILE_SIZE if values.get("source") == SOURCE_TOOL else MAX_FILE_SIZE
+    if len(data) > limit:
+        raise FileStoreError(f"larger than {format_size(limit)}")
     file_id = new_file_id()
     mime_type = base_type(mime_type) or None
     width, height = (image_size(data) or (None, None)) if (mime_type or "").startswith("image/") else (None, None)
@@ -178,16 +187,22 @@ def store(data: bytes, user_id: int, *, name: Optional[str], mime_type: Optional
     return row
 
 
-def _unique_name(stem: str, extension: str, taken: set[str]) -> str:
-    """<stem>-<n><extension> with the first number no file of the conversation has."""
-    number = 1
+def _unique_name(stem: str, extension: str, taken: set[str], numbered: bool = True) -> str:
+    """
+    <stem>-<n><extension> with the first number no file of the conversation has. With
+    numbered=False the first file is <stem><extension>, and only further ones get a number (from 2).
+    """
+    if not numbered and f"{stem}{extension}".lower() not in taken:
+        return f"{stem}{extension}"
+    number = 1 if numbered else 2
     while f"{stem}-{number}{extension}".lower() in taken:
         number += 1
     return f"{stem}-{number}{extension}"
 
 
 def save_tool_file(data: bytes, *, user_id: int, conversation_id: str, mime_type: Optional[str], stem: str,
-                   origin: str, message_id: Optional[int] = None, arguments: Any = None) -> dict:
+                   origin: str, message_id: Optional[int] = None, arguments: Any = None,
+                   numbered: bool = True) -> dict:
     """
     Store a file a tool created in a conversation, e.g. an image an MCP server generated.
 
@@ -201,6 +216,8 @@ def save_tool_file(data: bytes, *, user_id: int, conversation_id: str, mime_type
         origin: The tool's title, shown as where the file comes from.
         message_id: The answer the tool ran in.
         arguments: The tool call's arguments, kept (cut) so a later answer knows how the file was made.
+        numbered: False for a file that has a name of its own (one fetched from the web): it keeps
+            <stem>.<ext> if no file of the conversation has that name.
 
     Returns:
         The file's row, with "path".
@@ -216,7 +233,7 @@ def save_tool_file(data: bytes, *, user_id: int, conversation_id: str, mime_type
             details = details[:MAX_DETAILS_CHARS] + " [...]"
     with _naming:
         taken = {(row.get("name") or "").lower() for row in db.get_conversation_files(conversation_id, user_id)}
-        name = _unique_name(stem, extension_for(mime_type), taken)
+        name = _unique_name(stem, extension_for(mime_type), taken, numbered)
         row = store(data, user_id, name=name, mime_type=mime_type, conversation_id=conversation_id,
                     message_id=message_id, source=SOURCE_TOOL, origin=origin, details=details)
     if row.get("mime_type") == "application/pdf":
@@ -511,4 +528,111 @@ def image_for_model(file_id: str) -> Optional[tuple[bytes, str]]:
             return output.getvalue(), "image/jpeg"
     except Exception as e:
         log.warning(f"Image {file_id} can't be prepared for the model: {type(e).__name__}: {e}")
+        return None
+
+
+@dataclass(frozen=True)
+class ImagePart:
+    """A part of an image as a vision model gets it (image_part_for_model())."""
+    data: bytes
+    mime_type: str
+    box: tuple[int, int, int, int]  # The part in pixels of the image as shown: left, top, right, bottom
+    width: int                      # What the model gets, in pixels
+    height: int
+
+    @property
+    def scale(self) -> float:
+        """How large the model sees the part: 1.0 is the image's own resolution."""
+        return max(self.width, self.height) / max(self.box[2] - self.box[0], self.box[3] - self.box[1], 1)
+
+
+def _stored_region(region: tuple[float, float, float, float], orientation: Optional[int]) -> tuple:
+    """
+    A part of an image as it is shown (left, top, right, bottom as fractions) in the stored image,
+    which its EXIF orientation turns to be shown (the turns of ImageOps.exif_transpose()).
+    """
+    left, top, right, bottom = region
+    return {
+        2: (1 - right, top, 1 - left, bottom),              # Mirrored
+        3: (1 - right, 1 - bottom, 1 - left, 1 - top),      # Upside down
+        4: (left, 1 - bottom, right, 1 - top),              # Flipped
+        5: (top, left, bottom, right),                      # Mirrored along the diagonal
+        6: (top, 1 - right, bottom, 1 - left),              # Shown a quarter turn clockwise
+        7: (1 - bottom, 1 - right, 1 - top, 1 - left),      # Mirrored along the other diagonal
+        8: (1 - bottom, left, 1 - top, right),              # Shown a quarter turn counterclockwise
+    }.get(orientation, region)
+
+
+def image_part_for_model(file_id: str, region: tuple[float, float, float, float]) -> Optional[ImagePart]:
+    """
+    A part of an image as a vision model gets it, to look closer: cut from the image at its own
+    resolution, then scaled like a whole image, to at most MODEL_IMAGE_EDGE pixels on its longer
+    edge. A part no larger than that is the image's own pixels. JPEG, or PNG with transparency.
+
+    Args:
+        file_id: The image.
+        region: The part as fractions of the image as it is shown (EXIF rotation applied): left,
+            top, right, bottom, each from 0 to 1, with left < right and top < bottom.
+
+    Returns:
+        The part, or None if the file is missing, no image Pillow can read, or an image with more
+        pixels than are decoded (MAX_IMAGE_PIXELS).
+    """
+    path = get_file_path(file_id)
+    if path is None:
+        return None
+    try:
+        from PIL import Image
+        turns = {2: Image.Transpose.FLIP_LEFT_RIGHT, 3: Image.Transpose.ROTATE_180,
+                 4: Image.Transpose.FLIP_TOP_BOTTOM, 5: Image.Transpose.TRANSPOSE,
+                 6: Image.Transpose.ROTATE_270, 7: Image.Transpose.TRANSVERSE, 8: Image.Transpose.ROTATE_90}
+        with _decoding, Image.open(path) as source:
+            width, height = source.size
+            jpeg = source.format in ("JPEG", "MPO")
+            pixels = width * height
+            # Reading the orientation decodes a PNG that keeps it behind its pixels
+            if not jpeg and pixels > MAX_IMAGE_PIXELS:
+                raise ValueError(f"{pixels} pixels to decode, more than {MAX_IMAGE_PIXELS}")
+            orientation = source.getexif().get(0x0112)
+            left, top, right, bottom = _stored_region(region, orientation)
+            # The part in pixels of the stored image, at least one pixel wide and high
+            x0, y0 = min(int(left * width), width - 1), min(int(top * height), height - 1)
+            x1, y1 = min(max(math.ceil(right * width), x0 + 1), width), min(max(math.ceil(bottom * height), y0 + 1), height)
+            longest = max(x1 - x0, y1 - y0)
+            if jpeg:
+                # A JPEG can be decoded at 1/2, 1/4 or 1/8 of its size (as _scaled()): the smallest
+                # that still covers what the model gets of a part that is scaled down anyway
+                share = min(1.0, MODEL_IMAGE_EDGE / longest)
+                one_pass = _jpeg_in_one_pass(path)
+                if one_pass and pixels > MAX_IMAGE_PIXELS:
+                    # A camera's photo with more pixels than are decoded at once: at the largest
+                    # of those sizes that is not, so its parts are seen closer, if not at full size
+                    share = min(share, next((1 / divisor for divisor in (2, 4, 8)
+                                             if pixels / divisor ** 2 <= MAX_IMAGE_PIXELS), share))
+                if share < 1:
+                    source.draft(None, (max(1, math.ceil(width * share)), max(1, math.ceil(height * share))))
+                    if one_pass:
+                        pixels = source.width * source.height
+            if pixels > MAX_IMAGE_PIXELS:
+                raise ValueError(f"{pixels} pixels to decode, more than {MAX_IMAGE_PIXELS}")
+            across, down = source.width / width, source.height / height
+            part = source.crop((int(x0 * across), int(y0 * down),
+                                min(math.ceil(x1 * across), source.width), min(math.ceil(y1 * down), source.height)))
+            part.thumbnail((MODEL_IMAGE_EDGE, MODEL_IMAGE_EDGE))
+            if orientation in turns:
+                part = part.transpose(turns[orientation])
+            output = io.BytesIO()
+            if _has_alpha(part):
+                part.convert("RGBA").save(output, "PNG", optimize=True)
+                mime_type = "image/png"
+            else:
+                part.convert("RGB").save(output, "JPEG", quality=92)
+                mime_type = "image/jpeg"
+            # Where the part is in the image as shown, in its pixels
+            shown_width, shown_height = (height, width) if orientation in (5, 6, 7, 8) else (width, height)
+            box = (round(region[0] * shown_width), round(region[1] * shown_height),
+                   round(region[2] * shown_width), round(region[3] * shown_height))
+            return ImagePart(output.getvalue(), mime_type, box, part.width, part.height)
+    except Exception as e:
+        log.warning(f"A part of image {file_id} can't be prepared for the model: {type(e).__name__}: {e}")
         return None

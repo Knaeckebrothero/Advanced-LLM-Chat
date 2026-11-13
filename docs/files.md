@@ -2,16 +2,16 @@
 
 Every file in the chat is handled the same way, whether the user uploaded it or a tool created it (an image an MCP server generated, for example). It is stored once, belongs to one conversation, and the agent of that conversation lists and reads it with two tools, `list_files` and `read_file`, and shows it to the user by placing it in the text of its answer.
 
-- **Stored:** in `FILES_DIR` as `<file ID><extension>`, with a row in `uploaded_files`. A file ID is `file_<milliseconds>_<hex>`. At most 10 MB per file.
+- **Stored:** in `FILES_DIR` as `<file ID><extension>`, with a row in `uploaded_files`. A file ID is `file_<milliseconds>_<hex>`. An upload has at most 10 MB (`MAX_FILE_SIZE`), a file a tool brings in at most 32 MB (`MAX_TOOL_FILE_SIZE`): the original of a generated image is often a PNG of 15 MB and more, and it is the one worth keeping.
 - **Owner:** the user who uploaded it, or the user a tool created it for. Only the owner gets it from the files API.
 - **Conversation:** the one it was attached or created in. Only that conversation's agent sees it. A file belongs to one conversation.
 
-`backend/services/file_store.py` is the store; `backend/services/tools/file_tools.py` has the tools; `backend/services/mcp/media.py` gets the media out of MCP tool results.
+`backend/services/file_store.py` is the store; `backend/services/tools/file_tools.py` has the tools; `backend/services/mcp/media.py` gets the media out of MCP tool results; `backend/services/web_fetch.py` and `backend/services/tools/web_fetch_tools.py` fetch files (and pages) from web addresses.
 
 ## How a file gets its conversation
 
 - **Uploads:** `POST /api/files/upload` stores the file with its name, type, size (and pixels, for images) for the uploader, in no conversation yet. When the message that attaches it is stored (`db.create_message()`, also a conversation import), the file gets that conversation and message (`_link_message_files()` in `backend/database/db.py`). Only files of the conversation's owner are linked, and only ones that are in no conversation yet: the first conversation keeps the file.
-- **Files of tools:** `file_store.save_tool_file()` stores them straight into the conversation of the answer, with the answer's message id, the tool's title (`origin`) and the call's arguments (`details`, cut at 2000 characters), so a later answer can tell how an image was made. They are named `<server slug>-<n>.<ext>` (`civitai-1.png`), unique in the conversation.
+- **Files of tools:** `file_store.save_tool_file()` stores them straight into the conversation of the answer, with the answer's message id, the tool's title (`origin`) and the call's arguments (`details`, cut at 2000 characters), so a later answer can tell how an image was made. They are named `<server slug>-<n>.<ext>` (`civitai-1.png`), unique in the conversation. A file fetched from a web address keeps its name there (`fox.jpg`, then `fox-2.jpg`), with `Web: <host>` as its origin and its address as the details.
 - **Deleted messages:** when a message is deleted (alone, or with the messages after an edited one), its files leave the conversation: the agent no longer sees them. The files themselves stay, and their owner can still open them.
 
 Databases from before files had a conversation are migrated by the run that adds `uploaded_files.conversation_id` (the backend's start, or `app_init --prod`): `backfill_file_conversations()` gives every file the conversation of the oldest message that attaches it.
@@ -23,9 +23,21 @@ The tool group `files` (`TOOL_GROUPS` in `backend/llm/tools.py`). The tools are 
 | Tool | What it does |
 |---|---|
 | `list_files()` | The conversation's files, oldest first: name, type, pixels, size, where each comes from ("uploaded by the user", "created by Civitai: Run step") and when |
-| `read_file(file, query?, pages?)` | A file's content: text, a PDF's extracted text and page descriptions (`pages` for some of them), an audio transcript. **Images:** a model that takes images (`supports_vision`) gets the image itself, scaled to at most 1568 pixels; a text-only model gets a description from the vision helper (`VISION_MODEL`), or its answer to `query`. For a file a tool made, the result ends with the arguments it was made with |
+| `read_file(file, query?, pages?, region?)` | A file's content: text, a PDF's extracted text and page descriptions (`pages` for some of them), an audio transcript. **Images:** a model that takes images (`supports_vision`) gets the image itself, scaled to at most 1568 pixels; a text-only model gets a description from the vision helper (`VISION_MODEL`), or its answer to `query`. `region` looks closer at a part of an image (below). For a file a tool made, the result ends with the arguments it was made with |
 
 A file is named by its name (case doesn't matter) or by its file ID; when several files have the same name, `list_files` shows their IDs and the name alone is refused.
+
+### Looking closer: `region`
+
+A model never gets an image at its full size: every image is scaled to at most 1568 pixels on its longer edge (`MODEL_IMAGE_EDGE`), which is all most models take and keeps an image at about 1,600 tokens. Of a generated image of 2690 by 4000 pixels the model sees 1055 by 1568, which is enough to say what it shows and not enough to judge a face, a hand or small text.
+
+`read_file(file, region={"left": 50, "top": 0, "right": 100, "bottom": 50})` gives a part of the image instead: its edges in percent of the image's width and height, from the top left corner (here the top right quarter). The part is cut from the image at its own resolution and then scaled like a whole image, so a part of up to 1568 pixels is the image's own pixels, and the smaller the part, the closer the look. The result says which pixels it is and at what scale.
+
+- **Told when it matters:** the result of `read_file` and `web_fetch` for an image larger than the model gets says so ("You see it scaled down to 1055×1568 px"), and `read_file` names `region`. The prompt of the file tools has an example.
+- **A text-only model** gets the vision helper's description of the part, or its answer to `query` about it, kept per part and query.
+- **What a model sends:** shares of the image (0 to 1) are taken as such, edges past the image are the image's, and a part under 1 % of the width or height is refused. Models that send an object as its JSON text are understood (`_as_object()` in `backend/llm/tools.py`).
+- **Turned images:** the part is the one of the image as it is shown, whatever EXIF orientation it is stored with (`_stored_region()` in `file_store.py`).
+- **Cost:** `image_part_for_model()` decodes the image at full size, within the limit of 25 megapixels (below). A camera's JPEG over that is decoded at the half, quarter or eighth of its size that fits, so its parts come closer but not to full size; any other image over it has no parts.
 
 ### Showing a file: placed in the answer's text
 
@@ -52,11 +64,34 @@ The image goes to the model once, in the answer the tool ran in. In later turns 
 
 - **In the result itself:** image and audio blocks, and embedded resources, as base64.
 - **Linked** (`resource_link`): images, audio and PDFs are read from the server (`resources/read`). Text and video are not fetched; they stay links.
-- **Linked, but not deliverable:** when the read fails, or what comes back is no base64, the web address in the result that ends in the resource's file name is downloaded instead (of several, the largest). Civitai needs this: its `resources/read` returns an image's bytes as text, which destroys them, and names the image's signed address in the result's text (seen 2026-11-12). Downloads follow only https, only to public addresses (unless `MCP_ALLOW_PRIVATE_URLS`), send none of the server's headers, take only images, audio and PDFs, and stop at 10 MB.
+- **Linked, but not deliverable:** when the read fails, or what comes back is no base64, the web address in the result that ends in the resource's file name is downloaded instead (of several, the largest). Civitai needs this: its `resources/read` returns an image's bytes as text, which destroys them, and names the image's signed address in the result's text (seen 2026-11-12). Downloads follow only https, only to public addresses (unless `MCP_ALLOW_PRIVATE_URLS`), send none of the server's headers, take only images, audio and PDFs, and stop at 32 MB.
 
 What can't be kept never fails the tool call (the tool ran, and may have cost something): the model is told `not kept` and why.
 
 An agent with the `files` tool group is told that the user sees only a small preview and how to place a file in its answer. An agent without it isn't told, so everything its tools create is shown.
+
+## Web addresses (`web_fetch`)
+
+An image that exists only as a web address is nothing a model can look at, and nothing the chat can show (below, "Only stored files"). A tool's result often names images that way (Civitai's image search, a web search), and so does a user who pastes a link. The tool group `web_fetch` gives the agent one tool for that:
+
+| Tool | What it does |
+|---|---|
+| `web_fetch(url, start?)` | Opens a web address. **A page** comes back as text. **An image, a PDF or an audio file** is saved to the conversation's files, like any file a tool creates. Other text (JSON, plain text, SVG) comes back as it is |
+
+- **A fetched image** goes to a model that takes images (scaled as for `read_file`); a text-only model gets the vision helper's description. The chat shows it as a small preview with the answer, and the agent places it in its text by its name to show it. `list_files` and `read_file` find it again in any later turn. A PDF comes back with its extracted text, an audio file is only saved. A file the conversation already has from the web is not saved a second time: an agent that opens an address again, to look once more, gets the same file.
+- **A page** is its title, description and preview image (`og:image`), then its text in the manner of Markdown: headings, lists, links, and every image with its address, so the agent can fetch the ones worth looking at. Of a page with a `<main>` part only that is read (else its `<article>`s, else all of it); menus, footers and scripts are left out, and links to the same site are written as paths. Scripts don't run: a page that builds itself in the browser has little text, and the result says so. A text longer than 40,000 characters is cut, and `start` reads on from where it was cut.
+- **The type is the content's.** A server's word for what it sends is often wrong (a `.jpeg` address that returns WebP, a sign-in page in place of an image), so an image is one that Pillow can read (JPEG, PNG, WebP, GIF, AVIF, also animated ones), and it is stored under its real type: Civitai's `optimized=true` addresses end in `.jpeg` and return WebP.
+
+The group is **opt-in** and only for signed-in users, never for guests: the server opens whatever address is named, and for an anonymous visitor it won't. An agent gets it when it is picked on the Agents page ("Web addresses").
+
+What the server does with an address a model names (`backend/services/web_fetch.py`):
+
+- **Only public addresses**, http or https. The host's name is resolved once, all of its addresses must be public (no loopback, private, link-local or other reserved range), and the connection goes to an address that was checked, under the host's name (`Host` header, and the certificate is checked against it). A name that resolves to something else a moment later therefore leads nowhere else. Each redirect is checked the same way, at most 5 of them. No setting allows private addresses.
+- **Nothing goes along:** no cookies, no credentials (an address with a user name is refused), no proxy settings of the server, a fixed `User-Agent`. Sites that turn away automated requests answer 403, which the model is told.
+- **Limits:** 10 seconds to connect, 20 between two pieces of the answer, 60 in all. A file may be as large as the store takes from a tool (32 MB); of a page or text the first 2 MB are read. Video and types it can't read are refused before their content is loaded.
+- **Not in the log:** the HTTP library's request lines are switched off for these requests (an address can carry a signature or a search); the tool logs the host, the type and the size.
+
+**What it can be used for against the user.** An agent that opens any address can also send something out with one: text planted in a page, a file or a tool's result can tell the model to fetch an address that carries what it knows (the memory, the conversation). The chat never loads an image address a model writes for this reason; this tool is the same door on the server's side, which is why an agent has to be picked for it. Nothing checks yet that an address came from the conversation rather than from the model.
 
 ## In the chat
 
@@ -112,7 +147,7 @@ All under `/api/files`, for the file's owner only (404 otherwise):
 A file comes from anybody (a guest, an MCP server), so nothing that reads one may cost more than a fixed amount, whatever the file claims to be.
 
 - **PDFs** are read in a process of their own, never in the server (`document_handler.process_pdf_safely()`, `backend/services/pdf_worker.py`): at most 60 seconds, at most 512 MB allocated by the worker and by the `pdftoppm` it starts, at most 2 at once. Up to 4 more wait their turn; beyond that a PDF is not processed. Of a PDF, the first 20 pages are rendered, each scaled to 1754 pixels on its longer edge (an A4 page at 150 dpi) whatever its size on paper, and at most 500,000 characters of text are kept. The page images of one PDF may take 32 MB together; the pages past that are not kept (pages of text take a few hundred KB each). A PDF that takes too long, or whose text needs more memory than that, is still stored, but without text and pages; one that only `pdftoppm` fails on keeps its text. The worker gets none of the server's settings (no keys, no passwords), only where programs are and the language. It is limited, not locked in: it runs as the server's user. The call blocks, so it runs in a thread (`asyncio.to_thread`). In the backend image `tini` is the first process, so the `pdftoppm` of a worker that was killed doesn't stay behind as a dead process.
-- **Images** are decoded only up to 25 megapixels (`file_store.MAX_IMAGE_PIXELS`), two at a time. A larger one is stored and served, but has no preview and is not shown to a model. A camera's JPEG is the exception: it is decoded at a fraction of its size, so photos of any size get both. Reading an image's size (`image_size()`) never decodes it.
+- **Images** are decoded only up to 25 megapixels (`file_store.MAX_IMAGE_PIXELS`), two at a time. A larger one is stored and served, but has no preview and is not shown to a model. The vision helper gets an image scaled like a model of the chat does, not the file as it is. A camera's JPEG is the exception: it is decoded at a fraction of its size, so photos of any size get both. Reading an image's size (`image_size()`) never decodes it.
 - **Audio:** the local Whisper model is loaded into the server and transcribes on its CPU for as long as the audio takes, one file at a time in a thread of its own. `WHISPER_LOCAL_FALLBACK=false` keeps a failed API transcription from starting it; a public deployment should set that.
 
 ## Data
@@ -121,7 +156,7 @@ A file comes from anybody (a guest, an MCP server), so nothing that reads one ma
 
 ## Tests
 
-- `python -m backend.llm.tests.run_all`: the file tools on a fake file table (the conversation's files only, names and IDs, a vision model gets the scaled image, a text-only model the description, a PDF's preview), lists that models send as text, the vision helper's errors not cached, and images in tool results for both adapters.
+- `python -m backend.llm.tests.run_all`: the file tools on a fake file table (the conversation's files only, names and IDs, a vision model gets the scaled image, a text-only model the description, a PDF's preview), looking closer at an image (`region`: a part at the image's own resolution for both kinds of model, in all eight EXIF orientations, of a photo with more pixels than are decoded), lists that models send as text, the vision helper's errors not cached, and images in tool results for both adapters. `test_web_fetch.py` plays the web with a server on 127.0.0.1: which addresses are fetched (public ones only, also a name that resolves to a private address next to a public one), the connection to the checked address, redirects, the limits on size and time, a file's type by its content, a page as text, and the tool (a file saved under its name for the answer, the image for a vision model, the description for another, reading on in a long text).
 - `ng test advanced-llm-chat --include='src/app/chat-ui/chat-ui-message/answer-parts.spec.ts'`: the files placed in an answer's text: where the text is split, rows, lists and tables, names in every spelling, files that don't exist, web addresses, code, an answer still being written.
 - `python backend/services/tests/mcp_test.py` (`test_files`, `test_media`): against a real Postgres and real MCP servers: images of a result saved with unique names, linked resources, the download fallback and its limits, uploads linked and unlinked with their messages, the migration's backfill, previews, the files API (with where each listed file comes from, and the list of all files: its order, pages and filter).
 - `python backend/services/tests/upload_safety_test.py`: the limits above, offline, with files it builds itself: PDFs with pages of 200 inches, PDFs that take poppler minutes or pdfminer gigabytes, PNGs that claim millions of pixels, a camera's JPEG, the local Whisper model as a fake.
@@ -131,8 +166,11 @@ A file comes from anybody (a guest, an MCP server), so nothing that reads one ma
 - **More to do with a listed file.** The lists open and download single files. There is no download of all files at once, no deleting a file from a list, and no jump from a file to its message (only to its conversation, from "All files"). Files in no conversation show in no list.
 - **Deleting files with their conversation.** Deleting a conversation, or a message, leaves its files on disk (as uploads always were; only an expired guest's files are deleted). They are in no conversation then, so a cleanup can find them (`conversation_id IS NULL`).
 - **One conversation per file.** A conversation imported into the account that already has its original shows the attachments, but its agent can't open them: they stay with the first conversation.
-- **Video, and media a result only names by address.** Linked videos are not fetched. A server that returns nothing but a web address in its text (no image block, no resource link) gets no file.
+- **Video, and media a result only names by address.** Videos are not fetched, linked or by `web_fetch`. A server that returns nothing but a web address in its text (no image block, no resource link) gets no file on its own; an agent with `web_fetch` fetches the ones it wants to see.
+- **Pages that need a browser.** `web_fetch` runs no scripts and signs in nowhere, and sites behind a check for automated requests refuse it (Civitai's own pages do; its image addresses don't).
 - **Passing a file to a tool.** The agent can read and show a file, but not hand it to an MCP tool (as the start image of an image-to-image run, say): tools take JSON arguments, and the files are not reachable from outside.
 - **Files of the knowledge base.** A file belongs to one conversation, so an image can't be kept in the knowledge base and shown in another chat yet. The direction (researched on 2026-11-13, see the backlog in `docs/generalization_refactor.md`): one note per image with a description the agent searches as text, the file owned by the user, shown with the same Markdown image.
 - **The model isn't told about a wrong name.** A reference to a file that doesn't exist shows "(File not found)" to the user; the model learns of it only if the user says so.
-- **Images of user messages are not scaled.** The image in the latest user message goes to a vision model as uploaded; only `read_file` scales.
+- **Images of user messages are not scaled.** The image in the latest user message goes to a vision model as uploaded; only `read_file` and `web_fetch` scale.
+- **More than 1568 pixels for models that take more.** Every model gets the same size. Some take larger images; the catalog has no field for that, and `region` gets a model the detail at any size.
+- **`region` without the file tools.** An agent with `web_fetch` but without the group `files` sees fetched images scaled down and can't look closer.

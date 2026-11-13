@@ -16,7 +16,7 @@ PrivacyTier = Literal["local", "eu", "trusted", "untrusted"]
 ReasoningMode = Literal["none", "optional", "always"]
 Currency = Literal["USD", "EUR"]
 # Tool groups a persona can use; the keys of backend.llm.tools.TOOL_GROUPS
-ToolGroup = Literal["files", "web_search", "knowledge_graph", "knowledge_base", "past_chats", "auto_hide", "user_mcp"]
+ToolGroup = Literal["files", "web_search", "web_fetch", "knowledge_graph", "knowledge_base", "past_chats", "auto_hide", "user_mcp"]
 
 
 # Providers

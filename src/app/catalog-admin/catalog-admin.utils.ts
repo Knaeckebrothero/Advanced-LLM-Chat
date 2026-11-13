@@ -98,6 +98,7 @@ export function findPlaceholders(prompt: string): string[] {
 const TOOL_ICONS: Record<ToolGroup, string> = {
   files: 'folder_open',
   web_search: 'travel_explore',
+  web_fetch: 'link',
   knowledge_graph: 'hub',
   knowledge_base: 'menu_book',
   past_chats: 'history',
