@@ -133,14 +133,19 @@
     </div>
   </div>
 
-  <!-- Opened from a list of files: step to the one before and the one after -->
+  <!-- Opened from a message with several images, or from a list of files: step to the one before
+       and the one after. At an end a button stays where it is and only looks switched off: one
+       that is disabled would lose the keyboard's focus. No tooltips: Escape would close a
+       tooltip first, and the preview only at the second press -->
   <ng-container *ngIf="galleryCount">
-    <button mat-icon-button class="step-button step-button--previous" (click)="step(-1)" [disabled]="!hasPrevious"
-            [attr.aria-label]="'filePreview.previous' | translate" [matTooltip]="'filePreview.previous' | translate">
+    <button mat-icon-button class="step-button step-button--previous" (click)="step(-1)"
+            [class.is-end]="!hasPrevious" [attr.aria-disabled]="!hasPrevious"
+            [attr.aria-label]="'filePreview.previous' | translate">
       <mat-icon>chevron_left</mat-icon>
     </button>
-    <button mat-icon-button class="step-button step-button--next" (click)="step(1)" [disabled]="!hasNext"
-            [attr.aria-label]="'filePreview.next' | translate" [matTooltip]="'filePreview.next' | translate">
+    <button mat-icon-button class="step-button step-button--next" (click)="step(1)"
+            [class.is-end]="!hasNext" [attr.aria-disabled]="!hasNext"
+            [attr.aria-label]="'filePreview.next' | translate">
       <mat-icon>chevron_right</mat-icon>
     </button>
   </ng-container>

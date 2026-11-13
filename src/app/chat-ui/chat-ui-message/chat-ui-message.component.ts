@@ -5,7 +5,9 @@ import { Router } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
 import { ChatUiComponent } from '../chat-ui.component';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
-import { FilePreviewDialogComponent, FilePreviewDialogData } from '../../components/file-preview-dialog/file-preview-dialog.component';
+import {
+  FilePreviewDialogComponent, FilePreviewDialogData, openFilePreview
+} from '../../components/file-preview-dialog/file-preview-dialog.component';
 import { ApiService } from '../../services/api.service';
 import { SettingsStateService } from '../../services/settings-state.service';
 import { CatalogService } from '../../services/catalog.service';
@@ -18,7 +20,7 @@ import { FilePreviewsService } from '../../services/file-previews.service';
 import { ConversationFilesService } from '../../services/conversation-files.service';
 import { MessageWithSyncStatus } from '../../repositories/message.repository';
 import { IFileRef } from '../../data/models/file.model';
-import { stepFiles } from './answer-files/answer-files.component';
+import { stepFiles, unplacedFiles } from './answer-files/answer-files.component';
 import { AnswerPart, FILE_LINK, answerParts, findFile } from './answer-parts';
 
 // The IDs the server gives stored files (backend FILE_ID_PATTERN); a file not uploaded yet has another
@@ -76,6 +78,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   private partsState = '';
   private parts: AnswerPart[] = [];
   private placed: ReadonlySet<string> = new Set<string>();
+  private images: IFileRef[] = [];
 
   // Model catalog: per-message model and usage
   showUsage = false;
@@ -222,6 +225,14 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     }
     this.parts = parts;
     this.placed = new Set(parts.flatMap(part => part.items.map(item => item.file?.fileId ?? '')));
+    // The message's images as they follow each other on the page: what stands above the text,
+    // then what the text places
+    const above = unplacedFiles(steps, this.placed);
+    const images = new Map<string, IFileRef>();
+    for (const file of [...above.shown, ...above.created, ...parts.flatMap(part => part.items.map(item => item.file))]) {
+      if (file?.mimeType.startsWith('image/') && !images.has(file.fileId)) images.set(file.fileId, file);
+    }
+    this.images = [...images.values()];
     return parts;
   }
 
@@ -229,6 +240,16 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   get placedFileIds(): ReadonlySet<string> {
     void this.textParts;  // Worked out with the parts, whichever the template asks for first
     return this.placed;
+  }
+
+  /**
+   * The images this message shows, in their order: an image opened from the message steps to
+   * the one before and the one after it in the preview, without closing it in between. The
+   * same list until the message's files change.
+   */
+  get gallery(): IFileRef[] {
+    void this.textParts;
+    return this.images;
   }
 
   /** The parts keep their place while the answer grows, so only the last one is drawn again. */
@@ -287,25 +308,9 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
       .find(file => file.fileId === fileId);
   }
 
-  /** Open a stored file in the preview dialog. */
+  /** Open a stored file in the preview dialog; an image of this message steps to its other images. */
   private openFile(file: IFileRef): void {
-    const type = FilePreviewUtil.getFileType(file.mimeType);
-    const data: FilePreviewDialogData = {
-      fileId: file.fileId,
-      fileName: file.name,
-      fileSize: file.size ? FilePreviewUtil.formatFileSize(file.size) : undefined,
-      fileType: type,
-      mimeType: file.mimeType
-    };
-    this.dialog.open(FilePreviewDialogComponent, {
-      data,
-      panelClass: 'file-preview-dialog-panel',
-      hasBackdrop: false,  // The dialog has its own
-      maxWidth: '100vw',
-      maxHeight: '100vh',
-      width: '100vw',
-      height: '100vh'
-    });
+    openFilePreview(this.dialog, file, this.gallery);
   }
 
   getAttachmentIcon(type: FileType): string {
@@ -322,8 +327,9 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     return this.sanitizer.bypassSecurityTrustUrl(objectUrl);
   }
 
-  openFilePreviewDialog(attachment: FilePreview): void {
-    const dialogData: FilePreviewDialogData = {
+  /** An attachment of this message as the preview dialog takes it. */
+  private attachmentData(attachment: FilePreview): FilePreviewDialogData {
+    return {
       fileId: attachment.id,
       fileName: attachment.name,
       fileSize: attachment.sizeFormatted,
@@ -336,10 +342,20 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
       messageId: this.message.id,
       conversationId: this.message.conversationId
     };
+  }
+
+  openFilePreviewDialog(attachment: FilePreview): void {
+    const dialogData = this.attachmentData(attachment);
+    // An image of several: the preview steps through the message's images
+    const images = (this.message.attachments ?? []).filter(other => other.type === FileType.IMAGE);
+    if (images.length > 1 && images.includes(attachment)) {
+      dialogData.gallery = images.map(other => other === attachment ? dialogData : this.attachmentData(other));
+    }
 
     this.dialog.open(FilePreviewDialogComponent, {
       data: dialogData,
       panelClass: 'file-preview-dialog-panel',
+      autoFocus: 'dialog',  // As openFilePreview()
       hasBackdrop: false, // Component handles its own backdrop
       maxWidth: '100vw',
       maxHeight: '100vh',

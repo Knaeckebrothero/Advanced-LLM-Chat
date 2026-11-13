@@ -42,7 +42,7 @@
       role="group" [attr.aria-label]="'files.shown' | translate">
       <ng-container *ngFor="let item of part.items; trackBy: trackPlaced">
         <app-file-tile *ngIf="item.file as file; else loadingFile" [file]="file" [label]="item.label"
-          size="large"></app-file-tile>
+          size="large" [gallery]="gallery"></app-file-tile>
         <ng-template #loadingFile><span class="placed-file-loading" aria-hidden="true"></span></ng-template>
       </ng-container>
     </div>
@@ -196,12 +196,13 @@
             *ngIf="message.content.steps.length > 0"
             [steps]="message.content.steps"
             [status]="message.content.status"
+            [gallery]="gallery"
             (expandedChange)="onStepsExpandedChange($event)">
           </app-agent-steps>
 
           <!-- The files of the answer that it doesn't place in its text: what its tools created -->
           <app-answer-files *ngIf="message.content.steps.length > 0" [steps]="message.content.steps"
-            [placed]="placedFileIds"></app-answer-files>
+            [placed]="placedFileIds" [gallery]="gallery"></app-answer-files>
 
           <!-- Final response with streaming cursor: its text, and the files the agent places in it -->
           <div class="agent-response" *ngIf="!editing && (message.content.content || message.content.status === 'responding')">
