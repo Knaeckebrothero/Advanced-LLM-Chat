@@ -62,7 +62,7 @@ spec:
       {{- end }}
       automountServiceAccountToken: false
       initContainers:
-        {{- include "llmchat.waitForPostgres" . | nindent 8 }}
+        {{- include "llmchat.waitForPostgres" (dict "ctx" $) | nindent 8 }}
         # Keycloak's own database in the same Postgres, created by the chart's user
         - name: create-database
           image: {{ include "llmchat.image" (dict "image" .Values.postgresql.image "ctx" $) }}
