@@ -1,5 +1,5 @@
 """
-Model catalog API models: providers, models and personas (the "agents" of the UI).
+Model catalog API models: providers, models, personas (the "agents" of the UI) and their skills.
 
 The API contract is described in docs/model_catalog_api.md. Providers are
 read-only: they come from the server's catalog file (MODEL_CATALOG_FILE), and
@@ -8,6 +8,8 @@ their API keys only from environment variables, which responses never contain.
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field
+
+from backend.models.common import UtcDatetime
 
 ProviderKind = Literal["openai_compatible", "anthropic"]
 PrivacyTier = Literal["local", "eu", "trusted", "untrusted"]
@@ -161,6 +163,7 @@ class PersonaBase(BaseModel):
     sortOrder: int = 0
     ownMemory: bool = False  # With the knowledge base: its own knowledge base and memory per user, not the shared one
     mcpServers: Optional[List[str]] = None  # Slugs of the admin MCP servers it uses (docs/mcp.md); None = none
+    skills: Optional[List[str]] = None  # Names of its skills (docs/skills.md), in this order; None = none
     hidden: bool = False  # Hidden with all its chats and its own knowledge base
 
 
@@ -180,6 +183,7 @@ class PersonaUpdate(BaseModel):
     sortOrder: Optional[int] = None
     ownMemory: Optional[bool] = None
     mcpServers: Optional[List[str]] = None  # Send null or [] for none
+    skills: Optional[List[str]] = None  # Send null or [] for none
     hidden: Optional[bool] = None
 
 
@@ -207,6 +211,58 @@ class ToolGroupStatus(BaseModel):
     requires: Optional[ToolGroup] = None  # Works only together with this group (past_chats: knowledge_base)
 
 
+# Skills (docs/skills.md): the limits of the SKILL.md standard (agentskills.io), the text about 5,000 tokens
+
+SKILL_NAME_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
+SKILL_NAME_MAX = 64
+SKILL_DESCRIPTION_MAX = 1024
+SKILL_CONTENT_MAX = 20000
+
+
+class SkillBase(BaseModel):
+    name: str = Field(pattern=SKILL_NAME_PATTERN, max_length=SKILL_NAME_MAX)  # "image-generation"
+    description: str = Field(min_length=1, max_length=SKILL_DESCRIPTION_MAX)  # What it does and when to use it
+    content: str = Field(min_length=1, max_length=SKILL_CONTENT_MAX)  # The instructions, Markdown
+    enabled: bool = True
+
+
+class SkillCreate(SkillBase):
+    pass
+
+
+class SkillUpdate(BaseModel):
+    """Partial update; fields left out stay unchanged. A new name is also changed in the agents that have it."""
+    name: Optional[str] = Field(None, pattern=SKILL_NAME_PATTERN, max_length=SKILL_NAME_MAX)
+    description: Optional[str] = Field(None, min_length=1, max_length=SKILL_DESCRIPTION_MAX)
+    content: Optional[str] = Field(None, min_length=1, max_length=SKILL_CONTENT_MAX)
+    enabled: Optional[bool] = None
+
+
+class SkillAgent(BaseModel):
+    """An agent that has a skill."""
+    id: int
+    name: str
+
+
+class SkillOut(SkillBase):
+    id: int
+    agents: List[SkillAgent] = []  # The agents that have it
+    createdAt: Optional[UtcDatetime] = None
+    updatedAt: Optional[UtcDatetime] = None
+
+
+class SkillImport(BaseModel):
+    """POST /api/admin/skills/import: one SKILL.md file."""
+    text: str = Field(max_length=200_000)  # The whole file: YAML frontmatter (name, description), then the text
+    replace: bool = False  # Replace the skill of that name; without it an existing name is a conflict (409)
+
+
+class SkillImportResult(BaseModel):
+    skill: SkillOut
+    created: bool  # False: an existing skill was replaced
+    ignored: List[str] = []  # Frontmatter keys the app doesn't use (license, allowed-tools, ...)
+
+
 # Import and export
 
 class ImportCounts(BaseModel):
@@ -223,4 +279,5 @@ class ImportResult(BaseModel):
     models: ImportCounts
     personas: ImportCounts
     mcpServers: ImportCounts = ImportCounts()  # The admin MCP servers (docs/mcp.md)
+    skills: ImportCounts = ImportCounts()  # docs/skills.md
     errors: List[str] = []

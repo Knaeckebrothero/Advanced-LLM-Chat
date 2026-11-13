@@ -252,7 +252,22 @@ personas = Table(
     Column('sort_order', Integer, server_default='0'),
     Column('own_memory', Boolean, server_default='false'),  # Its own knowledge base and memory per user
     Column('mcp_servers', JSONB),  # Slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
+    Column('skills', JSONB),  # Names of its skills (docs/skills.md), NULL = none
     Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden with its chats and own knowledge base
+    Column('created_at', DateTime, server_default=func.now()),
+    Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
+)
+
+# Skills (docs/skills.md): texts that tell an agent how to do one kind of work, written by admins,
+# attached to agents (personas.skills) and loaded by the agent with use_skill
+skills = Table(
+    'skills',
+    metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('name', Text, unique=True, nullable=False),  # "image-generation" (SKILL.md: lowercase, digits, hyphens)
+    Column('description', Text, nullable=False),  # What it does and when to use it: all the model sees before loading it
+    Column('content', Text, nullable=False),  # The instructions, Markdown
+    Column('enabled', Boolean, nullable=False, server_default='true'),
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )

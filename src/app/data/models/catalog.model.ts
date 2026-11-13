@@ -1,7 +1,7 @@
 /**
  * Model Catalog Data Models
  *
- * Mirrors backend/models/catalog.py and MessageUsage in backend/models/message.py.
+ * Mirrors backend/models/catalog.py and MessageUsage in backend/models/message.py; skills: docs/skills.md.
  * The API contract is described in docs/model_catalog_api.md.
  */
 
@@ -160,6 +160,7 @@ export interface IPersonaBase {
   sortOrder: number;
   ownMemory?: boolean;  // With the knowledge base: its own knowledge base and memory per user (default: the shared one)
   mcpServers?: string[] | null;  // Slugs of the admin MCP servers it uses (docs/mcp.md); null or [] = none
+  skills?: string[] | null;  // Names of its skills (docs/skills.md), in this order; null or [] = none
   hidden?: boolean;  // Hidden with all its chats and its own knowledge base
 }
 
@@ -191,6 +192,45 @@ export interface IToolStatus {
 }
 
 // ============================================================================
+// Skills (docs/skills.md)
+// ============================================================================
+
+/** The limits of the SKILL.md standard; the text about 5,000 tokens. */
+export const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const SKILL_NAME_MAX = 64;
+export const SKILL_DESCRIPTION_MAX = 1024;
+export const SKILL_CONTENT_MAX = 20000;
+
+/** Instructions for one kind of work that agents load when a request needs them. */
+export interface ISkillBase {
+  name: string;         // "image-generation": lowercase letters, digits and single hyphens
+  description: string;  // What it does and when to use it: all the model sees before loading it
+  content: string;      // The instructions, Markdown
+  enabled: boolean;
+}
+
+export type ISkillCreate = ISkillBase;
+export type ISkillUpdate = Partial<ISkillBase>;
+
+export interface ISkillAgent {
+  id: number;
+  name: string;
+}
+
+export interface ISkillOut extends ISkillBase {
+  id: number;
+  agents: ISkillAgent[];  // The agents that have it
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ISkillImportResult {
+  skill: ISkillOut;
+  created: boolean;   // false: an existing skill was replaced
+  ignored: string[];  // Frontmatter keys the app doesn't use (license, allowed-tools, ...)
+}
+
+// ============================================================================
 // Import and export
 // ============================================================================
 
@@ -204,6 +244,7 @@ export interface IImportResult {
   models: IImportCounts;
   personas: IImportCounts;
   mcpServers?: IImportCounts;  // The admin MCP servers (docs/mcp.md)
+  skills?: IImportCounts;  // docs/skills.md
   errors: string[];
 }
 
@@ -214,6 +255,7 @@ export interface ICatalogFile {
   models?: Record<string, unknown>[];
   personas?: Record<string, unknown>[];
   mcp_servers?: Record<string, unknown>[];
+  skills?: Record<string, unknown>[];
   [key: string]: unknown;
 }
 

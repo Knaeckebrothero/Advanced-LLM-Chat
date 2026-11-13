@@ -49,6 +49,7 @@ Built on the official `openai` and `anthropic` SDKs. LangChain and LangGraph are
 - **Reasoning shown as steps:** reasoning text becomes a `thought` step titled "Thinking" that grows through `step_delta` events. It arrives as `reasoning_content` (Kimi, DeepSeek, Qwen), `reasoning` (some routers) or Anthropic thinking blocks. The old placeholder steps ("Analyzing request...", "Generating Response") go away.
 - **System prompt:** `build_system_prompt(persona_prompt: str | None, tools)` returns the identity paragraph (or the persona prompt in its place), followed by the sections for the tools it is given (file access, knowledge graph, knowledge base, the web search hint). With the knowledge base tools, `with_memory(system_prompt, memory)` adds the agent's memory with today's date (`docs/knowledge_base.md`, "Memory"). `with_instructions(system_prompt, texts)` adds the conversation's system messages at the end, under "## Instructions for this conversation:" (`ConversationHistoryBuilder.system_instructions()`: all of them, oldest first, or the ones before the message being regenerated). A system message is an instruction for every answer after it; it goes into the system prompt rather than its place in the history because many chat templates of open models accept a system message only at the start, so it is never cut off or summarized, and editing, deleting or inserting one keeps the summary.
 - **Tools of an answer** (`stream-generate`): the enabled tools of the tool groups of the conversation's persona (`persona_tool_groups()`); a persona without a selection (`tools: null`), no persona, or a persona the user may not use gets every enabled tool except the opt-in groups. Then the tools of the persona's MCP servers (`mcp_servers`, and the user's own with `user_mcp`; `docs/mcp.md`); a server that gives no tools is shown as a step at the start of the answer. An empty result sends no tools at all (`tools=None`), as does a model without `supports_tools`. The system prompt and the history token budget are computed with these tools.
+- **Skills** (`docs/skills.md`): an agent's enabled skills (`personas.skills`, `persona_skills()`) are listed in the system prompt by name and description (`with_skills()`, after the tool sections), and the tool `use_skill` (`skill_tools()`) loads one's text. Only for a model with `supports_tools`; an agent with skills gets the tool also without tool groups.
 
 ## Catalog (`backend/catalog/`)
 
@@ -69,6 +70,7 @@ The UI calls them agents; the API, the database and the catalog file keep the na
 
 - `tools`: the tool groups the agent may use, a list of `"files"`, `"web_search"`, `"knowledge_graph"`, `"knowledge_base"`, `"past_chats"` and `"user_mcp"`. `null` (the default) means every tool the server has enabled except the opt-in `"knowledge_base"`, `"past_chats"` and `"user_mcp"`, which an agent only gets by selecting them (`"past_chats"` only together with `"knowledge_base"`, `docs/past_chats.md`); `[]` means no tools. A selected group the server has switched off simply gives no tools (see `GET /api/admin/tools`).
 - `mcpServers` (`mcp_servers`): the slugs of the admins' MCP servers the agent uses (`docs/mcp.md`); null for none. Always picked explicitly, also with `tools: null`.
+- `skills`: the names of the agent's skills (`docs/skills.md`); null for none. Unknown names are a 400, duplicates are dropped.
 - An agent has no model of its own; the conversation's model answers.
 - The prompt may use `{{variable}}` placeholders. A value comes from the conversation's `persona_values`, else the variable's `default`, else an empty string.
 - Built-in variables: `{{date}}` (e.g. "Friday, 30 October 2026"), `{{user_name}}` (the user's name, else the part of the email before the @, "Guest" for guests), `{{language}}` (the UI language, e.g. "German").
@@ -101,6 +103,12 @@ All bodies are camelCase JSON, like the rest of the API. Authentication and CSRF
 | `PUT /api/admin/personas/{id}` | `PersonaUpdate` | `PersonaOut` |
 | `DELETE /api/admin/personas/{id}` | | 204 |
 | `GET /api/admin/tools` | | `ToolGroupStatus[]`, all five groups |
+| `GET /api/admin/skills` | | `SkillOut[]`, by name, each with the agents that have it (`docs/skills.md`) |
+| `POST /api/admin/skills` | `SkillCreate` | `SkillOut` (201); 409 for a taken name |
+| `PUT /api/admin/skills/{id}` | `SkillUpdate` | `SkillOut`; a new name is also changed in the agents |
+| `DELETE /api/admin/skills/{id}` | | 204; the skill is taken off the agents |
+| `POST /api/admin/skills/import` | `{"text": "<SKILL.md>", "replace": false}` | `{"skill": SkillOut, "created": bool, "ignored": [frontmatter keys left out]}` |
+| `GET /api/admin/skills/{id}/export` | | the skill as a `SKILL.md` file (`text/markdown`) |
 | `GET /api/admin/catalog/export` | | the catalog file below, as a download; usable as `MODEL_CATALOG_FILE` |
 | `POST /api/admin/catalog/import` | the catalog file below | `ImportResult` |
 
@@ -114,7 +122,8 @@ ProviderOut      id, name, kind, baseUrl, apiKeyEnv, apiKeySet, privacyTier, cur
 PersonaCreate    name, description?, systemPrompt, variables = [], tools = null,
                  availableToGuests = false, enabled = true, sortOrder = 0,
                  ownMemory = false (with knowledge_base: its own knowledge base and memory per user),
-                 mcpServers = null (slugs of admin MCP servers, docs/mcp.md)
+                 mcpServers = null (slugs of admin MCP servers, docs/mcp.md),
+                 skills = null (names of skills, docs/skills.md)
 PersonaUpdate    the same fields, all optional; left out = unchanged, tools: null = every enabled tool
                  (without the opt-in knowledge_base)
 PersonaOut       PersonaCreate + id
@@ -123,7 +132,12 @@ ToolGroupStatus  id ("files" | "web_search" | "knowledge_graph" | "knowledge_bas
                  available, reason (e.g. "TAVILY_API_KEY is not set", "NEO4J_ENABLED is off"; null when available),
                  optIn (only for personas that select it, not part of tools null: knowledge_base, past_chats, user_mcp),
                  requires (the group it only works with: "knowledge_base" for past_chats, else null)
-ImportResult     models {created, updated}, personas {created, updated}, mcpServers {created, updated}, errors
+SkillCreate      name (^[a-z0-9]+(-[a-z0-9]+)*$, at most 64), description (1 to 1,024), content (1 to 20,000),
+                 enabled = true
+SkillUpdate      the same fields, all optional
+SkillOut         SkillCreate + id, agents [{id, name}], createdAt, updatedAt
+ImportResult     models {created, updated}, personas {created, updated}, mcpServers {created, updated},
+                 skills {created, updated}, errors
 ```
 
 `tools` is a list of tool groups or `null`; duplicates are dropped and the groups are stored in the order above. Unknown groups are a 422.
@@ -147,7 +161,7 @@ Unchanged events keep their meaning. Additions:
 
 ## Catalog file
 
-Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake_case keys matching the database columns. Natural keys: providers by `name`, models by `provider` + `display_name`, personas by `name`, the admins' MCP servers (section `mcp_servers`, `docs/mcp.md`) by `slug`; they are imported before the personas, which name them in `mcp_servers`. Nothing is ever deleted. Keys are referenced by environment variable (`api_key_env`); an `api_key` entry is ignored with a message.
+Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake_case keys matching the database columns. Natural keys: providers by `name`, models by `provider` + `display_name`, personas by `name`, the admins' MCP servers (section `mcp_servers`, `docs/mcp.md`) by `slug`, skills (section `skills`: `name`, `description`, `content`, `enabled`; `docs/skills.md`) by `name`; servers and skills are imported before the personas, which name them in `mcp_servers` and `skills`. Nothing is ever deleted. Keys are referenced by environment variable (`api_key_env`); an `api_key` entry is ignored with a message.
 
 **Seeding** (`app_init`, on every start and also with `--prod`; Docker's `db-init` runs it on every `docker compose up`). `MODEL_CATALOG_FILE` defaults to `catalog/models.json` (relative to the repository root); an empty value disables seeding.
 - Providers: the file is their source of truth. Each entry creates the provider or replaces it completely, so a field removed from the file is cleared. Its models are kept. A provider that is in the database but no longer in the file is left alone, with a warning in the log.
@@ -157,6 +171,8 @@ Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake
 **Import in the app** (`POST /api/admin/catalog/import`) upserts models and personas: a new entry gets defaults for the keys it leaves out, an existing entry only changes the keys that are present, and `null` clears optional columns. Provider entries are ignored, with one message in `errors` ("providers ignored: providers come from the server's catalog file"); a model whose provider is not in the catalog is reported in `errors`. Unknown keys are reported and ignored; each bad entry is reported and the others are still imported.
 
 **Export** writes every column of providers, models and personas, without keys and without ids.
+
+**Skills** are seeded, imported and exported like personas. In a seed file a skill can instead name a `SKILL.md` next to the catalog file, `{"file": "skills/image-generation/SKILL.md"}` (inside the catalog file's folder; only when seeding, never in an import in the app). The repository's `catalog/models.json` ships the starter skills this way, from `catalog/skills/`.
 
 ```json
 {

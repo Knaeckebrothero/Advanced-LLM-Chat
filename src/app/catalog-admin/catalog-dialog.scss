@@ -201,6 +201,20 @@ mat-dialog-actions mat-spinner {
     color: var(--theme-text-secondary);
     overflow-wrap: anywhere;
   }
+
+  // A skill's description can be long: two lines, the rest is on the Skills section of the page
+  .skill-description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+
+  .tool-option-name {
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 0.85rem;
+  }
 }
 
 // With the knowledge base: its own memory or the shared one

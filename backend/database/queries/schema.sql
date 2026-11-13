@@ -212,6 +212,7 @@ CREATE TABLE IF NOT EXISTS personas (
     sort_order INTEGER DEFAULT 0,
     own_memory BOOLEAN DEFAULT FALSE,        -- its own knowledge base and memory per user instead of the user's shared one
     mcp_servers JSONB,                       -- slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
+    skills JSONB,                            -- names of its skills (docs/skills.md), NULL = none
     hidden BOOLEAN NOT NULL DEFAULT FALSE,     -- hidden with its chats and its own knowledge base
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -265,6 +266,10 @@ ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS auto_hide_prompt TEXT;
 -- name: add_mcp_columns
 -- Databases from before MCP servers (the CREATE TABLE above has it)
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS mcp_servers JSONB;
+
+-- name: add_skill_columns
+-- Databases from before skills (the CREATE TABLE above has it)
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS skills JSONB;
 
 -- name: add_file_columns
 -- Databases from before files belonged to a conversation (the CREATE TABLE above has the columns). The run
@@ -342,6 +347,19 @@ CREATE TABLE IF NOT EXISTS mcp_auto_accept (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS mcp_auto_accept_key ON mcp_auto_accept(server_id, user_id, coalesce(conversation_id, ''));
+
+-- name: create_skills_table
+-- Texts that tell an agent how to do one kind of work (docs/skills.md): written by admins, attached
+-- to agents (personas.skills), loaded by the agent with use_skill when a request needs one
+CREATE TABLE IF NOT EXISTS skills (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,               -- "image-generation": lowercase letters, digits and hyphens (SKILL.md)
+    description TEXT NOT NULL,               -- what it does and when to use it, all the model sees until it loads it
+    content TEXT NOT NULL,                   -- the instructions, Markdown
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- name: create_kb_note_revisions_table
 -- Every version of a note, written in the same transaction as the note: what it was, who wrote it and where
@@ -472,6 +490,13 @@ CREATE TRIGGER update_kb_notes_timestamp
 DROP TRIGGER IF EXISTS update_mcp_servers_timestamp ON mcp_servers;
 CREATE TRIGGER update_mcp_servers_timestamp
     BEFORE UPDATE ON mcp_servers
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+-- name: create_skills_trigger
+DROP TRIGGER IF EXISTS update_skills_timestamp ON skills;
+CREATE TRIGGER update_skills_timestamp
+    BEFORE UPDATE ON skills
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();
 
