@@ -2,10 +2,16 @@
 """
 Audio handling utilities for transcription.
 Handles audio transcription using OpenAI Whisper API (default) or local Whisper model (fallback).
+
+The local model is loaded into the server's memory and transcribes on the CPU, for as long as
+the audio takes. It runs in a thread of its own, one transcription at a time, and
+WHISPER_LOCAL_FALLBACK=false keeps it from being loaded at all when the API fails.
 """
 
+import asyncio
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +25,7 @@ from ..config import (
     WHISPER_TIMEOUT,
     USE_LOCAL_WHISPER,
     LOCAL_WHISPER_MODEL,
+    WHISPER_LOCAL_FALLBACK,
 )
 from .file_utils import SUPPORTED_AUDIO_TYPES, is_audio, get_file_path, get_audio_extension
 
@@ -27,6 +34,10 @@ logger = logging.getLogger(__name__)
 # Lazy-loaded clients
 _openai_client: Optional[AsyncOpenAI] = None
 _whisper_model = None  # Local Whisper model (cached after first load)
+
+# The one thread the local model is loaded and run in: off the event loop, and a second
+# transcription waits for the first without holding a thread of the shared pool
+_local_whisper_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="local-whisper")
 
 
 # Re-export for backwards compatibility
@@ -49,7 +60,7 @@ def _get_openai_client() -> Optional[AsyncOpenAI]:
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        logger.info("No OPENAI_API_KEY configured - will use local Whisper for transcription")
+        logger.info("No OPENAI_API_KEY configured for the Whisper API")
         return None
 
     _openai_client = AsyncOpenAI(api_key=api_key, base_url=WHISPER_BASE_URL, timeout=WHISPER_TIMEOUT)
@@ -161,8 +172,17 @@ def _transcribe_local(file_path: Path, language: Optional[str] = None) -> Option
 
 # Keep old function name for backwards compatibility (deprecated)
 def transcribe_audio(file_path: Path, language: Optional[str] = None) -> Optional[str]:
-    """Deprecated: Use process_audio() instead. This is the local-only transcription."""
+    """
+    Deprecated: Use process_audio() instead. This is the local-only transcription, in the
+    calling thread: it blocks for as long as the model takes, so never call it on the event loop.
+    """
     return _transcribe_local(file_path, language)
+
+
+async def _transcribe_local_in_thread(file_path: Path, language: Optional[str] = None) -> Optional[str]:
+    """_transcribe_local() in the local model's thread: loading the model and transcribing block for long."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_local_whisper_thread, _transcribe_local, file_path, language)
 
 
 async def process_audio(file_path: Path, file_id: str) -> dict:
@@ -171,7 +191,8 @@ async def process_audio(file_path: Path, file_id: str) -> dict:
 
     Uses OpenAI Whisper API by default.
     Set USE_LOCAL_WHISPER=true to force local model.
-    Falls back to local Whisper if API fails or no API key is configured.
+    Falls back to local Whisper if API fails or no API key is configured, unless
+    WHISPER_LOCAL_FALLBACK=false: then the transcription just fails.
 
     Args:
         file_path: Path to the audio file.
@@ -194,11 +215,11 @@ async def process_audio(file_path: Path, file_id: str) -> dict:
         try:
             transcript = await _transcribe_with_openai(file_path)
         except Exception as e:
-            logger.warning(f"OpenAI transcription failed, falling back to local: {e}")
+            logger.warning(f"OpenAI transcription failed: {e}")
 
-    # Fallback to local Whisper if needed
-    if not transcript:
-        transcript = _transcribe_local(file_path, WHISPER_LANGUAGE)
+    # Fallback to local Whisper if needed (and allowed)
+    if not transcript and (USE_LOCAL_WHISPER or WHISPER_LOCAL_FALLBACK):
+        transcript = await _transcribe_local_in_thread(file_path, WHISPER_LANGUAGE)
 
     if transcript:
         # Save transcript to file
