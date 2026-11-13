@@ -165,7 +165,7 @@ Claude Code has two layers. **CLAUDE.md** files are written by humans and loaded
 - Local observation (this machine, Claude Code session of 2026-11-01), showing the actual format:
   - MEMORY.md lines look like `- [Title](file.md) — one-line hook`
   - each topic file has frontmatter `name`, `description`, `metadata: {node_type: memory, type: feedback, originSessionId, modified}`, then a short body stating the fact and why
-  - [local file: ~/.claude/projects/-home-ghost-Repositories-Advanced-LLM-Chat/memory/check-ui-live-in-browser.md](file:///home/ghost/.claude/projects/-home-ghost-Repositories-Advanced-LLM-Chat/memory/check-ui-live-in-browser.md)
+  - local file: `~/.claude/projects/<project>/memory/check-ui-live-in-browser.md` (this project's Claude Code memory)
 - The UI shows "Saved 2 memories" / "Recalled 2 memories" when Claude writes or reads memory — [Claude Code docs: memory](https://code.claude.com/docs/en/memory)
 - On by default in local sessions; off by default in self-hosted environments. Toggle in `/memory` (saved as `autoMemoryEnabled`), per project via settings, or with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Subagents don't get the main auto memory (forks do) but can have their own via the subagent `memory` field — [Claude Code docs: memory](https://code.claude.com/docs/en/memory)
 - `/memory` lists CLAUDE.md/CLAUDE.local.md files across scopes, toggles auto memory and opens the memory folder; `/context` shows what loaded — [Claude Code docs: memory](https://code.claude.com/docs/en/memory)
