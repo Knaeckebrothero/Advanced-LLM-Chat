@@ -97,6 +97,15 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     this.catalogModels$ = this.catalogService.models$;
   }
 
+  /**
+   * The message's only attachment is an image: it is shown large, as in a messenger, and the
+   * bubble is as wide as the image, with the text under it. Several attachments are tiles.
+   */
+  get singlePhoto(): boolean {
+    const attachments = this.message?.attachments;
+    return !!attachments && attachments.length === 1 && attachments[0].type === 'image';
+  }
+
   // The server's previews of this message's uploaded files, by file ID
   private serverPreviews = new Map<string, string>();
   private requestedPreviews = new Set<string>();
@@ -114,7 +123,8 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     }
     if (!this.requestedPreviews.has(attachment.id)) {
       this.requestedPreviews.add(attachment.id);
-      this.filePreviews.url(attachment.id, 'small').then(
+      // A photo on its own is shown large, so it needs the large preview
+      this.filePreviews.url(attachment.id, this.singlePhoto ? 'large' : 'small').then(
         url => this.serverPreviews.set(attachment.id, url),
         () => undefined
       );

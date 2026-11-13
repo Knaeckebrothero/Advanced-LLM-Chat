@@ -78,7 +78,8 @@ The tool result steps of an answer carry the files in their metadata:
 **Never cropped.** Every image is shown whole, everywhere:
 
 - **A file tile** is as high as its place says (320 px alone, 200 px in a row, 72 px as a small preview; less on phones) and as wide as the image's shape makes it. In a column narrower than that it is as wide as the column and lower. Its space is reserved from the stored width and height, so nothing jumps when the image loads.
-- **An attachment of a message** is scaled down to fit a square of 160 px (120 px on phones), and the tile is as large as the image then is.
+- **A message's only image** is shown large, as in a messenger: scaled down to fit 320 by 420 px (300 by 380 px on phones, and at most 68 % of the screen's width). The bubble is as wide as the image, and the text wraps under it (`message-body--photo`).
+- **Several attachments of a message** are tiles: each image is scaled down to fit a square of 160 px (120 px on phones), and the tile is as large as the image then is.
 - **In the composer** a preview is as high as the row (80 px, 70 px on phones) and as wide as its shape makes it.
 - **Very long and very wide images** would become slivers, so a tile stays within 1:3 and 3:1 (an attachment at least 64 px wide and high), and a blurred copy of the image fills what the image leaves of it.
 
