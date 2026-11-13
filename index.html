@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-beasties-container>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Advanced LLM Chat</title>
@@ -15,21 +15,15 @@
 
   <!-- Security Headers as Meta Tags (fallback for when headers aren't set) -->
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <!-- CSP meta tag as fallback - matches the backend CSP, except frame-ancestors: browsers ignore it in a meta tag,
-       so it comes only as a header (nginx.conf, backend) -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' wss: https:; base-uri 'self'; form-action 'self'">
+  <!-- CSP meta tag as fallback, the same as the header of docker/nginx.conf except frame-ancestors: browsers ignore
+       it in a meta tag, so it comes only as the header. Scripts only from the app's own files: no inline script, no
+       eval, so a script that got into the page some other way doesn't run. Styles stay inline (Angular adds them) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' wss: https:; object-src 'none'; base-uri 'self'; form-action 'self'">
   <!-- Fonts (Roboto, Inter, Material Icons) are bundled from npm packages, see angular.json "styles" -->
-<style>@font-face{font-family:Roboto;font-style:normal;font-display:swap;font-weight:300;src:url("./media/roboto-latin-300-normal-ZNJYGCVX.woff2") format("woff2"),url("./media/roboto-latin-300-normal-HUKDSNAU.woff") format("woff")}@font-face{font-family:Roboto;font-style:normal;font-display:swap;font-weight:400;src:url("./media/roboto-latin-400-normal-LOX3CHMS.woff2") format("woff2"),url("./media/roboto-latin-400-normal-54N5OGOO.woff") format("woff")}@font-face{font-family:Roboto;font-style:normal;font-display:swap;font-weight:500;src:url("./media/roboto-latin-500-normal-D6YDQ3CR.woff2") format("woff2"),url("./media/roboto-latin-500-normal-RXEWG4GH.woff") format("woff")}@font-face{font-family:Inter;font-style:normal;font-display:swap;font-weight:400;src:url("./media/inter-latin-400-normal-55WT6UWF.woff2") format("woff2"),url("./media/inter-latin-400-normal-FR5HOXA4.woff") format("woff")}@font-face{font-family:Inter;font-style:normal;font-display:swap;font-weight:500;src:url("./media/inter-latin-500-normal-W62DVTXI.woff2") format("woff2"),url("./media/inter-latin-500-normal-ZNGIZ2YB.woff") format("woff")}@font-face{font-family:Inter;font-style:normal;font-display:swap;font-weight:600;src:url("./media/inter-latin-600-normal-R6Y2SZCR.woff2") format("woff2"),url("./media/inter-latin-600-normal-ZYHV6QZT.woff") format("woff")}@font-face{font-family:Inter;font-style:normal;font-display:swap;font-weight:700;src:url("./media/inter-latin-700-normal-SU5XVJMF.woff2") format("woff2"),url("./media/inter-latin-700-normal-TQQ5JXGD.woff") format("woff")}.mat-typography{font:400 14px/20px Roboto,sans-serif;letter-spacing:.0178571429em}html,body{height:100vh;width:100%;margin:0;padding:0;overflow:clip;font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}body{transition:background-color .3s ease,color .3s ease}html{overflow-x:hidden;-webkit-overflow-scrolling:touch;scroll-behavior:smooth}*,*:before,*:after{box-sizing:border-box}</style><link rel="stylesheet" href="styles-75QF2JUQ.css" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="styles-75QF2JUQ.css"></noscript></head>
+<link rel="stylesheet" href="styles-75QF2JUQ.css"></head>
 <body class="mat-typography">
-  <script>
-    // The theme's class before the app starts, so a dark theme doesn't flash white; ThemeService takes over
-    (function () {
-      var stored = null;
-      try { stored = localStorage.getItem('theme-preference'); } catch (e) {}
-      var dark = stored === 'dark' || (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.body.classList.add(dark ? 'theme-dark' : 'theme-light');
-    })();
-  </script>
+  <!-- The theme's class before the app starts (a file: the policy above allows no inline script) -->
+  <script src="assets/theme-init.js"></script>
   <app-root></app-root>
   <noscript>Please enable JavaScript to continue using this application.</noscript>
 <link rel="modulepreload" href="chunk-OOVG7Y6D.js"><link rel="modulepreload" href="chunk-WEKXCLXI.js"><link rel="modulepreload" href="chunk-XFDSHCLC.js"><link rel="modulepreload" href="chunk-ZB3YNTO4.js"><link rel="modulepreload" href="chunk-YPTVD2Q2.js"><script src="polyfills-B6TNHZQ6.js" type="module"></script><script src="scripts-QIUD7IKY.js" defer></script><script src="main-5W5HVYEK.js" type="module"></script></body>
