@@ -18,6 +18,9 @@ cryptography>=42.0.0  # Encrypts users' MCP secrets and OAuth tokens (ENCRYPTION
 # MCP servers as tools of the agents (docs/mcp.md); 2.x speaks the 2026-07-28 protocol and the older handshake
 mcp>=2.3.0,<3
 
+# Skills: the frontmatter of SKILL.md files (docs/skills.md)
+PyYAML>=6.0
+
 # Database
 psycopg2-binary>=2.9.9
 sqlalchemy>=2.0.23

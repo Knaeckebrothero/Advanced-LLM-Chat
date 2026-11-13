@@ -104,18 +104,28 @@ def entry_tokens(message: dict) -> int:
     return sum(message_tokens(part) for part in entry_messages(message))
 
 
+# Results that go back whole: a skill the agent loaded (docs/skills.md) is instructions it keeps following,
+# and a cut one would pass for the whole skill
+UNCUT_TOOLS = {"use_skill"}
+
+
 def replayed_record(tool_record: List[dict], max_result_chars: Optional[int] = None) -> List[dict]:
     """
     A stored tool record as it goes back to the model: results longer than max_result_chars
-    (HISTORY_TOOL_RESULT_CHARS; 0: no limit) are cut, with a note of how much is missing.
+    (HISTORY_TOOL_RESULT_CHARS; 0: no limit) are cut, with a note of how much is missing,
+    except those of UNCUT_TOOLS.
     """
     limit = settings.HISTORY_TOOL_RESULT_CHARS if max_result_chars is None else max_result_chars
     if limit <= 0:
         return tool_record
+    uncut = {call.get("id") for message in tool_record if message.get("role") == "assistant"
+             for call in message.get("tool_calls") or []
+             if (call.get("function") or {}).get("name") in UNCUT_TOOLS}
     replayed = []
     for message in tool_record:
         content = message.get("content")
-        if message.get("role") == "tool" and isinstance(content, str) and len(content) > limit:
+        if (message.get("role") == "tool" and message.get("tool_call_id") not in uncut
+                and isinstance(content, str) and len(content) > limit):
             message = {**message, "content": content[:limit] + RESULT_CUT_NOTE.format(count=len(content) - limit)}
         replayed.append(message)
     return replayed

@@ -4,7 +4,7 @@ Message API endpoints.
 import json
 import logging
 import time
-from typing import Dict, AsyncGenerator, List, Optional, Tuple
+from typing import Dict, AsyncGenerator, Iterable, List, Optional, Tuple
 from fastapi import APIRouter, Request, Response, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 from backend.models.common import ErrorResponse
@@ -32,8 +32,8 @@ from backend.security.errors import answer_error
 from backend.security.guest_limits import count_guest_request, guest_write, rate_limit_guest
 from backend.security.logging import crud_logger
 from backend.llm import (
-    ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, tools_for_groups, with_instructions,
-    with_mcp_servers, with_memory
+    ModelConfig, ToolRegistry, Usage, build_system_prompt, run_agent, skill_tools, tools_for_groups,
+    with_instructions, with_mcp_servers, with_memory, with_skills
 )
 from backend.llm.tools import MEMORY_TOOL_NAMES
 from backend.catalog.resolver import (
@@ -41,6 +41,7 @@ from backend.catalog.resolver import (
     ModelNotAvailable,
     conversation_hidden,
     persona_prompt_for_conversation,
+    persona_skills,
     persona_tool_groups,
     persona_vault,
     resolve_auxiliary_model,
@@ -109,7 +110,7 @@ def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
 
 
 def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig,
-                 hide: bool = False, hide_definition: str = "") -> Optional[ToolRegistry]:
+                 hide: bool = False, hide_definition: str = "", skills: Iterable[dict] = ()) -> Optional[ToolRegistry]:
     """
     The tools for an answer: the tools the server enables, limited to the tool
     groups of the conversation's persona (if it has a selection; the knowledge
@@ -118,7 +119,8 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
     the knowledge base tools only their notes (never a guest's): the shared
     knowledge base, or the persona's own one (persona_vault()). With hide, the device
     is in family mode, which the knowledge base and past chat tools then leave out;
-    hide_definition is what the agent hides on its own (none without it).
+    hide_definition is what the agent hides on its own (none without it). With the
+    persona's skills (persona_skills()), use_skill loads them (docs/skills.md).
 
     :return: The tools, or None for none (the model doesn't support tools, or
         the persona selected no enabled tool group).
@@ -129,6 +131,8 @@ def _agent_tools(current_user: dict, conversation: Optional[dict], config: Model
                              guest=bool(current_user.get('is_guest')), conversation=conversation,
                              vault=persona_vault(current_user, conversation), vision=config.supports_vision,
                              family_mode=hide, hide_definition=hide_definition)
+    for tool in skill_tools(list(skills)):
+        tools.add(tool)
     return tools if len(tools) else None
 
 
@@ -196,7 +200,8 @@ async def _answer_context(
     no tools (to show as steps).
 
     The persona decides the prompt and which tools the model gets; the prompt only
-    describes the tools it really has. The tools of the agent's MCP servers come next
+    describes the tools it really has. Its skills are listed next (docs/skills.md), for a
+    model with tools. The tools of the agent's MCP servers come next
     (not with mcp=False, which doesn't connect to them); answer_id is the id of the message
     being written, recorded with the files those tools create. With the knowledge base, the
     agent's memory follows (read for every answer, so a change shows in the next one).
@@ -208,7 +213,9 @@ async def _answer_context(
     hide = hide and not conversation_hidden(conversation)
     # What the agent hides on its own: the user's words, else the server's (empty: nothing)
     hide_definition = auto_hide_definition(current_user.get('user_id')) if config.supports_tools else ""
-    tools = _agent_tools(current_user, conversation, config, hide, hide_definition)
+    # The agent's skills, listed in the prompt and loaded with use_skill; a model without tools has none
+    skills = persona_skills(current_user, conversation) if config.supports_tools else []
+    tools = _agent_tools(current_user, conversation, config, hide, hide_definition, skills)
     toolset = McpToolset()
     if mcp:
         tools, toolset = await _mcp_tools(current_user, conversation, config, tools, answer_id)
@@ -217,8 +224,8 @@ async def _answer_context(
     history_builder = ConversationHistoryBuilder(db)
     system_prompt = with_instructions(
         _memory_prompt(
-            with_mcp_servers(build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools,
-                                                 hide_definition),
+            with_mcp_servers(with_skills(build_system_prompt(persona_prompt_for_conversation(current_user, conversation),
+                                                             tools, hide_definition), skills),
                              toolset.servers, toolset.unavailable()),
             current_user, conversation, tools, hide),
         history_builder.system_instructions(conversation_id))

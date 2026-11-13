@@ -16,6 +16,7 @@ import {
   IPersonaCreate,
   IPersonaOut,
   IPersonaVariable,
+  ISkillOut,
   IToolStatus,
   ToolGroup
 } from '../data/models/catalog.model';
@@ -38,6 +39,12 @@ interface McpOption {
   slug: string;
   name: string;
   server: IMcpServerOut | null;
+}
+
+/** A skill the agent can pick; `skill` is null for a name the agent has that no skill has (any more). */
+interface SkillOption {
+  name: string;
+  skill: ISkillOut | null;
 }
 
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -75,6 +82,9 @@ export class PersonaDialogComponent {
   mcpOptions: McpOption[];
   pickedMcp: Set<string>;  // Slugs of the picked MCP servers (tool mode "pick")
   mcpLoadError: string | null;
+  skillOptions: SkillOption[];
+  pickedSkills: Set<string>;  // Names of the picked skills (docs/skills.md)
+  skillsLoadError: string | null;
   saving = false;
   error: string | null = null;
 
@@ -111,6 +121,14 @@ export class PersonaDialogComponent {
       ...[...this.pickedMcp].filter(slug => !knownSlugs.has(slug)).map(slug => ({ slug, name: slug, server: null }))
     ];
     this.mcpLoadError = store.mcpError$.value;
+    // The skills, plus picked names no skill has (shown so they can be removed)
+    this.pickedSkills = new Set(p?.skills ?? []);
+    const knownSkills = new Set(store.skills.map(skill => skill.name));
+    this.skillOptions = [
+      ...store.skills.map(skill => ({ name: skill.name, skill })),
+      ...[...this.pickedSkills].filter(name => !knownSkills.has(name)).map(name => ({ name, skill: null }))
+    ];
+    this.skillsLoadError = store.skillsError$.value;
     this.form = fb.group({
       name: [name, Validators.required],
       description: [p?.description ?? ''],
@@ -217,6 +235,30 @@ export class PersonaDialogComponent {
     this.form.markAsDirty();
   }
 
+  // Skills: picked one by one (docs/skills.md); the agent loads them when a request needs one
+
+  isSkillChecked(option: SkillOption): boolean {
+    return this.pickedSkills.has(option.name);
+  }
+
+  /** A skill that no longer exists can't be picked, but one that is picked already can be removed. */
+  isSkillDisabled(option: SkillOption): boolean {
+    return option.skill === null && !this.pickedSkills.has(option.name);
+  }
+
+  /** Why the agent won't get the skill; null when it will. */
+  skillNote(option: SkillOption): string | null {
+    if (!option.skill) return this.translate.instant('catalog.admin.personas.skillUnknown');
+    if (!option.skill.enabled) return this.translate.instant('catalog.admin.personas.skillDisabled');
+    return null;
+  }
+
+  toggleSkill(name: string, checked: boolean): void {
+    if (checked) this.pickedSkills.add(name);
+    else this.pickedSkills.delete(name);
+    this.form.markAsDirty();
+  }
+
   get variables(): FormArray<FormGroup> {
     return this.form.controls['variables'] as FormArray<FormGroup>;
   }
@@ -276,7 +318,8 @@ export class PersonaDialogComponent {
       ownMemory: !!v.ownMemory,
       hidden: !!v.hidden,
       // [] for none: unambiguous for create and update
-      mcpServers: this.mcpOptions.map(o => o.slug).filter(slug => this.pickedMcp.has(slug))
+      mcpServers: this.mcpOptions.map(o => o.slug).filter(slug => this.pickedMcp.has(slug)),
+      skills: this.skillOptions.map(o => o.name).filter(name => this.pickedSkills.has(name))
     };
 
     this.saving = true;

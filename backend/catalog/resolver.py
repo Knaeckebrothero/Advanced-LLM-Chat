@@ -521,6 +521,24 @@ def persona_tool_groups(user: Optional[dict], conversation: Optional[dict]) -> O
     return None if tools is None else list(tools)
 
 
+def persona_skills(user: Optional[dict], conversation: Optional[dict]) -> list[dict]:
+    """
+    The enabled skills of the conversation's persona (docs/skills.md), in its order, for the
+    runtime. Personas the user may not use have none, as in persona_prompt_for_conversation().
+
+    Returns:
+        The skills' rows ({"name", "description", "content", ...}); [] without any.
+    """
+    persona_id = (conversation or {}).get("persona_id")
+    if persona_id is None:
+        return []
+    persona = db.get_persona_by_id(persona_id)
+    if not persona_usable(persona, user) or not persona.get("skills"):
+        return []
+    from backend.services.skills import agent_skills
+    return agent_skills(persona["skills"])
+
+
 def persona_vault(user: Optional[dict], conversation: Optional[dict]) -> int:
     """
     The knowledge base the conversation's persona uses: its own (its id) if it has own_memory,

@@ -3,7 +3,8 @@ System prompt for the agent.
 
 The prompt is the identity paragraph (or a persona's prompt in its place),
 followed by one section per enabled tool group, so the file access, graph and
-knowledge base and past chat instructions stay when a persona is used. With the
+knowledge base and past chat instructions stay when a persona is used. The agent's
+skills (with_skills()) and MCP servers (with_mcp_servers()) come next. With the
 knowledge base, the agent's memory follows (with_memory()). A conversation's system
 messages come last (with_instructions()).
 """
@@ -116,6 +117,29 @@ def hide_prompt(definition: str, with_knowledge_base: bool) -> str:
     """The section on hidden content: what to hide (the user's text) and, with the knowledge base, how to save it."""
     prompt = HIDE_PROMPT.format(definition=definition.strip())
     return prompt + "\n" + HIDE_KB_PROMPT if with_knowledge_base else prompt
+
+# The section of the agent's skills (docs/skills.md), with the tool use_skill
+SKILLS_HEADING = "## Skills:"
+SKILLS_INTRO = ("You have skills: instructions for particular kinds of work, with what you would otherwise miss. "
+                "Before every answer, go through the list below and decide for each skill whether the request falls "
+                "under its description. If one does, your first action is to call use_skill with its name, before you "
+                "write anything, even if you think you know how; then follow it. Skip this only for a skill whose text "
+                "is already in this conversation.")
+
+
+def with_skills(system_prompt: str, skills: Iterable[dict]) -> str:
+    """
+    The system prompt with a section that lists the agent's skills by name and description,
+    for an answer that has the tool use_skill (skill_tools() in backend/llm/tools.py).
+
+    Args:
+        skills: The agent's enabled skills ({"name", "description"}); none leaves the prompt as it is.
+    """
+    lines = [f"- {skill['name']}: {' '.join(skill['description'].split())}" for skill in skills]
+    if not lines:
+        return system_prompt
+    return f"{system_prompt}\n\n{SKILLS_HEADING}\n{SKILLS_INTRO}\n" + "\n".join(lines)
+
 
 # Heads a conversation's system messages, after the rest of the prompt
 INSTRUCTIONS_HEADING = "## Instructions for this conversation:"

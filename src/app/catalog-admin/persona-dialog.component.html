@@ -151,6 +151,39 @@
       </div>
     }
 
+    <!-- Skills: picked one by one, with either tool mode (docs/skills.md) -->
+    <h3 class="form-section" id="persona-skills-label">{{ 'catalog.admin.personas.skillsSection' | translate }}</h3>
+    @if (skillsLoadError) {
+      <p class="empty-hint">{{ 'catalog.admin.skills.loadFailed' | translate: { error: skillsLoadError } }}</p>
+    }
+    @if (skillOptions.length === 0) {
+      @if (!skillsLoadError) {
+        <p class="empty-hint">{{ 'catalog.admin.personas.skillsNone' | translate }}</p>
+      }
+    } @else {
+      <p class="empty-hint">{{ 'catalog.admin.personas.skillsPickHint' | translate }}</p>
+      <div class="tool-options" role="group" aria-labelledby="persona-skills-label">
+        @for (option of skillOptions; track option.name) {
+          <div class="tool-option" [class.is-unavailable]="!!skillNote(option)">
+            <mat-checkbox color="primary"
+                          [checked]="isSkillChecked(option)"
+                          [disabled]="isSkillDisabled(option)"
+                          (change)="toggleSkill(option.name, $event.checked)">
+              <span class="tool-option-label">
+                <mat-icon aria-hidden="true">school</mat-icon>
+                <span class="tool-option-name">{{ option.name }}</span>
+              </span>
+            </mat-checkbox>
+            @if (skillNote(option); as note) {
+              <p class="tool-reason">{{ note }}</p>
+            } @else if (option.skill) {
+              <p class="tool-reason skill-description">{{ option.skill.description }}</p>
+            }
+          </div>
+        }
+      </div>
+    }
+
     <!-- Visibility -->
     <h3 class="form-section">{{ 'catalog.admin.personas.visibilitySection' | translate }}</h3>
     <div class="toggle-grid">
