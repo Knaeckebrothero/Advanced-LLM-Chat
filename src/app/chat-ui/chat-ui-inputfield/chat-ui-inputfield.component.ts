@@ -7,6 +7,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import {FilePreview, FilePreviewUtil} from '../../data/objects/file-preview';
 import { DeviceCapabilitiesService } from '../services/device-capabilities.service';
 import { VoiceRecordingService } from './voice-recording.service';
@@ -89,7 +90,8 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     private apiService: ApiService,
     private sanitizer: DomSanitizer,
     private dialog: MatDialog,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private snackBar: MatSnackBar
   ) {}
 
   // ViewChild to access the textarea element directly
@@ -147,6 +149,17 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     return this.messageText.trim().length > 0 || this.filePreviews.length > 0;
   }
 
+  /**
+   * A file is still on its way to the server: the message waits for it, since a message sent
+   * before would go out without the file.
+   */
+  get uploading(): boolean {
+    return this.filePreviews.some(preview => preview.uploadStatus === UploadStatus.UPLOADING);
+  }
+
+  /** Sent while a file was still uploading: the message goes out as soon as the file has arrived. */
+  sendQueued = false;
+
   // Track created blob URLs for proper cleanup
   private downloadUrls: Map<string, SafeUrl> = new Map();
   private rawDownloadUrls: Map<string, string> = new Map();
@@ -156,6 +169,57 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Keeps the waveform canvas sized to the composer (a field, so removeEventListener gets the same function)
   private readonly onWindowResize = () => this.updateCanvasDimensions();
+
+  /** Files are being dragged over the window: they can be dropped anywhere to attach them. */
+  draggingFiles = false;
+  private dragTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private static carriesFiles(event: DragEvent): boolean {
+    return !!event.dataTransfer && Array.from(event.dataTransfer.types).includes('Files');
+  }
+
+  private setDragging(dragging: boolean): void {
+    if (this.dragTimer) clearTimeout(this.dragTimer);
+    this.dragTimer = null;
+    if (dragging) {
+      // "dragover" comes again and again while the files are over the window; once it stops
+      // (they left it, or the drag was cancelled), the composer goes back to normal
+      this.dragTimer = setTimeout(() => this.setDragging(false), 600);
+    }
+    if (dragging !== this.draggingFiles) {
+      this.ngZone.run(() => this.draggingFiles = dragging);
+    }
+  }
+
+  // Accepting the drop also keeps the browser from opening the file in place of the app
+  private readonly onDragOver = (event: DragEvent) => {
+    if (!ChatUiInputfieldComponent.carriesFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer!.dropEffect = 'copy';
+    this.setDragging(true);
+  };
+
+  private readonly onDrop = (event: DragEvent) => {
+    if (!ChatUiInputfieldComponent.carriesFiles(event)) return;
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    this.setDragging(false);
+    if (files.length) {
+      this.ngZone.run(() => void this.addFiles(files));
+    }
+  };
+
+  /** Files pasted into the message (a screenshot, a copied image) are attached. */
+  onPaste(event: ClipboardEvent): void {
+    const data = event.clipboardData;
+    const files = Array.from(data?.files ?? []);
+    // Text copied from an office program comes with a picture of itself: the text is what is meant
+    if (!files.length || Array.from(data?.types ?? []).includes('text/plain')) {
+      return;
+    }
+    event.preventDefault();
+    void this.addFiles(files);
+  }
 
   ngOnInit() {
     // Subscribe to device capabilities
@@ -193,7 +257,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     this.updateCanvasDimensions();
 
     // Add resize listener for responsive canvas (it only touches the DOM, so no change detection needed)
-    this.ngZone.runOutsideAngular(() => window.addEventListener('resize', this.onWindowResize));
+    this.ngZone.runOutsideAngular(() => {
+      window.addEventListener('resize', this.onWindowResize);
+      // Files dropped anywhere on the window are attached ("dragover" fires constantly: no change detection)
+      document.addEventListener('dragover', this.onDragOver);
+      document.addEventListener('drop', this.onDrop);
+    });
   }
 
   // Handle Enter key press - send on Enter, new line on Shift+Enter
@@ -247,12 +316,16 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Send the message
   sendMessage(): void {
     const trimmedMessage = this.messageText.trim();
+    if (this.uploading) {
+      this.sendQueued = true;
+      return;
+    }
+    this.sendQueued = false;
 
     // Check if we have either text or files to send
     if (trimmedMessage || this.filePreviews.length > 0) {
-      if (trimmedMessage) {
-        this.messageSent.emit(trimmedMessage);
-      }
+      // Files alone are a message too
+      this.messageSent.emit(trimmedMessage);
 
       // Clear the input and files after sending
       this.messageText = '';
@@ -312,16 +385,20 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   // Handle file selection from input
   async handleFileSelection(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
-    const files = input.files;
+    const files = Array.from(input.files ?? []);
+    input.value = '';  // The same file can be picked again
+    await this.addFiles(files);
+  }
 
-    if (files && files.length > 0) {
-      const fileArray = Array.from(files);
-
+  /** Attach files (picked, dropped on the window or pasted): they are uploaded right away. */
+  async addFiles(fileArray: File[]): Promise<void> {
+    if (fileArray.length > 0) {
       // Validate file sizes (10MB limit per file)
       const invalidFiles = fileArray.filter(file => !this.fileHandlingService.validateFileSize(file, 10));
       if (invalidFiles.length > 0) {
-        console.error('Some files exceed the 10MB limit:', invalidFiles);
-        // TODO: Show error message to user
+        this.snackBar.open(
+          this.translate.instant('composer.fileTooLarge', { names: invalidFiles.map(file => file.name).join(', '), size: 10 }),
+          this.translate.instant('filePreview.close'), { duration: 8000 });
       }
 
       // Create file previews for valid files
@@ -332,7 +409,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       await this.uploadFilesImmediately(newPreviews);
       this.filesSelected.emit(this.filePreviews);
       console.log('Files selected and uploaded:', this.filePreviews);
-      input.value = '';
+      if (this.sendQueued) {
+        this.sendMessage();
+      }
     }
   }
 
@@ -353,6 +432,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     }
 
     this.filePreviews = this.filePreviews.filter(fp => fp.id !== fileId);
+    this.sendQueued = false;
     this.filesSelected.emit(this.filePreviews);
   }
 
@@ -364,6 +444,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     this.rawDownloadUrls.clear();
 
     this.filePreviews = [];
+    this.sendQueued = false;
     this.filesSelected.emit(this.filePreviews);
   }
 
@@ -661,6 +742,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
   // Upload files immediately when selected
   private async uploadFilesImmediately(filePreviews: FilePreview[]): Promise<void> {
+    // On their way from now on: the message isn't sent before they have arrived
+    filePreviews.forEach(fp => fp.uploadStatus = UploadStatus.UPLOADING);
+
     // Check if backend is available
     const backendAvailable = await this.isBackendAvailable();
 
@@ -770,6 +854,9 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
   ngOnDestroy(): void {
     // Remove resize listener
     window.removeEventListener('resize', this.onWindowResize);
+    document.removeEventListener('dragover', this.onDragOver);
+    document.removeEventListener('drop', this.onDrop);
+    if (this.dragTimer) clearTimeout(this.dragTimer);
 
     // Unsubscribe from observables
     if (this.recordingStateSubscription) {

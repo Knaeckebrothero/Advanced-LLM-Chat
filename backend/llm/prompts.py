@@ -36,8 +36,8 @@ This conversation has its own files: what the user attached, and what your tools
 - What the user attaches to their latest message is in that message. In later messages it appears as a placeholder like [Attachment: report.pdf (fileId: abc123) - 5 pages, PDF document].
 - list_files() lists the conversation's files. Use it when the user refers to a file you can't find, e.g. an image from an earlier answer.
 - read_file(file="report.pdf") gives you a file's content; for an image, the image itself or a description of it. read_file(file="report.pdf", query="What is the revenue?") asks a question about a file you can't see yourself, read_file(file="report.pdf", pages=[1, 3]) reads some pages of a PDF.
-- show_file(files=["fox-1.png"]) shows files to the user above the text of your answer, images large. An image a tool created is only a small preview for the user until you show it: show the ones worth looking at, and never say you showed a file unless show_file confirmed it.
-Name a file by its name, or by its fileId when several have the same name. The chat can't display images from web addresses: don't put image links or Markdown images into your answer, show the file instead."""
+- To show a file to the user, place it in your answer as a Markdown image with the file's name as the address: ![A red fox in the snow](fox-1.png). It appears at that place in your text: an image as the picture, any other file as a card to open. Put it on a line of its own, next to what you say about it; several in a row appear side by side. An image a tool created is only a small preview for the user until you place it: place the ones worth looking at.
+Name a file by its name, or by its fileId when several have the same name. Only files of this conversation can be placed. The chat can't display images from web addresses: give those as links, never as Markdown images."""
 
 FILE_TOOL_NAMES = set(TOOL_GROUPS["files"])
 

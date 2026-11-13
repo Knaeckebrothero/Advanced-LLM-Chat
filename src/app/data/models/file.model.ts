@@ -44,9 +44,9 @@ export interface IFilePreview {
 }
 
 /**
- * A stored file as a step's metadata names it (backend/services/file_store.py file_ref(),
- * docs/files.md): a file a tool created in the answer (`files`) or one the agent shows
- * (`shownFiles`).
+ * A stored file as the server names it (backend/services/file_store.py file_ref(),
+ * docs/files.md): in a step's metadata, a file a tool created in the answer (`files`) or one
+ * that is shown with it anyway (`shownFiles`), and in the list of a conversation's files.
  */
 export interface IFileRef {
   fileId: string;

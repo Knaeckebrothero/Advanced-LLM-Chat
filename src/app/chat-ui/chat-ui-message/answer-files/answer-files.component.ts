@@ -14,10 +14,12 @@ export function stepFiles(step: IAgentStep, key: 'files' | 'shownFiles'): IFileR
 }
 
 /**
- * The files of an answer (docs/files.md), between its steps and its text: the ones the agent
- * shows (show_file), large, and under them the other files its tools created, as small
- * previews, so nothing a tool made stays hidden in a collapsed step. Both come from the steps'
- * metadata, so they appear while the answer runs and stay with the stored message.
+ * The files of an answer that it doesn't place in its text (docs/files.md), between its steps
+ * and its text: the ones that are shown anyway (the files of an agent that isn't told how to
+ * place them, and what show_file showed in older answers), large, and under them the other
+ * files its tools created, as small previews, so nothing a tool made stays hidden in a
+ * collapsed step. Both come from the steps' metadata, so they appear while the answer runs and
+ * stay with the stored message.
  */
 @Component({
   selector: 'app-answer-files',
@@ -28,6 +30,8 @@ export function stepFiles(step: IAgentStep, key: 'files' | 'shownFiles'): IFileR
 })
 export class AnswerFilesComponent implements DoCheck {
   @Input() steps: IAgentStep[] = [];
+  /** The files the answer places in its text (their IDs): those are not shown here again. */
+  @Input() placed: ReadonlySet<string> = new Set<string>();
 
   shown: IFileRef[] = [];
   created: IFileRef[] = [];  // Created in the answer, not shown
@@ -40,7 +44,7 @@ export class AnswerFilesComponent implements DoCheck {
 
   ngDoCheck(): void {
     // The steps grow in place while the answer streams; a tool result is never replaced
-    const state = `${this.steps.length}:${this.steps[this.steps.length - 1]?.id ?? ''}`;
+    const state = `${this.steps.length}:${this.steps[this.steps.length - 1]?.id ?? ''}:${[...this.placed].join()}`;
     if (state === this.seen) return;
     this.seen = state;
     const shown = new Map<string, IFileRef>();
@@ -49,8 +53,8 @@ export class AnswerFilesComponent implements DoCheck {
       for (const file of stepFiles(step, 'shownFiles')) shown.set(file.fileId, file);
       for (const file of stepFiles(step, 'files')) created.set(file.fileId, file);
     }
-    this.shown = [...shown.values()];
-    this.created = [...created.values()].filter(file => !shown.has(file.fileId));
+    this.shown = [...shown.values()].filter(file => !this.placed.has(file.fileId));
+    this.created = [...created.values()].filter(file => !shown.has(file.fileId) && !this.placed.has(file.fileId));
   }
 
   trackFile(index: number, file: IFileRef): string {

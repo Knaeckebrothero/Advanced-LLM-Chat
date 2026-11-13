@@ -572,7 +572,7 @@ def run_stream_tools(c, admin, user, available_groups):
         c.check(not has_tools and system == "You only chat.", "persona tools [] -> no tools, prompt without tool "
                 "sections", f"{names} {system!r}")
         names, has_tools, system, _ = sent[f"{PREFIX} Files only"]
-        c.check(names == ["list_files", "read_file", "show_file"] and "## Files:" in system
+        c.check(names == ["list_files", "read_file"] and "## Files:" in system
                 and "## Knowledge Graph" not in system,
                 "persona tools ['files'] -> only the file tools", f"{names} {system[:200]!r}")
         names, _, system, _ = sent[f"{PREFIX} All tools"]

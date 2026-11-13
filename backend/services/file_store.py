@@ -384,12 +384,13 @@ def _has_alpha(image) -> bool:
 
 def thumbnail(file_id: str, size: str) -> Optional[Path]:
     """
-    A preview of an image for the chat: at most THUMBNAIL_EDGES[size] pixels on its longer edge,
-    as WebP. Made once and kept next to the file (<file ID>_thumb_<size>.webp, deleted with it).
+    A preview of a file for the chat: an image, or the first page of a PDF (rendered when it was
+    uploaded, document_handler), at most THUMBNAIL_EDGES[size] pixels on its longer edge, as
+    WebP. Made once and kept next to the file (<file ID>_thumb_<size>.webp, deleted with it).
 
     Returns:
-        The preview's path, or None if the file is missing, no image Pillow can read, or an
-        image with more pixels than are decoded (MAX_IMAGE_PIXELS).
+        The preview's path, or None if the file is missing, no image Pillow can read (a PDF: has
+        no rendered page), or an image with more pixels than are decoded (MAX_IMAGE_PIXELS).
     """
     edge = THUMBNAIL_EDGES[size]
     path = get_file_path(file_id)
@@ -398,10 +399,13 @@ def thumbnail(file_id: str, size: str) -> Optional[Path]:
     preview = path.with_name(f"{file_id}_thumb_{size}.webp")
     if preview.is_file():
         return preview
+    picture = path.with_name(f"{file_id}_page_1.png") if path.suffix.lower() == ".pdf" else path
+    if not picture.is_file():
+        return None
     try:
         from PIL import Image
-        with _decoding, Image.open(path) as source:
-            image = _scaled(path, source, edge)
+        with _decoding, Image.open(picture) as source:
+            image = _scaled(picture, source, edge)
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGBA" if _has_alpha(image) else "RGB")
             # Written under another name first: a reader never gets half a file

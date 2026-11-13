@@ -593,11 +593,48 @@
 }
 
 // ============================================
+// FILES PLACED IN THE TEXT
+// ============================================
+// The files a message places in its text (an agent's answer): one large, several next to each other
+.placed-files {
+  --file-tile-height: 200px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0;
+
+  &.is-single {
+    --file-tile-height: 320px;
+  }
+
+  &:first-child {
+    margin-top: 0;
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// A file whose conversation's files are still being loaded
+.placed-file-loading {
+  width: var(--file-tile-height);
+  max-width: 100%;
+  height: var(--file-tile-height);
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background-color: var(--theme-hover);
+}
+
+// ============================================
 // ATTACHMENTS
 // ============================================
 .message-attachments {
   display: flex;
   flex-wrap: wrap;
+  // Each attachment keeps its own height: an image is as large as its shape makes it
+  align-items: flex-end;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -620,29 +657,46 @@
     transform: translateY(-1px);
   }
 
+  // An image is shown whole: scaled down to fit a square of --attachment-box, never cropped
+  // and never enlarged, and the tile is as large as the image then is
   &.is-image {
+    --attachment-box: 160px;
+    flex: none;
     padding: 0;
-    width: 160px;
-    height: 160px;
+    max-width: none;
     overflow: hidden;
     position: relative;
-
-    .attachment-thumbnail {
-      width: 100%;
-      height: 100%;
-    }
   }
 }
 
+// A very long or very wide image would leave a sliver: the tile stays at least this large,
+// and a blurred copy of the image fills what the image leaves of it
 .attachment-thumbnail {
-  width: 100%;
-  height: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  min-height: 64px;
+  overflow: hidden;
+  border-radius: 11px;
 
-  img {
+  .attachment-image {
+    position: relative;
+    display: block;
+    max-width: var(--attachment-box);
+    max-height: var(--attachment-box);
+  }
+
+  .attachment-backdrop {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 11px;
+    filter: blur(10px);
+    transform: scale(1.3);
+    opacity: 0.55;
   }
 }
 
@@ -655,6 +709,9 @@
   color: white;
   padding: 24px 12px 12px;
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border-bottom-left-radius: 11px;
   border-bottom-right-radius: 11px;
   opacity: 0;
@@ -666,8 +723,8 @@
 }
 
 .attachment-placeholder {
-  width: 100%;
-  height: 100%;
+  width: var(--attachment-box);
+  height: var(--attachment-box);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -698,6 +755,17 @@
     opacity: 0.5;
     color: var(--theme-primary);
   }
+}
+
+// A PDF's first page in place of the icon
+.attachment-page {
+  flex: none;
+  width: 44px;
+  max-height: 62px;
+  object-fit: contain;
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  background: #fff;
 }
 
 .attachment-icon {
@@ -1373,8 +1441,15 @@ em {
   }
 
   .attachment-item.is-image {
-    width: 120px;
-    height: 120px;
+    --attachment-box: 120px;
+  }
+
+  .placed-files {
+    --file-tile-height: 140px;
+
+    &.is-single {
+      --file-tile-height: 260px;
+    }
   }
 
   // Mobile-specific table and code block optimizations
