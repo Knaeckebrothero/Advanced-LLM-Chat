@@ -39,8 +39,10 @@
     font-size: 18px;
   }
 
+  // A tint of the surface, not the see-through hover colour: over a background image
+  // the button would lose its backing
   &:hover {
-    background-color: var(--theme-hover);
+    background-color: color-mix(in srgb, var(--theme-text) 6%, var(--theme-surface));
     color: var(--theme-text);
   }
 
@@ -62,6 +64,8 @@
 
 .summary-panel {
   margin-top: 12px;
+  // Starts where the messages do, next to their avatars (36px and the 16px gap of a message row)
+  margin-left: 52px;
   padding: 12px 16px;
   border: 1px solid var(--theme-border);
   border-radius: 12px;
@@ -90,5 +94,21 @@
       margin: 0;
       padding-left: 20px;
     }
+  }
+}
+
+// With a background image (settings), the summary sits on a frosted card like the messages
+:host-context(body.has-background-image) .summary-panel {
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--theme-border) 70%, transparent);
+  background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+// Phones: the messages have no avatar next to them and take the full width
+@media (max-width: 768px) {
+  .summary-panel {
+    margin-left: 0;
   }
 }
