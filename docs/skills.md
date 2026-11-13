@@ -146,6 +146,15 @@ They live in `catalog/skills/<name>/SKILL.md`, and `catalog/models.json` names t
   | Gemma 4 | The lighthouse prompt | 0 of 2 with the first wording; 1 of 2 after the stricter prompt and a description that starts with "Writes prompts for image models" |
 
   So smaller models load skills about half the time, as the published tests found. Gemma's answers also show its reasoning, a known problem with its tool answers.
+- **A/B test with real generations** (2026-11-13, the owner's Buzz): two agents that differ only in the skill (`files` and `user_mcp` tools, the dev user's Civitai generation and browse servers, DeepSeek V4.1 Flash), three requests each:
+
+  | Request | A, with the skill | B, without |
+  |---|---|---|
+  | Elf hanging paper lanterns, anime, portrait | Illustrious checkpoint (WAI) found with the browse tools, family tags, 832×1216, price checked first; 2 good images, but the elf pulls a cord instead of hanging a lantern. 6 Buzz | Civitai's own guide (`get_guide`), the hosted Anima model, no price check; 1 good image closer to the action. 16 Buzz |
+  | Realistic photo of a fisherman mending a net in morning fog | RealVisXL, 1216×832; two film-like photos, one in a boat instead of on the pier (said so) | Flux.2 Klein 9B, no price check; two polished, cinematic images that fit the scene best. 60 Buzz |
+  | Poster "Hafenfest 2027" | Qwen-Image for the text, asked before the 78 Buzz; both posters with the title and subtitle spelled right, nothing invented | Ideogram 4, asked first, 3 images for 116 Buzz (it said 87); made up dates and a programme, a stray quote mark before the title on all three (it saw it on two), one broken layout |
+
+  Both agents looked at every image with `read_file` before answering and described what was there; A asked the vision model targeted questions (the text, hands, the scene). In all: A 93 Buzz for 6 images, B 192 Buzz for 6 images; A's model calls cost more (about 8 against 4 cents, the skill's text and the model search). The skill paid off most where the model family matters (text in images) and on cost (price checks, cheaper community checkpoints); without it the agent leans on Civitai's hosted services, which gave the best photo but cost more. Two mistakes of the skill were fixed after the test: it said Civitai's SDXL service rejects `clipSkip` (A sent it and the run worked), and it now says to put only the user's words on an image. Found on the way: the images Civitai's MCP result returns are at most 1024 px on the longer side, the full size is only behind the result's download address.
 
 ## Later
 
