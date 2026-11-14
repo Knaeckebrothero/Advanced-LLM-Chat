@@ -13,7 +13,12 @@ A record is a list of messages in the OpenAI format, as run_agent() had them, ex
 - the images of a tool result become a note (images_note()); they are not sent again in later turns
 - it ends with the answer's last text as an assistant message, if there is any
 
-An answer that called no tool has no record: its text is all there is.
+Models that get their reasoning passed back (reasoning_passback: Kimi K3, DeepSeek) are trained
+to see what they thought in earlier turns, and DeepSeek's API wants it back whenever a request
+carries tools. Their tool calls keep their reasoning_content anyway, as run_agent() had them, and
+the answer's last text keeps the reasoning that led to it. So these models also get a record for
+an answer that called no tool: its text with its reasoning. An answer without reasoning, or of a
+model without passback, that called no tool has no record: its text is all there is.
 """
 from .common import TOOL_ERROR_KEY
 
@@ -40,17 +45,28 @@ def _stored(message: dict) -> dict:
     return kept
 
 
-def record(messages: list[dict], final_text: str = "") -> list[dict]:
+def _final_message(text: str, reasoning: str) -> dict:
+    """The answer's last text as an assistant message, with the reasoning that led to it."""
+    message = {"role": "assistant", "content": text}
+    if reasoning:
+        message["reasoning_content"] = reasoning
+    return message
+
+
+def record(messages: list[dict], final_text: str = "", final_reasoning: str = "") -> list[dict]:
     """
     The tool record of an answer.
 
     Args:
         messages: What the agent loop added to the history for this answer, in order.
         final_text: The text of the model call that ended the answer.
+        final_reasoning: That call's reasoning, for models that get it passed back; "" for others.
 
     Returns:
-        The record, or [] when no tool call was completed.
+        The record, or [] when no tool call was completed and there is no reasoning to keep
+        with the answer's text.
     """
+    has_text = bool(final_text and final_text.strip())
     kept: list[dict] = []
     called = False
     index = 0
@@ -73,9 +89,9 @@ def record(messages: list[dict], final_text: str = "") -> list[dict]:
             kept.append(_stored(message))  # The note before the last allowed model call
             index += 1
     if not called:
-        return []
-    if final_text and final_text.strip():
-        kept.append({"role": "assistant", "content": final_text})
+        return [_final_message(final_text, final_reasoning)] if final_reasoning and has_text else []
+    if has_text:
+        kept.append(_final_message(final_text, final_reasoning))
     return kept
 
 
@@ -83,7 +99,10 @@ def with_text(tool_record: list[dict], text: str) -> list[dict]:
     """
     A record after the answer's text was edited: the calls and their results stay, and the
     new text is the answer's only text (the text between the calls was part of the old one).
+    The reasoning that led to the old text goes with it. Without tool calls nothing is left: [].
     """
+    if not any(message.get("tool_calls") for message in tool_record if message.get("role") == "assistant"):
+        return []
     kept = []
     for message in tool_record:
         if message.get("role") == "assistant":

@@ -48,7 +48,7 @@ class ModelConfig:
     supports_tools: bool = True
     supports_vision: bool = False
     reasoning: str = "none"             # one of REASONING_MODES
-    reasoning_passback: bool = False    # send reasoning_content back on assistant messages in tool loops
+    reasoning_passback: bool = False    # send reasoning_content back on assistant messages, in tool loops and later turns
     context_window: Optional[int] = None
     max_output_tokens: Optional[int] = None
 
