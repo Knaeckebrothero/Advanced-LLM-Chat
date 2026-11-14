@@ -79,6 +79,6 @@ export class SettingsStateService {
       this.translate.use(newSettings.language);
     }
 
-    await this.repository.saveSettings(updatedSettings);
+    await this.repository.saveSettings(updatedSettings, 'autoHidePrompt' in newSettings);
   }
 }
