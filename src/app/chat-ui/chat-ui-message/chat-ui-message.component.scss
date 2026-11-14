@@ -176,6 +176,24 @@
   }
 }
 
+// The agent's image fills the avatar
+.message-avatar.message-avatar--image {
+  overflow: hidden;
+  background: transparent;
+
+  .avatar-icon {
+    width: 100%;
+    height: 100%;
+  }
+
+  .avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
 // Small avatar in the role label, only on phones (see RESPONSIVE)
 .message-avatar--inline {
   display: none;

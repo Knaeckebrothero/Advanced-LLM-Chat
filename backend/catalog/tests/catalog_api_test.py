@@ -56,8 +56,8 @@ TOGGLE_KEY_ENV = "ZZ_CATALOG_TOGGLE_API_KEY"
 PROVIDER_OUT_FIELDS = {"id", "name", "kind", "baseUrl", "apiKeyEnv", "apiKeySet", "privacyTier", "currency",
                        "reportedCostUnit", "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
 PERSONA_OUT_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "availableToGuests",
-                      "enabled", "sortOrder", "ownMemory", "mcpServers", "skills", "hidden"}
-PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "hidden"}
+                      "enabled", "sortOrder", "ownMemory", "mcpServers", "skills", "hidden", "avatar"}
+PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "hidden", "avatar"}
 
 
 class Checks:
@@ -565,6 +565,78 @@ def run_hidden_agents_and_default(c, admin, user, guest, personas, admin_email, 
     for persona in (secret, unowned):
         admin.delete(f"/api/admin/personas/{persona['id']}")
     db.delete_persona(theirs["id"])
+
+
+def image_data_url(width, height, mode="RGB", fmt="PNG", color="red"):
+    """A data URL of an image made in memory."""
+    import base64
+    import io
+    from PIL import Image
+    output = io.BytesIO()
+    Image.new(mode, (width, height), color).save(output, fmt)
+    return f"data:image/{fmt.lower()};base64," + base64.b64encode(output.getvalue()).decode("ascii")
+
+
+def data_url_size(data_url):
+    """Format and size of the image in a data URL."""
+    import base64
+    import io
+    from PIL import Image
+    with Image.open(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1]))) as image:
+        return image.format, image.size
+
+
+def run_agent_images(c, admin, guest):
+    from backend.services import file_store
+
+    c.section("Agents' images")
+    wide = image_data_url(600, 300)
+    r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Pictured", "systemPrompt": "Hi",
+                                                 "availableToGuests": True, "avatar": wide})
+    pictured = r.json()
+    avatar = pictured.get("avatar") or ""
+    c.check(r.status_code == 201 and avatar.startswith("data:image/webp;base64,")
+            and data_url_size(avatar) == ("WEBP", (256, 128)),
+            "an agent's image is kept as WebP of at most 256 pixels, not cropped", r.text[:200])
+    shown = next((p for p in guest.get("/api/personas").json() if p["id"] == pictured["id"]), {})
+    c.check(shown.get("avatar") == avatar, "the picker list carries the image (guests too, for a guest agent)")
+    r = admin.put(f"/api/admin/personas/{pictured['id']}", json={"description": "now described", "avatar": avatar})
+    c.check(r.status_code == 200 and r.json()["avatar"] == avatar,
+            "an update that sends the image back unchanged keeps it as it is (not written again)", r.text[:200])
+    r = admin.put(f"/api/admin/personas/{pictured['id']}", json={"description": "again"})
+    c.check(r.json()["avatar"] == avatar, "an update without the image keeps it")
+    r = admin.put(f"/api/admin/personas/{pictured['id']}",
+                  json={"avatar": image_data_url(100, 200, "RGBA", "PNG", (0, 0, 255, 128))})
+    c.check(r.status_code == 200 and r.json()["avatar"] != avatar
+            and data_url_size(r.json()["avatar"]) == ("WEBP", (100, 200)),
+            "a new image replaces it; a small one keeps its size", r.text[:200])
+    for label, value in (("not an image", "data:image/png;base64,aGVsbG8="),
+                         ("not a data URL", "https://example.com/fox.png"),
+                         ("not base64", "data:image/png;base64,%%%")):
+        r = admin.put(f"/api/admin/personas/{pictured['id']}", json={"avatar": value})
+        c.check(r.status_code == 400, f"an image that is {label} -> 400", r.text[:200])
+    exported = next(p for p in admin.get("/api/admin/catalog/export").json()["personas"]
+                    if p["name"] == f"{PREFIX} Pictured")
+    current = next(p for p in admin.get("/api/admin/personas").json() if p["id"] == pictured["id"])["avatar"]
+    c.check(exported["avatar"] == current and current.startswith("data:image/webp"), "the export carries the image")
+    r = admin.put(f"/api/admin/personas/{pictured['id']}", json={"avatar": None})
+    c.check(r.status_code == 200 and r.json()["avatar"] is None, "null takes the image away", r.text[:200])
+
+    # The limits, in-process: what is too large is refused before it is decoded
+    def refused(data_url):
+        try:
+            file_store.agent_image(data_url)
+        except ValueError as e:
+            return str(e)
+        return None
+    too_large = "data:image/png;base64," + "A" * (file_store.MAX_AGENT_IMAGE_BYTES * 4 // 3 + 8)
+    c.check("larger than" in (refused(too_large) or ""), "an image over 10 MB is refused")
+    c.check("too many pixels" in (refused(image_data_url(6000, 5000, "1")) or ""),
+            "an image of more pixels than are decoded is refused (a small file can claim any size)")
+    jpeg = image_data_url(1000, 800, "RGB", "JPEG")
+    c.check(data_url_size(file_store.agent_image(jpeg)) == ("WEBP", (256, 205)), "a JPEG is scaled too")
+
+    admin.delete(f"/api/admin/personas/{pictured['id']}")
 
 
 def run_message_sync(c, user, user_id, models):
@@ -1142,6 +1214,7 @@ def main():
     personas = run_personas(c, admin, user, guest)
     conversation = run_conversations_and_settings(c, user, guest, models, personas)
     run_hidden_agents_and_default(c, admin, user, guest, personas, args.admin_email, user_id)
+    run_agent_images(c, admin, guest)
     run_message_sync(c, user, user_id, models)
     run_stream_tools(c, admin, user, user_id, available_groups)
     if not args.skip_network:

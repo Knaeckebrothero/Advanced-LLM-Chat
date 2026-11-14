@@ -40,6 +40,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   // Variables
   userName: string = 'user';
   aiName: string = 'Assistant';
+  // The image of the conversation's agent, shown with its answers (null: none, an icon is shown)
+  agentAvatar: string | null = null;
   pendingFiles: FilePreview[] = [];
   isDarkMode: boolean = false; // Add this property
 
@@ -239,6 +241,13 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   ) { }
 
   ngOnInit() {
+    this.destroy$.add(
+      this.chatState.activePersona$.subscribe(persona => {
+        this.agentAvatar = persona?.avatar ?? null;
+        this.cdr.markForCheck();
+      })
+    );
+
     // An agent hid its chat while answering : say so, and let the user take it back
     this.destroy$.add(
       this.chatState.agentHideMarks$.subscribe(({ conversationId, hidden }) => {

@@ -192,6 +192,23 @@ app-model-select {
   min-width: 0;
 }
 
+// An agent in the agent menus: its image (or icon) next to the name and description
+.persona-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+
+  .model-option {
+    flex: 1;
+  }
+}
+
+.persona-option-spacer {
+  flex-shrink: 0;
+  width: 32px;
+}
+
 .model-option-main {
   display: flex;
   align-items: center;

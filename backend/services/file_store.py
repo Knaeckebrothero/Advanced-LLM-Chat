@@ -52,6 +52,12 @@ THUMBNAIL_EDGES = {"small": 256, "large": 1024}
 # have one: a camera's JPEG is decoded at a fraction of its size (_scaled())
 MAX_IMAGE_PIXELS = 25_000_000
 
+# An agent's image (agent_image()): the most bytes of the image an admin picks, and the longest edge
+# of what is kept, enough for the largest place it is shown (the Agents page, at twice its size)
+MAX_AGENT_IMAGE_BYTES = 10 * 1024 * 1024
+AGENT_IMAGE_EDGE = 256
+_DATA_URL = re.compile(r"^data:image/[a-z0-9.+-]+;base64,", re.IGNORECASE)
+
 # Images decoded at once, so that their memory doesn't add up: previews are asked for in parallel
 MAX_IMAGE_DECODES = 2
 _decoding = threading.BoundedSemaphore(MAX_IMAGE_DECODES)
@@ -437,13 +443,17 @@ def _jpeg_in_one_pass(path: Path) -> bool:
         return False
 
 
+class TooManyPixels(ValueError):
+    """An image would need more than MAX_IMAGE_PIXELS pixels decoded."""
+
+
 def _scaled(path: Path, image, edge: int):
     """
     An opened image as shown (the first frame, EXIF rotation applied), scaled to at most `edge`
     pixels on its longer edge. This is where images are decoded.
 
     Raises:
-        ValueError: More than MAX_IMAGE_PIXELS pixels would have to be decoded.
+        TooManyPixels: More than MAX_IMAGE_PIXELS pixels would have to be decoded.
     """
     from PIL import ImageOps
     pixels = image.width * image.height
@@ -455,7 +465,7 @@ def _scaled(path: Path, image, edge: int):
         if image.format in ("JPEG", "MPO") and _jpeg_in_one_pass(path):
             pixels = image.width * image.height  # The reduced size is all that is decoded
     if pixels > MAX_IMAGE_PIXELS:
-        raise ValueError(f"{pixels} pixels to decode, more than {MAX_IMAGE_PIXELS}")
+        raise TooManyPixels(f"{pixels} pixels to decode, more than {MAX_IMAGE_PIXELS}")
     # Scaled before it is turned: turning a full-size image would copy it at full size
     image.thumbnail((edge, edge))
     return ImageOps.exif_transpose(image)
@@ -499,6 +509,52 @@ def thumbnail(file_id: str, size: str) -> Optional[Path]:
     except Exception as e:
         log.info(f"No preview of {file_id}: {type(e).__name__}: {e}")
         return None
+
+
+def agent_image(data_url: str) -> str:
+    """
+    An agent's image as it is kept and shown: the picked image (a data URL) decoded with the
+    previews' limits, scaled to at most AGENT_IMAGE_EDGE pixels on its longer edge (never cropped:
+    where it is shown in a square, the page fits it), and written again as WebP, so only pixels
+    are kept (no metadata, nothing but an image).
+
+    Returns:
+        The image as a data URL (data:image/webp;base64,...).
+
+    Raises:
+        ValueError: Not a data URL of an image, larger than MAX_AGENT_IMAGE_BYTES, not an image
+            Pillow can read, or more pixels than are decoded (MAX_IMAGE_PIXELS).
+    """
+    import base64
+    import tempfile
+    from PIL import Image
+    match = _DATA_URL.match(data_url or "")
+    if not match:
+        raise ValueError("The agent's image must be a data URL of an image")
+    encoded = data_url[match.end():]
+    if len(encoded) > MAX_AGENT_IMAGE_BYTES * 4 // 3 + 4:
+        raise ValueError(f"The agent's image is larger than {MAX_AGENT_IMAGE_BYTES // (1024 * 1024)} MB")
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except ValueError:
+        raise ValueError("The agent's image is not valid base64") from None
+    # _scaled() reads a JPEG's header from its file to decide how cheaply it decodes
+    with tempfile.NamedTemporaryFile(suffix=".image") as file:
+        file.write(data)
+        file.flush()
+        path = Path(file.name)
+        try:
+            with _decoding, Image.open(path) as source:
+                image = _scaled(path, source, AGENT_IMAGE_EDGE)
+                image = image.convert("RGBA" if _has_alpha(image) else "RGB")
+                output = io.BytesIO()
+                image.save(output, "WEBP", quality=85, method=4)
+        except TooManyPixels:
+            raise ValueError("The agent's image has too many pixels") from None
+        except Exception as e:
+            log.info(f"Agent image not readable: {type(e).__name__}: {e}")
+            raise ValueError("The agent's image is not an image that can be read") from None
+    return "data:image/webp;base64," + base64.b64encode(output.getvalue()).decode("ascii")
 
 
 def image_for_model(file_id: str) -> Optional[tuple[bytes, str]]:

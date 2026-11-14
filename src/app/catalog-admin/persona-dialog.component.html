@@ -2,6 +2,31 @@
 
 <form [formGroup]="form" (ngSubmit)="save()">
   <mat-dialog-content class="catalog-dialog-content">
+    <!-- The agent's image: shown with it in the chat and the pickers (also dropped here) -->
+    <div class="agent-image-row" (dragover)="$event.preventDefault()" (drop)="dropImage($event)">
+      <app-agent-avatar [src]="avatar" [size]="64"></app-agent-avatar>
+      <div class="agent-image-body">
+        <div class="agent-image-buttons">
+          <button mat-stroked-button type="button" (click)="imageInput.click()">
+            <mat-icon>image</mat-icon>
+            {{ (avatar ? 'catalog.admin.personas.changeImage' : 'catalog.admin.personas.chooseImage') | translate }}
+          </button>
+          @if (avatar) {
+            <button mat-button type="button" (click)="removeImage()">
+              <mat-icon>delete_outline</mat-icon>
+              {{ 'catalog.admin.personas.removeImage' | translate }}
+            </button>
+          }
+        </div>
+        @if (imageError) {
+          <p class="agent-image-hint agent-image-hint--error" role="alert">{{ imageError }}</p>
+        } @else {
+          <p class="agent-image-hint">{{ 'catalog.admin.personas.imageHint' | translate }}</p>
+        }
+      </div>
+      <input #imageInput type="file" accept="image/*" hidden (change)="pickImage($event)">
+    </div>
+
     <mat-form-field appearance="outline" class="full-width">
       <mat-label>{{ 'catalog.admin.fields.name' | translate }}</mat-label>
       <input matInput formControlName="name" required>

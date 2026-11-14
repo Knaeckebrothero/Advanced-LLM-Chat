@@ -11,6 +11,7 @@ import { ChatStateService } from '../../services/chat-state.service';
 import { CatalogService } from '../../services/catalog.service';
 import { IConversationSelection, IPublicModel, IPublicPersona } from '../../data/models/catalog.model';
 import { ModelSelectComponent } from '../../components/catalog/model-select.component';
+import { AgentAvatarComponent } from '../../components/catalog/agent-avatar.component';
 import { askPersonaValues, personaInputVariables } from './persona-values-dialog.component';
 
 interface PickerView {
@@ -28,7 +29,8 @@ interface PickerView {
 @Component({
   selector: 'app-model-picker',
   standalone: true,
-  imports: [AsyncPipe, MatDialogModule, MatIconModule, MatMenuModule, MatTooltipModule, TranslateModule, ModelSelectComponent],
+  imports: [AsyncPipe, MatDialogModule, MatIconModule, MatMenuModule, MatTooltipModule, TranslateModule, ModelSelectComponent,
+            AgentAvatarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   template: `
@@ -47,10 +49,16 @@ interface PickerView {
           <button type="button"
                   class="persona-trigger"
                   [class.persona-trigger--active]="!!view.persona"
+                  [class.persona-trigger--image]="!!view.persona?.avatar"
                   [matMenuTriggerFor]="personaMenu"
                   [matTooltip]="('catalog.picker.persona' | translate) + ': ' + (view.persona?.name ?? ('catalog.picker.noPersona' | translate))"
                   [attr.aria-label]="('catalog.picker.choosePersona' | translate) + ': ' + (view.persona?.name ?? ('catalog.picker.noPersona' | translate))">
-            <mat-icon aria-hidden="true">theater_comedy</mat-icon>
+            @if (view.persona?.avatar) {
+              <app-agent-avatar class="persona-trigger-image" [src]="view.persona?.avatar" [size]="24"
+                                shape="round"></app-agent-avatar>
+            } @else {
+              <mat-icon aria-hidden="true">theater_comedy</mat-icon>
+            }
             @if (view.persona) {
               <span class="persona-trigger-name">{{ view.persona.name }}</span>
             }
@@ -62,11 +70,16 @@ interface PickerView {
                     [attr.aria-checked]="!view.persona"
                     [class.is-selected]="!view.persona"
                     (click)="selectPersona(null, view)">
-              <span class="model-option">
-                <span class="model-option-main">
-                  <span class="model-option-name">{{ 'catalog.picker.noPersona' | translate }}</span>
-                  <mat-icon class="model-option-check" [class.model-option-check--off]="!!view.persona"
-                            aria-hidden="true">check</mat-icon>
+              <span class="persona-option">
+                @if (withImages(view.personas)) {
+                  <span class="persona-option-spacer"></span>
+                }
+                <span class="model-option">
+                  <span class="model-option-main">
+                    <span class="model-option-name">{{ 'catalog.picker.noPersona' | translate }}</span>
+                    <mat-icon class="model-option-check" [class.model-option-check--off]="!!view.persona"
+                              aria-hidden="true">check</mat-icon>
+                  </span>
                 </span>
               </span>
             </button>
@@ -75,18 +88,23 @@ interface PickerView {
                       [attr.aria-checked]="persona.id === view.persona?.id"
                       [class.is-selected]="persona.id === view.persona?.id"
                       (click)="selectPersona(persona, view)">
-                <span class="model-option">
-                  <span class="model-option-main">
-                    <span class="model-option-name">{{ persona.name }}</span>
-                    @if (hasInputs(persona)) {
-                      <mat-icon class="persona-option-edit" aria-hidden="true">tune</mat-icon>
-                    }
-                    <mat-icon class="model-option-check" [class.model-option-check--off]="persona.id !== view.persona?.id"
-                              aria-hidden="true">check</mat-icon>
-                  </span>
-                  @if (persona.description) {
-                    <span class="model-option-description">{{ persona.description }}</span>
+                <span class="persona-option">
+                  @if (withImages(view.personas)) {
+                    <app-agent-avatar [src]="persona.avatar" [size]="32" shape="round"></app-agent-avatar>
                   }
+                  <span class="model-option">
+                    <span class="model-option-main">
+                      <span class="model-option-name">{{ persona.name }}</span>
+                      @if (hasInputs(persona)) {
+                        <mat-icon class="persona-option-edit" aria-hidden="true">tune</mat-icon>
+                      }
+                      <mat-icon class="model-option-check" [class.model-option-check--off]="persona.id !== view.persona?.id"
+                                aria-hidden="true">check</mat-icon>
+                    </span>
+                    @if (persona.description) {
+                      <span class="model-option-description">{{ persona.description }}</span>
+                    }
+                  </span>
                 </span>
               </button>
             }
@@ -115,6 +133,11 @@ export class ModelPickerComponent {
       map(([models, personas, selection, effectiveModel, persona]) =>
         ({ models, personas, selection, effectiveModel, persona }))
     );
+  }
+
+  /** Some agent has an image: then every entry has room for one (the icon where an agent has none). */
+  withImages(personas: IPublicPersona[]): boolean {
+    return personas.some(p => !!p.avatar);
   }
 
   hasInputs(persona: IPublicPersona): boolean {
