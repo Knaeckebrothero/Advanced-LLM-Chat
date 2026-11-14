@@ -234,7 +234,7 @@ llm_models = Table(
     Column('supports_tools', Boolean, server_default='true'),
     Column('supports_vision', Boolean, server_default='false'),
     Column('reasoning', Text, server_default='none'),  # 'none' | 'optional' | 'always'
-    Column('reasoning_passback', Boolean, server_default='false'),
+    Column('reasoning_passback', Boolean, server_default='false'),  # reasoning_content goes back (backend/llm/tool_record.py)
     Column('context_window', Integer),
     Column('max_output_tokens', Integer),
     Column('temperature', Float),

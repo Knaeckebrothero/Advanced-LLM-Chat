@@ -350,7 +350,7 @@
         "description": "Description",
         "reasoning": "Thinking",
         "reasoningEffort": "Reasoning effort",
-        "reasoningPassback": "Pass reasoning back in tool loops",
+        "reasoningPassback": "Pass reasoning back to the model",
         "temperature": "Temperature",
         "topP": "Top P",
         "maxOutputTokens": "Max output tokens",

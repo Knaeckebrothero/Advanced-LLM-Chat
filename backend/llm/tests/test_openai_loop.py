@@ -10,8 +10,9 @@ id), callId linking, tool errors, the step limit, request settings and
 extra_body, models without tools, usage summing, the cost with and without
 a price for cache reads, complete(), the images of
 a tool result, which follow the tool messages in a user message, and the tool
-record of an answer (tool_record.py): what it holds, and that the next turn's
-request starts with the last one word for word when the record goes back.
+record of an answer (tool_record.py): what it holds (with the reasoning of models
+that get it passed back, also of answers without tool calls), and that the next
+turn's request starts with the last one word for word when the record goes back.
 """
 import asyncio
 import json
@@ -196,7 +197,9 @@ async def test_three_step_chain_with_passback(server):
     assert [c["id"] for c in tool_record[0]["tool_calls"]] == ["call_a", "call_b"]
     assert tool_record[0]["reasoning_content"] == "I need two keys."
     assert json.loads(tool_record[2]["content"]) == {"key": "beta", "value": "value-of-beta"}
-    assert tool_record[-1] == {"role": "assistant", "content": "Alpha, beta and gamma."}
+    # The answer's last text keeps the reasoning that led to it
+    assert tool_record[-1] == {"role": "assistant", "content": "Alpha, beta and gamma.",
+                               "reasoning_content": "All three found."}
 
 
 async def test_three_step_chain_without_passback(server):
@@ -218,16 +221,59 @@ async def test_next_turn_starts_with_the_last_request(server):
         tool_record = record_of(await collect(config, [question], server, tools=TOOLS))
         last_request = server.requests[-1]["messages"]
 
+        answer = {"role": "assistant", "content": "Alpha, beta and gamma."}
+        if passback:
+            answer["reasoning_content"] = "All three found."
+
         def next_turn(body):
             assert body["messages"][:len(last_request)] == last_request, body["messages"]
-            assert body["messages"][len(last_request):] == [
-                {"role": "assistant", "content": "Alpha, beta and gamma."}, follow_up], body["messages"]
+            assert body["messages"][len(last_request):] == [answer, follow_up], body["messages"]
             return [chunk(content="Yes."), chunk(finish_reason="stop"), usage_chunk(10, 1)]
 
         server.script(next_turn)
         events = await collect(config, [question, *tool_record, follow_up], server, tools=TOOLS)
         assert tokens_of(events) == "Yes."
-        assert record_of(events) == [], "an answer without tool calls has no record"
+        assert record_of(events) == [], "an answer without tool calls or reasoning has no record"
+
+
+async def test_answer_without_tools_keeps_its_reasoning(server):
+    """
+    A model that gets its reasoning passed back gets it back in later turns too, also of answers
+    that called no tool; an edit of the text drops it, and models without passback never get it.
+    """
+    question = {"role": "user", "content": "Think of a number."}
+    follow_up = {"role": "user", "content": "Which one?"}
+
+    def thinks(body):
+        return [chunk(reasoning="I pick 7319."), chunk(content="Ready."), chunk(finish_reason="stop"),
+                usage_chunk(10, 5)]
+
+    for passback in (True, False):
+        server.reset()
+        server.script(thinks)
+        config = make_config(server.base_url, reasoning_passback=passback)
+        answer_record = record_of(await collect(config, [question], server, tools=TOOLS))
+        if not passback:
+            assert answer_record == [], answer_record
+            continue
+        assert answer_record == [{"role": "assistant", "content": "Ready.", "reasoning_content": "I pick 7319."}]
+
+        def next_turn(body):
+            assert body["messages"][1:] == [question, *answer_record, follow_up], body["messages"]
+            return [chunk(content="7319."), chunk(finish_reason="stop"), usage_chunk(20, 2)]
+
+        server.script(next_turn)
+        assert tokens_of(await collect(config, [question, *answer_record, follow_up], server, tools=TOOLS)) == "7319."
+        # Another model without passback gets the text only
+        def text_only(body):
+            assert body["messages"][2] == {"role": "assistant", "content": "Ready."}, body["messages"]
+            return [chunk(content="7319."), chunk(finish_reason="stop"), usage_chunk(20, 2)]
+
+        server.script(text_only)
+        other = make_config(server.base_url, reasoning_passback=False)
+        await collect(other, [question, *answer_record, follow_up], server, tools=TOOLS)
+        # The reasoning led to the old text: an edit leaves no record
+        assert with_text(answer_record, "Not ready.") == []
 
 
 async def test_tool_error_continues(server):
@@ -400,12 +446,19 @@ async def test_record_holds_complete_rounds_only(server):
     second = {"role": "assistant", "content": "One more.", "tool_calls": [
         {"id": "c", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}
     # The run broke off while the second round's tool ran: only the first round, and the text so far
+    # (the reasoning of a call that broke off is not passed: run_agent() only has it for a finished one)
     tool_record = record([call, *results, second], "One more.")
     assert [m["role"] for m in tool_record] == ["assistant", "tool", "tool", "assistant"], tool_record
     assert "_anthropic_content" not in tool_record[0] and tool_record[-1]["content"] == "One more."
     # A call without all of its results is no round; without a round there is no record
     assert record([call, results[0]], "") == []
     assert record([], "Just text.") == []
+    # Reasoning alone is kept only with a text it led to
+    assert record([], "", "Thoughts without an answer.") == []
+    assert record([], "Text.", "Thoughts.") == [{"role": "assistant", "content": "Text.", "reasoning_content": "Thoughts."}]
+    # Edited: the calls keep their reasoning, the new text has none
+    edited = with_text(record([{**call, "reasoning_content": "Two lookups."}, *results], "Done.", "Both found."), "Changed.")
+    assert edited[0]["reasoning_content"] == "Two lookups." and edited[-1] == {"role": "assistant", "content": "Changed."}
 
 
 
@@ -475,6 +528,7 @@ TESTS = [
     test_three_step_chain_with_passback,
     test_three_step_chain_without_passback,
     test_next_turn_starts_with_the_last_request,
+    test_answer_without_tools_keeps_its_reasoning,
     test_tool_error_continues,
     test_tool_result_images_follow_in_a_user_message,
     test_step_limit,
