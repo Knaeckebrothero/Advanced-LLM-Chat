@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     editing_mode TEXT DEFAULT 'guided',      -- 'guided' (an edited message is answered again) | 'manual' (edit and insert any message)
     memory_model_id INTEGER,                 -- llm_models.id that reviews conversations for the memory, NULL = the chat's model
     auto_hide_prompt TEXT,                   -- what agents hide on their own, in the user's words, NULL = the server's
+    default_persona_id INTEGER,              -- personas.id new conversations start with, NULL = none
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -231,6 +232,7 @@ CREATE TABLE IF NOT EXISTS personas (
     mcp_servers JSONB,                       -- slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
     skills JSONB,                            -- names of its skills (docs/skills.md), NULL = none
     hidden BOOLEAN NOT NULL DEFAULT FALSE,     -- hidden with its chats and its own knowledge base
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- who created it in the app, NULL = seeded or from before
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -305,6 +307,12 @@ ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS height INTEGER;
 ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'upload';
 ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS origin TEXT;
 ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS details TEXT;
+
+-- name: add_creator_columns
+-- Databases from before agents had a creator and users a default agent (the CREATE TABLEs above have them). The
+-- run that adds created_by also turns the sort orders around, as higher numbers come first since then
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS default_persona_id INTEGER;
 
 -- name: add_model_price_columns
 -- Databases from before the price of cache reads and the providers' own costs (the CREATE TABLEs above have them)

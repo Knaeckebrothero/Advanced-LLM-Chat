@@ -3,7 +3,7 @@ Model resolution: which model answers, with which persona prompt and tools.
 
 The runtime asks resolve_model() for the ModelConfig of a conversation. The
 order is: the explicitly requested model, the conversation's model, the user's
-default model, the first enabled catalog model by sort_order, and finally the
+default model, the enabled catalog model with the highest sort_order, and finally the
 environment model (model_from_env()), so setups without a catalog keep working.
 
 Guests only get models and personas marked available_to_guests. Disabled
@@ -84,6 +84,16 @@ def model_usable(model: Optional[dict], user: Optional[dict]) -> bool:
     return True
 
 
+def persona_of_another(persona: dict, user: Optional[dict]) -> bool:
+    """
+    Whether a persona is hidden and someone else's: only its creator sees and uses a hidden one.
+    A hidden persona without a creator (seeded, or nobody talked to it before personas had one)
+    is everybody's, as before.
+    """
+    creator = persona.get("created_by")
+    return bool(persona.get("hidden")) and creator is not None and creator != _user_id(user)
+
+
 def persona_usable(persona: Optional[dict], user: Optional[dict]) -> bool:
     """
     Whether a user may use a persona.
@@ -93,13 +103,16 @@ def persona_usable(persona: Optional[dict], user: Optional[dict]) -> bool:
         user: The current user.
 
     Returns:
-        True if the persona is enabled and, for guests, available to guests.
+        True if the persona is enabled, not someone else's hidden one and, for guests,
+        available to guests.
     """
     if not persona:
         return False
     if persona.get("enabled") is False:
         return False
     if is_guest(user) and not persona.get("available_to_guests"):
+        return False
+    if persona_of_another(persona, user):
         return False
     return True
 
@@ -220,7 +233,7 @@ def resolve_model(
     Decide which model answers.
 
     Order: model_id, the conversation's model_id, the user's default_model_id,
-    the first enabled model by sort_order, then model_from_env(). Stored
+    the enabled model with the highest sort_order, then model_from_env(). Stored
     choices (conversation, default) that are no longer usable are skipped.
 
     Args:
@@ -280,7 +293,7 @@ def resolve_auxiliary_model() -> Optional[ModelConfig]:
     The model for background tasks (titles, speech preprocessing).
 
     Returns:
-        The first enabled model with is_auxiliary (by sort_order), else
+        The enabled model with is_auxiliary and the highest sort_order, else
         auxiliary_model_from_env(), which may be None.
     """
     models = db.get_llm_models(enabled_only=True, auxiliary_only=True)

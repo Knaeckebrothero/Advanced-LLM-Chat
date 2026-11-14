@@ -12,8 +12,9 @@ import {
   DEFAULT_BACKGROUND_DIM,
 } from '../services/background.service';
 import { Language, Theme } from '../models/enum';
-import { IPublicModel } from '../data/models/catalog.model';
+import { IPublicModel, IPublicPersona } from '../data/models/catalog.model';
 import { ModelSelectComponent } from '../components/catalog/model-select.component';
+import { PersonaSelectComponent } from '../components/catalog/persona-select.component';
 import { Observable } from 'rxjs';
 import {TranslateModule, TranslatePipe, TranslateService} from '@ngx-translate/core';
 import { ChatStateService } from '../services/chat-state.service';
@@ -28,13 +29,15 @@ import { ConversationFilesDialogService } from '../components/conversation-files
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, MatIconModule, TranslateModule, ModelSelectComponent],
+  imports: [CommonModule, MatIconModule, TranslateModule, ModelSelectComponent, PersonaSelectComponent],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.scss'],
 })
 export class SettingsComponent {
   settings$: Observable<AppSettings | null>;
   models$: Observable<IPublicModel[]>;
+  // The agents to offer (without the hidden ones while this device is in family mode)
+  personas$: Observable<IPublicPersona[]>;
 
   themeOptions = [
     { value: Theme.Light, icon: 'light_mode', label: 'Light' },
@@ -89,6 +92,7 @@ export class SettingsComponent {
     this.customImageUrl$ = this.backgroundService.customImageUrl$;
     this.settings$ = this.settingsState.settings$;
     this.models$ = this.catalogService.models$;
+    this.personas$ = this.catalogService.visiblePersonas$;
   }
 
   updateTheme(theme: Theme): void {
@@ -131,6 +135,16 @@ export class SettingsComponent {
   selectedMemoryModel(settings: AppSettings, models: IPublicModel[]): number | null {
     const id = settings.memoryModelId ?? null;
     return models.some(m => m.id === id && m.supportsTools) ? id : null;
+  }
+
+  /** The agent new conversations start with; null = none. */
+  updateDefaultPersona(defaultPersonaId: number | null): void {
+    this.settingsState.updateSettings({ defaultPersonaId });
+  }
+
+  /** A default agent that is gone from the catalog (or hidden on this device) counts as none. */
+  selectedDefaultPersona(settings: AppSettings, personas: IPublicPersona[]): number | null {
+    return CatalogService.defaultPersona(settings.defaultPersonaId, personas)?.id ?? null;
   }
 
   /** A default model that is gone from the catalog counts as automatic. */

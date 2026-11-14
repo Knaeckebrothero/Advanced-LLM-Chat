@@ -232,7 +232,7 @@ export class ModelsTabComponent {
   ) {
     this.groups$ = combineLatest([this.store.providers$, this.store.models$]).pipe(
       map(([providers, models]) => {
-        const sorted = [...models].sort((a, b) => a.sortOrder - b.sortOrder || a.displayName.localeCompare(b.displayName));
+        const sorted = [...models].sort((a, b) => b.sortOrder - a.sortOrder || a.displayName.localeCompare(b.displayName));
         const groups: ProviderModels[] = providers.map(provider => ({
           provider,
           name: provider.name,

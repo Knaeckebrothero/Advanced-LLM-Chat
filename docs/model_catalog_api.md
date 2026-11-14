@@ -59,12 +59,13 @@ Built on the official `openai` and `anthropic` SDKs. LangChain and LangGraph are
 ## Catalog (`backend/catalog/`)
 
 - `resolver.py`:
-  - `resolve_model(user, model_id=None, conversation=None) -> ModelConfig`. Order: `model_id`, then the conversation's `model_id`, then the user's `default_model_id`, then the first enabled model by `sort_order`, then `model_from_env()`. Raises `ModelNotAvailable` when nothing is left, and `ModelNotAllowed` when an explicitly requested model is disabled or not available to the user.
-  - `resolve_auxiliary_model() -> ModelConfig | None`: the first enabled model with `is_auxiliary`, else `model_from_env()`.
+  - `resolve_model(user, model_id=None, conversation=None) -> ModelConfig`. Order: `model_id`, then the conversation's `model_id`, then the user's `default_model_id`, then the enabled model with the highest `sort_order`, then `model_from_env()`. Raises `ModelNotAvailable` when nothing is left, and `ModelNotAllowed` when an explicitly requested model is disabled or not available to the user.
+  - `resolve_auxiliary_model() -> ModelConfig | None`: the enabled model with `is_auxiliary` and the highest `sort_order`, else `model_from_env()`.
   - `get_model_config(model_id) -> ModelConfig`: no permission check (smoke test, admin test button).
   - `render_persona_prompt(persona_id, values, *, user_name, language) -> str | None`.
   - `persona_prompt_for_conversation(user, conversation)` and `persona_tool_groups(user, conversation) -> list[str] | None`: the rendered prompt and the tool groups of the conversation's persona, for the runtime (`None` without a usable persona; for the tools also when the persona has no selection).
 - **Visibility:** guests only see and use models and personas with `available_to_guests`. A guest without any guest model gets the environment model, as today. Disabled providers hide their models.
+- **Order:** models, agents and MCP servers are listed by `sort_order`, higher numbers first, then by name (since 2026-11-14; lower ones came first before). So a new entry goes to the top with a number above the others, without renumbering them. The start that adds `personas.created_by` turned the existing numbers around once (lowest + highest - number, `reverse_sort_orders()`), so every list kept its order.
 - **Providers** are defined only by the catalog file (`MODEL_CATALOG_FILE`) and are read-only in the API. Changing one means editing the file and running `app_init` again (Docker's `db-init` does it on every `docker compose up`).
 - **API keys** only come from environment variables: a provider names one in `api_key_env` (it must end in `_KEY` or `_TOKEN`), and its key is `os.getenv(api_key_env)`. Keys are never stored or returned; the API only says whether the variable is set (`apiKeySet`). Databases from before this change keep an unused `api_key_encrypted` column (`ALTER TABLE llm_providers DROP COLUMN api_key_encrypted` removes it).
 - **Admins:** with `AUTH_MODE=oidc`, users with `OIDC_ADMIN_ROLE` or a verified email in `ADMIN_EMAILS`; with the mock login, users whose email is in `ADMIN_EMAILS`. Guests never are (docs/authentication.md). Without admins, the catalog is still seeded from `MODEL_CATALOG_FILE`.
@@ -89,7 +90,7 @@ All bodies are camelCase JSON, like the rest of the API. Authentication and CSRF
 
 | Method and path | Response |
 |---|---|
-| `GET /api/models` | `PublicModel[]`, enabled models of enabled providers, sorted by `sortOrder`, then name. Empty when the catalog is empty (then the environment model answers). |
+| `GET /api/models` | `PublicModel[]`, enabled models of enabled providers, higher `sortOrder` first, then name. Empty when the catalog is empty (then the environment model answers). |
 | `GET /api/personas` | `PublicPersona[]` |
 
 ### Admin only (403 otherwise)
@@ -131,7 +132,7 @@ PersonaCreate    name, description?, systemPrompt, variables = [], tools = null,
                  skills = null (names of skills, docs/skills.md)
 PersonaUpdate    the same fields, all optional; left out = unchanged, tools: null = every enabled tool
                  (without the opt-in knowledge_base)
-PersonaOut       PersonaCreate + id
+PersonaOut       PersonaCreate + id (personas.created_by, the admin who created it in the app, is not sent)
 PublicPersona    id, name, description, systemPrompt, variables, tools
 ToolGroupStatus  id ("files" | "web_search" | "web_fetch" | "knowledge_graph" | "knowledge_base" | "past_chats" | "user_mcp"),
                  available, reason (e.g. "TAVILY_API_KEY is not set", "NEO4J_ENABLED is off"; null when available),
@@ -151,7 +152,7 @@ ImportResult     models {created, updated}, personas {created, updated}, mcpServ
 
 - `GET /api/auth/me`: adds `isAdmin`.
 - Conversations (`GET /api/conversations`, `GET /api/conversation/{id}`, `POST /api/conversation/create`, `PATCH /api/conversation/{id}`): accept and return `modelId`, `personaId` and `personaValues` (an object of variable values). `null` means the user's default model and no persona.
-- Settings (`GET` / `PUT /api/settings`): add `defaultModelId`, and `memoryModelId` (the model of the memory review, which needs tools; null = the conversation's model; `resolve_memory_model()`).
+- Settings (`GET` / `PUT /api/settings`): add `defaultModelId`, `memoryModelId` (the model of the memory review, which needs tools; null = the conversation's model; `resolve_memory_model()`) and `defaultPersonaId` (the agent new conversations start with; null = none; the chat starts a new conversation with it while the user may use it, and the agent picker can still change it or pick no agent). The app sends every setting with each change, so a model or agent is only checked when it differs from the stored one: one that became unavailable doesn't block saving the others.
 - Agent messages (message sync and all message responses): add `modelId`, `modelName` and `usage` (`MessageUsage`).
 - `POST /api/message/stream-generate`: optional `modelId` to answer with another model than the conversation's.
 
@@ -166,7 +167,7 @@ Unchanged events keep their meaning. Additions:
 
 ## Catalog file
 
-Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake_case keys matching the database columns. Natural keys: providers by `name`, models by `provider` + `display_name`, personas by `name`, the admins' MCP servers (section `mcp_servers`, `docs/mcp.md`) by `slug`, skills (section `skills`: `name`, `description`, `content`, `enabled`; `docs/skills.md`) by `name`; servers and skills are imported before the personas, which name them in `mcp_servers` and `skills`. Nothing is ever deleted. Keys are referenced by environment variable (`api_key_env`); an `api_key` entry is ignored with a message.
+Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake_case keys matching the database columns. The current `version` is 2, in which higher `sort_order` numbers come first. A version 1 file (lower ones first) is still read: each section's numbers are turned around (lowest + highest - number) so its lists keep their order. Natural keys: providers by `name`, models by `provider` + `display_name`, personas by `name`, the admins' MCP servers (section `mcp_servers`, `docs/mcp.md`) by `slug`, skills (section `skills`: `name`, `description`, `content`, `enabled`; `docs/skills.md`) by `name`; servers and skills are imported before the personas, which name them in `mcp_servers` and `skills`. Nothing is ever deleted. Keys are referenced by environment variable (`api_key_env`); an `api_key` entry is ignored with a message.
 
 **Seeding** (`app_init`, on every start and also with `--prod`; Docker's `db-init` runs it on every `docker compose up`). `MODEL_CATALOG_FILE` defaults to `catalog/models.json` (relative to the repository root); an empty value disables seeding.
 - Providers: the file is their source of truth. Each entry creates the provider or replaces it completely, so a field removed from the file is cleared. Its models are kept. A provider that is in the database but no longer in the file is left alone, with a warning in the log.
@@ -181,7 +182,7 @@ Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "providers": [
     {
       "name": "Cortecs",

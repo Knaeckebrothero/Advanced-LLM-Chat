@@ -48,7 +48,7 @@ export class SettingsRepository {
         remoteSettings &&
         (preferRemote || !localSettings || toMillis(remoteSettings.lastUpdated) > toMillis(localSettings.lastUpdated))
       ) {
-        // An older backend leaves newer fields out (default and memory model, background, editing mode): keep the local values then
+        // An older backend leaves newer fields out (default model and agent, memory model, background, editing mode): keep the local values then
         const merged: AppSettings = {
           ...remoteSettings,
           defaultModelId: remoteSettings.defaultModelId !== undefined
@@ -61,6 +61,9 @@ export class SettingsRepository {
           memoryModelId: remoteSettings.memoryModelId !== undefined
             ? remoteSettings.memoryModelId
             : localSettings?.memoryModelId ?? null,
+          defaultPersonaId: remoteSettings.defaultPersonaId !== undefined
+            ? remoteSettings.defaultPersonaId
+            : localSettings?.defaultPersonaId ?? null,
         };
         const storableSettings = { ...merged, id: SETTINGS_KEY };
         await db.put('settings', storableSettings);

@@ -17,7 +17,7 @@ from typing import Optional
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
-from backend.catalog.resolver import api_key_set, is_guest, model_usable, persona_usable
+from backend.catalog.resolver import api_key_set, is_guest, model_usable, persona_of_another, persona_usable
 from backend.database import db
 from backend.llm.tools import TOOL_GROUPS, tool_group_status
 from backend.services.mcp.servers import McpError, check_persona_servers
@@ -397,9 +397,9 @@ def public_models(user: Optional[dict]) -> list[PublicModel]:
 
 
 def public_personas(user: Optional[dict]) -> list[PublicPersona]:
-    """Enabled personas the user may use."""
+    """Enabled personas the user may use, higher sort order first, then name."""
     rows = db.get_personas(enabled_only=True, guests_only=is_guest(user))
-    return [persona_public(row) for row in rows]
+    return [persona_public(row) for row in rows if persona_usable(row, user)]
 
 
 # =========================================================================
@@ -503,20 +503,38 @@ def delete_model(model_id: int) -> None:
 # Personas
 # =========================================================================
 
-def list_personas() -> list[PersonaOut]:
-    """All personas (including disabled ones), by sort order and name."""
-    return [persona_out(row) for row in db.get_personas()]
-
-
-def create_persona(data: PersonaCreate) -> PersonaOut:
+def list_personas(user: Optional[dict] = None) -> list[PersonaOut]:
     """
-    Create a persona.
+    All personas (including disabled ones), higher sort order first, then name. With a user,
+    without the hidden ones of other creators.
+    """
+    return [persona_out(row) for row in db.get_personas()
+            if user is None or not persona_of_another(row, user)]
+
+
+def _persona_for(persona_id: int, user: Optional[dict]) -> dict:
+    """
+    The persona row to change, as the user may see it.
+
+    Raises:
+        CatalogNotFound: The persona does not exist, or is another creator's hidden one.
+    """
+    row = db.get_persona_by_id(persona_id)
+    if not row or (user is not None and persona_of_another(row, user)):
+        raise CatalogNotFound(f"Persona {persona_id} not found")
+    return row
+
+
+def create_persona(data: PersonaCreate, user: Optional[dict] = None) -> PersonaOut:
+    """
+    Create a persona; user (the admin, None when seeding) is its creator.
 
     Raises:
         CatalogError: A variable is declared twice.
         CatalogConflict: The name is taken.
     """
     values = _to_columns(data, PERSONA_FIELDS, PERSONA_NULLABLE, partial=False)
+    values["created_by"] = _creator_id(user)
     _check_variables(values.get("variables"))
     _normalize_tools(values)
     _check_mcp_servers(values)
@@ -526,20 +544,22 @@ def create_persona(data: PersonaCreate) -> PersonaOut:
     return persona_out(row)
 
 
-def update_persona(persona_id: int, data: PersonaUpdate) -> PersonaOut:
+def update_persona(persona_id: int, data: PersonaUpdate, user: Optional[dict] = None) -> PersonaOut:
     """
-    Update the fields of a persona that were sent.
+    Update the fields of a persona that were sent, as user (the admin, None when importing
+    without one). A hidden persona without a creator becomes the user's.
 
     tools: left out keeps the selection, null selects every enabled tool, [] none.
 
     Raises:
-        CatalogNotFound: The persona does not exist.
+        CatalogNotFound: The persona does not exist, or is another creator's hidden one.
         CatalogError: A variable is declared twice.
         CatalogConflict: The new name is taken.
     """
-    if not db.get_persona_by_id(persona_id):
-        raise CatalogNotFound(f"Persona {persona_id} not found")
+    existing = _persona_for(persona_id, user)
     values = _to_columns(data, PERSONA_FIELDS, PERSONA_NULLABLE, partial=True)
+    if values.get("hidden", existing.get("hidden")) and existing.get("created_by") is None:
+        values["created_by"] = _creator_id(user)
     if "variables" in values:
         values["variables"] = values["variables"] or []
         _check_variables(values["variables"])
@@ -551,10 +571,18 @@ def update_persona(persona_id: int, data: PersonaUpdate) -> PersonaOut:
     return persona_out(row)
 
 
-def delete_persona(persona_id: int) -> None:
-    """Delete a persona."""
+def delete_persona(persona_id: int, user: Optional[dict] = None) -> None:
+    """Delete a persona (not another creator's hidden one)."""
+    _persona_for(persona_id, user)
     if not db.delete_persona(persona_id):
         raise CatalogNotFound(f"Persona {persona_id} not found")
+
+
+def _creator_id(user: Optional[dict]) -> Optional[int]:
+    """The users.id a persona's creator column gets for a session user; None without one or for a guest."""
+    if user is None or is_guest(user):
+        return None
+    return user.get("user_id", user.get("id"))
 
 
 # =========================================================================

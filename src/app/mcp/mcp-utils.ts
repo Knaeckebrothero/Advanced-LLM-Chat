@@ -126,9 +126,9 @@ export function serverEndpoint(server: IMcpServerOut): string {
   return server.url ?? '';
 }
 
-/** The servers in their order: sort order, then name. */
+/** The servers in their order: higher sort order first, then name. */
 export function sortServers(servers: IMcpServerOut[]): IMcpServerOut[] {
-  return [...servers].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  return [...servers].sort((a, b) => b.sortOrder - a.sortOrder || a.name.localeCompare(b.name));
 }
 
 /** Translation key of a server's tool selection: all tools, none, or a count. */

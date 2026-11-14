@@ -90,7 +90,7 @@ class ModelBase(BaseModel):
     isAuxiliary: bool = False  # Used for titles and speech preprocessing
     availableToGuests: bool = False
     enabled: bool = True
-    sortOrder: int = 0
+    sortOrder: int = 0  # Higher numbers come first
     notes: Optional[str] = None
 
 
@@ -166,7 +166,7 @@ class PersonaBase(BaseModel):
     tools: Optional[List[ToolGroup]] = None  # None = every tool the server has enabled except opt-in ones, [] = none
     availableToGuests: bool = False
     enabled: bool = True
-    sortOrder: int = 0
+    sortOrder: int = 0  # Higher numbers come first
     ownMemory: bool = False  # With the knowledge base: its own knowledge base and memory per user, not the shared one
     mcpServers: Optional[List[str]] = None  # Slugs of the admin MCP servers it uses (docs/mcp.md); None = none
     skills: Optional[List[str]] = None  # Names of its skills (docs/skills.md), in this order; None = none
