@@ -7,6 +7,9 @@
  * ![[fox-1.png]] works too. Images at web addresses are never loaded (the page may only load
  * images from the app's own address, and an address a model writes can carry data away): they
  * become links.
+ *
+ * An agent with a knowledge base places a file one of its notes keeps the same way, in any
+ * conversation, by the file's name there (docs/knowledge_base.md, "Files").
  */
 import { IFileRef } from '../../data/models/file.model';
 import { CODE_RE } from '../../knowledge-base/kb-markdown';
@@ -87,18 +90,20 @@ function matches(files: IFileRef[], reference: string): IFileRef[] {
  * @param conversation The conversation's files, or undefined while they aren't loaded.
  * @param answerTime The answer's time in milliseconds (its message ID): of several files with
  *     the same name, the answer means the newest it could know.
+ * @param kept The files notes of the agent's knowledge base keep, as far as loaded: looked
+ *     through last, for a name the conversation has no file for.
  * @returns The file, null if there is none, undefined if the conversation's files are needed
  *     to tell and aren't loaded.
  */
 export function findFile(reference: string, own: IFileRef[], conversation: IFileRef[] | undefined,
-                         answerTime: number): IFileRef | null | undefined {
+                         answerTime: number, kept: IFileRef[] = []): IFileRef | null | undefined {
   reference = reference.trim().replace(/^["']|["']$/g, '');
   if (!reference) return null;
   const mine = matches(own, reference);
   if (mine.length) return mine[mine.length - 1];
   if (!conversation) return undefined;
   const found = matches(conversation, reference).sort((a, b) => fileTime(a.fileId) - fileTime(b.fileId));
-  if (!found.length) return null;
+  if (!found.length) return matches(kept, reference)[0] ?? null;
   const known = found.filter(file => fileTime(file.fileId) <= answerTime);
   return known.length ? known[known.length - 1] : found[0];
 }

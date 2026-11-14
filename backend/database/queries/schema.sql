@@ -424,6 +424,19 @@ CREATE TABLE IF NOT EXISTS kb_links (
     PRIMARY KEY (note_id, target_slug)
 );
 
+-- name: create_kb_files_table
+-- The files notes keep (docs/knowledge_base.md, "Files"): a stored file (uploaded_files), e.g. an image, under
+-- a name of its own in the knowledge base. It stays when its conversation is deleted and goes with its note
+CREATE TABLE IF NOT EXISTS kb_files (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vault INTEGER NOT NULL DEFAULT 0,        -- as kb_notes.vault
+    note_id BIGINT NOT NULL REFERENCES kb_notes(id) ON DELETE CASCADE,  -- the note that keeps it
+    name TEXT NOT NULL,                      -- "red-fox.png", made from the note's slug, unique in the knowledge base
+    file_id TEXT NOT NULL REFERENCES uploaded_files(file_id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- name: create_indexes
 CREATE INDEX IF NOT EXISTS idx_conversation_time ON messages("conversationId", time);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations("userId");
@@ -437,6 +450,9 @@ CREATE INDEX IF NOT EXISTS idx_llm_models_provider ON llm_models(provider_id);
 CREATE INDEX IF NOT EXISTS idx_kb_notes_user_updated ON kb_notes(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_kb_note_revisions_note ON kb_note_revisions(note_id);
 CREATE INDEX IF NOT EXISTS idx_kb_links_target ON kb_links(target_slug);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_files_name ON kb_files(user_id, vault, lower(name));
+CREATE INDEX IF NOT EXISTS idx_kb_files_note ON kb_files(note_id);
+CREATE INDEX IF NOT EXISTS idx_kb_files_file ON kb_files(file_id);
 
 -- name: create_update_timestamp_function
 CREATE OR REPLACE FUNCTION update_timestamp()

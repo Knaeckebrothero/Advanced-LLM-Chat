@@ -53,6 +53,8 @@ function markdownLinkSlug(target: string): string | null {
  */
 export function plainText(markdown: string): string {
   return markdown
+    // A file the note places says nothing in a line of text: ![[red-fox.png]]
+    .replace(/!\[\[[^[\]\n]*\]\]/g, ' ')
     .replace(WIKILINK_RE, (_whole, target: string, _heading: string | undefined, text: string | undefined) => (text ?? target).trim())
     .replace(/!?\[([^[\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[\[|\]\]/g, '')

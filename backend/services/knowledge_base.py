@@ -20,6 +20,11 @@ slugs go to kb_links, which gives the backlinks. Every write stores the new vers
 kb_note_revisions, with who wrote it and in which conversation. Archiving hides a note from
 lists and searches; an update restores it.
 
+A note can keep files, e.g. an image (kb_files, "Files" below): a stored file of a conversation
+(uploaded_files) gets a name of its own in the vault, made from the note's slug, and the note's text
+places it with ![[name]]. Kept files stay when their conversation is deleted and go with their note.
+Any note of the vault, and any answer of an agent that uses it, shows one by its name.
+
 Family mode: with family_mode, the reads leave out hidden notes and the lines tagged #hidden, and a
 save puts the hidden lines back (hidden_content.restore_hidden()). A writer from a hidden conversation
 (Writer.from_hidden) hides a new note and tags the lines it adds. A note's mark records who set it
@@ -38,7 +43,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 from urllib.parse import unquote
 
 from sqlalchemy import delete, func, insert, select, text, update
@@ -47,8 +52,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from backend.database import db
-from backend.database.tables import conversations, kb_links, kb_note_revisions, kb_notes, personas
-from backend.services import hidden_content
+from backend.database.tables import conversations, kb_files, kb_links, kb_note_revisions, kb_notes, personas
+from backend.services import file_store, file_utils, hidden_content
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +65,11 @@ MAX_TAG_CHARS = 50
 MAX_SLUG_CHARS = 80
 # Notes longer than this get a hint to split them (agent notes are usually a few KB)
 LONG_NOTE_CHARS = 15_000
+
+# Files one note keeps
+MAX_NOTE_FILES = 20
+# One at a time names the files a user's notes keep (pg_advisory_xact_lock with the user's id)
+_FILES_LOCK = 0x6B62
 
 # The memory: the note with this slug in each vault, part of every answer's system prompt
 MEMORY_SLUG = "memory"
@@ -86,6 +96,12 @@ _MD_LINK_RE = re.compile(r"\[[^\[\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\
 # Code, where [[...]] is text and not a link: fenced blocks (also unclosed at the end) and inline code.
 # One group, so CODE_RE.split() puts the code at the odd indices.
 CODE_RE = re.compile(r"(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)")
+# A file placed in a text: ![[name]], ![[name|300]] or ![what it shows](name "title"), as the chat
+# reads them (src/app/chat-ui/chat-ui-message/answer-parts.ts). Groups: the name and what follows it
+# of the first form, the text and the address of the second
+_EMBED_RE = re.compile(r"!\[\[([^\[\]|\n]+)(\|[^\[\]\n]*)?\]\]"
+                       r"|!\[((?:[^\[\]\\\n]|\\.|\[[^\[\]\n]*\])*)\]\(((?:[^()\n]|\([^()\n]*\))*)\)")
+_WEB_ADDRESS_RE = re.compile(r"(?:(?:https?:)?//|data:|blob:)", re.IGNORECASE)
 _TRANSLITERATION = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "æ": "ae", "ø": "o", "œ": "oe"})
 
 _NOTE_COLUMNS = (kb_notes.c.id, kb_notes.c.slug, kb_notes.c.title, kb_notes.c.description, kb_notes.c.tags,
@@ -171,17 +187,28 @@ def normalize_tags(tags: Optional[Iterable[str]]) -> list[str]:
     return result
 
 
+# What a stored file's name ends with (a note's doesn't: .md is a note)
+_FILE_ENDINGS = (set(file_store.TYPES_BY_EXTENSION) | set(file_store.EXTENSIONS.values())) - {".md"}
+
+
+def names_file(target: str) -> bool:
+    """A link's target names a file, not a note: it ends like a stored file (red-fox.png, report.pdf)."""
+    name = target.strip().lower()
+    return "." in name and "." + name.rsplit(".", 1)[1] in _FILE_ENDINGS
+
+
 def link_targets(content: str) -> list[str]:
     """
     The slugs a note's content links to, in order: [[target]] links and Markdown links without a
-    scheme (to other notes, e.g. [text](other-note.md)). Web links, anchors and code are skipped.
+    scheme (to other notes, e.g. [text](other-note.md)). Web links, anchors, code and files (the
+    images a note places, ![[red-fox.png]]) are skipped.
     """
     content = CODE_RE.sub(" ", content)
-    targets = [match.group(1) for match in _WIKILINK_RE.finditer(content)]
+    targets = [match.group(1) for match in _WIKILINK_RE.finditer(content) if not names_file(match.group(1))]
     for match in _MD_LINK_RE.finditer(content):
         target = match.group(1)
-        if ":" in target or target.startswith("#"):
-            continue  # https://..., mailto:..., #heading
+        if ":" in target or target.startswith("#") or names_file(target.split("#", 1)[0]):
+            continue  # https://..., mailto:..., #heading, a file
         target = unquote(target.split("#", 1)[0]).rstrip("/").rsplit("/", 1)[-1]
         if target.lower().endswith(".md"):
             target = target[:-3]
@@ -241,6 +268,10 @@ def _clean_content(content: Optional[str], title: str) -> str:
         content = rest.strip()
     if not content:
         raise KBError("The content must not be empty")
+    return _check_length(content)
+
+
+def _check_length(content: str) -> str:
     if len(content) > MAX_CONTENT_CHARS:
         raise KBError(f"The note is longer than {MAX_CONTENT_CHARS} characters ({len(content)}); split it into "
                       f"several notes that link to each other")
@@ -297,9 +328,10 @@ def _version(conn: Connection, note_id: int) -> int:
 def get_note(user_id: int, ref: str, vault: int = 0, family_mode: bool = False) -> dict:
     """
     A note with its version and links: "links" (the notes it links to: slug, title or None if there
-    is no such note, status) and "backlinks" (the active notes that link to it: slug, title). With
-    family_mode, a hidden note isn't found, and the note comes without its hidden lines, links to hidden
-    notes and backlinks from them.
+    is no such note, status) and "backlinks" (the active notes that link to it: slug, title). Also
+    its files: "files" (the ones it keeps, see _kept_files()) and "placed_files" (files of other notes
+    that its text places). With family_mode, a hidden note isn't found, and the note comes without its
+    hidden lines, links to hidden notes, backlinks from them and hidden files.
 
     Raises:
         KBError: There is no such note.
@@ -334,6 +366,12 @@ def get_note(user_id: int, ref: str, vault: int = 0, family_mode: bool = False) 
         if family_mode:
             backlinks = backlinks.where(kb_notes.c.hidden.is_(False))
         note["backlinks"] = [dict(row._mapping) for row in conn.execute(backlinks)]
+        _with_files(conn, user_id, vault, [note], family_mode)
+        own = {row["name"].lower() for row in note["files"]}
+        others = [key for key in placed_files(note["content"]) if key not in own]
+        note["placed_files"] = _kept_files(
+            conn, user_id, vault, family_mode, "AND f.note_id <> :note_id AND (lower(f.name) = ANY(:keys) "
+            "OR f.file_id = ANY(:keys))", note_id=note["id"], keys=others) if others else []
     return note
 
 
@@ -344,8 +382,8 @@ def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status:
     without the memory (and with family_mode without the hidden notes).
 
     Returns:
-        {"notes": [...] (without content), "total": the number of matching notes,
-         "tags": [(tag, count)], the 20 most used tags (only without a tag filter)}
+        {"notes": [...] (without content, each with "files": the files it keeps), "total": the number
+         of matching notes, "tags": [(tag, count)], the 20 most used tags (only without a tag filter)}
     """
     tag_filter = normalize_tags([tag])[0] if tag and tag.strip().lstrip("#").strip() else None
     conditions = [kb_notes.c.user_id == user_id, kb_notes.c.vault == vault,
@@ -358,13 +396,14 @@ def list_notes(user_id: int, tag: Optional[str] = None, limit: int = 50, status:
         total = conn.execute(select(func.count()).select_from(kb_notes).where(*conditions)).scalar_one()
         notes = [
             dict(row._mapping) for row in conn.execute(
-                select(kb_notes.c.slug, kb_notes.c.title, kb_notes.c.description, kb_notes.c.tags,
+                select(kb_notes.c.id, kb_notes.c.slug, kb_notes.c.title, kb_notes.c.description, kb_notes.c.tags,
                        kb_notes.c.status, kb_notes.c.hidden, kb_notes.c.hidden_by, kb_notes.c.updated_at)
                 .where(*conditions)
                 .order_by(kb_notes.c.updated_at.desc().nulls_last(), kb_notes.c.id.desc())
                 .limit(limit)
             )
         ]
+        _with_files(conn, user_id, vault, notes, family_mode)
         tags = []
         if not tag_filter:
             tags = [tuple(row) for row in conn.execute(text(
@@ -391,14 +430,15 @@ def count_notes(user_id: int, vault: int = 0, family_mode: bool = False) -> dict
 
 def all_notes(user_id: int, vault: int = 0, family_mode: bool = False) -> list[dict]:
     """
-    All notes of a vault with their content, active and archived and the memory, by slug (for the
-    export); with family_mode without the hidden notes and lines.
+    All notes of a vault with their content and the files they keep ("files"), active and archived
+    and the memory, by slug (for the export); with family_mode without the hidden notes, lines and files.
     """
     query = select(*_NOTE_COLUMNS).where(kb_notes.c.user_id == user_id, kb_notes.c.vault == vault)
     if family_mode:
         query = query.where(kb_notes.c.hidden.is_(False))
     with db.connection() as conn:
         notes = [dict(row._mapping) for row in conn.execute(query.order_by(kb_notes.c.slug))]
+        _with_files(conn, user_id, vault, notes, family_mode)
     if family_mode:
         for note in notes:
             note["content"] = hidden_content.visible(note["content"])
@@ -543,7 +583,8 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
         tags: Tags; notes with them rank higher.
 
     Returns:
-        The best notes, each with "matched" (the ways it matched: "words", "exact", "tags").
+        The best notes, each with "matched" (the ways it matched: "words", "exact", "tags") and
+        "files" (the files it keeps).
 
     Raises:
         KBError: Neither query words, exact texts nor tags.
@@ -582,7 +623,7 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
 
     sql = f"""
         SELECT * FROM (
-            SELECT slug, title, description, tags, status, hidden, hidden_by, content, updated_at, {', '.join(columns)}
+            SELECT id, slug, title, description, tags, status, hidden, hidden_by, content, updated_at, {', '.join(columns)}
             FROM kb_notes
             WHERE user_id = :user_id AND vault = :vault AND status = :status AND slug <> :memory
               {'AND NOT hidden' if family_mode else ''} AND ({' OR '.join(matches)})
@@ -592,6 +633,7 @@ def search_notes(user_id: int, query: Optional[str] = None, exact: Optional[Iter
     """
     with db.connection() as conn:
         rows = [dict(row._mapping) for row in conn.execute(text(sql), params)]
+        _with_files(conn, user_id, vault, rows, family_mode)
 
     for row in rows:
         row["matched"] = [name for name, key in (("words", "word_rank"), ("exact", "exact_hits"), ("tags", "tag_hits"))
@@ -632,14 +674,24 @@ def _set_links(conn: Connection, note_id: int, content: str) -> None:
 
 
 def create_note(writer: Writer, title: str, content: str, description: Optional[str] = None,
-                tags: Optional[Iterable[str]] = None, hidden_note: bool = False) -> dict:
+                tags: Optional[Iterable[str]] = None, hidden_note: bool = False,
+                files: Optional[Iterable[dict]] = None) -> dict:
     """
     Create a note in the writer's vault; its slug is made from the title. It is hidden if hidden_note
     or the writer writes from a hidden conversation, and the mark is the writer's (hidden_by).
 
+    Args:
+        files: Stored files the note keeps (rows of uploaded_files, the writer's own), e.g. an image
+            of the conversation. Each gets a name in the knowledge base, made from the note's slug,
+            and the text places it: where it names the file already, else at its start (_place_files()).
+
+    Returns:
+        The note, with "kept" (the names of the files it keeps now) and "kept_already" (files given
+        that a note keeps already: name -> that note's slug).
+
     Raises:
-        KBError: Invalid fields, a note with that slug exists already (also an archived one), or
-            the title would give the memory's slug.
+        KBError: Invalid fields, a note with that slug exists already (also an archived one), the
+            title would give the memory's slug, or more files than a note keeps.
     """
     title = _clean_title(title)
     values = {
@@ -657,7 +709,12 @@ def create_note(writer: Writer, title: str, content: str, description: Optional[
             existing = _find_note(conn, writer.user_id, values["slug"], vault=writer.vault)
             if existing is not None and existing["slug"] == values["slug"]:
                 raise _exists(existing, writer)
+            plan = _plan_files(conn, writer, values["slug"], None, files)
+            if plan:
+                values["content"] = _check_length(_place_files(values["content"], plan))
             note = dict(conn.execute(insert(kb_notes).values(**values).returning(*_NOTE_COLUMNS)).one()._mapping)
+            note["kept"] = _keep_files(conn, writer, note["id"], plan)
+            note["kept_already"] = {kept.name: kept.note for kept in plan if kept.note is not None}
             _add_revision(conn, note, "create", writer)
             _set_links(conn, note["id"], note["content"])
     except IntegrityError:
@@ -697,7 +754,8 @@ def _exists(note: dict, writer: Optional[Writer] = None) -> KBError:
 def update_note(writer: Writer, ref: str, content: Optional[str] = None, append: Optional[str] = None,
                 title: Optional[str] = None, description: Optional[str] = None,
                 tags: Optional[Iterable[str]] = None, base_version: Optional[int] = None,
-                reason: Optional[str] = None, hidden_note: Optional[bool] = None) -> tuple[dict, list[str]]:
+                reason: Optional[str] = None, hidden_note: Optional[bool] = None,
+                files: Optional[Iterable[dict]] = None) -> tuple[dict, list[str]]:
     """
     Change a note; its slug stays. Updating an archived note restores it. Only the user (the page)
     changes the memory this way; the agent changes it line by line (memory_add() and the like).
@@ -711,21 +769,26 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
         reason: Stored with the revision (e.g. which version was restored).
         hidden_note: Hides the note or not. From the page it is the user's decision; an agent
             can't change a mark the user set (refused if it is the only change, else left alone).
+        files: Stored files the note keeps from now on, as for create_note(). The new content or
+            the appended text places them; with neither, they are placed at the note's end.
 
     A writer that is in family mode (Writer.family_mode) wrote content without the hidden lines, which
     are put back; one from a hidden conversation (Writer.from_hidden) tags the lines it adds, unless the
     note is hidden anyway.
 
     Returns:
-        (the note, what changed; [] if the values were the same already)
+        (the note, with "kept" and "kept_already" as from create_note(); what changed, [] if the
+        values were the same already)
 
     Raises:
         KBError: No such note (KBNotFound), the note changed since base_version (KBConflict),
-            nothing to change, content and append together, invalid fields, the memory and not the user.
+            nothing to change, content and append together, invalid fields, the memory and not the
+            user, more files than a note keeps.
     """
+    files = list(files or ())
     if content is not None and append is not None:
         raise KBError("Give either content (replaces the whole text) or append (adds to the end), not both")
-    if all(value is None for value in (content, append, title, description, tags, hidden_note)):
+    if all(value is None for value in (content, append, title, description, tags, hidden_note)) and not files:
         raise KBError("Nothing to change: give content, append, title, description or tags")
 
     with db.connection() as conn:
@@ -744,6 +807,17 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
         changes = []
         if title is not None:
             new["title"] = _clean_title(title)
+        plan = _plan_files(conn, writer, note["slug"], note["id"], files)
+        if plan and note["slug"] == MEMORY_SLUG:
+            raise KBError("The memory keeps no files; write a note for the file and point to it from the memory")
+        if plan and content is not None:
+            content = _place_files(_clean_content(content, new["title"]), plan)
+        elif plan and append is not None:
+            append = _place_files(append.strip(), plan, at_end=True)
+        elif plan:
+            # Placed at the note's end, unless its text shows them already
+            shown = placed_files(note["content"])
+            append = "\n".join(f"![[{kept.name}]]" for kept in plan if kept.name.lower() not in shown) or None
         tag_new = writer.from_hidden and not note["hidden"]
         if content is not None:
             new["content"] = _clean_content(content, new["title"])
@@ -776,6 +850,9 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
             changes.append(f"title → \"{new['title']}\"")
         if new["content"] != note["content"]:
             changes.append(f"appended {len(append.strip())} characters" if append is not None else "content replaced")
+        new_files = [kept.name for kept in plan if kept.note is None]
+        if new_files:
+            changes.append(f"keeps {', '.join(new_files)}")
         if new["description"] != note["description"]:
             changes.append("description changed" if new["description"] else "description removed")
         if new["tags"] != note["tags"]:
@@ -786,6 +863,7 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
             new["status"] = "active"
             changes.append("restored from the archive")
         if not changes:
+            note["kept"], note["kept_already"] = [], {kept.name: kept.note for kept in plan}
             return note, []
         if hidden_note is not None and bool(hidden_note) != note["hidden"] and user_mark:
             changes.append("the hidden mark stays as the user set it")
@@ -797,6 +875,8 @@ def update_note(writer: Writer, ref: str, content: Optional[str] = None, append:
                     content=new["content"], status=new["status"], hidden=new["hidden"], hidden_by=new["hidden_by"])
             .returning(*_NOTE_COLUMNS)
         ).one()._mapping)
+        note["kept"] = _keep_files(conn, writer, note["id"], plan)
+        note["kept_already"] = {kept.name: kept.note for kept in plan if kept.note is not None}
         _add_revision(conn, note, "update", writer, reason=reason)
         if content_changed:
             _set_links(conn, note["id"], note["content"])
@@ -875,8 +955,9 @@ def restore_revision(writer: Writer, ref: str, revision_id: int,
 
 def delete_note(user_id: int, ref: str, vault: int = 0, family_mode: bool = False) -> str:
     """
-    Delete a note for good, with all its versions (only from the page: the agent can only archive).
-    Links to it from other notes stay and point to a note that doesn't exist (any more).
+    Delete a note for good, with all its versions and the files it keeps (only from the page: the
+    agent can only archive). A kept file that a conversation still has stays there. Links to the
+    note from other notes stay and point to a note that doesn't exist (any more).
 
     Returns:
         The slug of the deleted note.
@@ -888,9 +969,297 @@ def delete_note(user_id: int, ref: str, vault: int = 0, family_mode: bool = Fals
         note = _find_note(conn, user_id, ref, lock=True, vault=vault, family_mode=family_mode)
         if note is None:
             raise _not_found(ref)
+        kept = list(conn.execute(select(kb_files.c.file_id).where(kb_files.c.note_id == note["id"])).scalars())
         conn.execute(delete(kb_notes).where(kb_notes.c.id == note["id"]))
+    _delete_unused_files(kept)
     log.info(f"Knowledge base {user_id}/{vault}: deleted note {note['slug']} for good")
     return note["slug"]
+
+
+# =========================================================================
+# Files
+# =========================================================================
+
+@dataclass
+class _Kept:
+    """A file of a note write: the stored file and its name in the knowledge base."""
+    row: dict                    # The stored file (uploaded_files)
+    name: str                    # Its name in the knowledge base
+    note: Optional[str] = None   # The slug of the note that keeps it already; None: this write keeps it
+    placed: bool = False         # The note's text places it
+
+
+def _address(raw: str) -> str:
+    """The address of a Markdown image without its "title" and <angle brackets>."""
+    target = re.sub(r"\s+(?:\"[^\"]*\"|'[^']*')$", "", raw.strip()).strip()
+    if target.startswith("<") and target.endswith(">"):
+        target = target[1:-1].strip()
+    return target
+
+
+def _plain_name(reference: str) -> str:
+    """A reference as a plain file name: sandbox:/mnt/data/My%20Fox.png -> My Fox.png"""
+    name = re.sub(r"^[a-z][a-z0-9+.-]*:", "", reference.strip(), flags=re.IGNORECASE)
+    name = re.split(r"[?#]", name, maxsplit=1)[0].rstrip("/")
+    return unquote(name.rsplit("/", 1)[-1]).strip()
+
+
+def _file_key(reference: str) -> str:
+    """What a reference to a file is compared by: a file ID as it is, a name plain and in lowercase."""
+    reference = (reference or "").strip().strip("\"'")
+    return reference if file_utils.is_file_id(reference) else _plain_name(reference).lower()
+
+
+def _replace_placed(content: str, replace: Callable[[str], Optional[str]]) -> str:
+    """
+    The content with the files it places (outside of code; web addresses are no files) named anew:
+    replace(the reference's key) gives the new name, or None to leave it as it is.
+    """
+    def placed(match: re.Match) -> str:
+        embed = match.group(1) is not None
+        reference = match.group(1).strip() if embed else _address(match.group(4))
+        if not embed and _WEB_ADDRESS_RE.match(reference):
+            return match.group(0)
+        name = replace(_file_key(reference))
+        if name is None:
+            return match.group(0)
+        return f"![[{name}{match.group(2) or ''}]]" if embed else f"![{match.group(3)}]({name})"
+
+    parts = CODE_RE.split(content)
+    return "".join(part if index % 2 else _EMBED_RE.sub(placed, part) for index, part in enumerate(parts))
+
+
+def placed_files(content: Optional[str]) -> list[str]:
+    """The files a text places, in order and each once: names plain and in lowercase, file IDs as they are."""
+    keys: list[str] = []
+
+    def seen(key: str) -> None:
+        if key and key not in keys:
+            keys.append(key)
+
+    _replace_placed(content or "", seen)
+    return keys
+
+
+def _file_shown(name: str, content: Optional[str]) -> bool:
+    """For family mode: a kept file is left out if its note's text places it in hidden lines only."""
+    key = name.lower()
+    return key in placed_files(hidden_content.visible(content)) or key not in placed_files(content)
+
+
+def _kept_files(conn: Connection, user_id: int, vault: int, family_mode: bool = False, where: str = "",
+                **params) -> list[dict]:
+    """
+    Files the notes of a vault keep, in the order they were kept: the stored file's columns
+    (uploaded_files), with "name" its name in the knowledge base ("original_name": the one it was
+    stored under), and the note that keeps it ("note_id", "note_slug", "note_title", "note_status").
+    With family_mode without the files of hidden notes and the ones only hidden lines place.
+
+    Args:
+        where: A further condition on kb_files f, kb_notes n or uploaded_files u ("AND ..."), with params.
+    """
+    rows = conn.execute(text(
+        "SELECT u.*, f.name AS kb_name, f.note_id, n.slug AS note_slug, n.title AS note_title, "
+        "n.status AS note_status, n.hidden AS note_hidden"
+        + (", n.content AS note_content" if family_mode else "") +
+        " FROM kb_files f JOIN kb_notes n ON n.id = f.note_id JOIN uploaded_files u ON u.file_id = f.file_id "
+        f"WHERE f.user_id = :user_id AND f.vault = :vault {where} ORDER BY f.id"
+    ), {"user_id": user_id, "vault": vault, **params})
+    files = []
+    for row in rows:
+        row = dict(row._mapping)
+        content = row.pop("note_content", None)
+        if family_mode and (row["note_hidden"] or not _file_shown(row["kb_name"], content)):
+            continue
+        row["original_name"], row["name"] = row["name"], row.pop("kb_name")
+        files.append(row)
+    return files
+
+
+def vault_files(user_id: int, vault: int = 0, family_mode: bool = False) -> list[dict]:
+    """The files the notes of a vault keep, in the order they were kept (see _kept_files())."""
+    with db.connection() as conn:
+        return _kept_files(conn, user_id, vault, family_mode)
+
+
+def find_file(user_id: int, vault: int, reference: str, family_mode: bool = False) -> Optional[dict]:
+    """
+    The kept file of a vault that a reference names: by its name in the knowledge base (whatever
+    its case) or by its file ID. None if the vault keeps no such file (or, with family_mode, hides it).
+    """
+    key = _file_key(reference)
+    if not key:
+        return None
+    where = "AND f.file_id = :key" if file_utils.is_file_id(key) else "AND lower(f.name) = :key"
+    with db.connection() as conn:
+        files = _kept_files(conn, user_id, vault, family_mode, where, key=key)
+    return files[0] if files else None
+
+
+def _with_files(conn: Connection, user_id: int, vault: int, notes: list[dict], family_mode: bool = False) -> None:
+    """Give each of the notes (rows with "id") its "files": the files it keeps."""
+    ids = [note["id"] for note in notes]
+    kept = _kept_files(conn, user_id, vault, family_mode, "AND f.note_id = ANY(:ids)", ids=ids) if ids else []
+    for note in notes:
+        note["files"] = [row for row in kept if row["note_id"] == note["id"]]
+
+
+def _plan_files(conn: Connection, writer: Writer, slug: str, note_id: Optional[int],
+                files: Optional[Iterable[dict]]) -> list[_Kept]:
+    """
+    What a write of the note `slug` does with the stored files it is given (rows of uploaded_files):
+    a file the vault keeps already goes by its name there, a new one is named after the note,
+    <slug>.png, further ones <slug>-2.jpg and so on (whatever their type: no two kept files differ
+    only in their ending). Nothing is stored yet (_keep_files()).
+
+    Raises:
+        KBError: A file isn't the writer's, or the note would keep more than MAX_NOTE_FILES.
+    """
+    rows: dict[str, dict] = {}
+    for row in files or ():
+        if row.get("user_id") != writer.user_id:
+            raise KBError(f"The file '{file_store.file_name(row)}' can't be kept: it isn't the user's")
+        rows.setdefault(row["file_id"], row)
+    if not rows:
+        return []
+    # Names are unique in the vault: one write at a time picks them
+    conn.execute(text("SELECT pg_advisory_xact_lock(:key, :user_id)"),
+                 {"key": _FILES_LOCK, "user_id": writer.user_id})
+    names = conn.execute(select(kb_files.c.name, kb_files.c.note_id)
+                         .where(kb_files.c.user_id == writer.user_id, kb_files.c.vault == writer.vault)).all()
+    taken = {row.name.lower().rsplit(".", 1)[0] for row in names}
+    # What the writer may know is kept: on a device in family mode a hidden file is kept once more, under a
+    # name of this note, rather than named
+    known = {row["file_id"]: row for row in reversed(_kept_files(
+        conn, writer.user_id, writer.vault, writer.family_mode, "AND f.file_id = ANY(:ids)", ids=list(rows)))}
+    plan = []
+    for file_id, row in rows.items():
+        if file_id in known:
+            plan.append(_Kept(row, known[file_id]["name"], note=known[file_id]["note_slug"]))
+            continue
+        stem, number = slug, 1
+        while stem in taken:
+            number += 1
+            stem = f"{slug}-{number}"
+        taken.add(stem)
+        extension = file_store.extension_for(row.get("mime_type"), row.get("original_name") or row.get("name"))
+        plan.append(_Kept(row, f"{stem}{extension.lower()}"))
+    new = sum(1 for kept in plan if kept.note is None)
+    own = sum(1 for row in names if row.note_id == note_id) if note_id is not None else 0
+    if new and own + new > MAX_NOTE_FILES:
+        raise KBError(f"A note keeps at most {MAX_NOTE_FILES} files ({own} kept, {new} more given): write "
+                      f"further notes for the others, one note per image")
+    return plan
+
+
+def _keep_files(conn: Connection, writer: Writer, note_id: int, plan: list[_Kept]) -> list[str]:
+    """Store the new files of a plan as files of the note; returns their names."""
+    new = [{"user_id": writer.user_id, "vault": writer.vault, "note_id": note_id, "name": kept.name,
+            "file_id": kept.row["file_id"]} for kept in plan if kept.note is None]
+    if new:
+        conn.execute(insert(kb_files), new)
+    return [row["name"] for row in new]
+
+
+def _place_files(content: str, plan: list[_Kept], at_end: bool = False) -> str:
+    """
+    A note's text with the files of a write placed under their names in the knowledge base. Where
+    the text places one by the name or file ID it has in the conversation, that becomes its new
+    name; the ones it doesn't place go before the text (at_end: after it), as ![[name]] on lines
+    of their own.
+    """
+    known: dict[str, _Kept] = {}
+    stored = [(kept.row.get("original_name") or kept.row.get("name") or "").lower() for kept in plan]
+    for kept, original in zip(plan, stored):
+        known[kept.row["file_id"]] = known[kept.name.lower()] = kept
+    for kept, original in zip(plan, stored):
+        if original and stored.count(original) == 1:
+            known.setdefault(original, kept)
+
+    def name(key: str) -> Optional[str]:
+        kept = known.get(key)
+        if kept is None:
+            return None
+        kept.placed = True
+        return kept.name
+
+    content = _replace_placed(content, name)
+    lines = "\n".join(f"![[{kept.name}]]" for kept in plan if not kept.placed)
+    if not lines or not content.strip():
+        return lines or content
+    return f"{content.rstrip()}\n\n{lines}" if at_end else f"{lines}\n\n{content.lstrip(chr(10))}"
+
+
+def _without_file(content: str, name: str) -> str:
+    """A note's text without the places that show the file `name`; a line left empty goes too."""
+    marker = "\x00"
+    marked = _replace_placed(content, lambda key: marker if key == name.lower() else None)
+    if marker not in marked:
+        return content
+    lines = []
+    for line in marked.split("\n"):
+        if marker in line:
+            line = re.sub(r"!\[\[\x00[^\]]*\]\]|!\[[^\x00]*?\]\(\x00\)", "", line)
+            if not line.strip(" \t-*+>"):
+                continue
+        lines.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _delete_unused_files(file_ids: Iterable[str]) -> int:
+    """
+    Delete the stored files among these that nothing has any more: in no conversation and kept
+    by no note. For what a deleted note kept. Returns how many were deleted.
+    """
+    deleted = 0
+    for file_id in dict.fromkeys(file_ids):
+        try:
+            with db.connection() as conn:
+                unused = conn.execute(text(
+                    "SELECT 1 FROM uploaded_files u WHERE u.file_id = :id AND u.conversation_id IS NULL "
+                    "AND NOT EXISTS (SELECT 1 FROM kb_files f WHERE f.file_id = u.file_id)"), {"id": file_id}).first()
+            if unused:
+                file_utils.delete_stored_file(file_id)
+                db.delete_cache_by_file(file_id)
+                db.delete_uploaded_file(file_id)
+                deleted += 1
+        except Exception as e:
+            log.warning(f"Could not delete the file {file_id} a note kept: {type(e).__name__}: {e}")
+    return deleted
+
+
+def remove_file(writer: Writer, ref: str, name: str) -> tuple[dict, str]:
+    """
+    Take a file away from the note that keeps it (the page): the note's text no longer places it,
+    and the stored file is deleted unless a conversation still has it.
+
+    Returns:
+        (the note, the removed file's name)
+
+    Raises:
+        KBNotFound: There is no such note, or it keeps no such file.
+    """
+    with db.connection() as conn:
+        note = _find_note(conn, writer.user_id, ref, lock=True, vault=writer.vault, family_mode=writer.family_mode)
+        if note is None:
+            raise _not_found(ref)
+        kept = _kept_files(conn, writer.user_id, writer.vault, writer.family_mode,
+                           "AND f.note_id = :note_id AND lower(f.name) = :name",
+                           note_id=note["id"], name=_file_key(name))
+        if not kept:
+            raise KBNotFound(f"Note '{note['slug']}' keeps no file '{name}'")
+        file = kept[0]
+        conn.execute(delete(kb_files).where(kb_files.c.note_id == note["id"],
+                                            func.lower(kb_files.c.name) == file["name"].lower()))
+        content = _without_file(note["content"], file["name"]) or note["content"]
+        if content != note["content"]:
+            note = dict(conn.execute(
+                update(kb_notes).where(kb_notes.c.id == note["id"]).values(content=content).returning(*_NOTE_COLUMNS)
+            ).one()._mapping)
+        _add_revision(conn, note, "update", writer, reason=f"Removed the file {file['name']}")
+    _delete_unused_files([file["file_id"]])
+    log.info(f"Knowledge base {_vault_name(writer)}: note {note['slug']} no longer keeps {file['name']}")
+    return note, file["name"]
 
 
 # =========================================================================

@@ -338,6 +338,19 @@ kb_links = Table(
     Column('target_slug', Text, primary_key=True),  # Need not exist (yet)
 )
 
+# The files notes keep (docs/knowledge_base.md, "Files"): a stored file under a name of its own in the knowledge base
+kb_files = Table(
+    'kb_files',
+    metadata,
+    Column('id', BigInteger, primary_key=True, autoincrement=True),
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+    Column('vault', Integer, nullable=False, server_default='0'),  # As kb_notes.vault
+    Column('note_id', BigInteger, ForeignKey('kb_notes.id', ondelete='CASCADE'), nullable=False),  # The note that keeps it
+    Column('name', Text, nullable=False),  # "red-fox.png", made from the note's slug, unique in the knowledge base
+    Column('file_id', Text, ForeignKey('uploaded_files.file_id', ondelete='CASCADE'), nullable=False),
+    Column('created_at', DateTime, server_default=func.now()),
+)
+
 # The nightly consolidation of a knowledge base (backend/services/memory_dream.py): how far it got
 memory_dreams = Table(
     'memory_dreams',
@@ -434,3 +447,7 @@ idx_llm_models_provider = Index('idx_llm_models_provider', llm_models.c.provider
 idx_kb_notes_user_updated = Index('idx_kb_notes_user_updated', kb_notes.c.user_id, kb_notes.c.updated_at.desc())
 idx_kb_note_revisions_note = Index('idx_kb_note_revisions_note', kb_note_revisions.c.note_id)
 idx_kb_links_target = Index('idx_kb_links_target', kb_links.c.target_slug)
+idx_kb_files_name = Index('idx_kb_files_name', kb_files.c.user_id, kb_files.c.vault, func.lower(kb_files.c.name),
+                          unique=True)
+idx_kb_files_note = Index('idx_kb_files_note', kb_files.c.note_id)
+idx_kb_files_file = Index('idx_kb_files_file', kb_files.c.file_id)

@@ -8,6 +8,11 @@ user's shared one, else the id of an agent with its own (GET /vaults lists them)
 knowledge base is its note "memory": GET /memory reads it, PUT /notes/memory edits it like any note;
 lists and searches leave it out.
 
+Notes keep files, e.g. images (docs/knowledge_base.md, "Files"): a note comes with the files it keeps
+and the ones its text places, GET /files lists the files a conversation's answers can place, and
+DELETE /notes/{slug}/files/{name} takes one away from its note. The files themselves come from the
+files API (backend/api/files.py), by their file ID.
+
 Edits made here are revisions with author "user". An edit or a restored version sends the version
 it was made on (baseVersion) and gets 409 with code "conflict" if the note changed since, e.g.
 because an agent wrote to it meanwhile. Deleting a note for good is only possible here; the agent
@@ -25,12 +30,16 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import FileResponse
+from sqlalchemy import text
+from starlette.background import BackgroundTask
 
 from backend.catalog.resolver import persona_usable
 from backend.database import db
 from backend.models.knowledge_base import (
     KBArchiveRequest,
     KBCounts,
+    KBFile,
     KBLink,
     KBMemory,
     KBNote,
@@ -152,6 +161,8 @@ def _note(user_id: int, slug: str, vault: int = 0, hide: bool = False) -> KBNote
         links=[KBLink(**link) for link in note["links"]],
         backlinks=[KBLink(slug=link["slug"], title=link["title"], status="active") for link in note["backlinks"]],
         revisions=_revision_summaries(user_id, revisions, hide),
+        files=[KBFile.from_row(file) for file in note["files"]],
+        placedFiles=[KBFile.from_row(file) for file in note["placed_files"]],
     )
 
 
@@ -236,23 +247,57 @@ def search_notes(q: str = Query(..., min_length=1, max_length=500), status_: Not
             for hit in hits]
 
 
+def _conversation_vaults(user: dict, conversation_id: str, hide: bool) -> List[int]:
+    """
+    The knowledge bases whose files the answers of a conversation can place: the one its agent uses
+    now, then those its earlier messages were written with (an agent can be changed). None for a
+    conversation of somebody else; with hide, not those of hidden agents.
+    """
+    with db.connection() as conn:
+        now = conn.execute(text('SELECT conversation_memory_vault(c.id) AS vault FROM conversations c '
+                                'WHERE c.id = :id AND c."userId" = :user_id'),
+                           {"id": conversation_id, "user_id": user["user_id"]}).first()
+        if now is None:
+            return []
+        used = conn.execute(text('SELECT DISTINCT memory_vault FROM messages WHERE "conversationId" = :id '
+                                 'AND memory_vault IS NOT NULL ORDER BY memory_vault'),
+                            {"id": conversation_id}).scalars().all()
+    vaults = [vault for vault in dict.fromkeys(([now.vault] if now.vault is not None else []) + list(used))]
+    own = {item.id for item in _vaults(user, hide)} if any(vaults) else {0}
+    return [vault for vault in vaults if vault in own]
+
+
+@router.get("/files", response_model=List[KBFile])
+def list_files(conversationId: Optional[str] = Query(None, max_length=200), vault: int = Depends(_vault),
+               user: dict = Depends(require_member), hide: bool = Depends(family_mode)):
+    """
+    The files the notes of a knowledge base keep, in the order they were kept. With conversationId,
+    the ones the answers of that conversation can place in their text (the chat finds them by name):
+    those of the knowledge base its agent uses, and of the ones its earlier messages were written with.
+    """
+    vaults = [vault] if conversationId is None else _conversation_vaults(user, conversationId, hide)
+    return [KBFile.from_row(file) for one in vaults
+            for file in kb.vault_files(user["user_id"], one, family_mode=hide)]
+
+
 @router.get("/export")
 def export_notes(tz: Optional[str] = Query(None, max_length=64), vault: int = Depends(_vault),
                  user: dict = Depends(require_member), hide: bool = Depends(family_mode)):
     """
-    All notes of a knowledge base (and its memory) as a zip that opens as an Obsidian vault
-    (knowledge_base_export), with the times in the time zone tz (the browser's, e.g. Europe/Berlin;
-    UTC without one or for an unknown one).
+    All notes of a knowledge base (and its memory) with the files they keep, as a zip that opens as
+    an Obsidian vault (knowledge_base_export), with the times in the time zone tz (the browser's,
+    e.g. Europe/Berlin; UTC without one or for an unknown one).
     """
     zone = knowledge_base_export.time_zone(tz)
-    content, count = knowledge_base_export.export_vault(user["user_id"], zone, vault, family_mode=hide)
+    # Written to a file, not into memory: the images notes keep can add up to gigabytes
+    path, count = knowledge_base_export.export_vault_file(user["user_id"], zone, vault, family_mode=hide)
     agent = None
     if vault:
         agent = next((item.personaName or "" for item in _vaults(user, hide) if item.id == vault), "")
     name = knowledge_base_export.file_name(zone, agent)
     crud_logger.info(f"Knowledge base exported by user {user['user_id']} ({count} notes)")
-    return Response(content=content, media_type="application/zip",
-                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return FileResponse(path, media_type="application/zip", filename=name,
+                        background=BackgroundTask(path.unlink, missing_ok=True))
 
 
 @router.get("/notes/{slug}", response_model=KBNote)
@@ -328,6 +373,21 @@ def delete_note(slug: str, vault: int = Depends(_vault), user: dict = Depends(re
         raise _error(e)
     crud_logger.info(f"Note {deleted} deleted for good by user {user['user_id']} (vault {vault})")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/notes/{slug}/files/{name}", response_model=KBNote)
+def remove_file(slug: str, name: str, vault: int = Depends(_vault), user: dict = Depends(require_member),
+                hide: bool = Depends(family_mode)):
+    """
+    Take a file away from the note that keeps it: the note's text no longer places it, and the file
+    is deleted unless a conversation still has it. Returns the note as it is now.
+    """
+    try:
+        note, removed = kb.remove_file(_writer(user, vault, hide), slug, name)
+    except KBError as e:
+        raise _error(e)
+    crud_logger.info(f"File {removed} of note {note['slug']} removed by user {user['user_id']} (vault {vault})")
+    return _note(user["user_id"], note["slug"], vault, hide)
 
 
 @router.get("/notes/{slug}/revisions/{revision_id}", response_model=KBRevision)
