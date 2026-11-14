@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1794652618025,
+  "timestamp": 1794666778866,
   "index": "/Advanced-LLM-Chat/index.html",
   "assetGroups": [
     {
@@ -168,8 +168,8 @@
     "/Advanced-LLM-Chat/assets/backgrounds/aurora.svg": "4317d4f97611de867fd00101f4319e8bf3bb5816",
     "/Advanced-LLM-Chat/assets/backgrounds/ridges.svg": "6e6cf2856cb537d54d8e4c6d3d849fbe9c665d01",
     "/Advanced-LLM-Chat/assets/env.template.js": "f9935f6e30672e3d9cff426e7f9eb356fd63aed1",
-    "/Advanced-LLM-Chat/assets/i18n/de.json": "e649fc848ad295af338d6d06ea708030cd124732",
-    "/Advanced-LLM-Chat/assets/i18n/en.json": "ccfaa159f9349efca1314613811aaed7c5e24cad",
+    "/Advanced-LLM-Chat/assets/i18n/de.json": "0009a8eeaa6f930984e4684d310c5aee9c4aa476",
+    "/Advanced-LLM-Chat/assets/i18n/en.json": "8aca53051fd876f24d253a6c5890594ced17285a",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-144-144.png": "313ccfeb19f50c2fe91c67b86f736473978e4c69",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-192-192.png": "08ed5b826739b5829a60c015e200ec6e31377cc1",
     "/Advanced-LLM-Chat/assets/icons/android/android-launchericon-48-48.png": "4e83611b2b50073931a9ef6719cffbdc4a911e1d",
