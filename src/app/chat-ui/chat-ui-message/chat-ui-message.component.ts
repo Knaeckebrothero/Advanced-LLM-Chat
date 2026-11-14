@@ -20,6 +20,7 @@ import { FilePreviewsService } from '../../services/file-previews.service';
 import { ConversationFilesService } from '../../services/conversation-files.service';
 import { MessageWithSyncStatus } from '../../repositories/message.repository';
 import { IFileRef } from '../../data/models/file.model';
+import { IAgentStep } from '../../data/models/message.model';
 import { stepFiles, unplacedFiles } from './answer-files/answer-files.component';
 import { AnswerPart, FILE_LINK, answerParts, findFile } from './answer-parts';
 
@@ -205,15 +206,17 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     this.partsState = state;
 
     const conversationId = this.message.conversationId;
-    // The message's own files come first: what the answer's tools created, or what a message attaches
+    // The message's own files come first: what the answer's tools created, the files of notes its
+    // knowledge base tools named, or what a message attaches
     const own: IFileRef[] = answer
-      ? steps.flatMap(step => [...stepFiles(step, 'files'), ...stepFiles(step, 'shownFiles')])
+      ? this.filesOfSteps(steps)
       : (this.message.attachments ?? []).filter(attachment => SERVER_FILE_ID.test(attachment.id)).map(attachment => (
         { fileId: attachment.id, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size }));
     const parts = answerParts(
       content,
       reference => {
-        const file = findFile(reference, own, this.conversationFiles.files(conversationId), this.message.id);
+        const file = findFile(reference, own, this.conversationFiles.files(conversationId), this.message.id,
+          this.conversationFiles.kept(conversationId));
         // Not in the list: the file may be newer than it
         return file === null && this.conversationFiles.retry(conversationId, reference) ? undefined : file;
       },
@@ -288,7 +291,8 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
       event.preventDefault();
       const fileId = href.slice(FILE_LINK.length);
       const file = this.conversationFiles.files(this.message.conversationId)?.find(known => known.fileId === fileId)
-        ?? this.ownFile(fileId);
+        ?? this.ownFile(fileId)
+        ?? this.conversationFiles.kept(this.message.conversationId).find(known => known.fileId === fileId);
       if (file) this.openFile(file);
       return;
     }
@@ -303,9 +307,18 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   /** A file of this answer's steps, by its ID. */
   private ownFile(fileId: string): IFileRef | undefined {
     if (!this.message.isAgent()) return undefined;
-    return this.message.content.steps
-      .flatMap(step => [...stepFiles(step, 'files'), ...stepFiles(step, 'shownFiles')])
-      .find(file => file.fileId === fileId);
+    return this.filesOfSteps(this.message.content.steps).find(file => file.fileId === fileId);
+  }
+
+  /**
+   * The files an answer's steps know: what its tools created or showed, then the files of notes
+   * that its knowledge base tools named (kept under names of their own, docs/knowledge_base.md).
+   */
+  private filesOfSteps(steps: IAgentStep[]): IFileRef[] {
+    return [
+      ...steps.flatMap(step => [...stepFiles(step, 'files'), ...stepFiles(step, 'shownFiles')]),
+      ...steps.flatMap(step => stepFiles(step, 'kbFiles'))
+    ];
   }
 
   /** Open a stored file in the preview dialog; an image of this message steps to its other images. */

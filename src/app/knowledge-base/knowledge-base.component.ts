@@ -15,7 +15,8 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
-import { IKBNote, IKBNoteSummary, IKBSearchHit, IKBVault, KB_MEMORY_SLUG, NoteStatus } from '../data/models/knowledge-base.model';
+import { IKBFile, IKBNote, IKBNoteSummary, IKBSearchHit, IKBVault, KB_MEMORY_SLUG, NoteStatus } from '../data/models/knowledge-base.model';
+import { FileTileComponent } from '../components/file-tile/file-tile.component';
 import { ChatStateService } from '../services/chat-state.service';
 import { FamilyModeService } from '../services/family-mode.service';
 import { ConfirmDialogData } from '../catalog-admin/confirm-dialog.component';
@@ -44,6 +45,7 @@ type PaneMode = 'view' | 'edit' | 'history';
   standalone: true,
   imports: [
     FormsModule,
+    FileTileComponent,
     MatButtonModule,
     MatButtonToggleModule,
     MatDialogModule,
@@ -186,6 +188,11 @@ export class KnowledgeBaseComponent implements OnInit {
     return 'snippet' in item ? plainText(item.snippet) : null;
   }
 
+  /** The first image a note keeps, shown next to it in the list. */
+  thumb(item: IKBNoteSummary): IKBFile | null {
+    return item.files?.find(file => file.mimeType.startsWith('image/')) ?? null;
+  }
+
   date(value: string | null): string {
     return formatDate(value, this.translate);
   }
@@ -267,6 +274,23 @@ export class KnowledgeBaseComponent implements OnInit {
     try {
       await this.store.restore(note.slug);
       if (announce) this.snackBar.open(this.translate.instant('knowledgeBase.note.restoredDone'), undefined, { duration: 3000 });
+    } catch (error) {
+      this.showError(error);
+    }
+  }
+
+  /** Take a file away from the note that keeps it, after asking: it can't be brought back. */
+  async removeFile(note: IKBNote, file: IKBFile): Promise<void> {
+    const data: ConfirmDialogData = {
+      title: this.translate.instant('knowledgeBase.note.removeFileTitle'),
+      message: this.translate.instant('knowledgeBase.note.removeFileMessage', { name: file.name }),
+      confirmLabel: this.translate.instant('knowledgeBase.note.removeFileConfirm'),
+      danger: true
+    };
+    if (!(await confirmDialog(this.dialog, data))) return;
+    try {
+      await this.store.removeFile(note.slug, file.name);
+      this.snackBar.open(this.translate.instant('knowledgeBase.note.removeFileDone'), undefined, { duration: 3000 });
     } catch (error) {
       this.showError(error);
     }

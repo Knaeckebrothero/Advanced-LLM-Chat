@@ -1,4 +1,4 @@
-import { Component, OnInit, input, output } from '@angular/core';
+import { Component, OnInit, computed, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { TextFieldModule } from '@angular/cdk/text-field';
@@ -65,6 +65,9 @@ export class NoteEditorComponent implements OnInit {
   readonly note = input<IKBNote | null>(null);
   /** The title of a new note (e.g. from a link to a note that doesn't exist yet). */
   readonly initialTitle = input('');
+
+  /** The files the preview can show: the ones the note keeps, and other notes' that its text names. */
+  readonly files = computed(() => [...(this.note()?.files ?? []), ...(this.note()?.placedFiles ?? [])]);
 
   /** Done: the saved note, or null when cancelled. */
   readonly done = output<IKBNote | null>();

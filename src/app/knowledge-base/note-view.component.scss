@@ -56,6 +56,58 @@
   border-top: 1px solid var(--theme-border);
 }
 
+// The files the note keeps: a preview, the name the agent places it by, and a way to take it away
+.note-kept {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.kept-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kept-item {
+  --file-tile-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kept-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kept-name {
+  font-size: 0.875rem;
+  color: var(--theme-text);
+  overflow-wrap: anywhere;
+}
+
+.kept-facts {
+  font-size: 0.75rem;
+  color: var(--theme-text-secondary);
+}
+
+.kept-remove {
+  flex: none;
+  color: var(--theme-text-secondary);
+
+  &:hover {
+    color: var(--theme-error, #d32f2f);
+  }
+}
+
 .note-links {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

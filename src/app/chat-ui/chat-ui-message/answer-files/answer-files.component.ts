@@ -5,8 +5,11 @@ import { IFileRef } from '../../../data/models/file.model';
 import { IAgentStep } from '../../../data/models/message.model';
 import { FileTileComponent } from '../../../components/file-tile/file-tile.component';
 
-/** The files in a step's metadata under a key (`files`: a tool created them; `shownFiles`: the agent shows them). */
-export function stepFiles(step: IAgentStep, key: 'files' | 'shownFiles'): IFileRef[] {
+/**
+ * The files in a step's metadata under a key (`files`: a tool created them; `shownFiles`: the
+ * agent shows them; `kbFiles`: files that notes of the knowledge base keep, which the result names).
+ */
+export function stepFiles(step: IAgentStep, key: 'files' | 'shownFiles' | 'kbFiles'): IFileRef[] {
   const files = step.type === 'tool_result' ? step.metadata?.[key] : null;
   if (!Array.isArray(files)) return [];
   return files.filter((file): file is IFileRef =>

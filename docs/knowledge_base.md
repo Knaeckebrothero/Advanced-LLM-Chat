@@ -1,6 +1,6 @@
 # Knowledge base
 
-Each signed-in user has a knowledge base: Markdown notes that the agent keeps across all of the user's conversations, like an Obsidian vault it writes itself. Its note `memory` is the agent's **memory**: short lines that are part of every answer and point to the notes with the details, like Claude Code's `MEMORY.md` index (see [Memory](#memory)). An agent with **own memory** gets a knowledge base of its own per user instead of the shared one ([Knowledge bases per agent](#knowledge-bases-per-agent)). Once a conversation has been quiet for a while, a **memory review** reads it and saves what the agent didn't ([Memory review](#memory-review)). Once a night, a **consolidation** puts the day together in a journal per week, tidies the memory up and keeps the patterns it sees ([Nightly consolidation](#nightly-consolidation)). Nothing is off limits: the user wants everything kept, personal and sensitive topics included, so the prompts ask to save rather than to hold back ("when in doubt, save it") and have no safety rules or restrictions on web content (decided on 2026-11-04). On the Knowledge base page the user reads, searches, corrects, archives and deletes the notes and the memory, sees who wrote each version, and exports them as an Obsidian vault. An agent that also has the tool group **Past chats** searches and reads the user's earlier conversations of its memory, word for word (`docs/past_chats.md`); what the memory review reads joins its memory.
+Each signed-in user has a knowledge base: Markdown notes that the agent keeps across all of the user's conversations, like an Obsidian vault it writes itself. Its note `memory` is the agent's **memory**: short lines that are part of every answer and point to the notes with the details, like Claude Code's `MEMORY.md` index (see [Memory](#memory)). An agent with **own memory** gets a knowledge base of its own per user instead of the shared one ([Knowledge bases per agent](#knowledge-bases-per-agent)). Once a conversation has been quiet for a while, a **memory review** reads it and saves what the agent didn't ([Memory review](#memory-review)). Once a night, a **consolidation** puts the day together in a journal per week, tidies the memory up and keeps the patterns it sees ([Nightly consolidation](#nightly-consolidation)). Nothing is off limits: the user wants everything kept, personal and sensitive topics included, so the prompts ask to save rather than to hold back ("when in doubt, save it") and have no safety rules or restrictions on web content (decided on 2026-11-04). A note can keep files, above all images, so the agent shows a picture again in any later conversation ([Files](#files)). On the Knowledge base page the user reads, searches, corrects, archives and deletes the notes and the memory, sees who wrote each version, and exports them as an Obsidian vault. An agent that also has the tool group **Past chats** searches and reads the user's earlier conversations of its memory, word for word (`docs/past_chats.md`); what the memory review reads joins its memory.
 
 The design follows the memory research of 2026-11-01 (Claude, ChatGPT, Claude Code, OpenClaw, Letta and the benchmarks): a small curated layer in every prompt, details looked up on demand, and a background job that doesn't depend on the chat model remembering to save.
 
@@ -17,11 +17,11 @@ It is adapted from the knowledge base of Superhuman Remote Worker (SRW): its `kb
 
 | Tool | What it does |
 |---|---|
-| `kb_search(query?, exact?, tags?, max_results?)` | Notes that contain any query word, any exact text or any of the tags. Each hit shows how it matched and the passage around the match |
-| `kb_list(tag?, max_results?)` | The active notes, most recently updated first. Without a tag it also lists the 20 most used tags |
-| `kb_read(note)` | A note in full: content, tags, dates, the notes it links to (also ones that don't exist yet) and the notes that link to it |
-| `kb_write(title, content, description?, tags?)` | Creates a note. The slug is made from the title. A title whose slug exists already is refused (also for an archived note), with a pointer to `kb_update` |
-| `kb_update(note, content? \| append?, title?, description?, tags?)` | Replaces the content or appends to it (not both), and can change the title, description or the whole tag list. The slug stays the same. Updating an archived note restores it |
+| `kb_search(query?, exact?, tags?, max_results?)` | Notes that contain any query word, any exact text or any of the tags. Each hit shows how it matched, the passage around the match and the files the note keeps |
+| `kb_list(tag?, max_results?)` | The active notes, most recently updated first, with the files they keep. Without a tag it also lists the 20 most used tags |
+| `kb_read(note)` | A note in full: content, tags, dates, the notes it links to (also ones that don't exist yet), the notes that link to it, and the files it keeps with where each comes from |
+| `kb_write(title, content, description?, tags?, files?)` | Creates a note. The slug is made from the title. A title whose slug exists already is refused (also for an archived note), with a pointer to `kb_update`. `files`: files of the conversation that the note keeps ([Files](#files)) |
+| `kb_update(note, content? \| append?, title?, description?, tags?, files?)` | Replaces the content or appends to it (not both), and can change the title, description or the whole tag list. The slug stays the same. Updating an archived note restores it. `files`: further files the note keeps |
 | `kb_archive(note, reason?)` | Hides a note from lists and searches; `kb_read` still shows it. Nothing is deleted for good |
 | `memory_add(text, section?)` | Adds a line to the memory with today's date, under the heading `section` (made if missing) or before the first heading. A line it has already is not added twice |
 | `memory_replace(line, text)` | Replaces the one line that contains `line` (a few words of it, case-insensitive) with `text`, dated today |
@@ -29,7 +29,7 @@ It is adapted from the knowledge base of Superhuman Remote Worker (SRW): its `kb
 
 A refused request raises `ToolInputError`. The step shows as failed, and the model gets a message saying what to do instead, so a tool result never claims a write that didn't happen. The `## Knowledge Base and Memory:` section of the system prompt (`KB_PROMPT` in `backend/llm/prompts.py`) explains the two layers, when to save (the user tells something about themselves, a correction or preference, a decision or goal, "remember this", worked-out results), how (a fact on one line in the memory, details in a note plus a pointer line), when to look things up, and to write down only what the user said or what the agent found out. It comes with the tools, separate from the agent's own prompt, and is only there when the tools are. `kb_write` answers with a nudge to give an important note a pointer line in the memory.
 
-The results of `kb_read`, `kb_write`, `kb_update`, `kb_archive` and the memory tools are a `ToolText` (`backend/llm/tools.py`): a string for the model that also carries `{"kbNote": slug}` (and `{"kbVault": id}` for an agent's own knowledge base). The agent loop puts that into the result step's `metadata`, and the chat shows a book icon on the step (and an "Open note" button inside it) that opens the note on the Knowledge base page.
+The results of `kb_read`, `kb_write`, `kb_update`, `kb_archive` and the memory tools are a `ToolText` (`backend/llm/tools.py`): a string for the model that also carries `{"kbNote": slug}` (and `{"kbVault": id}` for an agent's own knowledge base). The agent loop puts that into the result step's `metadata`, and the chat shows a book icon on the step (and an "Open note" button inside it) that opens the note on the Knowledge base page. A result that names kept files (also of `kb_search` and `kb_list`) carries them as `{"kbFiles": [...]}`, which is how the chat finds a file the answer places.
 
 ## Memory
 
@@ -91,6 +91,27 @@ The first run on the development database (2026-11-04, DeepSeek V4.1 Flash, two 
 - **Parallel calls:** tool calls of one model turn run concurrently. An update locks the note's row, so parallel appends are all kept. Two notes with the same slug written at the same moment are stopped by the unique key, and the second one gets the usual "exists already" message.
 - **Deleting a user** deletes their notes, revisions and links (`ON DELETE CASCADE`).
 
+## Files
+
+A note can keep files of a conversation, so that they outlast it: an image the user sent, or one a tool of the agent made. That is how an agent keeps pictures, finds them later by words and shows them again in any conversation. It works for any stored file (a PDF, an audio file); images are what it is for.
+
+**One note per image** is the pattern the prompt asks for (`KB_FILES_RULES` in `backend/llm/prompts.py`). The note's text says what the image shows, in enough detail to find it by words: who and what is in it, the setting, style and colors, text in it, why it is kept, and for a generated image the prompt and settings. The search is the notes' text search: nothing searches images by their looks. The agent is told to describe what it sees, not what was asked for, and to look at the image first. A note can also keep several files (a trip with its photos), up to `MAX_NOTE_FILES` (20).
+
+- **Keeping:** `kb_write(..., files=["civitai-3.png"])` or `kb_update(note, files=[...])`, with names or file IDs of files of the conversation the agent answers in. Files of other conversations and other users are refused, and a refused call writes nothing. The memory review has no `files` parameter (it reads a conversation as text), and the memory keeps no files.
+- **Its name:** a kept file is named after its note, `<slug>.<ending>`: `red-fox-in-the-snow.png`, further files of the note `red-fox-in-the-snow-2.jpg`. Names are unique in the knowledge base whatever their ending and case (`kb_files`, one write at a time picks them). The name is what the agent and the user go by; the conversation's name (`civitai-3.png`) means nothing later.
+- **In the note's text:** `![[red-fox-in-the-snow.png]]` (Obsidian's embed) or `![a fox](red-fox-in-the-snow.png)`. Where the text the agent writes already places the file by its name or file ID in the conversation, that becomes the new name. Else the file goes to the top of a new note, or to the end of an updated one (`_place_files()`).
+- **Not twice:** a file a note keeps already is not kept again. Another note that is given it shows it by its name, and the result says which note keeps it.
+- **Stored once:** `kb_files` points to the stored file (`uploaded_files`, `docs/files.md`), so keeping costs no second copy. The file stays in its conversation as before, and stays kept when the conversation or its message is deleted.
+- **Finding:** `kb_search`, `kb_list` and `kb_read` name the files of the notes they show (`Keeps: red-fox-in-the-snow.png (image/png, 1024×1536 px)`), and `kb_read` says where each comes from and, for a file a tool made, the arguments it was made with. Search results are text: the image itself goes to the model only when it asks.
+- **Looking:** `read_file` of the file tools reads a kept file by its name, in any conversation, for an agent that has both tool groups (the image itself for a vision model, `region` to look closer; `docs/files.md`). A file of the conversation with the same name comes first.
+- **Showing:** the agent places a kept file in its answer like a file of the conversation, `![what it shows](red-fox-in-the-snow.png)`, which costs no tokens for the image. The chat looks for the name among the files the answer's knowledge base tools named (`metadata.kbFiles`), then the conversation's files, then the kept files of the knowledge bases the conversation's messages were written with (`GET /api/kb/files?conversationId=`, asked only for a name the conversation has no file for).
+- **Other notes** place a kept file by its name too. `![[red-fox.png]]` is no link to a note: a target that ends like a file is left out of the links (`names_file()`).
+- **Per knowledge base:** an agent with its own memory keeps its files apart, like its notes.
+- **Family mode:** the file of a hidden note is hidden with it, and so is one that a note's text places only in hidden lines (what a hidden conversation adds to a note that isn't hidden is tagged, the line with its file too). On a device in family mode such a file is not found by the tools, the chat, the page or the export.
+- **Gone with its note:** deleting a note for good (the page) deletes the files it keeps, unless a conversation or another note still has them. On the page a single file can be taken away from its note the same way. The agent can't delete files: it archives notes, and the files of an archived note stay readable by their names.
+
+`backend/services/knowledge_base.py` ("Files") has the store; the files themselves are served by the files API, by their file ID, to their owner.
+
 ## Search
 
 One query per search, over the user's active notes (the page can also search the archived ones):
@@ -110,9 +131,10 @@ There is no index for this: a user's vault is small (SRW's agent-written notes h
 - **Memory:** pinned above the notes, with how many of the 200 lines it uses; it opens like a note, with a banner explaining it and no archive action.
 - **List:** search (the agent's search: any word, longer ones as prefixes, plus the text as a literal part of a note from three characters on), a switch between the notes and the archive with their counts, and the tags in use as filters. Search results show the passage around the match as plain text.
 - **Note:** the Markdown rendered with ngx-markdown. `[[links]]` become links to the page (`noteMarkdown()` in `kb-markdown.ts`, outside of code); a link to a note that doesn't exist yet is dashed, and clicking it starts writing that note. Task boxes show as ☐ and ☑, because the sanitizer removes checkboxes. Below: "Links to" and "Linked from". At the top: the tags (they filter the list), and who changed the note last, when and in which chat (a link to the chat).
+- **Files:** the files a note's text places are shown at their place, an image as the picture (never cropped), as in a chat answer (`NoteContentComponent` uses the chat's `answerParts()`); a click opens the preview, which steps through the note's images. The editor's preview and the history show them too. Under the note, **Files** lists what it keeps, with the name the agent goes by, pixels and size, and a button that takes a file away from the note (asked first: it deletes the file unless a chat still has it). In the list, a note that keeps an image shows a small preview of the first one; a click on it opens the image.
 - **Edit:** title, description, tags (chips) and the Markdown with a preview; Ctrl+S saves. A new note's slug is shown while typing the title. If an agent changed the note meanwhile, the editor says so and offers "Save anyway" (the agent's version stays in the history) or "Discard my changes". Leaving the editor with unsaved changes asks first.
 - **History:** every version with its action, author (you, or the agent's name) and time; one of them in full; "Restore this version" makes it the current one as a new version.
-- **Archive, restore, delete:** archiving offers "Undo"; deleting for good asks first and removes all versions. The agent can only archive.
+- **Archive, restore, delete:** archiving offers "Undo"; deleting for good asks first and removes all versions and the files the note keeps. The agent can only archive.
 - **Export for Obsidian:** downloads the zip (below).
 
 The frontend's `slugify()` matches the backend's (checked against it for umlauts, accents and other scripts).
@@ -125,31 +147,34 @@ All under `/api/kb`, for signed-in users only (guests get 403 with code `guest`)
 |---|---|
 | `GET /notes?status=&tag=` | Notes with the status (`active` or `archived`), newest first, with the tags in use and the counts per status |
 | `GET /search?q=&status=` | Search hits with the passage around the match |
-| `GET /notes/{slug}` | A note with its version, links, backlinks and versions (without content) |
+| `GET /notes/{slug}` | A note with its version, links, backlinks and versions (without content), the files it keeps (`files`: `[{fileId, name, mimeType, size, width, height, note, origin}]`) and the files of other notes that its text places (`placedFiles`) |
 | `POST /notes` | A new note (author `user`); 409 `exists` with the existing note's slug |
 | `PUT /notes/{slug}` | Replaces title, description, tags and content (the slug stays); `baseVersion`, else 409 `conflict` with the version now |
 | `POST /notes/{slug}/archive`, `/restore` | Archive, or restore unchanged |
-| `DELETE /notes/{slug}` | Delete for good |
+| `DELETE /notes/{slug}` | Delete for good, with the files it keeps |
+| `DELETE /notes/{slug}/files/{name}` | Take a file away from its note; returns the note as it is then |
+| `GET /files?conversationId=` | The files the notes of the knowledge base keep. With `conversationId`: the kept files the answers of that conversation can place, of the knowledge base its agent uses and of the ones its earlier messages were written with (none for somebody else's conversation) |
 | `GET /notes/{slug}/revisions/{id}` | One version with its content |
 | `POST /notes/{slug}/revisions/{id}/restore` | Makes that version the current one, as a new version (`baseVersion` as for an edit) |
-| `GET /export?tz=` | The Obsidian zip (with the memory as `memory.md`; `knowledge-base-<agent>-<date>.zip` for an agent's own) |
+| `GET /export?tz=` | The Obsidian zip with the notes' files (with the memory as `memory.md`; `knowledge-base-<agent>-<date>.zip` for an agent's own) |
 | `GET /vaults` | The user's knowledge bases: the shared one, the own ones of the agents the user may use, and those of other agents that still have notes; with counts and memory lines |
 | `GET /memory` | The memory of a knowledge base with its lines, characters and limits; `note` is null while it is empty |
 | `POST /review` | `{conversationId}`: the memory review of that conversation now; `{status, detail, modelName, changes, reviewedUntil}` |
 
-Errors carry `{"code", "message"}` as detail: `not_found` (404), `exists` and `conflict` (409), `invalid` (400). Times are UTC with a `Z` (`UtcDatetime`).
+The notes in the lists and search hits carry their `files` too. Errors carry `{"code", "message"}` as detail: `not_found` (404), `exists` and `conflict` (409), `invalid` (400). Times are UTC with a `Z` (`UtcDatetime`).
 
 ## Obsidian export (`backend/services/knowledge_base_export.py`)
 
 A zip with the folder `knowledge-base/`, which Obsidian opens as a vault:
 
 - one `<slug>.md` per note, so the `[[slug]]` links resolve as they are (link view, graph, backlinks); archived notes in `knowledge-base/archive/` (Obsidian finds a link's file by name in any folder);
+- the files notes keep in `knowledge-base/files/`, under their names in the knowledge base, so `![[red-fox.png]]` shows the image in Obsidian as it is. The zip is written to a temporary file and sent from there, since images add up (a kept file that is missing on disk is left out);
 - YAML properties: `title`, `aliases` (the title, for Obsidian's link suggestions and search), `description`, `tags`, `created`, `updated`; then the title as a heading and the content;
 - links not written as a slug are rewritten to one, keeping their text (`[[Project Apollo]]` becomes `[[project-apollo|Project Apollo]]`, `[x](Project%20Apollo.md)` becomes `[x](project-apollo.md)`); code stays as it is;
 - tags as Obsidian accepts them: other characters than letters, digits, `_`, `-` and `/` become dashes, and a tag of only digits gets the prefix `tag-` (`2026` becomes `tag-2026`);
 - times in the browser's time zone (the page sends it as `tz`; Obsidian reads times without a zone as local time), also the files' dates in the zip; UTC for an unknown zone.
 
-Earlier versions aren't exported. Importing a vault is a later step: name clashes, folders and attachments need decisions first, and the export format should prove itself before.
+Earlier versions aren't exported. Importing a vault is a later step: name clashes and folders need decisions first, and the export format should prove itself before.
 
 ## Postgres with pgvector
 
@@ -182,6 +207,7 @@ The compose files and the Helm chart run `pgvector/pgvector:pg16` (Debian) inste
   - the memory review against the fake OpenAI server of `backend/llm/tests`: what it sends, what it saves (author `review`), reading every message once, a failure and the retry, which conversations are due;
   - the nightly consolidation the same way: the period, the days and their week notes, the transcript and the changes it is given, the journal it writes (author `dream`), `memory_dreams`, nothing to do, a failure.
   - the memory snapshot on the real tables: storing and replacing it, the time of the newest answer, a line the agent saves going into the note, the cascade when the conversation is deleted.
+  - the files notes keep (`test_notes_keep_files`, `test_hidden_files`, `test_files_api_and_export`), with real stored files in a temporary folder: a file's name and place in the text, a file kept already, names another note has, refusals that write nothing, search, list and read naming the files, `read_file` from another conversation and only with that knowledge base, a deleted conversation, a file taken away, a deleted note, the limit, two writes at once, hidden notes and hidden lines, the API and the export.
 
   The script runs `migrate_schema()` first, as `app_init --prod` does, because an old test database lacks columns that `schema.sql`'s triggers use.
 
@@ -190,6 +216,10 @@ The compose files and the Helm chart run `pgvector/pgvector:pg16` (Debian) inste
 - **Embeddings (step 2):** a vector column next to the notes, filled from the homelab's Qwen3 embedding model, plus a semantic part in the search score. Keep the word and exact search as a fallback, because the router is flaky and SRW once lost its whole knowledge base to a missing embedding key. With a fixed dimension HNSW works up to 2000 dimensions (`halfvec` up to 4000). A per-user scan of an untyped `vector` column works without any index.
 - **Search hits in the prompt:** besides the memory, the agent only sees notes it searches for or reads. SRW-style search hits for each message would help models that rarely search.
 - **Import** of an Obsidian vault (see the export).
+- **Adding a file on the page.** A note gets its files from an agent, in a chat: send the picture there and ask to keep it. The page shows them and takes them away, but has no upload.
+- **Search by an image's looks.** Kept images are found by their notes' text. Image embeddings (SigLIP 2, Qwen3-VL-Embedding) could add "looks like" searches later.
+- **A description written without the agent.** The note's text is what the agent writes. Nothing describes a kept image on its own, so a careless agent leaves an image that is hard to find.
+- **A gallery of all kept images.** The list shows a note's first image, and the tag `image` filters to the image notes if the agent tagged them.
 - **`[[links]]` in chat answers:** the agent mentions notes as `[[slug]]`, which the chat shows as plain text; they could link to the page.
 - **A diff** between two versions in the history.
 - **Memory:** the nightly consolidation in docker compose (Kubernetes only, by decision). The search over past conversations is built: `docs/past_chats.md`.

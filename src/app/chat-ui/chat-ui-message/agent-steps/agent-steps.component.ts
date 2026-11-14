@@ -201,15 +201,17 @@ export class AgentStepsComponent {
   }
 
   /**
-   * The files of a tool's result (docs/files.md): the ones it created, or the ones show_file
-   * showed (a tool of older answers); shown in the step in place of the metadata. The arrays
-   * are the metadata's own, so the template gets the same ones at every check.
+   * The files of a tool's result (docs/files.md): the ones it created, the ones show_file
+   * showed (a tool of older answers), or the files of the notes a knowledge base tool named;
+   * shown in the step in place of the metadata. The arrays are the metadata's own, so the
+   * template gets the same ones at every check.
    */
   filesOf(step: IAgentStep): IFileRef[] | null {
-    const created = stepFiles(step, 'files');
-    if (created.length) return created;
-    const shown = stepFiles(step, 'shownFiles');
-    return shown.length ? shown : null;
+    for (const key of ['files', 'shownFiles', 'kbFiles'] as const) {
+      const files = stepFiles(step, key);
+      if (files.length) return files;
+    }
+    return null;
   }
 
   /** The step's title; the ones about MCP servers in the user's language. */

@@ -5,6 +5,38 @@
   min-width: 0;
 }
 
+// The files the text places, between its Markdown: next to each other, each shown whole
+.note-files {
+  --file-tile-height: 220px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0;
+
+  &.is-single {
+    --file-tile-height: 360px;
+  }
+
+  &:first-child {
+    margin-top: 0;
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .note-files {
+    --file-tile-height: 150px;
+
+    &.is-single {
+      --file-tile-height: 280px;
+    }
+  }
+}
+
 :host ::ng-deep .note-markdown {
   display: block;
   font-size: 0.95rem;

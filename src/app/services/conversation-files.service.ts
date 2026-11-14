@@ -1,6 +1,9 @@
 import { Injectable } from '@angular/core';
+import { skip } from 'rxjs/operators';
+import { AuthService } from '../auth/auth.service';
 import { IFileRef } from '../data/models/file.model';
 import { ApiService } from './api.service';
+import { FamilyModeService } from './family-mode.service';
 
 // Conversations whose files are kept in memory; the oldest go first
 const MAX_CONVERSATIONS = 30;
@@ -14,6 +17,10 @@ const LOAD_TIMEOUT_MS = 20000;
  *
  * A list is loaded when an answer first needs it, and once more for a name it doesn't have,
  * since the file may be newer than the list.
+ *
+ * A name the conversation has no file for may be a file a note of the agent's knowledge base
+ * keeps (docs/knowledge_base.md, "Files"): those are loaded with that second look
+ * (GET /api/kb/files?conversationId=...), so only conversations that need them ask for them.
  */
 @Injectable({ providedIn: 'root' })
 export class ConversationFilesService {
@@ -21,11 +28,28 @@ export class ConversationFilesService {
   version = 0;
 
   private lists = new Map<string, IFileRef[]>();
+  // The files notes keep that the conversation's answers can place; only of conversations that asked
+  private keptLists = new Map<string, IFileRef[]>();
   private loading = new Map<string, Promise<void>>();
   // Per conversation, the references a list was already loaded again for
   private asked = new Map<string, Set<string>>();
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private auth: AuthService, familyMode: FamilyModeService) {
+    // What notes keep depends on family mode: asked for again once it changes
+    familyMode.active$.pipe(skip(1)).subscribe(() => {
+      this.keptLists.clear();
+      this.asked.clear();
+      this.version++;
+    });
+  }
+
+  /**
+   * The files of notes that the conversation's answers can place, as far as known: none until a
+   * name was looked for that the conversation has no file for (retry()).
+   */
+  kept(conversationId: string): IFileRef[] {
+    return this.keptLists.get(conversationId) ?? [];
+  }
 
   /** The conversation's files as far as known; undefined until its list has arrived. */
   files(conversationId: string): IFileRef[] | undefined {
@@ -59,16 +83,23 @@ export class ConversationFilesService {
     let loading = this.loading.get(conversationId);
     if (!loading) {
       const late = new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('timeout')), LOAD_TIMEOUT_MS));
-      loading = Promise.race([this.api.getConversationFiles(conversationId), late])
+      // The first look is for the conversation's own files. A second one comes from a name they
+      // don't have, which may be a file a note keeps (guests have no notes)
+      const withKept = this.lists.has(conversationId) && !this.auth.isGuest;
+      const files = Promise.race([this.api.getConversationFiles(conversationId), late])
         // Not reachable: what is known stays, and the answer shows what it can
-        .catch(() => this.lists.get(conversationId) ?? [])
-        .then(files => {
-          this.lists.delete(conversationId);
-          this.lists.set(conversationId, files);
-          this.loading.delete(conversationId);
-          this.version++;
-          this.trim();
-        });
+        .catch(() => this.lists.get(conversationId) ?? []);
+      const kept = !withKept ? Promise.resolve(null)
+        : Promise.race([this.api.getKBFilesOfConversation(conversationId), late])
+          .catch(() => this.keptLists.get(conversationId) ?? null);
+      loading = Promise.all([files, kept]).then(([found, keptFiles]) => {
+        this.lists.delete(conversationId);
+        this.lists.set(conversationId, found);
+        if (keptFiles) this.keptLists.set(conversationId, keptFiles);
+        this.loading.delete(conversationId);
+        this.version++;
+        this.trim();
+      });
       this.loading.set(conversationId, loading);
     }
     return loading;
@@ -78,6 +109,7 @@ export class ConversationFilesService {
     while (this.lists.size > MAX_CONVERSATIONS) {
       const oldest = this.lists.keys().next().value!;
       this.lists.delete(oldest);
+      this.keptLists.delete(oldest);
       this.asked.delete(oldest);
     }
   }

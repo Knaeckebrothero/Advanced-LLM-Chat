@@ -362,7 +362,8 @@ def _in_thread(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
 # Tool definitions
 # =========================================================================
 
-def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = None, vision: bool = False) -> list[Tool]:
+def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = None, vision: bool = False,
+               knowledge_base: Optional[tuple] = None) -> list[Tool]:
     """
     list_files, read_file: the files of the conversation (docs/files.md). The agent shows a
     file by placing it in its answer's text (FILE_ACCESS_PROMPT), which needs no tool.
@@ -373,13 +374,16 @@ def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = N
             of this conversation; the model can't choose another (the arguments are not in
             the schemas). Without either, they see no files at all.
         vision: The model takes images: read_file gives it an image itself instead of a description.
+        knowledge_base: For an agent that also has the knowledge base: (its vault, the device is in
+            family mode). read_file then also reads the files its notes keep, by their names there.
     """
     from ..services.tools import file_tools as tools
     scope = {"user_id": user_id, "conversation_id": conversation_id}
     file_param = {
         "type": "string",
         "description": "The file's name as list_files or an attachment placeholder shows it, e.g. \"report.pdf\", "
-                       "or its fileId",
+                       "or its fileId" + ("; also the name of a file a note of your knowledge base keeps"
+                                          if knowledge_base is not None else ""),
     }
     image_content = (
         "An image you get to see yourself, a large one scaled down; with 'region' you look closer at a part of "
@@ -407,6 +411,8 @@ def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = N
                 "plus page descriptions of a PDF, the transcript of an audio file. " + image_content + " "
                 "Call it for a file that appears as a placeholder like [Attachment: report.pdf (fileId: abc123) "
                 "...], for one list_files shows, and to look at an image a tool created."
+                + (" It also reads a file that a note of your knowledge base keeps, in any conversation."
+                   if knowledge_base is not None else "")
             ),
             parameters={
                 "type": "object",
@@ -439,7 +445,7 @@ def file_tools(user_id: Optional[int] = None, conversation_id: Optional[str] = N
                 },
                 "required": ["file"],
             },
-            func=functools.partial(tools.read_file, vision=vision, **scope),
+            func=functools.partial(tools.read_file, vision=vision, knowledge_base=knowledge_base, **scope),
         ),
     ]
 
@@ -576,7 +582,8 @@ def web_fetch_tool(user_id: int, conversation_id: Optional[str] = None, answer_i
 
 
 def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vault: int = 0,
-                         author: str = "agent", family_mode: bool = False, marking: bool = False) -> list[Tool]:
+                         author: str = "agent", family_mode: bool = False, marking: bool = False,
+                         reads_files: bool = False) -> list[Tool]:
     """
     The knowledge base tools: the notes of one user, kept across all of their conversations, and
     the memory, which is part of every answer.
@@ -593,6 +600,12 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
             that, what is written from a hidden conversation is marked (writes_hidden()).
         marking: The agent marks hidden content itself (the tool group auto_hide): kb_write, kb_update,
             memory_add and memory_replace get the parameter hidden.
+        reads_files: The agent also has the file tools: kb_read tells it that read_file reads a
+            file a note keeps.
+
+    An agent that answers in a conversation keeps files of it with its notes (the parameter files
+    of kb_write and kb_update, docs/knowledge_base.md, "Files"). The memory review doesn't: it reads
+    the conversation as text.
     """
     from ..catalog.resolver import writes_hidden
     from ..services.knowledge_base import (MAX_CONTENT_CHARS, MAX_DESCRIPTION_CHARS, MAX_TAGS,
@@ -604,6 +617,7 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                     persona_id=conversation.get("persona_id"), vault=vault,
                     from_hidden=writes_hidden(conversation, vault), family_mode=family_mode)
     reader = {"user_id": user_id, "vault": vault, "family_mode": family_mode}
+    keeps_files = author == "agent" and bool(conversation.get("id"))
     line_param = {
         "type": "string",
         "description": "A part of the line to change, copied from the memory in the system prompt (a few words "
@@ -633,6 +647,15 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
     def hidden_param(description: str) -> dict:
         """The parameter hidden, for agents that mark hidden content."""
         return {"hidden": {"type": "boolean", "description": description}} if marking else {}
+
+    def files_param(description: str) -> dict:
+        """The parameter files, for an agent that answers in a conversation."""
+        return {"files": {"type": "array", "items": {"type": "string"}, "description": description}} \
+            if keeps_files else {}
+
+    keeping = (" To keep an image or another file of this conversation beyond it, pass it in files: write one "
+               "note per image, whose content says what the image shows, so that it is found by words later."
+               if keeps_files else "")
 
     return [
         Tool(
@@ -682,7 +705,7 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                 "it links to and the notes that link to it."
             ),
             parameters={"type": "object", "properties": {"note": note_param}, "required": ["note"]},
-            func=_in_thread(functools.partial(kb_tools.kb_read, **reader)),
+            func=_in_thread(functools.partial(kb_tools.kb_read, reads_files=reads_files, **reader)),
         ),
         Tool(
             name="kb_write",
@@ -692,7 +715,7 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                 "user and their projects, decisions, preferences, results of research, or what the user asks you "
                 "to remember. One topic per note. Search first (kb_search): if a note on the topic exists, change "
                 "it with kb_update instead; a title whose slug exists already is refused. Link other notes with "
-                "[[slug]]. Returns the new note's slug."
+                "[[slug]]. Returns the new note's slug." + keeping
             ),
             parameters={
                 "type": "object",
@@ -705,6 +728,10 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                                                f"{MAX_CONTENT_CHARS} characters)"},
                     "description": description_param,
                     "tags": tags_param,
+                    **files_param("Files of this conversation that the note keeps, by name or fileId, e.g. "
+                                  "[\"fox-1.png\"]: an image the user sent, or one a tool of yours made. Each "
+                                  "is stored in the knowledge base under the note's name and shown at the top "
+                                  "of the note; the result names it"),
                     **hidden_param("true if the note is hidden, so that devices in family mode hide it"),
                 },
                 "required": ["title", "content"],
@@ -728,6 +755,10 @@ def knowledge_base_tools(user_id: int, conversation: Optional[dict] = None, vaul
                     "title": {"type": "string", "description": "A new title (the slug stays)"},
                     "description": description_param,
                     "tags": {**tags_param, "description": "The complete new list of tags; [] removes them"},
+                    **files_param("Files of this conversation that the note keeps from now on, by name or "
+                                  "fileId, e.g. [\"fox-2.png\"]. Each is stored in the knowledge base under "
+                                  "the note's name and shown at the end of the note, or where the new text "
+                                  "places it"),
                     **hidden_param("true hides the note, false takes the mark back (a mark the user set "
                                  "stays). For single hidden lines of a note that isn't, end them with #hidden"),
                 },
@@ -1011,10 +1042,15 @@ def tool_group_status() -> list[dict]:
 
 def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: Optional[dict],
                  vault: int = 0, vision: bool = False, family_mode: bool = False, marking: bool = False,
-                 answer_id: Optional[int] = None) -> list[Tool]:
-    """The tool definitions of a group, for the user the agent answers for."""
+                 answer_id: Optional[int] = None, together: frozenset = frozenset()) -> list[Tool]:
+    """
+    The tool definitions of a group, for the user the agent answers for. together: the groups
+    the agent gets, since the file tools and the knowledge base know of each other (a note keeps files).
+    """
+    with_kb = "knowledge_base" in together and user_id is not None and not guest
     if group == "files":
-        return file_tools(user_id, (conversation or {}).get("id"), vision)
+        return file_tools(user_id, (conversation or {}).get("id"), vision,
+                          (vault, family_mode) if with_kb else None)
     if group == "web_search":
         return [web_search_tool()]
     if group == "web_fetch":
@@ -1028,7 +1064,8 @@ def _group_tools(group: str, user_id: Optional[int], guest: bool, conversation: 
         if user_id is None or guest:
             log.debug("No knowledge base without a signed-in user")
             return []
-        return knowledge_base_tools(user_id, conversation, vault, family_mode=family_mode, marking=marking)
+        return knowledge_base_tools(user_id, conversation, vault, family_mode=family_mode, marking=marking,
+                                    reads_files="files" in together)
     if group == "past_chats":
         if user_id is None or guest:
             log.debug("No past chats without a signed-in user")
@@ -1052,6 +1089,8 @@ def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = 
     # of the knowledge base tools
     marking = ("auto_hide" in groups and tool_group_unavailable_reason("auto_hide") is None
                and bool(hide_definition.strip()))
+    together = frozenset(group for group in groups if group in TOOL_GROUPS
+                         and tool_group_unavailable_reason(group) is None)
     for group in TOOL_GROUPS:
         if group not in groups:
             continue
@@ -1063,7 +1102,7 @@ def _enabled_tools(groups: Iterable[str], user_id: Optional[int], guest: bool = 
             log.debug(f"Tool group {group} disabled: {reason}")
             continue
         for tool in _group_tools(group, user_id, guest, conversation, vault, vision, family_mode, marking,
-                                 answer_id):
+                                 answer_id, together):
             registry.add(tool)
     return registry
 

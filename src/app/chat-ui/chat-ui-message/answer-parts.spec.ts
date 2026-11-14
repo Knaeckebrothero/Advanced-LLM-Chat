@@ -66,6 +66,25 @@ describe('answerParts', () => {
     expect(findFile('nope.png', own, conversation, 2500)).toBeNull();
   });
 
+  it('finds a file that a note of the knowledge base keeps, after the conversation\'s own', () => {
+    // Kept under the note's name: the same stored file as fox-1.png, and one of another conversation
+    const keptFox: IFileRef = { fileId: 'file_2000_aa', name: 'red-fox.png', mimeType: 'image/png' };
+    const keptCat: IFileRef = { fileId: 'file_100_ff', name: 'Luna.jpg', mimeType: 'image/jpeg' };
+    const keptImage: IFileRef = { fileId: 'file_200_gg', name: 'image.png', mimeType: 'image/png' };
+    const kept = [keptFox, keptCat, keptImage];
+    expect(findFile('luna.jpg', own, conversation, 2500, kept)).toBe(keptCat);
+    expect(findFile('red-fox.png', [], [], 2500, kept)).toBe(keptFox);
+    expect(findFile('image.png', own, conversation, 2500, kept)).toBe(photoOld);  // The conversation's comes first
+    expect(findFile('luna.jpg', own, undefined, 2500, kept)).toBeUndefined();     // Not known yet whether it has one
+    expect(findFile('nope.png', own, conversation, 2500, kept)).toBeNull();
+    // What the answer's knowledge base tools named is among its own files
+    expect(findFile('red-fox.png', [...own, keptFox], undefined, 2500)).toBe(keptFox);
+    const placed = answerParts('Here: ![[Luna.jpg]]', reference => findFile(reference, own, conversation, 2500, kept),
+      false, name => `(no ${name})`);
+    expect(placed.map(part => part.type)).toEqual(['text', 'files']);
+    expect(placed[1].items[0].file).toBe(keptCat);
+  });
+
   it('says so when a file does not exist, and waits while the files are loading', () => {
     expect(short('See ![x](nope.png) here')).toEqual(['See (no nope.png) here']);
     const waiting = parts('![x](image.png)', false, false);
