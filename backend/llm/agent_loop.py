@@ -6,7 +6,8 @@ run_agent() streams one answer as events for the SSE endpoint:
 - ("step_delta", {"id": str, "delta": str}): text appended to an earlier step (live reasoning)
 - ("token", str): text of the answer
 - ("tool_record", list[dict]): once, before the usage: the answer's tool calls and their results
-  as the model got them (tool_record.py), to store with the answer; [] when it called no tool
+  as the model got them (tool_record.py), to store with the answer; [] when it called no tool,
+  unless the model gets its reasoning passed back (then the record keeps the answer's reasoning)
 - ("usage", Usage): exactly once, last, summed over all model calls
 
 Reasoning becomes a "Thinking" step: sent once empty when it starts, grown
@@ -242,6 +243,7 @@ async def run_agent(
     answered = False            # any answer text streamed yet
     separate_next_text = False  # put a blank line before the next answer text (text before and after tools)
     call_text: list[str] = []   # the answer text of the current model call
+    call_reasoning = ""         # its reasoning, when the model gets it passed back (reasoning_passback)
 
     log.info(f"Agent run: model={config.model_id} ({config.provider_name}), messages={len(history)}, "
              f"tools={registry.names() if registry else []}, max_steps={max_steps}")
@@ -256,6 +258,7 @@ async def run_agent(
             reasoning: Optional[_ReasoningStep] = None
             turn: Optional[ModelTurn] = None
             call_text = []
+            call_reasoning = ""
             async for kind, data in _stream_turn(
                 client, config, history,
                 system_prompt=system_prompt,
@@ -290,6 +293,7 @@ async def run_agent(
             if turn is None:
                 raise RuntimeError("The model stream ended without a response")
             total.add(turn.usage)
+            call_reasoning = turn.assistant_message.get("reasoning_content") or ""
             log.debug(f"Model call {step_index + 1}: stop={turn.stop_reason}, tool_calls={len(turn.tool_calls)}, "
                       f"text={len(turn.text)} chars, reasoning={len(turn.reasoning)} chars")
 
@@ -311,6 +315,7 @@ async def run_agent(
                 break
 
             history.append(turn.assistant_message)
+            call_reasoning = ""  # It went into the history with the tool calls
             async for event in _run_tools(registry, turn.tool_calls, history):
                 yield event
             separate_next_text = answered
@@ -320,7 +325,7 @@ async def run_agent(
         raise
 
     log.info(f"Agent run finished: input={total.input_tokens}, output={total.output_tokens} tokens")
-    yield ("tool_record", tool_record(history[len(messages):], "".join(call_text)))
+    yield ("tool_record", tool_record(history[len(messages):], "".join(call_text), call_reasoning))
     yield ("usage", total)
 
 

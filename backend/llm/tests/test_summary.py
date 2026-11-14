@@ -535,8 +535,8 @@ def continued(previous: dict, body: dict) -> list:
 
 async def test_every_request_continues_the_one_before(server):
     """
-    How Kimi K3 answers (its reasoning passed back, two rounds of tools, the memory in the system
-    prompt), through stream-generate: every model call of an answer, and the first one of the
+    How Kimi K3 answers (its reasoning passed back, also of earlier answers, two rounds of tools,
+    the memory in the system prompt), through stream-generate: every model call of an answer, and the first one of the
     next answer, continues the request before it, so the provider's prompt cache can hit. When the
     memory changes, the system prompt keeps its snapshot and the change goes in a note with the
     newest message (backend/services/memory_snapshot.py), so only the last exchange is new.
@@ -612,14 +612,15 @@ async def test_every_request_continues_the_one_before(server):
                 assert [m["role"] for m in added] == ["assistant", "tool"], added
                 assert added[0].get("reasoning_content"), added  # passed back within the answer
 
-            # The next answer continues the last request with the answer's text and the new question
+            # The next answer continues the last request with the answer's text (with the reasoning
+            # that led to it) and the new question
             await asks("And gamma?")
             server.script(answers("Gamma is unknown."))
             response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
             assert response.status_code == 200 and "event: done" in response.text, response.text
             second = server.requests[-1]
             assert continued(first[-1], second) == [
-                {"role": "assistant", "content": "Alpha and beta are found."},
+                {"role": "assistant", "content": "Alpha and beta are found.", "reasoning_content": "I have it."},
                 {"role": "user", "content": "And gamma?"}], second["messages"]
 
             # And so does the one after an answer without tools
@@ -629,7 +630,7 @@ async def test_every_request_continues_the_one_before(server):
             assert response.status_code == 200 and "event: done" in response.text, response.text
             third = server.requests[-1]
             assert continued(second, third) == [
-                {"role": "assistant", "content": "Gamma is unknown."},
+                {"role": "assistant", "content": "Gamma is unknown.", "reasoning_content": "I have it."},
                 {"role": "user", "content": "Thanks."}], third["messages"]
 
             # The memory changed (the agent saved a line, or the review ran): the system prompt keeps
@@ -641,7 +642,7 @@ async def test_every_request_continues_the_one_before(server):
             assert response.status_code == 200 and "event: done" in response.text, response.text
             fourth = server.requests[-1]
             added = continued(third, fourth)
-            assert added[0] == {"role": "assistant", "content": "You're welcome."}, added
+            assert added[0] == {"role": "assistant", "content": "You're welcome.", "reasoning_content": "I have it."}, added
             note, question = added[1]["content"].split("\n\n", 1)
             assert note.startswith("<memory-update>") and "Added:\n- Has a cat." in note, note
             assert question == "Bye." and "Has a cat" not in fourth["messages"][0]["content"]
@@ -655,7 +656,8 @@ async def test_every_request_continues_the_one_before(server):
             fifth = server.requests[-1]
             assert fifth["messages"][:len(fourth["messages"]) - 1] == fourth["messages"][:-1]
             assert fifth["messages"][len(fourth["messages"]) - 1:-1] == [
-                {"role": "user", "content": "Bye."}, {"role": "assistant", "content": "Bye!"}], fifth["messages"]
+                {"role": "user", "content": "Bye."},
+                {"role": "assistant", "content": "Bye!", "reasoning_content": "I have it."}], fifth["messages"]
             assert fifth["messages"][-1]["content"].endswith("\n\nOne more thing.") and \
                 "- Has a cat." in fifth["messages"][-1]["content"]
             assert all("<memory-update>" not in row["content"] for row in fake_db.rows), "never stored"

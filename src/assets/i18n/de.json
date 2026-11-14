@@ -350,7 +350,7 @@
         "description": "Beschreibung",
         "reasoning": "Nachdenken",
         "reasoningEffort": "Denkaufwand",
-        "reasoningPassback": "Gedankengang in Werkzeugschleifen zurückgeben",
+        "reasoningPassback": "Gedankengang an das Modell zurückgeben",
         "temperature": "Temperatur",
         "topP": "Top P",
         "maxOutputTokens": "Max. Ausgabe-Tokens",
