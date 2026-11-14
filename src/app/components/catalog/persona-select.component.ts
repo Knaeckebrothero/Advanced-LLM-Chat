@@ -10,6 +10,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { TranslateModule } from '@ngx-translate/core';
 import { IPublicPersona } from '../../data/models/catalog.model';
+import { AgentAvatarComponent } from './agent-avatar.component';
 
 /**
  * An agent dropdown for forms (settings), styled like the model dropdown's field: a full-width
@@ -18,7 +19,7 @@ import { IPublicPersona } from '../../data/models/catalog.model';
 @Component({
   selector: 'app-persona-select',
   standalone: true,
-  imports: [MatIconModule, MatMenuModule, TranslateModule],
+  imports: [MatIconModule, MatMenuModule, TranslateModule, AgentAvatarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // The menu panel lives in the overlay container; the styles are the model dropdown's
   encapsulation: ViewEncapsulation.None,
@@ -27,7 +28,11 @@ import { IPublicPersona } from '../../data/models/catalog.model';
             class="model-select-trigger model-select-trigger--field"
             [matMenuTriggerFor]="personaMenu"
             [attr.aria-label]="('catalog.picker.choosePersona' | translate) + ': ' + (selected?.name ?? ('catalog.picker.noPersona' | translate))">
-      <mat-icon class="model-select-icon" aria-hidden="true">theater_comedy</mat-icon>
+      @if (selected?.avatar) {
+        <app-agent-avatar [src]="selected?.avatar" [size]="24" shape="round"></app-agent-avatar>
+      } @else {
+        <mat-icon class="model-select-icon" aria-hidden="true">theater_comedy</mat-icon>
+      }
       <span class="model-select-name">{{ selected?.name ?? ('catalog.picker.noPersona' | translate) }}</span>
       <mat-icon class="model-select-arrow" aria-hidden="true">arrow_drop_down</mat-icon>
     </button>
@@ -37,15 +42,20 @@ import { IPublicPersona } from '../../data/models/catalog.model';
               [attr.aria-checked]="!selected"
               [class.is-selected]="!selected"
               (click)="select(null)">
-        <span class="model-option">
-          <span class="model-option-main">
-            <span class="model-option-name">{{ 'catalog.picker.noPersona' | translate }}</span>
-            <mat-icon class="model-option-check" [class.model-option-check--off]="!!selected"
-                      aria-hidden="true">check</mat-icon>
-          </span>
-          @if (noneHint) {
-            <span class="model-option-description">{{ noneHint }}</span>
+        <span class="persona-option">
+          @if (withImages) {
+            <span class="persona-option-spacer"></span>
           }
+          <span class="model-option">
+            <span class="model-option-main">
+              <span class="model-option-name">{{ 'catalog.picker.noPersona' | translate }}</span>
+              <mat-icon class="model-option-check" [class.model-option-check--off]="!!selected"
+                        aria-hidden="true">check</mat-icon>
+            </span>
+            @if (noneHint) {
+              <span class="model-option-description">{{ noneHint }}</span>
+            }
+          </span>
         </span>
       </button>
       @for (persona of personas; track persona.id) {
@@ -53,15 +63,20 @@ import { IPublicPersona } from '../../data/models/catalog.model';
                 [attr.aria-checked]="persona.id === selected?.id"
                 [class.is-selected]="persona.id === selected?.id"
                 (click)="select(persona.id)">
-          <span class="model-option">
-            <span class="model-option-main">
-              <span class="model-option-name">{{ persona.name }}</span>
-              <mat-icon class="model-option-check" [class.model-option-check--off]="persona.id !== selected?.id"
-                        aria-hidden="true">check</mat-icon>
-            </span>
-            @if (persona.description) {
-              <span class="model-option-description">{{ persona.description }}</span>
+          <span class="persona-option">
+            @if (withImages) {
+              <app-agent-avatar [src]="persona.avatar" [size]="32" shape="round"></app-agent-avatar>
             }
+            <span class="model-option">
+              <span class="model-option-main">
+                <span class="model-option-name">{{ persona.name }}</span>
+                <mat-icon class="model-option-check" [class.model-option-check--off]="persona.id !== selected?.id"
+                          aria-hidden="true">check</mat-icon>
+              </span>
+              @if (persona.description) {
+                <span class="model-option-description">{{ persona.description }}</span>
+              }
+            </span>
           </span>
         </button>
       }
@@ -76,6 +91,11 @@ export class PersonaSelectComponent {
   /** The description under "No agent". */
   @Input() noneHint: string | null = null;
   @Output() selectedChange = new EventEmitter<number | null>();
+
+  /** Some agent has an image: then every entry has room for one (the icon where an agent has none). */
+  get withImages(): boolean {
+    return this.personas.some(p => !!p.avatar);
+  }
 
   get selected(): IPublicPersona | null {
     return this.personas.find(p => p.id === this.selectedId) ?? null;

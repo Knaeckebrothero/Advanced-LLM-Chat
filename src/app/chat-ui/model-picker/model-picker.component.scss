@@ -48,6 +48,11 @@ app-model-picker {
     }
   }
 
+  // The agent's image in place of the icon: closer to the chip's round edge
+  &--image {
+    padding-left: 3px;
+  }
+
   &--active {
     color: var(--theme-text-accent);
     border-color: rgba(var(--theme-primary-rgb), 0.5);

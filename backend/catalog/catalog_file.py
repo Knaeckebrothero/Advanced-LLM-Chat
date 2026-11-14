@@ -98,7 +98,7 @@ MODEL_EXPORT_COLUMNS = [
 ]
 PERSONA_EXPORT_COLUMNS = [
     "name", "description", "system_prompt", "variables", "tools", "available_to_guests",
-    "enabled", "sort_order", "own_memory", "mcp_servers", "skills", "hidden",
+    "enabled", "sort_order", "own_memory", "mcp_servers", "skills", "hidden", "avatar",
 ]
 MCP_SERVER_EXPORT_COLUMNS = list(MCP_SERVER_KEYS)
 # Skills (docs/skills.md); natural key name

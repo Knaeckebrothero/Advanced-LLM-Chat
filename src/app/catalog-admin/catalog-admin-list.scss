@@ -333,24 +333,6 @@
   min-width: 0;
 }
 
-.agent-avatar {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--theme-active);
-  color: var(--theme-text-accent);
-
-  mat-icon {
-    font-size: 22px;
-    width: 22px;
-    height: 22px;
-  }
-}
-
 .agent-title {
   flex: 1;
   min-width: 0;

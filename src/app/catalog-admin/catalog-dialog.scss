@@ -232,3 +232,35 @@ mat-dialog-actions mat-spinner {
 .sort-order-field {
   width: min(220px, 100%);
 }
+
+// The agent's image: a preview, and buttons to pick or take it away (a file can also be dropped)
+.agent-image-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 4px 0 16px;
+}
+
+.agent-image-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agent-image-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-image-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--theme-text-secondary);
+
+  &--error {
+    color: var(--theme-tier-untrusted);
+  }
+}
