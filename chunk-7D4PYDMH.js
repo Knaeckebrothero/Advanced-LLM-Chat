@@ -1,1 +1,0 @@
-import{a as t}from"./chunk-UC6GSF2P.js";import{d as o,n as a}from"./chunk-6PAZHJIR.js";function s(r,i){return o(this,null,function*(){let e=r.open(t,{data:i,panelClass:"catalog-dialog-panel",backdropClass:"custom-backdrop",maxWidth:"95vw",width:"440px",autoFocus:"first-tabbable"});return(yield a(e.afterClosed()))===!0})}export{s as a};
