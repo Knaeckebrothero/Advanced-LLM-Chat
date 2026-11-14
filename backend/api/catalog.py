@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from backend.catalog import catalog_file, service
 from backend.catalog.fetch import fetch_provider_models
-from backend.catalog.resolver import ModelNotAvailable, get_model_config
+from backend.catalog.resolver import ModelNotAvailable, get_model_config, persona_of_another
 from backend.catalog.service import CatalogError
 from backend.llm import complete
 from backend.models.catalog import (
@@ -45,6 +45,7 @@ from backend.models.catalog import (
     SkillUpdate,
     ToolGroupStatus,
 )
+from backend.database import db
 from backend.services import skills
 from backend.services.skills import SkillError
 from backend.security.auth import get_current_user, require_admin
@@ -76,7 +77,7 @@ def _http_error(error: CatalogError | SkillError) -> HTTPException:
             operation_id="listModels")
 async def list_models(current_user: dict = Depends(get_current_user)):
     """
-    Lists the models for the model picker, sorted by sort order, then name.
+    Lists the models for the model picker, higher sort order first, then name.
 
     Guests only see models available to guests. The list is empty when the
     catalog is empty; the environment model answers then.
@@ -98,7 +99,7 @@ async def list_models(current_user: dict = Depends(get_current_user)):
             operation_id="listPersonas")
 async def list_personas(current_user: dict = Depends(get_current_user)):
     """
-    Lists the personas for the persona picker, sorted by sort order, then name.
+    Lists the personas for the persona picker, higher sort order first, then name.
 
     Guests only see personas available to guests.
 
@@ -167,7 +168,7 @@ async def admin_fetch_provider_models(provider_id: int, admin: dict = Depends(re
             operation_id="adminListModels")
 async def admin_list_models(admin: dict = Depends(require_admin)):
     """
-    Lists all catalog models, including disabled ones, by sort order and name.
+    Lists all catalog models, including disabled ones, higher sort order first, then name.
 
     :return: The models.
     :rtype: List[ModelOut]
@@ -304,12 +305,13 @@ async def admin_test_model(model_id: int, admin: dict = Depends(require_admin)):
             operation_id="adminListPersonas")
 async def admin_list_personas(admin: dict = Depends(require_admin)):
     """
-    Lists all personas, including disabled ones, by sort order and name.
+    Lists all personas, including disabled ones, higher sort order first, then name; without
+    the hidden ones of other creators.
 
     :return: The personas.
     :rtype: List[PersonaOut]
     """
-    return service.list_personas()
+    return service.list_personas(admin)
 
 
 @router.post("/admin/personas",
@@ -329,7 +331,7 @@ async def admin_create_persona(req: PersonaCreate, admin: dict = Depends(require
     :raises HTTPException: 400 if a variable is declared twice, 409 if the name is taken.
     """
     try:
-        persona = service.create_persona(req)
+        persona = service.create_persona(req, admin)
     except CatalogError as e:
         raise _http_error(e)
     crud_logger.info(f"Persona created - id: {persona.id}, name: {persona.name}, by user {admin['user_id']}")
@@ -355,7 +357,7 @@ async def admin_update_persona(persona_id: int, req: PersonaUpdate, admin: dict 
     :raises HTTPException: 404 if not found, 400 for invalid fields, 409 if the name is taken.
     """
     try:
-        persona = service.update_persona(persona_id, req)
+        persona = service.update_persona(persona_id, req, admin)
     except CatalogError as e:
         raise _http_error(e)
     crud_logger.info(f"Persona updated - id: {persona_id}, fields: {sorted(req.model_fields_set)}, "
@@ -377,7 +379,7 @@ async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_ad
     :raises HTTPException: 404 if not found.
     """
     try:
-        service.delete_persona(persona_id)
+        service.delete_persona(persona_id, admin)
     except CatalogError as e:
         raise _http_error(e)
     crud_logger.info(f"Persona deleted - id: {persona_id}, by user {admin['user_id']}")
@@ -387,6 +389,15 @@ async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_ad
 # =========================================================================
 # Admin: skills (docs/skills.md)
 # =========================================================================
+
+def _shown_agents(skill_list: list[dict], admin: dict) -> list[dict]:
+    """The skills without the hidden agents of other creators in their agents."""
+    others = {row["id"] for row in db.get_personas() if persona_of_another(row, admin)}
+    if not others:
+        return skill_list
+    return [{**skill, "agents": [agent for agent in skill["agents"] if agent["id"] not in others]}
+            for skill in skill_list]
+
 
 @router.get("/admin/skills",
             response_model=List[SkillOut],
@@ -400,7 +411,7 @@ async def admin_list_skills(admin: dict = Depends(require_admin)):
     :return: The skills.
     :rtype: List[SkillOut]
     """
-    return skills.list_skills()
+    return _shown_agents(skills.list_skills(), admin)
 
 
 @router.post("/admin/skills",
@@ -424,7 +435,7 @@ async def admin_create_skill(req: SkillCreate, admin: dict = Depends(require_adm
     except SkillError as e:
         raise _http_error(e)
     crud_logger.info(f"Skill created - id: {skill['id']}, name: {skill['name']}, by user {admin['user_id']}")
-    return skill
+    return _shown_agents([skill], admin)[0]
 
 
 @router.post("/admin/skills/import",
@@ -450,7 +461,7 @@ async def admin_import_skill(req: SkillImport, admin: dict = Depends(require_adm
         raise _http_error(e)
     crud_logger.info(f"Skill imported - id: {skill['id']}, name: {skill['name']}, created: {created}, "
                      f"by user {admin['user_id']}")
-    return SkillImportResult(skill=skill, created=created, ignored=ignored)
+    return SkillImportResult(skill=_shown_agents([skill], admin)[0], created=created, ignored=ignored)
 
 
 @router.put("/admin/skills/{skill_id}",
@@ -476,7 +487,7 @@ async def admin_update_skill(skill_id: int, req: SkillUpdate, admin: dict = Depe
         raise _http_error(e)
     crud_logger.info(f"Skill updated - id: {skill_id}, fields: {sorted(req.model_fields_set)}, "
                      f"by user {admin['user_id']}")
-    return skill
+    return _shown_agents([skill], admin)[0]
 
 
 @router.delete("/admin/skills/{skill_id}",
@@ -568,7 +579,7 @@ async def admin_export_catalog(admin: dict = Depends(require_admin)):
     :return: The catalog file (JSON, offered as a download).
     :rtype: JSONResponse
     """
-    content = catalog_file.export_catalog()
+    content = catalog_file.export_catalog(admin)
     crud_logger.info(f"Catalog exported by user {admin['user_id']}")
     headers = {"Content-Disposition": 'attachment; filename="model-catalog.json"'}
     return JSONResponse(content=jsonable_encoder(content), headers=headers)
@@ -598,7 +609,7 @@ async def admin_import_catalog(
     :raises HTTPException: 400 if the file itself is malformed (e.g. wrong version).
     """
     try:
-        result = catalog_file.import_catalog(data)
+        result = catalog_file.import_catalog(data, admin)
     except CatalogError as e:
         raise _http_error(e)
     crud_logger.info(

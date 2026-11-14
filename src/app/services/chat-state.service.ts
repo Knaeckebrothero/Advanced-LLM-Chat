@@ -39,8 +39,12 @@ import { AppSettings } from '../models/settings.model';
 import { describeHttpError } from '../catalog-admin/catalog-admin.utils';
 import { TranslateService } from '@ngx-translate/core';
 
-/** Model and persona for a new conversation, kept until it is created with the first message. */
-const EMPTY_DRAFT: IConversationSelection = { modelId: null, personaId: null, personaValues: null };
+/**
+ * Model and persona for a new conversation, kept until it is created with the first message.
+ * personaId undefined: the user's default agent (none picked yet); null: no agent.
+ */
+type DraftSelection = Omit<IConversationSelection, 'personaId'> & { personaId: number | null | undefined };
+const EMPTY_DRAFT: DraftSelection = { modelId: null, personaId: undefined, personaValues: null };
 
 export interface ChatState {
   activeConversation: Conversation | null;
@@ -72,7 +76,7 @@ export class ChatStateService implements OnDestroy {
   private streamingSubscription: Subscription | null = null;
 
   // Model catalog selection
-  private draftSelection$ = new BehaviorSubject<IConversationSelection>(EMPTY_DRAFT);
+  private draftSelection$ = new BehaviorSubject<DraftSelection>(EMPTY_DRAFT);
 
   // The summary the model gets instead of the active conversation's oldest messages (kept on the server only)
   private summary$ = new BehaviorSubject<IConversationSummary | null>(null);
@@ -110,14 +114,24 @@ export class ChatStateService implements OnDestroy {
     shareReplay(1)
   );
 
-  /** Model and persona of the active conversation (the draft for a new conversation). */
+  /** The id of the agent a new conversation starts with (the user's default agent while it is offered), or null. */
+  private defaultPersonaId$: Observable<number | null> = combineLatest([
+    this.settingsState.settings$,
+    this.catalogService.visiblePersonas$
+  ]).pipe(
+    map(([settings, personas]) => CatalogService.defaultPersona(settings?.defaultPersonaId, personas)?.id ?? null),
+    distinctUntilChanged()
+  );
+
+  /** Model and persona of the active conversation (the draft for a new conversation, with the default agent). */
   public selection$: Observable<IConversationSelection> = combineLatest([
     this.activeConversation$,
-    this.draftSelection$
+    this.draftSelection$,
+    this.defaultPersonaId$
   ]).pipe(
-    map(([conversation, draft]) => {
+    map(([conversation, draft, defaultPersonaId]) => {
       if (!conversation || conversation.id === '0') {
-        return draft;
+        return ChatStateService.withDefaultPersona(draft, defaultPersonaId);
       }
       return conversation.selection;
     }),
@@ -1332,13 +1346,22 @@ export class ChatStateService implements OnDestroy {
     if (!this.catalogService.hasModels && this.catalogService.personas.length === 0) {
       return undefined;
     }
-    const defaultModelId = this.settingsState.getCurrentSettings()?.defaultModelId ?? null;
-    const model = this.catalogService.resolveModel(draft.modelId, defaultModelId);
+    const settings = this.settingsState.getCurrentSettings();
+    const model = this.catalogService.resolveModel(draft.modelId, settings?.defaultModelId ?? null);
+    const defaultPersona = CatalogService.defaultPersona(settings?.defaultPersonaId,
+                                                        this.catalogService.visiblePersonas);
     return {
-      modelId: model ? model.id : null,
-      personaId: draft.personaId,
-      personaValues: draft.personaValues
+      ...ChatStateService.withDefaultPersona(draft, defaultPersona?.id ?? null),
+      modelId: model ? model.id : null
     };
+  }
+
+  /** A draft's selection: the agent picked for it, else (none picked yet) the default agent. */
+  private static withDefaultPersona(draft: DraftSelection, defaultPersonaId: number | null): IConversationSelection {
+    if (draft.personaId !== undefined) {
+      return { ...draft, personaId: draft.personaId };
+    }
+    return { ...draft, personaId: defaultPersonaId, personaValues: null };
   }
 
   private applySelection(conversation: Conversation, selection: IConversationSelection | undefined): void {

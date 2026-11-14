@@ -12,6 +12,7 @@ export interface IAppSettings {
   backgroundBlur?: number;  // 0-20 px
   editingMode?: 'guided' | 'manual';  // How messages are edited
   memoryModelId?: number | null;  // Model that reviews conversations for the memory (null = the conversation's)
+  defaultPersonaId?: number | null;  // Agent new conversations start with (null = none)
 }
 
 export interface IAppSettingsWithMeta extends IAppSettings {

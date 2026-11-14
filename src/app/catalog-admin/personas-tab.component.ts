@@ -157,10 +157,10 @@ export class PersonasTabComponent {
     readonly familyMode: FamilyModeService
   ) {}
 
-  /** The agents in their order; without the hidden ones while this device is in family mode. */
+  /** The agents in their order (higher sort order first); without the hidden ones while this device is in family mode. */
   sorted(personas: IPersonaOut[], familyMode = false): IPersonaOut[] {
     return personas.filter(persona => !(familyMode && persona.hidden))
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+      .sort((a, b) => b.sortOrder - a.sortOrder || a.name.localeCompare(b.name));
   }
 
   isAvailable(tool: ToolGroup): boolean {

@@ -37,7 +37,8 @@ def _values(values: dict) -> dict:
 
 
 def _order():
-    return (mcp_servers.c.sort_order, func.lower(mcp_servers.c.name), mcp_servers.c.id)
+    """Higher sort order first, then name."""
+    return (func.coalesce(mcp_servers.c.sort_order, 0).desc(), func.lower(mcp_servers.c.name), mcp_servers.c.id)
 
 
 # ----- Servers -----

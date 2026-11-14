@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from backend.services.hidden_content import auto_hide_definition_of
 from backend.models.settings import AppSettings, AppSettingsResponse
-from backend.catalog.service import CatalogError, check_model_choice
+from backend.catalog.service import CatalogError, check_model_choice, check_persona_choice
 from backend.database import db
 from backend.database.db import UNSET
 from backend.security.auth import get_current_user
@@ -87,6 +87,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
             language=settings['language'],
             defaultModelId=settings.get('default_model_id'),
             memoryModelId=settings.get('memory_model_id'),
+            defaultPersonaId=settings.get('default_persona_id'),
             **_optional_settings(settings),
             lastUpdated=last_updated_ts
         )
@@ -130,12 +131,20 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         logger.warning(f"Guest user attempted to save settings")
         raise HTTPException(status_code=403, detail="Guests cannot save settings.")
 
+    # The app sends every setting with each change: a choice is only checked when it changes, so one
+    # that became unavailable (a disabled model, a hidden agent) doesn't block saving the others
+    stored = db.get_user_settings(user_id) or {}
+
+    def changed(field: str, column: str) -> bool:
+        return field in new_settings.model_fields_set and getattr(new_settings, field) != stored.get(column)
+
     # Default model: left out = keep the stored one, null = clear it
     default_model_id = UNSET
     if "defaultModelId" in new_settings.model_fields_set:
         default_model_id = new_settings.defaultModelId
         try:
-            check_model_choice(current_user, default_model_id)
+            if changed("defaultModelId", "default_model_id"):
+                check_model_choice(current_user, default_model_id)
         except CatalogError as e:
             logger.warning(f"Rejected default model {default_model_id} for user_id {user_id}: {e}")
             raise HTTPException(status_code=e.status_code, detail=str(e))
@@ -144,14 +153,26 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
     memory_model_id = UNSET
     if "memoryModelId" in new_settings.model_fields_set:
         memory_model_id = new_settings.memoryModelId
+        if changed("memoryModelId", "memory_model_id"):
+            try:
+                check_model_choice(current_user, memory_model_id)
+            except CatalogError as e:
+                logger.warning(f"Rejected memory model {memory_model_id} for user_id {user_id}: {e}")
+                raise HTTPException(status_code=e.status_code, detail=str(e))
+            model = db.get_llm_model_by_id(memory_model_id) if memory_model_id is not None else None
+            if model is not None and model.get("supports_tools") is False:
+                raise HTTPException(status_code=400, detail="The memory model must support tools")
+
+    # Default agent: left out = keep the stored one, null = none
+    default_persona_id = UNSET
+    if "defaultPersonaId" in new_settings.model_fields_set:
+        default_persona_id = new_settings.defaultPersonaId
         try:
-            check_model_choice(current_user, memory_model_id)
+            if changed("defaultPersonaId", "default_persona_id"):
+                check_persona_choice(current_user, default_persona_id)
         except CatalogError as e:
-            logger.warning(f"Rejected memory model {memory_model_id} for user_id {user_id}: {e}")
+            logger.warning(f"Rejected default agent {default_persona_id} for user_id {user_id}: {e}")
             raise HTTPException(status_code=e.status_code, detail=str(e))
-        model = db.get_llm_model_by_id(memory_model_id) if memory_model_id is not None else None
-        if model is not None and model.get("supports_tools") is False:
-            raise HTTPException(status_code=400, detail="The memory model must support tools")
 
     # Optional settings: left out = keep the stored values
     optional = {
@@ -170,6 +191,7 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         language=new_settings.language,
         default_model_id=default_model_id,
         memory_model_id=memory_model_id,
+        default_persona_id=default_persona_id,
         **optional
     )
 
@@ -194,6 +216,7 @@ async def update_settings(new_settings: AppSettings, current_user: dict = Depend
         language=settings['language'],
         defaultModelId=settings.get('default_model_id'),
         memoryModelId=settings.get('memory_model_id'),
+        defaultPersonaId=settings.get('default_persona_id'),
         **_optional_settings(settings),
         lastUpdated=last_updated_ts
     )

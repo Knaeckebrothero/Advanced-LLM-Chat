@@ -58,6 +58,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from sqlalchemy import delete, func, insert, select  # noqa: E402
 
 from backend import config  # noqa: E402
+from backend.catalog import resolver  # noqa: E402
 from backend.database.db import Database  # noqa: E402
 from backend.database.tables import (conversations, kb_files, kb_note_revisions, kb_notes, memory_dreams,  # noqa: E402
                                      messages, personas, uploaded_files, user_settings, users)
@@ -945,8 +946,8 @@ async def test_hidden_api_and_agents():
     from backend.security.auth import get_current_user
     from backend.services import memory_dream
 
-    saved = kb_api.db, resolver.db
-    kb_api.db = resolver.db = db
+    saved = kb_api.db, resolver.db, memory_dream.db
+    kb_api.db = resolver.db = memory_dream.db = db
     try:
         app = FastAPI()
         app.include_router(kb_api.router)
@@ -1000,7 +1001,7 @@ async def test_hidden_api_and_agents():
                                               ConversationHistoryBuilder(db))
         assert transcript.startswith("### Party talk [hidden]"), transcript
     finally:
-        kb_api.db, resolver.db = saved
+        kb_api.db, resolver.db, memory_dream.db = saved
 
 
 async def test_agents_hide_content():
@@ -1516,7 +1517,8 @@ def main() -> int:
     # As app_init --prod does: add the columns a test database from an older version lacks, then the schema
     migrate_schema(db.engine, logging.getLogger("kb-test"))
     db.init_tables()
-    knowledge_base.db = hidden_content.db = file_store.db = db  # The store's database; the tools call the store
+    # The store's database (the tools call the store), and the agents' (whether one is hidden)
+    knowledge_base.db = hidden_content.db = file_store.db = resolver.db = db
     file_utils.FILES_DIR = tempfile.mkdtemp(prefix="kb-test-files-")  # The files notes keep
     assert TOOL_GROUPS["knowledge_base"]
     try:
