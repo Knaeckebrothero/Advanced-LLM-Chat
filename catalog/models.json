@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "providers": [
     {
       "name": "Cortecs",
@@ -52,7 +52,7 @@
       "input_price_per_mtok": 0.182,
       "output_price_per_mtok": 0.547,
       "cached_input_price_per_mtok": 0.005,
-      "sort_order": 10
+      "sort_order": 70
     },
     {
       "provider": "Cortecs",
@@ -68,7 +68,7 @@
       "input_price_per_mtok": 1.795,
       "output_price_per_mtok": 3.59,
       "cached_input_price_per_mtok": 0.449,
-      "sort_order": 20
+      "sort_order": 60
     },
     {
       "provider": "Cortecs",
@@ -83,7 +83,7 @@
       "input_price_per_mtok": 0.687,
       "output_price_per_mtok": 2.11,
       "cached_input_price_per_mtok": 0.071,
-      "sort_order": 30
+      "sort_order": 50
     },
     {
       "provider": "Cortecs",
@@ -116,7 +116,7 @@
       "input_price_per_mtok": 0.459,
       "output_price_per_mtok": 1.836,
       "cached_input_price_per_mtok": 0.138,
-      "sort_order": 45
+      "sort_order": 35
     },
     {
       "provider": "Homelab",
@@ -129,7 +129,7 @@
       "context_window": 131072,
       "is_auxiliary": true,
       "available_to_guests": true,
-      "sort_order": 50
+      "sort_order": 30
     },
     {
       "provider": "Anthropic",
@@ -144,7 +144,7 @@
       "input_price_per_mtok": 4.0,
       "output_price_per_mtok": 20.0,
       "cached_input_price_per_mtok": 0.2,
-      "sort_order": 60
+      "sort_order": 20
     },
     {
       "provider": "Anthropic",
@@ -159,7 +159,7 @@
       "input_price_per_mtok": 2.0,
       "output_price_per_mtok": 10.0,
       "cached_input_price_per_mtok": 0.1,
-      "sort_order": 61
+      "sort_order": 19
     },
     {
       "provider": "Anthropic",
@@ -174,7 +174,7 @@
       "input_price_per_mtok": 0.1,
       "output_price_per_mtok": 0.5,
       "cached_input_price_per_mtok": 0.01,
-      "sort_order": 62
+      "sort_order": 18
     },
     {
       "provider": "OpenAI",
@@ -187,7 +187,7 @@
       "context_window": 524288,
       "input_price_per_mtok": 10.0,
       "output_price_per_mtok": 50.0,
-      "sort_order": 70,
+      "sort_order": 10,
       "notes": "Without tools: Chat Completions rejects tools together with reasoning on this model, and it always reasons (tested 2026-10-30). Tools need the Responses API, which the runtime doesn't use yet. Above 272k input tokens OpenAI charges twice the input and 1.5 times the output price."
     }
   ],
@@ -197,12 +197,19 @@
   ],
   "personas": [
     {
+      "name": "Assistant",
+      "description": "Searches the web, reads your files and remembers what matters",
+      "system_prompt": "You are a helpful assistant. Answer clearly and to the point, and say so when you are not sure of something. Today is {{date}}.",
+      "tools": ["files", "web_search", "web_fetch", "knowledge_base", "past_chats", "auto_hide"],
+      "sort_order": 30
+    },
+    {
       "name": "Pirate",
       "description": "Answers in pirate speak",
       "system_prompt": "You are a helpful assistant who always talks like a {{style}}, while still giving correct and useful answers. Today is {{date}}.",
       "variables": [{"name": "style", "label": "Style", "default": "pirate"}],
       "available_to_guests": true,
-      "sort_order": 10
+      "sort_order": 20
     },
     {
       "name": "Translator",
@@ -211,7 +218,7 @@
       "variables": [{"name": "target_language", "label": "Target language", "default": "English"}],
       "tools": [],
       "available_to_guests": true,
-      "sort_order": 20
+      "sort_order": 10
     }
   ]
 }

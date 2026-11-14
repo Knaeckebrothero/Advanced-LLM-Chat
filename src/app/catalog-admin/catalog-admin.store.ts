@@ -177,11 +177,14 @@ export class CatalogAdminStore {
     return this.api.fetchProviderModels(id);
   }
 
-  /** Add models picked from a provider's model list, with default settings. */
+  /**
+   * Add models picked from a provider's model list, with default settings, below the existing ones
+   * (higher sort orders come first), so the first model, the default, stays as it is.
+   */
   async addFetchedModels(provider: IProviderOut, fetched: IFetchedModel[]): Promise<{ added: number; errors: string[] }> {
     const errors: string[] = [];
     let added = 0;
-    const nextSortOrder = Math.max(0, ...this.models.map(m => m.sortOrder)) + 10;
+    const below = Math.min(fetched.length * 10, ...this.models.map(m => m.sortOrder));
     for (const [index, model] of fetched.entries()) {
       const create: IModelCreate = {
         providerId: provider.id,
@@ -195,7 +198,7 @@ export class CatalogAdminStore {
         isAuxiliary: false,
         availableToGuests: false,
         enabled: true,
-        sortOrder: nextSortOrder + index * 10
+        sortOrder: below - (index + 1) * 10
       };
       try {
         await this.api.createModel(create);

@@ -94,6 +94,24 @@ export class CatalogService {
     return this.personasSubject.value.find(p => p.id === id);
   }
 
+  /** The agents to offer now: without the hidden ones while this device is in family mode. */
+  get visiblePersonas(): IPublicPersona[] {
+    const personas = this.personasSubject.value;
+    return this.familyMode.active ? personas.filter(persona => !persona.hidden) : personas;
+  }
+
+  /**
+   * The agent a new conversation starts with: the user's default agent while it is offered
+   * (in the catalog for this user, and not hidden on this device), else none.
+   */
+  static defaultPersona(
+    defaultPersonaId: number | null | undefined,
+    personas: IPublicPersona[]
+  ): IPublicPersona | null {
+    if (defaultPersonaId === null || defaultPersonaId === undefined) return null;
+    return personas.find(p => p.id === defaultPersonaId) ?? null;
+  }
+
   /**
    * The model the backend will answer with, following its resolver order:
    * the conversation's model, then the user's default, then the first model of the catalog.

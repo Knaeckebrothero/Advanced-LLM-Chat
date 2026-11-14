@@ -282,6 +282,53 @@ def backfill_message_memory(conn: Connection) -> int:
     """)).rowcount
 
 
+def personas_lack_creator(engine: Engine) -> bool:
+    """Whether personas has no created_by yet: this run of the schema adds it (and turns the sort orders around)."""
+    inspector = inspect(engine)
+    if not inspector.has_table("personas"):
+        return False  # A new database: nothing to fill in or turn around
+    return "created_by" not in {column["name"] for column in inspector.get_columns("personas")}
+
+
+def backfill_persona_creators(conn: Connection) -> int:
+    """
+    Give the hidden agents from before agents had a creator one: the signed-in user with the most
+    conversations with it (on a tie the lower id). A hidden agent nobody has talked to keeps none.
+    Runs once, in the transaction that adds personas.created_by (init_tables() or db_init).
+
+    Returns:
+        Number of agents that got a creator.
+    """
+    return conn.execute(text("""
+        UPDATE personas p
+        SET created_by = top.user_id
+        FROM (
+            SELECT DISTINCT ON (c.persona_id) c.persona_id, c."userId" AS user_id
+            FROM conversations c
+            JOIN users u ON u.id = c."userId"
+            WHERE c.persona_id IS NOT NULL AND NOT COALESCE(u.is_guest, FALSE)
+            GROUP BY c.persona_id, c."userId"
+            ORDER BY c.persona_id, COUNT(*) DESC, c."userId"
+        ) AS top
+        WHERE p.id = top.persona_id AND p.hidden AND p.created_by IS NULL
+    """)).rowcount
+
+
+def reverse_sort_orders(conn: Connection) -> None:
+    """
+    Turn the sort orders of models, agents and MCP servers around, as higher numbers come first now:
+    each number becomes lowest + highest - itself, so every list keeps its order and its range. Runs
+    once, in the transaction that adds personas.created_by (init_tables() or db_init).
+    """
+    for table in ("llm_models", "personas", "mcp_servers"):
+        conn.execute(text(f"""
+            UPDATE {table}
+            SET sort_order = bounds.lowest + bounds.highest - COALESCE(sort_order, 0)
+            FROM (SELECT MIN(COALESCE(sort_order, 0)) AS lowest, MAX(COALESCE(sort_order, 0)) AS highest
+                  FROM {table}) AS bounds
+        """))
+
+
 def prepare_database(engine: Engine) -> None:
     """
     Get the database ready for the schema: enable pgvector, and on the first start on the pgvector
@@ -590,6 +637,7 @@ class Database:
         backfill_file_owners = not inspect(self.engine).has_table("uploaded_files")
         link_files = files_lack_conversations(self.engine)
         fill_memory = messages_lack_memory(self.engine)
+        add_creators = personas_lack_creator(self.engine)
 
         with self.connection() as conn:
             for block in blocks:
@@ -615,6 +663,11 @@ class Database:
                 filled = backfill_message_memory(conn)
                 log.info(f"Messages belong to a memory now: {filled} existing message(s) got the one of their "
                          f"conversation's agent")
+            if add_creators:
+                reverse_sort_orders(conn)
+                creators = backfill_persona_creators(conn)
+                log.info(f"Higher sort orders come first now: turned the existing ones around; {creators} hidden "
+                         f"agent(s) got the user who talks to them as creator")
 
         log.info("Database tables initialized successfully")
 
@@ -2186,7 +2239,8 @@ class Database:
         background_blur=UNSET,
         editing_mode=UNSET,
         memory_model_id=UNSET,
-        auto_hide_prompt=UNSET
+        auto_hide_prompt=UNSET,
+        default_persona_id=UNSET
     ) -> dict:
         """
         Create or update user settings.
@@ -2205,6 +2259,8 @@ class Database:
                 conversation's model), UNSET keeps it.
             auto_hide_prompt: What agents hide on their own; None follows the server's text,
                 UNSET keeps it.
+            default_persona_id: Agent new conversations start with; None clears it (no agent),
+                UNSET keeps it.
 
         Returns:
             The user settings dictionary.
@@ -2220,6 +2276,7 @@ class Database:
             ("editing_mode", editing_mode),
             ("memory_model_id", memory_model_id),
             ("auto_hide_prompt", auto_hide_prompt),
+            ("default_persona_id", default_persona_id),
         ):
             if value is not UNSET:
                 values[column] = value
@@ -2586,7 +2643,7 @@ class Database:
 
         Each row has the llm_models columns plus provider_name, provider_kind,
         currency, provider_privacy_tier, provider_enabled and
-        effective_privacy_tier. Ordered by sort_order, then display name.
+        effective_privacy_tier. Higher sort_order first, then display name.
 
         Args:
             enabled_only: Only enabled models of enabled providers.
@@ -2732,7 +2789,7 @@ class Database:
 
     def get_personas(self, enabled_only: bool = False, guests_only: bool = False) -> list[dict]:
         """
-        Get personas, ordered by sort_order, then name.
+        Get personas, higher sort_order first, then name.
 
         Args:
             enabled_only: Only enabled personas.
@@ -2748,7 +2805,7 @@ class Database:
                 stmt = stmt.where(personas.c.enabled.is_not(False))
             if guests_only:
                 stmt = stmt.where(personas.c.available_to_guests.is_(True))
-            stmt = stmt.order_by(personas.c.sort_order, personas.c.name, personas.c.id)
+            stmt = stmt.order_by(func.coalesce(personas.c.sort_order, 0).desc(), personas.c.name, personas.c.id)
             results = conn.execute(stmt).fetchall()
             persona_list = [self._row_to_dict(row) for row in results]
             log.debug(f"Found {len(persona_list)} personas")

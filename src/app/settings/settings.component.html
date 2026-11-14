@@ -109,7 +109,24 @@
           </app-model-select>
           <p class="setting-hint">{{ 'catalog.settings.defaultModelHint' | translate }}</p>
         </div>
+      </ng-container>
 
+      <!-- The agent new conversations start with (only when there are agents) -->
+      <ng-container *ngIf="(personas$ | async) as personas">
+        <div class="setting-option" *ngIf="personas.length > 0">
+          <label id="default-persona-label">{{ 'catalog.settings.defaultPersona' | translate }}</label>
+          <app-persona-select
+            class="default-model-select"
+            [personas]="personas"
+            [selectedId]="selectedDefaultPersona(settings, personas)"
+            [noneHint]="'catalog.settings.noPersonaHint' | translate"
+            (selectedChange)="updateDefaultPersona($event)">
+          </app-persona-select>
+          <p class="setting-hint">{{ 'catalog.settings.defaultPersonaHint' | translate }}</p>
+        </div>
+      </ng-container>
+
+      <ng-container *ngIf="(models$ | async) as models">
         <!-- The model that reviews conversations for the agents' memory (signed-in users, models with tools) -->
         <div class="setting-option" *ngIf="hasMemory && toolModels(models).length > 0">
           <label id="memory-model-label">{{ 'catalog.settings.memoryModel' | translate }}</label>

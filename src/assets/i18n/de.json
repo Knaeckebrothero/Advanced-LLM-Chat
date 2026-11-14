@@ -316,7 +316,10 @@
       "memoryModelChatHint": "Das Modell, das im Chat antwortet, sieht ihn auch durch",
       "memoryModelHint": "Ist ein Chat mit einem Agenten mit Wissensdatenbank eine Weile ruhig, liest dieses Modell ihn und speichert das Wichtige im Gedächtnis des Agenten. Nur Modelle mit Werkzeugen.",
       "automatic": "Automatisch",
-      "automaticHint": "Das erste Modell des Katalogs"
+      "automaticHint": "Das erste Modell des Katalogs",
+      "defaultPersona": "Standard-Agent",
+      "defaultPersonaHint": "Neue Chats beginnen mit diesem Agenten. Du kannst in jedem Chat einen anderen oder keinen wählen.",
+      "noPersonaHint": "Neue Chats beginnen ohne Agenten"
     },
     "common": {
       "cancel": "Abbrechen",
@@ -405,7 +408,7 @@
         "test": "Testen",
         "testOk": "Antwort nach {{ms}} ms",
         "testFailed": "Fehlgeschlagen",
-        "sortOrderHint": "Kleinere Zahlen kommen zuerst",
+        "sortOrderHint": "Größere Zahlen kommen zuerst",
         "modelIdHint": "Der Modellname in der API des Anbieters",
         "descriptionHint": "Wird in der Modellauswahl angezeigt",
         "capabilitiesSection": "Fähigkeiten",
@@ -597,7 +600,7 @@
     "byUser": "Von dir ausgeblendet",
     "byPersona": "Ausgeblendet, weil sein Agent es ist",
     "agent": "Ausgeblendet",
-    "agentHint": "Ein ausgeblendeter Agent ist mit all seinen Chats und seiner eigenen Wissensdatenbank ausgeblendet.",
+    "agentHint": "Ein ausgeblendeter Agent ist mit all seinen Chats und seiner eigenen Wissensdatenbank ausgeblendet, und nur wer ihn erstellt hat, sieht ihn überhaupt.",
     "agentHidden": "Ausgeblendeter Agent",
     "note": "Ausgeblendet",
     "noteHint": "Um nur einzelne Zeilen auszublenden, beende sie mit #hidden.",

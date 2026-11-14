@@ -186,7 +186,7 @@ WHERE (CAST(:enabled_only AS BOOLEAN) IS FALSE OR (COALESCE(m.enabled, TRUE) AND
   AND (CAST(:guests_only AS BOOLEAN) IS FALSE OR COALESCE(m.available_to_guests, FALSE))
   AND (CAST(:auxiliary_only AS BOOLEAN) IS FALSE OR COALESCE(m.is_auxiliary, FALSE))
   AND (CAST(:provider_id AS INTEGER) IS NULL OR m.provider_id = :provider_id)
-ORDER BY m.sort_order, m.display_name, m.id;
+ORDER BY COALESCE(m.sort_order, 0) DESC, m.display_name, m.id;
 
 -- name: get_llm_model_with_provider
 -- One catalog model with its provider's name, kind, currency and tier (same columns as above)

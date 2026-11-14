@@ -147,7 +147,7 @@ def seed(**sections):
     """Seed the catalog in-process from a temporary catalog file, as app_init does."""
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "catalog.json"
-        path.write_text(json.dumps({"version": 1, **sections}), encoding="utf-8")
+        path.write_text(json.dumps({"version": catalog_file.CATALOG_FILE_VERSION, **sections}), encoding="utf-8")
         return catalog_file.seed_from_file(path)
 
 
@@ -271,12 +271,14 @@ def run_tools(c, admin):
             r.text)
     c.check(groups[0] == {"id": "files", "available": True, "reason": None, "optIn": False, "requires": None},
             "files is always available")
-    c.check(groups[3] == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True, "requires": None},
+    by_id = {g["id"]: g for g in groups}
+    c.check(by_id.get("knowledge_base") == {"id": "knowledge_base", "available": True, "reason": None, "optIn": True,
+                                            "requires": None},
             "the knowledge base is always available, and opt-in", r.text)
-    c.check(groups[4] == {"id": "past_chats", "available": True, "reason": None, "optIn": True,
-                          "requires": "knowledge_base"},
+    c.check(by_id.get("past_chats") == {"id": "past_chats", "available": True, "reason": None, "optIn": True,
+                                        "requires": "knowledge_base"},
             "the past chats are opt-in and need the knowledge base", r.text)
-    c.check(groups[5]["id"] == "user_mcp" and groups[5]["optIn"] is True, "users' own MCP servers are opt-in", r.text)
+    c.check(by_id.get("user_mcp", {}).get("optIn") is True, "users' own MCP servers are opt-in", r.text)
     c.check(all((g["available"] and g["reason"] is None) or (not g["available"] and g["reason"]) for g in groups),
             "unavailable groups say why", r.text)
     print("        " + ", ".join(f"{g['id']}: {'on' if g['available'] else g['reason']}" for g in groups))
@@ -287,15 +289,15 @@ def run_models(c, admin, user, guest, main, env, disabled):
     c.section("Models")
     created = {}
     for name, provider, extra in [
-        ("Guest Model", main, {"availableToGuests": True, "sortOrder": 20, "temperature": 0.3,
+        ("Guest Model", main, {"availableToGuests": True, "sortOrder": 40, "temperature": 0.3,
                                  "inputPricePerMtok": 0.18, "outputPricePerMtok": 0.55,
                                  "cachedInputPricePerMtok": 0.005, "supportsVision": True}),
-        ("Beta Model", main, {"sortOrder": 10, "reasoning": "always", "reasoningPassback": True,
+        ("Beta Model", main, {"sortOrder": 50, "reasoning": "always", "reasoningPassback": True,
                                 "extraBody": {"provider": {"zdr": True}}, "privacyTier": "untrusted"}),
-        ("Alpha Model", main, {"sortOrder": 10}),
-        ("Disabled Model", main, {"enabled": False, "sortOrder": 0, "availableToGuests": True}),
-        ("Aux Model", env, {"isAuxiliary": True, "sortOrder": 50}),
-        ("Hidden Provider Model", disabled, {"sortOrder": 0, "availableToGuests": True}),
+        ("Alpha Model", main, {"sortOrder": 50}),
+        ("Disabled Model", main, {"enabled": False, "sortOrder": 60, "availableToGuests": True}),
+        ("Aux Model", env, {"isAuxiliary": True, "sortOrder": 10}),
+        ("Hidden Provider Model", disabled, {"sortOrder": 60, "availableToGuests": True}),
     ]:
         r = admin.post("/api/admin/models", json=model_body(provider["id"], name, **extra))
         c.check(r.status_code == 201, f"create model '{name}' -> 201", r.text)
@@ -325,7 +327,7 @@ def run_models(c, admin, user, guest, main, env, disabled):
 
     names = [m["displayName"] for m in user.get("/api/models").json()]
     expected = [f"{PREFIX} Alpha Model", f"{PREFIX} Beta Model", f"{PREFIX} Guest Model", f"{PREFIX} Aux Model"]
-    c.check(names == expected, "GET /api/models (user): enabled only, by sortOrder then name", str(names))
+    c.check(names == expected, "GET /api/models (user): enabled only, higher sortOrder first, then name", str(names))
     public = user.get("/api/models").json()[0]
     c.check(set(public) == {"id", "displayName", "description", "providerName", "privacyTier", "supportsTools",
                             "supportsVision", "reasoning", "contextWindow", "inputPricePerMtok",
@@ -346,14 +348,14 @@ def run_personas(c, admin, user, guest):
         "systemPrompt": "Talk like a {{style}} to {{user_name}} in {{language}} on {{date}}. {{unknown}} {{ mood }}",
         "variables": [{"name": "style", "label": "Style", "default": "pirate"},
                       {"name": "mood", "label": "Mood"}],
-        "tools": ["web_search", "files", "files"], "availableToGuests": True, "sortOrder": 1,
+        "tools": ["web_search", "files", "files"], "availableToGuests": True, "sortOrder": 2,
     })
     c.check(r.status_code == 201, "create persona -> 201", r.text)
     pirate = r.json()
     c.check(set(pirate) == PERSONA_OUT_FIELDS, "PersonaOut fields (no defaultModelId)", str(sorted(pirate)))
     c.check(pirate["tools"] == ["files", "web_search"], "tools deduplicated, in group order", str(pirate["tools"]))
     r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Private", "systemPrompt": "Private",
-                                                 "sortOrder": 2})
+                                                 "sortOrder": 1})
     private = r.json()
     c.check(private["tools"] is None, "tools left out -> null (every enabled tool)", r.text)
     r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Off", "systemPrompt": "Off", "enabled": False,
@@ -383,7 +385,7 @@ def run_personas(c, admin, user, guest):
             "persona partial update")
     r = admin.put(f"/api/admin/personas/{private['id']}", json={"tools": []})
     c.check(r.status_code == 200 and r.json()["tools"] == [], "update tools [] -> no tools", r.text)
-    r = admin.put(f"/api/admin/personas/{private['id']}", json={"sortOrder": 2})
+    r = admin.put(f"/api/admin/personas/{private['id']}", json={"sortOrder": 1})
     c.check(r.json()["tools"] == [], "update without tools keeps them", r.text)
     r = admin.put(f"/api/admin/personas/{private['id']}", json={"tools": None})
     c.check(r.json()["tools"] is None, "update tools null -> every enabled tool again", r.text)
@@ -467,6 +469,104 @@ def run_conversations_and_settings(c, user, guest, models, personas):
     return conversation
 
 
+def run_hidden_agents_and_default(c, admin, user, guest, personas, admin_email, user_id):
+    from backend.catalog import resolver
+    from backend.database.db import backfill_persona_creators, reverse_sort_orders
+    from sqlalchemy import text
+
+    c.section("Hidden agents are their creator's, the default agent, the switch to higher numbers first")
+    pirate, private, off = personas
+    admin_id = db.get_user_by_email(admin_email)["id"]
+    names = lambda session: [p["name"] for p in session.get("/api/personas").json()]  # noqa: E731
+
+    # A hidden agent is its creator's: nobody else sees or uses it
+    r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Secret", "systemPrompt": "Secret",
+                                                 "hidden": True, "sortOrder": 5})
+    secret = r.json()
+    c.check(r.status_code == 201 and db.get_persona_by_id(secret["id"])["created_by"] == admin_id,
+            "a created agent has its admin as creator", r.text)
+    c.check(f"{PREFIX} Secret" in names(admin) and secret["id"] in [p["id"] for p in admin.get(
+        "/api/admin/personas").json()], "the creator sees their hidden agent")
+    c.check(f"{PREFIX} Secret" not in names(user), "another user's picker leaves it out", str(names(user)))
+    c.check(user.post("/api/conversation/create", json={"name": "x", "participants": [], "personaId": secret["id"]}
+                      ).status_code == 403, "another user can't start a chat with it -> 403")
+    c.check(guest.post("/api/conversation/create", json={"name": "x", "participants": [], "personaId": secret["id"]}
+                       ).status_code == 403, "a guest can't either -> 403")
+    row = db.get_persona_by_id(secret["id"])
+    c.check(resolver.persona_usable(row, {"user_id": admin_id}) and resolver.persona_usable(row, {"id": admin_id})
+            and not resolver.persona_usable(row, {"user_id": user_id}),
+            "persona_usable: the creator (a session or a users row of the background jobs), not another user")
+
+    # Another creator's hidden agent: not on the Agents page, not changeable, not exported
+    r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Theirs", "systemPrompt": "Theirs",
+                                                 "hidden": True})
+    theirs = r.json()
+    db.update_persona(theirs["id"], {"created_by": user_id})
+    c.check(theirs["id"] not in [p["id"] for p in admin.get("/api/admin/personas").json()]
+            and f"{PREFIX} Theirs" not in names(admin), "another creator's hidden agent: not listed for the admin")
+    c.check(admin.put(f"/api/admin/personas/{theirs['id']}", json={"hidden": False}).status_code == 404
+            and admin.delete(f"/api/admin/personas/{theirs['id']}").status_code == 404,
+            "another creator's hidden agent: update and delete -> 404")
+    exported = [p["name"] for p in admin.get("/api/admin/catalog/export").json()["personas"]]
+    c.check(f"{PREFIX} Theirs" not in exported and f"{PREFIX} Secret" in exported,
+            "the export leaves out other creators' hidden agents", str(exported))
+    c.check(f"{PREFIX} Theirs" in names(user), "its creator sees it (also without admin rights)")
+
+    # A hidden agent without a creator is everybody's; whoever saves it hidden becomes its creator
+    unowned = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Unowned", "systemPrompt": "Unowned",
+                                                       "sortOrder": 3}).json()
+    db.update_persona(unowned["id"], {"created_by": None, "hidden": True})
+    c.check(f"{PREFIX} Unowned" in names(user), "a hidden agent without a creator is everybody's (as before)")
+    r = user.post("/api/conversation/create", json={"name": "Unowned chat", "participants": [],
+                                                     "personaId": unowned["id"]})
+    unowned_chat = r.json()
+    with db.engine.connect() as conn:
+        transaction = conn.begin()
+        filled = backfill_persona_creators(conn)
+        creator = conn.execute(text("SELECT created_by FROM personas WHERE id = :id"),
+                               {"id": unowned["id"]}).scalar()
+        before = dict(conn.execute(text("SELECT id, COALESCE(sort_order, 0) FROM personas")).all())
+        reverse_sort_orders(conn)
+        after = dict(conn.execute(text("SELECT id, COALESCE(sort_order, 0) FROM personas")).all())
+        transaction.rollback()
+    total = min(before.values()) + max(before.values())
+    c.check(filled >= 1 and creator == user_id,
+            "the switch gives a hidden agent the user with the most chats with it as creator", f"{filled} {creator}")
+    c.check(after == {pid: total - order for pid, order in before.items()},
+            "the switch turns the sort orders around and keeps their range", f"{before} -> {after}")
+    user.delete(f"/api/conversation/{unowned_chat['id']}")
+    r = admin.put(f"/api/admin/personas/{unowned['id']}", json={"description": "now saved"})
+    c.check(r.status_code == 200 and db.get_persona_by_id(unowned["id"])["created_by"] == admin_id
+            and f"{PREFIX} Unowned" not in names(user),
+            "saving a hidden agent without a creator makes the admin its creator", r.text)
+
+    # The default agent of new chats
+    r = user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": private["id"]})
+    c.check(r.status_code == 200 and r.json()["defaultPersonaId"] == private["id"],
+            "PUT settings with defaultPersonaId", r.text)
+    r = user.put("/api/settings", json={"theme": "dark", "language": "de"})
+    c.check(r.json()["defaultPersonaId"] == private["id"] and user.get("/api/settings").json()[
+        "defaultPersonaId"] == private["id"], "settings without defaultPersonaId keep it; GET returns it")
+    c.check(user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": secret["id"]}
+                     ).status_code == 403, "another creator's hidden agent as default -> 403")
+    c.check(user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": off["id"]}
+                     ).status_code == 403, "a disabled agent as default -> 403")
+    c.check(user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": 999999}
+                     ).status_code == 400, "an unknown agent as default -> 400")
+    admin.put(f"/api/admin/personas/{private['id']}", json={"enabled": False})
+    r = user.put("/api/settings", json={"theme": "light", "language": "de", "defaultPersonaId": private["id"]})
+    admin.put(f"/api/admin/personas/{private['id']}", json={"enabled": True})
+    c.check(r.status_code == 200 and r.json()["theme"] == "light",
+            "a default agent that became unavailable doesn't block saving the other settings", r.text)
+    r = user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": None})
+    c.check(r.json()["defaultPersonaId"] is None, "defaultPersonaId null: no agent")
+    c.check(guest.get("/api/settings").json().get("defaultPersonaId") is None, "guest settings: no default agent")
+
+    for persona in (secret, unowned):
+        admin.delete(f"/api/admin/personas/{persona['id']}")
+    db.delete_persona(theirs["id"])
+
+
 def run_message_sync(c, user, user_id, models):
     c.section("Message sync")
     conversation_id = f"{PREFIX}-sync-{int(time.time())}"
@@ -498,7 +598,7 @@ def run_fetch_models(c, admin, env):
         fetched = r.json()["models"]
         first = fetched[0]["id"]
         admin.post("/api/admin/models", json={"providerId": env["id"], "displayName": f"{PREFIX} Fetched",
-                                               "modelId": first, "sortOrder": 100})
+                                               "modelId": first, "sortOrder": -100})
         again = {m["id"]: m for m in admin.post(f"/api/admin/providers/{env['id']}/fetch-models").json()["models"]}
         c.check(again[first]["alreadyAdded"] is True and sum(m["alreadyAdded"] for m in again.values()) == 1,
                 "alreadyAdded marks the catalog model", first)
@@ -535,18 +635,21 @@ def run_fetch_models(c, admin, env):
     c.check(admin.post("/api/admin/providers/999999/fetch-models").status_code == 404, "unknown provider -> 404")
 
 
-def run_stream_tools(c, admin, user, available_groups):
+def run_stream_tools(c, admin, user, user_id, available_groups):
     """The tools and system prompt stream-generate sends, per persona tool selection."""
     from backend.llm.tests.fake_openai_server import FakeOpenAIServer, chunk, usage_chunk
 
     c.section("Stream-generate tools (fake model server)")
-    # "Every enabled tool" leaves out the opt-in groups (the knowledge base)
+    from backend.services.hidden_content import auto_hide_definition
+    # "Every enabled tool" leaves out the opt-in groups (the knowledge base), and hide_chat while the user
+    # has no text of what agents hide (AUTO_HIDE_DEFINITION or their own)
+    hides = bool(auto_hide_definition(user_id))
     everything = sorted(name for group in available_groups if group not in OPT_IN_GROUPS
-                        for name in TOOL_GROUPS[group])
+                        and (group != "auto_hide" or hides) for name in TOOL_GROUPS[group])
     with FakeOpenAIServer() as server:
         seed(providers=[provider_entry("Fake", base_url=server.base_url, api_key_env=KEY_ENV, privacy_tier="local")])
         provider = providers_by_name(admin)[f"{PREFIX} Fake"]
-        model = admin.post("/api/admin/models", json=model_body(provider["id"], "Fake Model", sortOrder=200)).json()
+        model = admin.post("/api/admin/models", json=model_body(provider["id"], "Fake Model", sortOrder=-200)).json()
         personas = []
         for name, prompt, tools in [("No tools", "You only chat.", []), ("Files only", "You read files.", ["files"]),
                                     ("All tools", "You use everything.", None),
@@ -600,7 +703,7 @@ def run_import_export(c, admin, main):
     c.check(r.status_code == 200 and "attachment" in r.headers.get("content-disposition", ""),
             "export -> 200 as a download")
     first = r.json()
-    c.check(first["version"] == 1 and all(set(p) == set(catalog_file.PROVIDER_EXPORT_COLUMNS)
+    c.check(first["version"] == catalog_file.CATALOG_FILE_VERSION and all(set(p) == set(catalog_file.PROVIDER_EXPORT_COLUMNS)
                                           for p in first["providers"]),
             "export providers without keys", str(first["providers"][:1]))
     model_entry = next(m for m in first["models"] if m["display_name"] == f"{PREFIX} Beta Model")
@@ -662,7 +765,7 @@ def run_import_export(c, admin, main):
         "models": [
             {"provider": main["name"], "display_name": f"{PREFIX} Imported Model", "model_id": "imp-1",
              "input_price_per_mtok": 1.5, "output_price_per_mtok": 3, "cached_input_price_per_mtok": 0.15,
-             "available_to_guests": True, "sort_order": 99,
+             "available_to_guests": True, "sort_order": 2,
              "colour": "red"},
             {"provider": "No such provider", "display_name": "x", "model_id": "x"},
             {"provider": main["name"], "display_name": f"{PREFIX} No id"},
@@ -695,17 +798,22 @@ def run_import_export(c, admin, main):
 
     # Partial upsert: only the given keys change
     r = admin.post("/api/admin/catalog/import", json={"models": [
-        {"provider": main["name"], "display_name": f"{PREFIX} Imported Model", "sort_order": 98}]})
+        {"provider": main["name"], "display_name": f"{PREFIX} Imported Model", "sort_order": 1}]})
     updated = next(m for m in admin.get("/api/admin/models").json() if m["id"] == imported_model["id"])
-    c.check(r.json()["models"] == {"created": 0, "updated": 1} and updated["sortOrder"] == 98
+    c.check(r.json()["models"] == {"created": 0, "updated": 1} and updated["sortOrder"] == 1
             and updated["inputPricePerMtok"] == 1.5 and updated["cachedInputPricePerMtok"] == 0.15,
             "partial upsert changes only the given keys")
     exported = next(m for m in admin.get("/api/admin/catalog/export").json()["models"]
                     if m["display_name"] == f"{PREFIX} Imported Model")
     c.check(exported["cached_input_price_per_mtok"] == 0.15, "export writes the cached price as a float",
             str(exported.get("cached_input_price_per_mtok")))
-    c.check(admin.post("/api/admin/catalog/import", json={"version": 2}).status_code == 400,
+    c.check(admin.post("/api/admin/catalog/import", json={"version": 3}).status_code == 400,
             "unsupported file version -> 400")
+    old_file = catalog_file._current_version({"version": 1, "models": [{"sort_order": 10}, {"sort_order": 30}, {}],
+                                              "personas": [{"sort_order": 5}], "skills": [{"sort_order": 1}]})
+    c.check([m.get("sort_order") for m in old_file["models"]] == [30, 10, None]
+            and old_file["personas"] == [{"sort_order": 5}] and old_file["skills"] == [{"sort_order": 1}],
+            "a version 1 file is read with its sort orders turned around (lower ones came first)", str(old_file))
     c.check(admin.post("/api/admin/catalog/import", json={"providers": {}}).status_code == 400,
             "sections must be lists -> 400")
 
@@ -774,7 +882,7 @@ def run_seeding(c, admin, main, models, personas):
     result = seed(providers=[MAIN_PROVIDER], models=[
         {"provider": main["name"], "display_name": guest_model["displayName"], "model_id": "changed-id",
          "description": "from the file", "sort_order": 1},
-        {"provider": main["name"], "display_name": f"{PREFIX} Seeded Model", "model_id": "seeded", "sort_order": 300},
+        {"provider": main["name"], "display_name": f"{PREFIX} Seeded Model", "model_id": "seeded", "sort_order": -300},
     ], personas=[
         {"name": pirate["name"], "system_prompt": "Changed by the file", "tools": []},
         {"name": f"{PREFIX} Seeded Persona", "system_prompt": "Seeded", "tools": ["files"], "colour": "red"},
@@ -804,7 +912,7 @@ def run_seeding(c, admin, main, models, personas):
     # ${VAR} in base_url: skipped while unset, filled in once set
     router = provider_entry("Router", base_url="${" + ROUTER_URL_ENV + "}/v1", privacy_tier="local")
     router_model = {"provider": router["name"], "display_name": f"{PREFIX} Router Model", "model_id": "r",
-                    "sort_order": 300}
+                    "sort_order": -300}
     os.environ.pop(ROUTER_URL_ENV, None)
     result = seed(providers=[router], models=[router_model])
     c.check(result.providers.created == 0 and result.models.created == 0 and result.errors == []
@@ -847,6 +955,13 @@ def run_seeding(c, admin, main, models, personas):
     translator = next(p for p in repo_file["personas"] if p["name"] == "Translator")
     c.check(translator.get("tools") == [] and all("default_model" not in p for p in repo_file["personas"]),
             "catalog/models.json: Translator has no tools, no default_model")
+    assistant = next(p for p in repo_file["personas"] if p["name"] == "Assistant")
+    c.check(repo_file["version"] == catalog_file.CATALOG_FILE_VERSION
+            and assistant["tools"] == ["files", "web_search", "web_fetch", "knowledge_base", "past_chats", "auto_hide"]
+            and not assistant.get("available_to_guests") and not assistant.get("own_memory")
+            and not assistant.get("skills") and not assistant.get("hidden")
+            and assistant["sort_order"] == max(p["sort_order"] for p in repo_file["personas"]),
+            "catalog/models.json: the Assistant on top, with its tools, not for guests, no own memory or skills")
 
 
 def run_resolver(c, models, personas, conversation, user_email):
@@ -1026,8 +1141,9 @@ def main():
     models = run_models(c, admin, user, guest, main_provider, env, disabled)
     personas = run_personas(c, admin, user, guest)
     conversation = run_conversations_and_settings(c, user, guest, models, personas)
+    run_hidden_agents_and_default(c, admin, user, guest, personas, args.admin_email, user_id)
     run_message_sync(c, user, user_id, models)
-    run_stream_tools(c, admin, user, available_groups)
+    run_stream_tools(c, admin, user, user_id, available_groups)
     if not args.skip_network:
         run_fetch_models(c, admin, env)
     run_import_export(c, admin, main_provider)

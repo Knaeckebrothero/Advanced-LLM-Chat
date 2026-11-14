@@ -30,4 +30,5 @@ export interface AppSettings {
   editingMode?: EditingMode;      // default 'guided'
   memoryModelId?: number | null;  // Model of the memory review, with tool support (null = the conversation's model)
   autoHidePrompt?: string | null; // What agents hide on their own, in the user's words (family mode); "" = nothing
+  defaultPersonaId?: number | null; // Agent new conversations start with (null = none)
 }

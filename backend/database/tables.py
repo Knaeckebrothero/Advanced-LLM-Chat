@@ -167,6 +167,7 @@ user_settings = Table(
     Column('editing_mode', Text, server_default='guided'),  # 'guided' | 'manual'
     Column('memory_model_id', Integer),  # llm_models.id that reviews conversations for the memory, NULL = the chat's
     Column('auto_hide_prompt', Text),  # What agents hide on their own, in the user's words; NULL = the server's
+    Column('default_persona_id', Integer),  # personas.id new conversations start with, NULL = none
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
@@ -271,6 +272,7 @@ personas = Table(
     Column('mcp_servers', JSONB),  # Slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
     Column('skills', JSONB),  # Names of its skills (docs/skills.md), NULL = none
     Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden with its chats and own knowledge base
+    Column('created_by', Integer, ForeignKey('users.id', ondelete='SET NULL')),  # NULL = seeded or from before
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )

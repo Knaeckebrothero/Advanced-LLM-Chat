@@ -73,12 +73,12 @@ def _rows(conn, query) -> list[dict]:
 
 
 def _with_agents(rows: list[dict]) -> list[dict]:
-    """The skill rows, each with "agents": the agents that have it ({"id", "name"}, by sort order and name)."""
+    """The skill rows, each with "agents": the agents that have it ({"id", "name"}, higher sort order first, then name)."""
     with db.connection() as conn:
         agents = conn.execute(
             select(personas.c.id, personas.c.name, personas.c.skills)
             .where(personas.c.skills.is_not(None))
-            .order_by(personas.c.sort_order, func.lower(personas.c.name), personas.c.id)
+            .order_by(func.coalesce(personas.c.sort_order, 0).desc(), func.lower(personas.c.name), personas.c.id)
         ).all()
     by_name: dict[str, list[dict]] = {}
     for agent in agents:

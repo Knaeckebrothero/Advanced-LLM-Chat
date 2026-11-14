@@ -4,7 +4,7 @@ The catalog file: JSON import, export and seeding from MODEL_CATALOG_FILE.
 Format (snake_case keys matching the database columns, see docs/model_catalog_api.md):
 
     {
-      "version": 1,
+      "version": 2,
       "providers": [{"name", "kind", "base_url", "api_key_env", "privacy_tier", "currency", ...}],
       "models":    [{"provider": "<provider name>", "display_name", "model_id", ...}],
       "skills":    [{"name", "description", "content", "enabled"}],
@@ -25,6 +25,10 @@ are ignored, since providers come from the server's catalog file.
 Neither deletes anything. Export writes every column; API keys are never part
 of it, providers only name their key variable (api_key_env).
 
+sort_order: higher numbers come first since version 2. A version 1 file is still
+read, with each section's sort orders turned around (lowest + highest - itself),
+so its lists keep their order.
+
 Validation is the same as in the admin API (backend/catalog/service.py).
 """
 import json
@@ -38,6 +42,7 @@ from typing import Optional
 from pydantic import ValidationError
 
 from backend.catalog import service
+from backend.catalog.resolver import persona_of_another
 from backend.catalog.service import CatalogError
 from backend.database import db
 from backend.models.mcp import McpServerCreate, McpServerUpdate
@@ -58,7 +63,9 @@ from backend.models.catalog import (
 
 log = logging.getLogger(__name__)
 
-CATALOG_FILE_VERSION = 1
+CATALOG_FILE_VERSION = 2
+# Version 1 sorted lower numbers first; such a file is read with its sort orders turned around
+SORTED_SECTIONS = ("models", "mcp_servers", "personas")
 
 # Relative MODEL_CATALOG_FILE paths are resolved against the repository root
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -134,9 +141,10 @@ def _export_value(column: str, value):
     return value
 
 
-def export_catalog() -> dict:
+def export_catalog(user: Optional[dict] = None) -> dict:
     """
-    The whole catalog in the catalog file format, usable as MODEL_CATALOG_FILE.
+    The whole catalog in the catalog file format, usable as MODEL_CATALOG_FILE. With a user
+    (the admin), without the hidden personas of other creators.
 
     Returns:
         The catalog file as a dict.
@@ -145,7 +153,7 @@ def export_catalog() -> dict:
     provider_names = {row["id"]: row["name"] for row in providers}
     provider_entries = [{column: row.get(column) for column in PROVIDER_EXPORT_COLUMNS} for row in providers]
 
-    models = sorted(db.get_llm_models(), key=lambda m: (m["provider_name"], m["sort_order"] or 0, m["display_name"]))
+    models = sorted(db.get_llm_models(), key=lambda m: (m["provider_name"], -(m["sort_order"] or 0), m["display_name"]))
     model_entries = [
         {"provider": provider_names[row["provider_id"]],
          **{column: _export_value(column, row.get(column)) for column in MODEL_EXPORT_COLUMNS}}
@@ -154,6 +162,8 @@ def export_catalog() -> dict:
 
     persona_entries = []
     for row in db.get_personas():
+        if user is not None and persona_of_another(row, user):
+            continue
         entry = {column: row.get(column) for column in PERSONA_EXPORT_COLUMNS}
         entry["variables"] = entry["variables"] or []
         persona_entries.append(entry)
@@ -289,15 +299,18 @@ def _fill_cached_price(existing: dict, fields: dict, label: str) -> str:
     return "updated"
 
 
-def _import_persona(entry: dict, label: str, errors: list, *, create_only: bool) -> str:
-    """Create or update (unless create_only) a persona."""
+def _import_persona(entry: dict, label: str, errors: list, *, create_only: bool,
+                    user: Optional[dict] = None) -> str:
+    """Create or update (unless create_only) a persona, as user (the importing admin, None when seeding)."""
     fields = _fields(entry, PERSONA_KEYS, label, errors)
     name = str(entry.get("name") or "").strip()
     if not name:
         raise CatalogError("name is required")
     fields["name"] = name
     existing = db.get_persona_by_name(name)
-    return _save(existing, PersonaCreate, PersonaUpdate, service.create_persona, service.update_persona,
+    return _save(existing, PersonaCreate, PersonaUpdate,
+                 lambda data: service.create_persona(data, user),
+                 lambda persona_id, data: service.update_persona(persona_id, data, user),
                  fields, {v: k for k, v in PERSONA_KEYS.items()}, create_only=create_only)
 
 
@@ -365,12 +378,37 @@ def _check_file(data) -> list[str]:
     if not isinstance(data, dict):
         raise CatalogError("The catalog file must be a JSON object")
     version = data.get("version", CATALOG_FILE_VERSION)
-    if version != CATALOG_FILE_VERSION:
+    if version not in (1, CATALOG_FILE_VERSION):
         raise CatalogError(f"Unsupported catalog file version {version!r} (expected {CATALOG_FILE_VERSION})")
     for section in SECTIONS:
         if data.get(section) is not None and not isinstance(data[section], list):
             raise CatalogError(f"'{section}' must be a list")
     return [f"unknown top-level key '{key}' ignored" for key in data if key != "version" and key not in SECTIONS]
+
+
+def _current_version(data: dict) -> dict:
+    """
+    The file as version 2: a version 1 file (lower sort orders first) gets each section's sort orders
+    turned around, lowest + highest - itself, so its lists keep their order. Other files as they are.
+    """
+    if data.get("version") != 1:
+        return data
+    data = dict(data)
+    for section in SORTED_SECTIONS:
+        entries = data.get(section)
+        if not entries:
+            continue
+        numbers = [entry["sort_order"] for entry in entries
+                   if isinstance(entry, dict) and isinstance(entry.get("sort_order"), int)]
+        if not numbers:
+            continue
+        total = min(numbers) + max(numbers)
+        data[section] = [
+            {**entry, "sort_order": total - entry["sort_order"]}
+            if isinstance(entry, dict) and isinstance(entry.get("sort_order"), int) else entry
+            for entry in entries
+        ]
+    return data
 
 
 def _run_section(data: dict, section: str, importer, counts, errors: list, **options) -> None:
@@ -393,9 +431,10 @@ def _run_section(data: dict, section: str, importer, counts, errors: list, **opt
 # Import (admin UI)
 # =========================================================================
 
-def import_catalog(data: dict) -> ImportResult:
+def import_catalog(data: dict, user: Optional[dict] = None) -> ImportResult:
     """
-    Import a catalog file uploaded in the app: upsert models, MCP servers, skills, then personas.
+    Import a catalog file uploaded in the app: upsert models, MCP servers, skills, then personas,
+    as user (the admin: the creator of the personas it creates).
 
     Provider entries are ignored (one message in errors); a model whose
     provider is not in the catalog is reported in errors.
@@ -412,13 +451,14 @@ def import_catalog(data: dict) -> ImportResult:
     """
     result = ImportResult(models=ImportCounts(), personas=ImportCounts(), mcpServers=ImportCounts(),
                           skills=ImportCounts(), errors=_check_file(data))
+    data = _current_version(data)
     if data.get("providers"):
         result.errors.append(PROVIDERS_IGNORED)
     _run_section(data, "models", _import_model, result.models, result.errors, create_only=False)
     # Before the personas, which name them
     _run_section(data, "mcp_servers", _import_mcp_server, result.mcpServers, result.errors, create_only=False)
     _run_section(data, "skills", _import_skill, result.skills, result.errors, create_only=False)
-    _run_section(data, "personas", _import_persona, result.personas, result.errors, create_only=False)
+    _run_section(data, "personas", _import_persona, result.personas, result.errors, create_only=False, user=user)
 
     log.info(
         f"Imported catalog: models {result.models.created} created / {result.models.updated} updated, "
@@ -552,6 +592,7 @@ def seed_catalog(data: dict) -> SeedResult:
         CatalogError: If the file itself is malformed.
     """
     result = SeedResult(errors=_check_file(data))
+    data = _current_version(data)
     _run_section(data, "providers", _seed_provider, result.providers, result.errors)
     _run_section(data, "models", _import_model, result.models, result.errors, create_only=True)
     _run_section(data, "mcp_servers", _import_mcp_server, result.mcp_servers, result.errors, create_only=True)
