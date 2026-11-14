@@ -273,6 +273,7 @@ personas = Table(
     Column('skills', JSONB),  # Names of its skills (docs/skills.md), NULL = none
     Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden with its chats and own knowledge base
     Column('created_by', Integer, ForeignKey('users.id', ondelete='SET NULL')),  # NULL = seeded or from before
+    Column('avatar', Text),  # Its image: a data URL of a WebP (file_store.agent_image())
     Column('created_at', DateTime, server_default=func.now()),
     Column('updated_at', DateTime, server_default=func.now(), onupdate=func.now()),
 )

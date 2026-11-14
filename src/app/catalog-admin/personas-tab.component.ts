@@ -15,12 +15,13 @@ import { CatalogAdminDialogs } from './catalog-admin-dialogs';
 import { PersonaDialogComponent, PersonaDialogData } from './persona-dialog.component';
 import { toolIcon } from './catalog-admin.utils';
 import { FamilyModeService } from '../services/family-mode.service';
+import { AgentAvatarComponent } from '../components/catalog/agent-avatar.component';
 
 /** Agents (personas in the API): a named system prompt with fill-in variables and a set of tools. */
 @Component({
   selector: 'app-personas-tab',
   standalone: true,
-  imports: [AsyncPipe, MatButtonModule, MatIconModule, MatTooltipModule, TranslateModule],
+  imports: [AsyncPipe, MatButtonModule, MatIconModule, MatTooltipModule, TranslateModule, AgentAvatarComponent],
   template: `
     <div class="section-header">
       <div class="section-heading">
@@ -40,7 +41,7 @@ import { FamilyModeService } from '../services/family-mode.service';
         @for (persona of sorted(personas, (familyMode.active$ | async) ?? true); track persona.id) {
           <article class="agent-card" [class.is-disabled]="!persona.enabled">
             <div class="agent-head">
-              <span class="agent-avatar" aria-hidden="true"><mat-icon>smart_toy</mat-icon></span>
+              <app-agent-avatar [src]="persona.avatar" [size]="48"></app-agent-avatar>
               <div class="agent-title">
                 <h3 class="item-title">{{ persona.name }}</h3>
                 <div class="agent-tags">

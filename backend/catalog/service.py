@@ -120,9 +120,10 @@ PERSONA_FIELDS = {
     "mcpServers": "mcp_servers",
     "skills": "skills",
     "hidden": "hidden",
+    "avatar": "avatar",
 }
 # tools: NULL = every enabled tool, so null in an update selects all tools again; mcp_servers, skills: NULL = none
-PERSONA_NULLABLE = {"description", "variables", "tools", "mcp_servers", "skills"}
+PERSONA_NULLABLE = {"description", "variables", "tools", "mcp_servers", "skills", "avatar"}
 
 # Columns that must not be empty strings
 REQUIRED_TEXT_COLUMNS = {"name", "display_name", "model_id", "system_prompt"}
@@ -370,6 +371,7 @@ def persona_out(row: dict) -> PersonaOut:
         mcpServers=list(row["mcp_servers"]) if row.get("mcp_servers") else None,
         skills=list(row["skills"]) if row.get("skills") else None,
         hidden=bool(row.get("hidden")),
+        avatar=row.get("avatar"),
     )
 
 
@@ -383,6 +385,7 @@ def persona_public(row: dict) -> PublicPersona:
         variables=_variables(row),
         tools=_tools(row),
         hidden=bool(row.get("hidden")),
+        avatar=row.get("avatar"),
     )
 
 
@@ -535,6 +538,7 @@ def create_persona(data: PersonaCreate, user: Optional[dict] = None) -> PersonaO
     """
     values = _to_columns(data, PERSONA_FIELDS, PERSONA_NULLABLE, partial=False)
     values["created_by"] = _creator_id(user)
+    _prepare_avatar(values, None)
     _check_variables(values.get("variables"))
     _normalize_tools(values)
     _check_mcp_servers(values)
@@ -560,6 +564,7 @@ def update_persona(persona_id: int, data: PersonaUpdate, user: Optional[dict] = 
     values = _to_columns(data, PERSONA_FIELDS, PERSONA_NULLABLE, partial=True)
     if values.get("hidden", existing.get("hidden")) and existing.get("created_by") is None:
         values["created_by"] = _creator_id(user)
+    _prepare_avatar(values, existing)
     if "variables" in values:
         values["variables"] = values["variables"] or []
         _check_variables(values["variables"])
@@ -576,6 +581,26 @@ def delete_persona(persona_id: int, user: Optional[dict] = None) -> None:
     _persona_for(persona_id, user)
     if not db.delete_persona(persona_id):
         raise CatalogNotFound(f"Persona {persona_id} not found")
+
+
+def _prepare_avatar(values: dict, existing: Optional[dict]) -> None:
+    """
+    The image as it is kept (file_store.agent_image()): a new one is scaled and written again; the
+    one the persona has already (sent back unchanged) is kept as it is.
+
+    Raises:
+        CatalogError: Not an image that can be read, or too large.
+    """
+    avatar = values.get("avatar")
+    if avatar is None or (existing is not None and avatar == existing.get("avatar")):
+        if existing is not None and avatar is not None:
+            del values["avatar"]
+        return
+    from backend.services.file_store import agent_image
+    try:
+        values["avatar"] = agent_image(avatar)
+    except ValueError as e:
+        raise CatalogError(str(e)) from e
 
 
 def _creator_id(user: Optional[dict]) -> Optional[int]:

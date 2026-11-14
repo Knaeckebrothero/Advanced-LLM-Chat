@@ -25,6 +25,10 @@ import { sortServers } from '../mcp/mcp-utils';
 import { CatalogAdminStore } from './catalog-admin.store';
 import { FamilyModeService } from '../services/family-mode.service';
 import { describeHttpError, DIALOG_ERROR, findPlaceholders, INVALID_FIELD, numberOrNull, revealInDialog, textOrNull, toolIcon } from './catalog-admin.utils';
+import { AgentAvatarComponent } from '../components/catalog/agent-avatar.component';
+
+/** The largest image that can be picked for an agent; the server keeps a small copy of it. */
+const MAX_AGENT_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export interface PersonaDialogData {
   persona: IPersonaOut | null;  // null = add a new agent
@@ -65,7 +69,8 @@ const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
     MatRadioModule,
     MatSlideToggleModule,
     MatTooltipModule,
-    TranslateModule
+    TranslateModule,
+    AgentAvatarComponent
   ],
   templateUrl: './persona-dialog.component.html',
   styleUrls: ['./catalog-dialog.scss']
@@ -87,6 +92,11 @@ export class PersonaDialogComponent {
   skillsLoadError: string | null;
   saving = false;
   error: string | null = null;
+  /** The agent's image as it will be saved (a data URL; a picked file until the server made it small), or none. */
+  avatar: string | null;
+  /** The image was picked or taken away here, so it is sent (an update leaves it out otherwise). */
+  private avatarChanged = false;
+  imageError: string | null = null;
 
   /** The server offers family mode. */
   readonly familyModeAvailable: boolean;
@@ -105,6 +115,7 @@ export class PersonaDialogComponent {
     this.isCopy = !data.persona && !!data.copyOf;
     const p = data.persona ?? data.copyOf ?? null;
     const name = this.isCopy ? store.copyName(data.copyOf!.name) : p?.name ?? '';
+    this.avatar = p?.avatar ?? null;  // A copy keeps the image
     this.pickedTools = new Set(p?.tools ?? []);
     // The server's tool groups, plus picked ones it doesn't list (shown as unavailable)
     const listed = new Set(store.tools.map(t => t.id));
@@ -290,6 +301,50 @@ export class PersonaDialogComponent {
     }
   }
 
+  /** An image picked with the file chooser. */
+  async pickImage(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';  // The same file can be picked again
+    if (file) await this.useImage(file);
+  }
+
+  /** An image dropped on the image row. */
+  async dropImage(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    const file = event.dataTransfer?.files?.[0];
+    if (file) await this.useImage(file);
+  }
+
+  removeImage(): void {
+    this.avatar = null;
+    this.avatarChanged = true;
+    this.imageError = null;
+  }
+
+  private async useImage(file: File): Promise<void> {
+    this.imageError = null;
+    if (!file.type.startsWith('image/')) {
+      this.imageError = this.translate.instant('catalog.admin.personas.imageNotImage');
+      return;
+    }
+    if (file.size > MAX_AGENT_IMAGE_BYTES) {
+      this.imageError = this.translate.instant('catalog.admin.personas.imageTooLarge');
+      return;
+    }
+    try {
+      this.avatar = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      this.avatarChanged = true;
+    } catch {
+      this.imageError = this.translate.instant('catalog.admin.personas.imageNotImage');
+    }
+  }
+
   removeVariable(index: number): void {
     this.variables.removeAt(index);
   }
@@ -320,7 +375,9 @@ export class PersonaDialogComponent {
       hidden: !!v.hidden,
       // [] for none: unambiguous for create and update
       mcpServers: this.mcpOptions.map(o => o.slug).filter(slug => this.pickedMcp.has(slug)),
-      skills: this.skillOptions.map(o => o.name).filter(name => this.pickedSkills.has(name))
+      skills: this.skillOptions.map(o => o.name).filter(name => this.pickedSkills.has(name)),
+      // An update without a change leaves the image out, so the server keeps it as it is
+      ...(this.isNew || this.avatarChanged ? { avatar: this.avatar } : {})
     };
 
     this.saving = true;

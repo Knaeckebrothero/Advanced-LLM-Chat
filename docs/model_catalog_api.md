@@ -129,11 +129,14 @@ PersonaCreate    name, description?, systemPrompt, variables = [], tools = null,
                  availableToGuests = false, enabled = true, sortOrder = 0,
                  ownMemory = false (with knowledge_base: its own knowledge base and memory per user),
                  mcpServers = null (slugs of admin MCP servers, docs/mcp.md),
-                 skills = null (names of skills, docs/skills.md)
+                 skills = null (names of skills, docs/skills.md),
+                 avatar = null (its image as a data URL: any image up to 10 MB is sent, the server keeps
+                 a WebP of at most 256 pixels on its longer edge, never cropped, file_store.agent_image();
+                 an update that sends the kept one back, or leaves it out, keeps it; null takes it away)
 PersonaUpdate    the same fields, all optional; left out = unchanged, tools: null = every enabled tool
                  (without the opt-in knowledge_base)
 PersonaOut       PersonaCreate + id (personas.created_by, the admin who created it in the app, is not sent)
-PublicPersona    id, name, description, systemPrompt, variables, tools
+PublicPersona    id, name, description, systemPrompt, variables, tools, avatar
 ToolGroupStatus  id ("files" | "web_search" | "web_fetch" | "knowledge_graph" | "knowledge_base" | "past_chats" | "user_mcp"),
                  available, reason (e.g. "TAVILY_API_KEY is not set", "NEO4J_ENABLED is off"; null when available),
                  optIn (only for personas that select it, not part of tools null: web_fetch, knowledge_base, past_chats, user_mcp),
@@ -176,7 +179,7 @@ Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake
 
 **Import in the app** (`POST /api/admin/catalog/import`) upserts models and personas: a new entry gets defaults for the keys it leaves out, an existing entry only changes the keys that are present, and `null` clears optional columns. Provider entries are ignored, with one message in `errors` ("providers ignored: providers come from the server's catalog file"); a model whose provider is not in the catalog is reported in `errors`. Unknown keys are reported and ignored; each bad entry is reported and the others are still imported.
 
-**Export** writes every column of providers, models and personas, without keys and without ids.
+**Export** writes every column of providers, models and personas, without keys and without ids (an agent's image as its data URL, `avatar`).
 
 **Skills** are seeded, imported and exported like personas. In a seed file a skill can instead name a `SKILL.md` next to the catalog file, `{"file": "skills/image-generation/SKILL.md"}` (inside the catalog file's folder; only when seeding, never in an import in the app). The repository's `catalog/models.json` ships the starter skills this way, from `catalog/skills/`.
 

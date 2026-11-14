@@ -165,6 +165,9 @@ export interface IPersonaBase {
   mcpServers?: string[] | null;  // Slugs of the admin MCP servers it uses (docs/mcp.md); null or [] = none
   skills?: string[] | null;  // Names of its skills (docs/skills.md), in this order; null or [] = none
   hidden?: boolean;  // Hidden with all its chats and its own knowledge base
+  // Its image, a data URL: sent, any image (at most 10 MB); returned, a WebP of at most 256 pixels.
+  // null takes it away; left out (in an update) keeps it
+  avatar?: string | null;
 }
 
 export type IPersonaCreate = IPersonaBase;
@@ -183,6 +186,7 @@ export interface IPublicPersona {
   variables: IPersonaVariable[];
   tools?: ToolGroup[] | null;
   hidden?: boolean;  // Left out of the picker in family mode
+  avatar?: string | null;  // Its image, a data URL; null = none (an icon is shown)
 }
 
 /** A tool group and whether the server can offer it (GET /api/admin/tools). */

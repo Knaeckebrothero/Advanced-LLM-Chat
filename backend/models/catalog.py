@@ -171,6 +171,9 @@ class PersonaBase(BaseModel):
     mcpServers: Optional[List[str]] = None  # Slugs of the admin MCP servers it uses (docs/mcp.md); None = none
     skills: Optional[List[str]] = None  # Names of its skills (docs/skills.md), in this order; None = none
     hidden: bool = False  # Hidden with all its chats and its own knowledge base
+    # Its image, a data URL. Sent: any image (at most 10 MB), kept as a WebP of at most 256 pixels
+    # (file_store.agent_image()); None = none, the pages show an icon
+    avatar: Optional[str] = None
 
 
 class PersonaCreate(PersonaBase):
@@ -191,6 +194,7 @@ class PersonaUpdate(BaseModel):
     mcpServers: Optional[List[str]] = None  # Send null or [] for none
     skills: Optional[List[str]] = None  # Send null or [] for none
     hidden: Optional[bool] = None
+    avatar: Optional[str] = None  # Send null to take the image away
 
 
 class PersonaOut(PersonaBase):
@@ -206,6 +210,7 @@ class PublicPersona(BaseModel):
     variables: List[PersonaVariable] = []
     tools: Optional[List[ToolGroup]] = None
     hidden: bool = False  # The picker leaves it out in family mode
+    avatar: Optional[str] = None  # Its image, a data URL of a WebP; None = none
 
 
 class ToolGroupStatus(BaseModel):

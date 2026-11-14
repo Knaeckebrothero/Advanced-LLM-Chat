@@ -543,6 +543,11 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   }
 
   /** An answer of the assistant: not your message, nor a system message (an instruction to the model). */
+  /** The image of the conversation's agent for an answer, or null (the icons are shown). */
+  get agentAvatar(): string | null {
+    return this.isAnswer ? this.chatUI.agentAvatar : null;
+  }
+
   get isAnswer(): boolean {
     return this.message.roleName !== 'user' && this.message.roleName !== 'system';
   }
