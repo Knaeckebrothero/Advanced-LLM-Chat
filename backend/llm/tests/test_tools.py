@@ -37,10 +37,11 @@ from typing import get_args
 from backend.api import messages
 from backend.catalog import resolver
 from backend.llm import tools as tools_module
-from backend.llm.prompts import (CHAT_PROMPT, FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, MEMORY_EMPTY,
+from backend.llm.prompts import (_ALSO_KEPT_FILES, CHAT_PROMPT, FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, MEMORY_EMPTY,
                                  MEMORY_HEADING, WEB_FETCH_PROMPT, WEB_SEARCH_PROMPT, build_system_prompt,
                                  with_instructions, with_memory)
 from backend.llm.tools import (OPT_IN_GROUPS, TOOL_GROUPS, ToolInputError, ToolText, default_tools,
+                               knowledge_base_tools,
                                tool_group_status, tool_message_content, tools_for_groups)
 from backend.llm.types import ModelConfig
 from backend.models.catalog import ToolGroup
@@ -284,11 +285,30 @@ async def test_stream_generate_tools_follow_the_persona():
             assert tools.get("memory_add").func.__wrapped__.keywords["writer"] == writer
             assert tools.get("kb_search").func.__wrapped__.keywords == {"user_id": 1, "vault": 0, "family_mode": False}
             assert not writer.from_hidden and not writer.family_mode
+            # Its notes keep files of the conversation (the parameter files), and the file tools read the kept
+            # ones, of the same knowledge base. Neither without the other group, nor for the memory review
+            assert "files" in tools.get("kb_write").parameters["properties"]
+            assert "files" in tools.get("kb_update").parameters["properties"]
+            assert tools.get("read_file").func.keywords["knowledge_base"] == (0, False)
+            assert tools.get("kb_read").func.__wrapped__.keywords["reads_files"] is True
+            assert "knowledge base" in tools.get("read_file").description
+            assert _ALSO_KEPT_FILES in build_system_prompt(None, tools)
+            only_files = messages._agent_tools(user, {"id": "conv-1", "persona_id": 2}, config)
+            assert only_files.get("read_file").func.keywords["knowledge_base"] is None
+            assert "knowledge base" not in only_files.get("read_file").description
+            assert FILE_ACCESS_PROMPT in build_system_prompt(None, only_files)
+            only_notes = messages._agent_tools(user, {"id": "conv-1", "persona_id": 7}, config)
+            assert only_notes.get("kb_read").func.__wrapped__.keywords["reads_files"] is False
+            assert "Images and other files" in build_system_prompt(None, only_notes)
+            review = knowledge_base_tools(1, {"id": "conv-1"}, author="review")
+            assert "files" not in next(tool for tool in review if tool.name == "kb_write").parameters["properties"]
             # Family mode: a device in it binds family_mode to every tool that reads or writes;
             # what is written in a hidden chat (marked, or of a hidden agent) is marked, unless it goes into
             # a hidden agent's own knowledge base
             tools = messages._agent_tools(user, {"id": "conv-1", "persona_id": 6}, config, hide=True)
-            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 0, "family_mode": True}
+            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 0, "family_mode": True,
+                                                                      "reads_files": True}
+            assert tools.get("read_file").func.keywords["knowledge_base"] == (0, True)
             assert tools.get("kb_update").func.__wrapped__.keywords["writer"].family_mode
             assert messages._agent_tools(user, {"id": "c", "persona_id": 6, "hidden": True}, config) \
                 .get("memory_add").func.__wrapped__.keywords["writer"].from_hidden
@@ -302,7 +322,8 @@ async def test_stream_generate_tools_follow_the_persona():
             tools = messages._agent_tools(user, {"id": "conv-2", "persona_id": 8}, config)
             assert tools.get("kb_write").func.__wrapped__.keywords["writer"].vault == 8
             assert tools.get("memory_remove").func.__wrapped__.keywords["writer"].vault == 8
-            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 8, "family_mode": False}
+            assert tools.get("kb_read").func.__wrapped__.keywords == {"user_id": 1, "vault": 8, "family_mode": False,
+                                                                      "reads_files": False}
             assert resolver.persona_vault(user, {"persona_id": 8}) == 8
             assert resolver.persona_vault(user, {"persona_id": 6}) == 0
             assert resolver.persona_vault(user, {"persona_id": 9}) == 0, "a disabled persona counts as none"

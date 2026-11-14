@@ -11,10 +11,31 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from backend.models.common import UtcDatetime
+from backend.services import file_store
 from backend.services.knowledge_base import (MAX_DESCRIPTION_CHARS, MAX_TAGS, MAX_TITLE_CHARS, MEMORY_MAX_CHARS,
                                              MEMORY_MAX_LINES)
 
 NoteStatus = Literal["active", "archived"]
+
+
+class KBFile(BaseModel):
+    """
+    A file a note keeps, e.g. an image: a stored file (the files API serves it by fileId) under its
+    name in the knowledge base, by which notes and answers place it.
+    """
+    fileId: str
+    name: str  # "red-fox.png", made from the note's slug
+    mimeType: str
+    size: Optional[int] = None  # Bytes
+    width: Optional[int] = None  # Images: pixels
+    height: Optional[int] = None
+    note: Optional[str] = None  # The slug of the note that keeps it
+    origin: Optional[str] = None  # A file a tool made: the tool's title, "Civitai: Run step"
+
+    @classmethod
+    def from_row(cls, row: dict) -> "KBFile":
+        """From a row of knowledge_base.vault_files()."""
+        return cls(**file_store.file_ref(row), note=row.get("note_slug"), origin=row.get("origin"))
 
 
 class KBNoteSummary(BaseModel):
@@ -27,12 +48,13 @@ class KBNoteSummary(BaseModel):
     updatedAt: Optional[UtcDatetime] = None
     hidden: bool = False  # Hidden
     hiddenBy: Optional[str] = None  # Who set hidden: "user" or "agent" (agents leave the user's decision alone)
+    files: List[KBFile] = []  # The files it keeps, in the order they were kept
 
     @classmethod
     def from_row(cls, row: dict) -> "KBNoteSummary":
         return cls(slug=row["slug"], title=row["title"], description=row["description"], tags=row["tags"] or [],
                    status=row["status"], updatedAt=row["updated_at"], hidden=bool(row.get("hidden")),
-                   hiddenBy=row.get("hidden_by"))
+                   hiddenBy=row.get("hidden_by"), files=[KBFile.from_row(file) for file in row.get("files") or []])
 
 
 class KBTagCount(BaseModel):
@@ -105,6 +127,7 @@ class KBNote(KBNoteSummary):
     links: List[KBLink] = []  # The notes it links to, also ones that don't exist
     backlinks: List[KBLink] = []  # The active notes that link to it
     revisions: List[KBRevisionSummary] = []  # Newest first
+    placedFiles: List[KBFile] = []  # Files of other notes that its text places
 
 
 class KBNoteWrite(BaseModel):

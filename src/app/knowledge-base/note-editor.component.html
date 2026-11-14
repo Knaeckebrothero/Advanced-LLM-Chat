@@ -121,7 +121,7 @@
     } @else {
       <div class="content-preview">
         @if (content.trim()) {
-          <app-note-content [content]="content" [interactive]="false"></app-note-content>
+          <app-note-content [content]="content" [interactive]="false" [files]="files()"></app-note-content>
         } @else {
           <p class="preview-empty">{{ 'knowledgeBase.editor.previewEmpty' | translate }}</p>
         }

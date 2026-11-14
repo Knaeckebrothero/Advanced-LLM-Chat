@@ -14,20 +14,30 @@ Links whose target isn't written as a slug are rewritten to one, keeping the tex
 becomes [text](project-apollo.md), because Obsidian goes by file name. Code stays as it is. Obsidian tags may only
 contain letters, digits, _, - and /, and not only digits, so other characters become dashes and
 a tag of digits gets the prefix "tag-" (2026 becomes tag-2026).
+
+The files notes keep (images, say) are in files/, under their names in the knowledge base: a note
+places one with ![[name]] or ![text](name), and Obsidian finds a file by its name in any folder.
 """
 import io
 import json
+import logging
 import re
+import tempfile
 import zipfile
 from datetime import datetime, timezone, tzinfo
-from typing import Optional
+from pathlib import Path
+from typing import IO, Optional
 from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from backend.services import knowledge_base as kb
+from backend.services.file_utils import get_file_path
+
+log = logging.getLogger(__name__)
 
 VAULT_FOLDER = "knowledge-base"
 ARCHIVE_FOLDER = "archive"
+FILES_FOLDER = "files"
 
 # [[target]], [[target#heading]], [[target|alias]], [[target#heading|alias]]
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]|#]+)(#[^\[\]|]*)?(\|[^\[\]]*)?\]\]")
@@ -72,8 +82,8 @@ def obsidian_links(content: str) -> str:
     def wikilink(match: re.Match) -> str:
         target, heading, alias = match.group(1), match.group(2) or "", match.group(3)
         slug = kb.slugify(target)
-        if not slug or slug == target.strip():
-            return match.group(0)
+        if not slug or slug == target.strip() or kb.names_file(target):
+            return match.group(0)  # A slug already, or a file the note places: ![[red-fox.png]]
         return f"[[{slug}{heading}{alias or '|' + target.strip()}]]"
 
     def markdown_link(match: re.Match) -> str:
@@ -129,23 +139,70 @@ def note_path(note: dict) -> str:
     return f"{folder}/{note['slug']}.md"
 
 
+def _zip_time(value: Optional[datetime], zone: Optional[tzinfo]) -> tuple:
+    """A time of the database as a zip entry takes it (not before 1980), in the zone."""
+    return max(local_time(value, zone) or datetime.now(), datetime(1980, 1, 1)).timetuple()[:6]
+
+
+def write_vault(target: IO[bytes], user_id: int, zone: Optional[tzinfo] = None, vault: int = 0,
+                family_mode: bool = False) -> int:
+    """
+    Write a knowledge base of the user as a zip: its notes (with its memory as memory.md) and, in
+    files/, the files they keep. Times in the zone (UTC without one); with family_mode without the
+    hidden notes, lines and files. A kept file that is missing on disk is left out.
+
+    Returns:
+        The number of notes in it.
+    """
+    notes = kb.all_notes(user_id, vault, family_mode=family_mode)
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        # The vault folder itself, so even an empty knowledge base unpacks to a folder Obsidian can open
+        archive.mkdir(VAULT_FOLDER)
+        for note in notes:
+            info = zipfile.ZipInfo(note_path(note), date_time=_zip_time(note.get("updated_at") or note.get("created_at"), zone))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, note_markdown(note, zone).encode("utf-8"))
+        for file in (file for note in notes for file in note.get("files") or ()):
+            path = get_file_path(file["file_id"])
+            if path is None:
+                log.warning(f"The kept file {file['name']} ({file['file_id']}) is missing and not exported")
+                continue
+            info = zipfile.ZipInfo(f"{VAULT_FOLDER}/{FILES_FOLDER}/{file['name']}",
+                                   date_time=_zip_time(file.get("created_at"), zone))
+            # Images and PDFs are compressed already
+            info.compress_type = zipfile.ZIP_STORED
+            with path.open("rb") as source, archive.open(info, "w") as entry:
+                while chunk := source.read(1024 * 1024):
+                    entry.write(chunk)
+    return len(notes)
+
+
 def export_vault(user_id: int, zone: Optional[tzinfo] = None, vault: int = 0,
                  family_mode: bool = False) -> tuple[bytes, int]:
     """
-    A knowledge base of the user (with its memory as memory.md) as a zip, with times in the zone
-    (UTC without one); with family_mode without the hidden notes and lines.
+    A knowledge base as a zip in memory (write_vault()).
 
     Returns:
         (the zip, the number of notes in it)
     """
-    notes = kb.all_notes(user_id, vault, family_mode=family_mode)
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        # The vault folder itself, so even an empty knowledge base unpacks to a folder Obsidian can open
-        archive.mkdir(VAULT_FOLDER)
-        for note in notes:
-            changed = local_time(note.get("updated_at") or note.get("created_at"), zone) or datetime.now()
-            info = zipfile.ZipInfo(note_path(note), date_time=max(changed, datetime(1980, 1, 1)).timetuple()[:6])
-            info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, note_markdown(note, zone).encode("utf-8"))
-    return buffer.getvalue(), len(notes)
+    count = write_vault(buffer, user_id, zone, vault, family_mode)
+    return buffer.getvalue(), count
+
+
+def export_vault_file(user_id: int, zone: Optional[tzinfo] = None, vault: int = 0,
+                      family_mode: bool = False) -> tuple[Path, int]:
+    """
+    A knowledge base as a zip in a temporary file (write_vault()), which the caller deletes: the
+    files notes keep can be large.
+
+    Returns:
+        (the zip's path, the number of notes in it)
+    """
+    with tempfile.NamedTemporaryFile(prefix="knowledge-base-", suffix=".zip", delete=False) as target:
+        path = Path(target.name)
+        try:
+            return path, write_vault(target, user_id, zone, vault, family_mode)
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise

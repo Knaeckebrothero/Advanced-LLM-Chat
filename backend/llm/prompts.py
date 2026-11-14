@@ -45,7 +45,19 @@ This conversation has its own files: what the user attached, and what your tools
 - To show a file to the user, place it in your answer as a Markdown image with the file's name as the address: ![A red fox in the snow](fox-1.png). It appears at that place in your text: an image as the picture, any other file as a card to open. Put it on a line of its own, next to what you say about it; several in a row appear side by side. An image a tool created is only a small preview for the user until you place it: place the ones worth looking at.
 Name a file by its name, or by its fileId when several have the same name. Only files of this conversation can be placed. The chat can't display images from web addresses: give those as links, never as Markdown images."""
 
+# In its place for an agent that also has the knowledge base, whose notes keep files (docs/knowledge_base.md, "Files")
+_ONLY_CONVERSATION_FILES = "Only files of this conversation can be placed."
+_ALSO_KEPT_FILES = ("Only files of this conversation and files that notes of your knowledge base keep can be placed; "
+                    "read_file reads the kept ones too, by the names they have there.")
+
 FILE_TOOL_NAMES = set(TOOL_GROUPS["files"])
+
+
+def file_access_prompt(with_knowledge_base: bool = False) -> str:
+    """The section on the conversation's files; with the knowledge base, it also names the files notes keep."""
+    if not with_knowledge_base:
+        return FILE_ACCESS_PROMPT
+    return FILE_ACCESS_PROMPT.replace(_ONLY_CONVERSATION_FILES, _ALSO_KEPT_FILES)
 
 # Added when the Neo4j knowledge graph tools are enabled
 GRAPH_PROMPT = """## Knowledge Graph:
@@ -69,6 +81,12 @@ KB_HOW_RULES = """How to save it:
 - Keep the memory short and current: one fact per line, under headings such as "About the user", "Preferences", "Ongoing" and "Where things are". When something changes, replace its line (memory_replace) rather than adding another one, and remove what is no longer true (memory_remove).
 - Write down only what the user said or what you found out, never details you assumed or added. Leave out only what matters for nothing beyond the current conversation."""
 
+# Only the agent keeps files: the memory review reads a conversation as text
+KB_FILES_RULES = """Images and other files:
+- A note can keep files of a conversation, so that they outlast it: pass them to kb_write or kb_update in files. Do it when the user wants a picture kept or remembered, whether they sent it or you made it, and for one you will need again, such as the look of a person, a character or a place.
+- One note per image. Its content says what the image shows, in enough detail to find it by words later: who and what is in it, the setting, the style and colors, any text in it. Add why it is kept and, for a generated image, the prompt and settings it was made with. Describe what you see in it, not what was asked for: look at the image first if you haven't. Give the note the tag "image".
+- The kept file gets the note's name, e.g. red-fox.png; search results and notes name the files they keep. To show one, in any conversation, place it in your answer by that name: ![A red fox in the snow](red-fox.png). A description can be wrong: look at the image itself before you claim a detail of it."""
+
 KB_PROMPT = f"""## Knowledge Base and Memory:
 You keep two things for this user that last across all of your conversations with them:
 - Your memory: short lines, shown below under "Your memory", that are part of every conversation. It holds what you should always have in mind about the user, and where the details are.
@@ -77,6 +95,8 @@ You keep two things for this user that last across all of your conversations wit
 {KB_SAVE_RULES}
 
 {KB_HOW_RULES}
+
+{KB_FILES_RULES}
 
 When to look something up:
 - Start from your memory: it tells you what you know and which note has the details. Read that note (kb_read) when you need them.
@@ -208,7 +228,7 @@ def build_system_prompt(
             tool_paragraph += " " + WEB_FETCH_PROMPT
         sections.append(tool_paragraph)
     if names & FILE_TOOL_NAMES:
-        sections.append(FILE_ACCESS_PROMPT)
+        sections.append(file_access_prompt(bool(names & KB_TOOL_NAMES)))
     if names & GRAPH_TOOL_NAMES:
         sections.append(GRAPH_PROMPT)
     if names & KB_TOOL_NAMES:

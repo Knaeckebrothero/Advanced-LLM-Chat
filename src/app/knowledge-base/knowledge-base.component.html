@@ -140,7 +140,7 @@
             } @else {
               <ul class="note-list">
                 @for (item of store.items(); track item.slug) {
-                  <li>
+                  <li [class.has-thumb]="thumb(item)">
                     <button type="button" class="note-item" [class.is-selected]="item.slug === store.slug() && !creating()"
                             [attr.aria-current]="item.slug === store.slug() ? 'page' : null" (click)="select(item.slug)">
                       <span class="note-item-title">
@@ -165,6 +165,10 @@
                         }
                       </span>
                     </button>
+                    <!-- The first image it keeps; a click opens the image, not the note -->
+                    @if (thumb(item); as image) {
+                      <app-file-tile class="note-item-thumb" [file]="image" size="small" [lazy]="true"></app-file-tile>
+                    }
                   </li>
                 }
               </ul>
@@ -220,7 +224,7 @@
                     <app-note-view [note]="note" (back)="backToList()" (edit)="mode.set('edit')"
                                    (history)="mode.set('history')" (archive)="archive(note)" (restore)="restore(note)"
                                    (delete)="delete(note)" (tagPicked)="showTag($event)"
-                                   (missingLink)="newNote($event.text)"
+                                   (missingLink)="newNote($event.text)" (removeFile)="removeFile(note, $event)"
                                    (conversation)="openConversation($event)"></app-note-view>
                   }
                 }

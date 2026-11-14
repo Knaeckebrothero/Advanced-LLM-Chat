@@ -6,7 +6,20 @@
  * "memory" of each is the agent's memory, part of every answer.
  */
 
+import { IFileRef } from './file.model';
+
 export type NoteStatus = 'active' | 'archived';
+
+/**
+ * A file a note keeps, e.g. an image (docs/knowledge_base.md, "Files"): a stored file under its
+ * name in the knowledge base, by which notes and answers place it (![[red-fox.png]]).
+ */
+export interface IKBFile extends IFileRef {
+  /** The slug of the note that keeps it. */
+  note?: string | null;
+  /** A file a tool made: the tool's title, "Civitai: Run step". */
+  origin?: string | null;
+}
 
 export interface IKBNoteSummary {
   slug: string;
@@ -17,6 +30,7 @@ export interface IKBNoteSummary {
   updatedAt: string | null;
   hidden?: boolean;  // Hidden
   hiddenBy?: 'user' | 'agent' | null;  // Who set it: the user (agents leave it alone) or an agent
+  files?: IKBFile[];  // The files it keeps, in the order they were kept
 }
 
 export interface IKBTagCount {
@@ -71,6 +85,7 @@ export interface IKBNote extends IKBNoteSummary {
   links: IKBLink[];
   backlinks: IKBLink[];
   revisions: IKBRevisionSummary[];  // Newest first
+  placedFiles?: IKBFile[];  // Files of other notes that its text places
 }
 
 export interface IKBNoteWrite {

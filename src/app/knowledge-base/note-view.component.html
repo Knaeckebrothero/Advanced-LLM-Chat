@@ -95,7 +95,32 @@
   </header>
 
   <app-note-content class="note-body" [content]="note().content" [links]="note().links" [slug]="note().slug"
-                    (missingLink)="missingLink.emit($event)"></app-note-content>
+                    [files]="placeable()" (missingLink)="missingLink.emit($event)"></app-note-content>
+
+  @if (kept().length) {
+    <footer class="note-kept">
+      <h3 class="link-heading">
+        <mat-icon aria-hidden="true">attach_file</mat-icon>
+        {{ 'knowledgeBase.note.files' | translate }}
+      </h3>
+      <ul class="kept-list">
+        @for (file of kept(); track file.fileId) {
+          <li class="kept-item">
+            <app-file-tile [file]="file" size="small" [gallery]="keptImages()"></app-file-tile>
+            <span class="kept-text">
+              <span class="kept-name">{{ file.name }}</span>
+              <span class="kept-facts">{{ fileFacts(file) }}</span>
+            </span>
+            <button mat-icon-button type="button" class="kept-remove" (click)="removeFile.emit(file)"
+                    [attr.aria-label]="'knowledgeBase.note.removeFile' | translate: { name: file.name }"
+                    [matTooltip]="'knowledgeBase.note.removeFileShort' | translate">
+              <mat-icon>delete_outline</mat-icon>
+            </button>
+          </li>
+        }
+      </ul>
+    </footer>
+  }
 
   @if (note().links.length || note().backlinks.length) {
     <footer class="note-links">

@@ -253,6 +253,24 @@
   }
 }
 
+// A note that keeps an image shows it next to its text
+.note-list li {
+  position: relative;
+}
+
+.note-list li.has-thumb .note-item {
+  padding-right: 80px;
+}
+
+.note-item-thumb {
+  --file-tile-height: 52px;
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  max-width: 56px;
+  transform: translateY(-50%);
+}
+
 .note-item-title {
   font-size: 0.925rem;
   font-weight: 600;

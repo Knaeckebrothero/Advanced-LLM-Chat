@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, input, output, signal, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -26,6 +26,9 @@ export class NoteHistoryComponent implements OnInit {
   readonly note = input.required<IKBNote>();
   readonly back = output<void>();
   readonly conversation = output<string>();
+
+  /** The files a version's text can place: the ones the note keeps now, and other notes' that it names. */
+  readonly files = computed(() => [...(this.note().files ?? []), ...(this.note().placedFiles ?? [])]);
 
   readonly selectedId = signal<number | null>(null);
   readonly revision = signal<IKBRevision | null>(null);

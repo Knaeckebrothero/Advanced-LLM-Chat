@@ -13,7 +13,8 @@ ToolInputError with a message for the model, so the step shows as failed.
 - read_file: a file's content as text. A vision model gets an image itself (ToolText.images);
   a text-only model gets what the vision helper says about it, or its answer to a query. A
   model sees an image scaled down; with region it looks closer at a part, at up to the image's
-  own resolution.
+  own resolution. An agent with the knowledge base also reads the files its notes keep
+  (docs/knowledge_base.md, "Files"), by their names there: a file of the conversation comes first.
 """
 import asyncio
 import base64
@@ -29,9 +30,10 @@ logger = logging.getLogger(__name__)
 
 def _origin(row: dict) -> str:
     """Where a file comes from, for the model."""
+    kept = f", kept in the knowledge base by the note [[{row['note_slug']}]]" if row.get("note_slug") else ""
     if row.get("source") == file_store.SOURCE_TOOL:
-        return f"created by {row['origin']}" if row.get("origin") else "created by a tool"
-    return "uploaded by the user"
+        return (f"created by {row['origin']}" if row.get("origin") else "created by a tool") + kept
+    return "uploaded by the user" + kept
 
 
 def _describe(row: dict, with_id: bool = False) -> str:
@@ -48,10 +50,21 @@ def _describe(row: dict, with_id: bool = False) -> str:
     return line
 
 
-def _find(conversation_id: Optional[str], user_id: Optional[int], reference: str) -> dict:
+def _find(conversation_id: Optional[str], user_id: Optional[int], reference: str,
+          knowledge_base: Optional[tuple] = None) -> dict:
+    """
+    The file a model means: one of the conversation, else one the knowledge base keeps
+    (knowledge_base: its vault and whether the device is in family mode; None for an agent without one).
+    """
     try:
         return file_store.find_file(conversation_id, user_id, reference)
     except FileStoreError as e:
+        if knowledge_base is not None and user_id is not None:
+            from backend.services import knowledge_base as kb
+            vault, family_mode = knowledge_base
+            kept = kb.find_file(user_id, vault, reference, family_mode=family_mode)
+            if kept is not None:
+                return kept
         raise ToolInputError(str(e))
 
 
@@ -160,10 +173,11 @@ async def read_file(
     *,
     user_id: Optional[int] = None,
     conversation_id: Optional[str] = None,
-    vision: bool = False
+    vision: bool = False,
+    knowledge_base: Optional[tuple] = None
 ) -> str:
     """
-    The content of a file of the conversation.
+    The content of a file of the conversation, or of one the agent's knowledge base keeps.
 
     - Text files: the content.
     - Images: the image itself for a vision model, which needs nobody to answer a query for
@@ -182,6 +196,9 @@ async def read_file(
         user_id: The user the agent answers for, bound by the tool registry.
         conversation_id: The conversation it answers in, bound by the tool registry.
         vision: The model that reads takes images (ModelConfig.supports_vision), bound by the registry.
+        knowledge_base: For an agent with the knowledge base: its vault and whether the device is in
+            family mode (which leaves out hidden files), bound by the registry. The files its
+            notes keep are then read by their names there.
 
     Returns:
         The content as text; for an image a vision model reads, a ToolText with the image.
@@ -189,7 +206,7 @@ async def read_file(
     from ..file_retrieval_service import get_file_retrieval_service
 
     logger.info(f"read_file called: file={file}, query={query}, pages={pages}, region={region}")
-    row = await asyncio.to_thread(_find, conversation_id, user_id, file)
+    row = await asyncio.to_thread(_find, conversation_id, user_id, file, knowledge_base)
     file_id = row["file_id"]
     made_with = f"\n[Made with these arguments: {row['details']}]" if row.get("details") else ""
 

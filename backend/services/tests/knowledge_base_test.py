@@ -26,6 +26,10 @@ journal it writes (author 'dream'), memory_dreams, nothing to do, and a failure.
 that hides them, the hidden lines kept on a save, what a hidden chat writes marked, the own
 knowledge bases of hidden agents, and the consolidation's rule for hidden chats; agents hiding
 content themselves (hide_chat, the hidden parameter) and never changing what the user decided.
+The files notes keep (images): kb_write and kb_update with files of the conversation (their names
+in the knowledge base, where the text places them, a file kept already, refusals), search, list
+and read naming them, read_file from another conversation, vaults and users apart, a deleted
+conversation and a deleted note, a file taken away, hidden ones, the export and the API.
 
 It creates the database <POSTGRES_DB>_kb_test if needed (or --database, whose name must contain
 "test") and deletes its own test users, so it never touches the real database:
@@ -40,6 +44,7 @@ import io
 import json
 import logging
 import sys
+import tempfile
 import traceback
 import zipfile
 from datetime import datetime, timezone
@@ -54,12 +59,12 @@ from sqlalchemy import delete, func, insert, select  # noqa: E402
 
 from backend import config  # noqa: E402
 from backend.database.db import Database  # noqa: E402
-from backend.database.tables import (conversations, kb_note_revisions, kb_notes, memory_dreams, messages,  # noqa: E402
-                                     personas, user_settings, users)
+from backend.database.tables import (conversations, kb_files, kb_note_revisions, kb_notes, memory_dreams,  # noqa: E402
+                                     messages, personas, uploaded_files, user_settings, users)
 from backend.llm.tools import TOOL_GROUPS, ToolInputError, tools_for_groups  # noqa: E402
 from backend.services import knowledge_base  # noqa: E402
 from backend.services import knowledge_base_export  # noqa: E402
-from backend.services import hidden_content  # noqa: E402
+from backend.services import file_store, file_utils, hidden_content  # noqa: E402
 from backend.services.knowledge_base import KBConflict, KBNotFound, Writer, link_targets, note_slug, slugify  # noqa: E402
 
 TEST_EMAILS = ("kb-test-1@example.com", "kb-test-2@example.com")
@@ -94,6 +99,7 @@ def cleanup(conn) -> None:
     test_users = select(users.c.id).where(users.c.email.in_(TEST_EMAILS))
     test_conversations = select(conversations.c.id).where(conversations.c.userId.in_(test_users))
     conn.execute(delete(messages).where(messages.c.conversationId.in_(test_conversations)))
+    conn.execute(delete(uploaded_files).where(uploaded_files.c.user_id.in_(test_users)))
     conn.execute(delete(conversations).where(conversations.c.userId.in_(test_users)))
     conn.execute(delete(users).where(users.c.email.in_(TEST_EMAILS)))
     conn.execute(delete(personas).where(personas.c.name.startswith(TEST_PERSONA_PREFIX)))
@@ -123,6 +129,9 @@ async def test_slugs_and_links():
     assert link_targets(content) == ["project-apollo", "budget", "plan", "other-note", "some-note"], link_targets(content)
     # [[...]] in code is text, also in a code block that isn't closed
     assert link_targets("A `[[x]]` b\n```\n[[y]]\n```\n[[z]] ~~~\n[[w]]") == ["z"]
+    # A file a note places is no link to a note
+    assert link_targets("![[red-fox.png]] ![a fox](red-fox-2.JPG) [[report.pdf|the report]] ![[Some note]] "
+                        "[[v1.2 plan]] [n](other.md)") == ["some-note", "v1-2-plan", "other"]
 
 
 async def test_write_and_read_back():
@@ -1122,12 +1131,352 @@ async def test_memory_snapshot():
         memory_snapshot.db = saved
 
 
+def picture(width: int = 60, height: int = 40, color: str = "orange", kind: str = "PNG") -> bytes:
+    from PIL import Image
+    data = io.BytesIO()
+    Image.new("RGB", (width, height), color).save(data, kind)
+    return data.getvalue()
+
+
+def add_conversation(conversation_id: str, user_index: int = 0, **values) -> dict:
+    with db.connection() as conn:
+        conn.execute(insert(conversations).values(id=conversation_id, userId=user_ids[user_index], name="Pictures",
+                                                  **values))
+    return {"id": conversation_id, "persona_id": values.get("persona_id")}
+
+
+def tool_image(conversation_id: str, user_index: int = 0, **arguments) -> dict:
+    """An image a tool made in a conversation (civitai-1.png, civitai-2.png, ...)."""
+    return file_store.save_tool_file(picture(), user_id=user_ids[user_index], conversation_id=conversation_id,
+                                     mime_type="image/png", stem="civitai", origin="Civitai: Run step",
+                                     arguments=arguments or None)
+
+
+def kept_names(user_index: int = 0, vault: int = 0, family_mode: bool = False) -> list[str]:
+    return [row["name"] for row in knowledge_base.vault_files(user_ids[user_index], vault, family_mode=family_mode)]
+
+
+async def test_notes_keep_files():
+    user_id = user_ids[0]
+    chat = add_conversation("kb-test-pictures")
+    both = tools_for_groups(["files", "knowledge_base"], user_id=user_id, conversation=chat, vision=True)
+    fox = tool_image("kb-test-pictures", prompt="a red fox in the snow")
+    photo = file_store.store(picture(kind="JPEG"), user_id, name="IMG_2041.jpg", mime_type="image/jpeg",
+                             conversation_id="kb-test-pictures")
+    assert fox["name"] == "civitai-1.png"
+
+    # A note keeps a file of the conversation: named after the note, placed at the top of its text
+    result = await both.call("kb_write", {"title": "Red fox in the snow", "tags": ["image"], "files": ["civitai-1.png"],
+                                          "content": "A red fox stands in deep snow, looking at the viewer."})
+    assert "The note keeps red-fox-in-the-snow.png" in result and "![what it shows](red-fox-in-the-snow.png)" in result
+    assert result.metadata["kbNote"] == "red-fox-in-the-snow"
+    assert result.metadata["kbFiles"] == [{"fileId": fox["file_id"], "name": "red-fox-in-the-snow.png",
+                                           "mimeType": "image/png", "size": fox["size_bytes"], "width": 60,
+                                           "height": 40}], result.metadata
+    note = knowledge_base.get_note(user_id, "red-fox-in-the-snow")
+    assert note["content"] == "![[red-fox-in-the-snow.png]]\n\nA red fox stands in deep snow, looking at the viewer."
+    assert [(row["name"], row["original_name"], row["file_id"]) for row in note["files"]] == \
+        [("red-fox-in-the-snow.png", "civitai-1.png", fox["file_id"])]
+
+    # Where the text places the file by its name in the conversation (whatever its case), it stays there
+    result = await both.call("kb_write", {"title": "Luna", "files": ["img_2041.JPG"],
+                                          "content": "Luna on the sofa.\n\n![Luna](IMG_2041.jpg)\n\nShe is a tabby. "
+                                                     "`![x](IMG_2041.jpg)` stays code."})
+    assert "keeps luna.jpg" in result, result
+    assert knowledge_base.get_note(user_id, "luna")["content"] == \
+        "Luna on the sofa.\n\n![Luna](luna.jpg)\n\nShe is a tabby. `![x](IMG_2041.jpg)` stays code."
+
+    # More files of a note are numbered. An update places them at the note's end, or where the new text names
+    # them, also by file ID
+    second, third = tool_image("kb-test-pictures"), tool_image("kb-test-pictures")
+    result = await both.call("kb_update", {"note": "luna", "files": [second["name"]]})
+    assert "keeps luna-2.png" in result and result.metadata["kbFiles"][0]["name"] == "luna-2.png", result
+    assert knowledge_base.get_note(user_id, "luna")["content"].endswith("stays code.\n\n![[luna-2.png]]")
+    result = await both.call("kb_update", {"note": "luna", "files": [third["file_id"]],
+                                           "append": f"Asleep: ![[{third['file_id']}|300]]"})
+    assert knowledge_base.get_note(user_id, "luna")["content"].endswith("![[luna-2.png]]\n\nAsleep: ![[luna-3.png|300]]")
+    assert kept_names() == ["red-fox-in-the-snow.png", "luna.jpg", "luna-2.png", "luna-3.png"]
+
+    # A file a note keeps already is not kept twice: the other note shows it by its name
+    result = await both.call("kb_write", {"title": "Fox again", "content": "The same fox.", "files": ["civitai-1.png"]})
+    assert "red-fox-in-the-snow.png is kept already by the note [[red-fox-in-the-snow]]; this note shows it" in result
+    again = knowledge_base.get_note(user_id, "fox-again")
+    assert again["content"] == "![[red-fox-in-the-snow.png]]\n\nThe same fox." and again["files"] == []
+    assert [row["name"] for row in again["placed_files"]] == ["red-fox-in-the-snow.png"]
+    assert len(kept_names()) == 4
+    result = await both.call("kb_update", {"note": "red-fox-in-the-snow", "files": ["civitai-1.png"]})
+    assert "nothing was changed" in result and "is kept already; this note shows it" in result, result
+    # A name another note's file has is not taken
+    fourth = tool_image("kb-test-pictures")
+    await both.call("kb_write", {"title": "Luna 2", "content": "Another one.", "files": [fourth["name"]]})
+    assert kept_names()[-1] == "luna-2-2.png"
+
+    # Only files of the conversation (or kept ones) can be kept, and a refused call writes nothing
+    add_conversation("kb-test-theirs", user_index=1)
+    theirs = tool_image("kb-test-theirs", user_index=1)
+    for missing in ("nope.png", theirs["file_id"]):
+        message = await refused(both, "kb_write", {"title": "Nothing", "content": "x", "files": [missing]})
+        assert "in this conversation" in message and "nothing was written" in message, message
+    try:
+        knowledge_base.get_note(user_id, "nothing")
+        raise AssertionError("a refused write creates no note")
+    except KBNotFound:
+        pass
+    try:
+        knowledge_base.create_note(Writer(user_id), "Theirs", "x", files=[theirs])
+        raise AssertionError("another user's file is not kept")
+    except knowledge_base.KBError as e:
+        assert "isn't the user's" in str(e)
+
+    # Search, list and read name the files, and their steps know them
+    found = await both.call("kb_search", {"query": "fox snow"})
+    assert "   Keeps: red-fox-in-the-snow.png (image/png, 60×40 px)" in found, found
+    assert "![what it shows](red-fox-in-the-snow.png)" in found
+    assert found.metadata["kbFiles"][0]["fileId"] == fox["file_id"]
+    listing = await both.call("kb_list", {})
+    assert "; keeps luna.jpg, luna-2.png, luna-3.png)" in listing and "kbFiles" in listing.metadata, listing
+    read = await both.call("kb_read", {"note": "red-fox-in-the-snow"})
+    assert "Files this note keeps:\n- red-fox-in-the-snow.png (image/png, 60×40 px, " in read, read
+    assert 'created by Civitai: Run step' in read and 'Made with these arguments: {"prompt": "a red fox in the snow"}' in read
+    assert 'read_file(file="red-fox-in-the-snow.png")' in read
+    read = await both.call("kb_read", {"note": "fox-again"})
+    assert "It also shows: red-fox-in-the-snow.png (image/png, 60×40 px), kept by [[red-fox-in-the-snow]]" in read
+    assert read.metadata["kbFiles"][0]["name"] == "red-fox-in-the-snow.png"
+    # A result that names no file is plain text, as before
+    assert type(await both.call("kb_search", {"query": "same"})) is str, "fox-again keeps no file itself"
+    notes_only = tools_for_groups(["knowledge_base"], user_id=user_id, conversation=chat)
+    assert "read_file" not in await notes_only.call("kb_read", {"note": "red-fox-in-the-snow"})
+
+    # In another conversation the agent reads a kept file by its name, and only an agent with that knowledge base
+    elsewhere = add_conversation("kb-test-elsewhere")
+    later = tools_for_groups(["files", "knowledge_base"], user_id=user_id, conversation=elsewhere, vision=True)
+    assert await later.call("list_files", {}) == "This conversation has no files."
+    seen = await later.call("read_file", {"file": "Red-Fox-in-the-snow.png"})
+    assert "red-fox-in-the-snow.png (image/png, 60×40 px" in seen and len(seen.images) == 1, seen
+    assert "created by Civitai: Run step, kept in the knowledge base by the note [[red-fox-in-the-snow]]" in seen
+    assert 'Made with these arguments: {"prompt": "a red fox in the snow"}' in seen
+    files_only = tools_for_groups(["files"], user_id=user_id, conversation=elsewhere, vision=True)
+    assert "No file" in await refused(files_only, "read_file", {"file": "red-fox-in-the-snow.png"})
+    own = tools_for_groups(["files", "knowledge_base"], user_id=user_id, conversation=elsewhere, vault=7, vision=True)
+    assert "No file" in await refused(own, "read_file", {"file": "red-fox-in-the-snow.png"})
+    assert knowledge_base.find_file(user_ids[1], 0, "red-fox-in-the-snow.png") is None
+    # A file of the conversation with that name comes first
+    file_store.store(picture(8, 8), user_id, name="luna.jpg", mime_type="image/jpeg", conversation_id="kb-test-elsewhere")
+    assert "8×8 px" in await later.call("read_file", {"file": "luna.jpg"})
+
+    # An agent with its own knowledge base keeps its files apart, under names of its own
+    mine = tools_for_groups(["files", "knowledge_base"], user_id=user_id, conversation=chat, vault=7, vision=True)
+    await mine.call("kb_write", {"title": "Luna", "content": "Mine.", "files": ["IMG_2041.jpg"]})
+    assert kept_names(vault=7) == ["luna.jpg"] and len(kept_names()) == 5
+
+    # Kept files outlast their conversation
+    with db.connection() as conn:
+        conn.execute(delete(conversations).where(conversations.c.id == "kb-test-pictures"))
+    assert (await later.call("read_file", {"file": "red-fox-in-the-snow.png"})).images
+    assert db.get_file(fox["file_id"])["conversation_id"] is None
+
+    # A file is taken away from its note (the page): the text no longer places it, and it is deleted with
+    # nothing else having it
+    page = Writer(user_id, author="user")
+    note, removed = knowledge_base.remove_file(page, "luna", "LUNA-3.png")
+    assert removed == "luna-3.png" and note["content"].endswith("![[luna-2.png]]\n\nAsleep:"), note["content"]
+    assert knowledge_base.list_revisions(user_id, "luna")[0]["reason"] == "Removed the file luna-3.png"
+    assert db.get_file(third["file_id"]) is None and file_utils.get_file_path(third["file_id"]) is None
+    try:
+        knowledge_base.remove_file(page, "luna", "luna-3.png")
+        raise AssertionError("the note no longer keeps it")
+    except KBNotFound:
+        pass
+
+    # A deleted note takes its files with it; a file that another note keeps, or a conversation has, stays
+    assert knowledge_base.delete_note(user_id, "luna") == "luna"
+    assert db.get_file(second["file_id"]) is None, "kept by nothing else, in no conversation"
+    assert db.get_file(photo["file_id"]) is not None, "the other knowledge base still keeps it"
+    assert kept_names() == ["red-fox-in-the-snow.png", "luna-2-2.png"] and kept_names(vault=7) == ["luna.jpg"]
+    knowledge_base.delete_note(user_id, "luna", vault=7)
+    assert db.get_file(photo["file_id"]) is None and file_utils.get_file_path(photo["file_id"]) is None
+    knowledge_base.delete_note(user_id, "red-fox-in-the-snow")
+    assert knowledge_base.find_file(user_id, 0, "red-fox-in-the-snow.png") is None
+    assert knowledge_base.get_note(user_id, "fox-again")["placed_files"] == []
+    with db.connection() as conn:
+        assert conn.execute(select(func.count()).select_from(kb_files)
+                            .where(kb_files.c.user_id == user_id)).scalar_one() == 1
+
+    # A note keeps a limited number of files, and the memory none
+    saved = knowledge_base.MAX_NOTE_FILES
+    knowledge_base.MAX_NOTE_FILES = 2
+    try:
+        more = [tool_image("kb-test-elsewhere") for _ in range(3)]
+        await later.call("kb_write", {"title": "Many", "content": "x", "files": [more[0]["name"], more[1]["name"]]})
+        message = await refused(later, "kb_update", {"note": "many", "files": [more[2]["name"]]})
+        assert "keeps at most 2 files" in message, message
+    finally:
+        knowledge_base.MAX_NOTE_FILES = saved
+    knowledge_base.memory_add(Writer(user_id), "Likes foxes")
+    try:
+        knowledge_base.update_note(page, "memory", files=[more[2]])
+        raise AssertionError("the memory keeps no files")
+    except knowledge_base.KBError as e:
+        assert "memory keeps no files" in str(e)
+
+    # Two notes written at the same moment get names of their own
+    pair = [tool_image("kb-test-elsewhere") for _ in range(2)]
+    add_conversation("kb-test-twin")
+    await asyncio.gather(*(later.call("kb_update", {"note": "many", "content": f"y{i}", "files": [row["name"]]})
+                           for i, row in enumerate(pair)), return_exceptions=True)
+    assert len(set(kept_names())) == len(kept_names())
+
+
+async def test_hidden_files():
+    user_id = user_ids[0]
+    add_conversation("kb-test-gifts")
+    gift, plan, cake, open_ = (tool_image("kb-test-gifts") for _ in range(4))
+    knowledge_base.create_note(Writer(user_id, from_hidden=True), "Gift", "The gift.", files=[gift])
+    knowledge_base.create_note(Writer(user_id), "Day", "Breakfast.", files=[open_])
+    # What a hidden chat adds to a note that isn't hidden is tagged, and so is the line that places its file
+    knowledge_base.update_note(Writer(user_id, from_hidden=True), "day", files=[plan])
+    day = knowledge_base.get_note(user_id, "day")
+    assert day["content"] == "![[day.png]]\n\nBreakfast.\n\n![[day-2.png]] #hidden", day["content"]
+    assert kept_names() == ["gift.png", "day.png", "day-2.png"]
+    # A device in family mode gets neither the files of hidden notes nor the ones only hidden lines place
+    assert kept_names(family_mode=True) == ["day.png"]
+    assert knowledge_base.find_file(user_id, 0, "gift.png", family_mode=True) is None
+    assert knowledge_base.find_file(user_id, 0, "day-2.png", family_mode=True) is None
+    assert knowledge_base.find_file(user_id, 0, "day-2.png")["file_id"] == plan["file_id"]
+    seen = knowledge_base.get_note(user_id, "day", family_mode=True)
+    assert seen["content"].rstrip() == "![[day.png]]\n\nBreakfast." and [row["name"] for row in seen["files"]] == ["day.png"]
+    assert [row["name"] for row in knowledge_base.list_notes(user_id, family_mode=True)["notes"][0]["files"]] == ["day.png"]
+    hiding = tools_for_groups(["files", "knowledge_base"], user_id=user_id, conversation={"id": "kb-test-gifts"},
+                              vision=True, family_mode=True)
+    assert "Keeps: day.png (image/png, 60×40 px)\n" in await hiding.call("kb_search", {"query": "breakfast"}) + "\n"
+    # Its agent reads the files of the conversation it is in, but no hidden one of the knowledge base elsewhere
+    add_conversation("kb-test-open")
+    elsewhere = tools_for_groups(["files", "knowledge_base"], user_id=user_id, conversation={"id": "kb-test-open"},
+                                 vision=True, family_mode=True)
+    assert "No file" in await refused(elsewhere, "read_file", {"file": "gift.png"})
+    assert "No file" in await refused(elsewhere, "read_file", {"file": "day-2.png"})
+    assert (await elsewhere.call("read_file", {"file": "day.png"})).images
+    # A file the text doesn't place at all is not hidden: nothing says so
+    knowledge_base.update_note(Writer(user_id, author="user"), "day", content="Breakfast only.")
+    assert kept_names(family_mode=True) == ["day.png", "day-2.png"]
+    # From a device in family mode a hidden file is kept once more, under a name of the new note, not named
+    result = await hiding.call("kb_write", {"title": "Present", "content": "A box.", "files": [gift["name"]]})
+    assert "keeps present.png" in result and "gift" not in result, result
+    assert kept_names(family_mode=True) == ["day.png", "day-2.png", "present.png"]
+    # The file stays while one of the notes keeps it
+    knowledge_base.delete_note(user_id, "gift")
+    with db.connection() as conn:
+        conn.execute(delete(conversations).where(conversations.c.id == "kb-test-gifts"))
+    knowledge_base.delete_note(user_id, "day")
+    assert db.get_file(gift["file_id"]) is not None and db.get_file(plan["file_id"]) is None
+    assert cake["file_id"] and db.get_file(cake["file_id"]) is not None, "a file no note keeps is left alone"
+
+
+async def test_files_api_and_export():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.api import knowledge_base as kb_api
+    from backend.catalog import resolver
+    from backend.security.auth import get_current_user
+
+    saved = kb_api.db, resolver.db
+    kb_api.db = resolver.db = db
+    try:
+        current = {"user": {"user_id": user_ids[0], "is_guest": False}}
+        app = FastAPI()
+        app.include_router(kb_api.router)
+        app.dependency_overrides[get_current_user] = lambda: current["user"]
+        client = TestClient(app)
+        hide = {"X-Family-Mode": "1"}
+        user_id = user_ids[0]
+
+        keeper = add_persona("Keeper", ["files", "knowledge_base"])
+        companion = add_persona("Companion", ["knowledge_base"], own_memory=True)
+        plain = add_persona("Plain", ["files"])
+        chat = add_conversation("kb-test-album", persona_id=keeper)
+        fox, gift, owl = (tool_image("kb-test-album") for _ in range(3))
+        agent = tools_for_groups(["files", "knowledge_base"], user_id=user_id, conversation=chat)
+        await agent.call("kb_write", {"title": "Fox", "content": "A fox.", "files": [fox["name"]]})
+        await agent.call("kb_write", {"title": "Den", "content": "Where it lives: ![the fox](fox.png)"})
+        knowledge_base.create_note(Writer(user_id), "Gift", "A gift.", files=[gift], hidden_note=True)
+        knowledge_base.create_note(Writer(user_id, vault=companion), "Owl", "An owl.", files=[owl])
+
+        # A note comes with the files it keeps and the ones of other notes that its text places
+        note = client.get("/api/kb/notes/fox").json()
+        assert note["files"] == [{"fileId": fox["file_id"], "name": "fox.png", "mimeType": "image/png",
+                                  "size": fox["size_bytes"], "width": 60, "height": 40, "note": "fox",
+                                  "origin": "Civitai: Run step"}], note["files"]
+        assert note["placedFiles"] == []
+        den = client.get("/api/kb/notes/den").json()
+        assert den["files"] == [] and [file["name"] for file in den["placedFiles"]] == ["fox.png"]
+        listed = {item["slug"]: item["files"] for item in client.get("/api/kb/notes").json()["notes"]}
+        assert [file["name"] for file in listed["fox"]] == ["fox.png"] and listed["den"] == []
+        assert client.get("/api/kb/search", params={"q": "fox"}).json()[0]["files"][0]["fileId"] == fox["file_id"]
+
+        # The files of a knowledge base, and the ones a conversation's answers can place: those of the knowledge
+        # base its agent uses, and of the ones its earlier messages were written with
+        assert [file["name"] for file in client.get("/api/kb/files").json()] == ["fox.png", "gift.png"]
+        assert [file["name"] for file in client.get("/api/kb/files", headers=hide).json()] == ["fox.png"]
+        assert [file["name"] for file in client.get("/api/kb/files", params={"vault": companion}).json()] == ["owl.png"]
+        album = {"conversationId": "kb-test-album"}
+        assert [file["name"] for file in client.get("/api/kb/files", params=album).json()] == ["fox.png", "gift.png"]
+        assert [file["name"] for file in client.get("/api/kb/files", params=album, headers=hide).json()] == ["fox.png"]
+        add_conversation("kb-test-plain", persona_id=plain)
+        assert client.get("/api/kb/files", params={"conversationId": "kb-test-plain"}).json() == []
+        with db.connection() as conn:
+            conn.execute(insert(messages).values(id=1763000000001, conversationId="kb-test-plain", roleName="Assistant",
+                                                 content="[]", time=1763000000001, memory_vault=companion))
+        assert [file["name"] for file in client.get("/api/kb/files", params={"conversationId": "kb-test-plain"}).json()] \
+            == ["owl.png"]
+        with db.connection() as conn:
+            conn.execute(conversations.update().where(conversations.c.id == "kb-test-plain").values(persona_id=keeper))
+        assert [file["name"] for file in client.get("/api/kb/files", params={"conversationId": "kb-test-plain"}).json()] \
+            == ["fox.png", "gift.png", "owl.png"]
+        assert client.get("/api/kb/files", params={"conversationId": "no-such-chat"}).json() == []
+        current["user"] = {"user_id": user_ids[1], "is_guest": False}
+        assert client.get("/api/kb/files", params=album).json() == [] and client.get("/api/kb/files").json() == []
+        current["user"] = {"user_id": user_ids[1], "is_guest": True}
+        assert client.get("/api/kb/files", params=album).status_code == 403
+        current["user"] = {"user_id": user_id, "is_guest": False}
+
+        # The export has the kept files in files/, under their names; in family mode not the hidden ones
+        response = client.get("/api/kb/export")
+        assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        assert sorted(archive.namelist()) == ["knowledge-base/", "knowledge-base/den.md", "knowledge-base/files/fox.png",
+                                              "knowledge-base/files/gift.png", "knowledge-base/fox.md",
+                                              "knowledge-base/gift.md"], archive.namelist()
+        assert archive.read("knowledge-base/files/fox.png") == file_utils.get_file_path(fox["file_id"]).read_bytes()
+        assert "\n![[fox.png]]\n\nA fox.\n" in archive.read("knowledge-base/fox.md").decode("utf-8")
+        assert "![the fox](fox.png)" in archive.read("knowledge-base/den.md").decode("utf-8")
+        data, _ = knowledge_base_export.export_vault(user_id, family_mode=True)
+        assert sorted(zipfile.ZipFile(io.BytesIO(data)).namelist()) == [
+            "knowledge-base/", "knowledge-base/den.md", "knowledge-base/files/fox.png", "knowledge-base/fox.md"]
+        # A kept file that is gone from the disk is left out
+        file_utils.get_file_path(gift["file_id"]).unlink()
+        data, _ = knowledge_base_export.export_vault(user_id)
+        assert "knowledge-base/files/gift.png" not in zipfile.ZipFile(io.BytesIO(data)).namelist()
+
+        # A file is taken away from its note; the note comes back as it is now
+        assert client.delete("/api/kb/notes/fox/files/nope.png").status_code == 404
+        assert client.delete("/api/kb/notes/gift/files/gift.png", headers=hide).status_code == 404
+        response = client.delete("/api/kb/notes/fox/files/fox.png")
+        assert response.status_code == 200 and response.json()["files"] == [], response.text
+        assert response.json()["content"] == "A fox." and response.json()["revisions"][0]["author"] == "user"
+        assert client.get("/api/kb/notes/den").json()["placedFiles"] == []
+        assert db.get_file(fox["file_id"]) is not None, "the conversation still has it"
+        assert client.delete("/api/kb/notes/gift").status_code == 204
+    finally:
+        kb_api.db, resolver.db = saved
+
+
 TESTS = [test_slugs_and_links, test_write_and_read_back, test_same_slug_is_refused, test_links_and_backlinks,
          test_update, test_search, test_list, test_archive_and_restore, test_users_are_separate, test_revisions,
          test_parallel_tool_calls, test_deleting_a_user_deletes_the_notes, test_tool_results_link_to_their_note,
          test_page_edits_and_versions, test_obsidian_export, test_api, test_memory, test_memory_limits, test_vaults,
          test_api_vaults_and_memory, test_memory_review, test_memory_dream, test_hidden_lines,
-         test_hidden_store_and_tools, test_hidden_api_and_agents, test_agents_hide_content, test_memory_snapshot]
+         test_hidden_store_and_tools, test_hidden_api_and_agents, test_agents_hide_content, test_memory_snapshot,
+         test_notes_keep_files, test_hidden_files, test_files_api_and_export]
 
 
 async def run() -> int:
@@ -1167,7 +1516,8 @@ def main() -> int:
     # As app_init --prod does: add the columns a test database from an older version lacks, then the schema
     migrate_schema(db.engine, logging.getLogger("kb-test"))
     db.init_tables()
-    knowledge_base.db = hidden_content.db = db  # The store's database; the tools call the store
+    knowledge_base.db = hidden_content.db = file_store.db = db  # The store's database; the tools call the store
+    file_utils.FILES_DIR = tempfile.mkdtemp(prefix="kb-test-files-")  # The files notes keep
     assert TOOL_GROUPS["knowledge_base"]
     try:
         return asyncio.run(run())

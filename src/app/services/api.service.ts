@@ -31,6 +31,7 @@ import { IApiConversationCreate, IApiConversationUpdate, IConversationFile } fro
 import { IContextSize, ISystemPrompt, IConversationSummary } from '../data/models/conversation.model';
 import { FilePreviewSize, IAllFiles, IChatFile } from '../data/models/file.model';
 import {
+  IKBFile,
   IKBMemory,
   IKBNote,
   IKBNoteList,
@@ -1055,6 +1056,23 @@ export class ApiService {
     return await lastValueFrom(
       this.http.post<IKBNote>(`${this.kbNoteUrl(slug)}/revisions/${revisionId}/restore`, { baseVersion },
         this.kbOptions(vault))
+    );
+  }
+
+  /**
+   * The files of notes that the answers of a conversation can place in their text: those of the
+   * knowledge base its agent uses, and of the ones its earlier messages were written with.
+   */
+  async getKBFilesOfConversation(conversationId: string): Promise<IKBFile[]> {
+    return await lastValueFrom(
+      this.http.get<IKBFile[]>(`${this.baseUrl}/api/kb/files`, { ...this.getHttpOptions(), params: { conversationId } })
+    );
+  }
+
+  /** Takes a file away from the note that keeps it (deleted, unless a conversation still has it); the note as it is then. */
+  async removeKBNoteFile(slug: string, name: string, vault = 0): Promise<IKBNote> {
+    return await lastValueFrom(
+      this.http.delete<IKBNote>(`${this.kbNoteUrl(slug)}/files/${encodeURIComponent(name)}`, this.kbOptions(vault))
     );
   }
 

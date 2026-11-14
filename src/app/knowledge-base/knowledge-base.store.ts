@@ -213,6 +213,11 @@ export class KnowledgeBaseStore {
     return this.shown(await this.api.restoreKBNote(slug, this.vault()));
   }
 
+  /** Take a file away from the note that keeps it. */
+  async removeFile(slug: string, name: string): Promise<IKBNote> {
+    return this.shown(await this.api.removeKBNoteFile(slug, name, this.vault()));
+  }
+
   async delete(slug: string): Promise<void> {
     await this.api.deleteKBNote(slug, this.vault());
     if (this.slug() === slug) {
