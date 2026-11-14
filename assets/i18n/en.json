@@ -316,7 +316,10 @@
       "memoryModelChatHint": "The model that answers in the conversation also reviews it",
       "memoryModelHint": "Once a chat with an agent that has the knowledge base has been quiet for a while, this model reads it and saves what matters to the agent's memory. Only models with tools.",
       "automatic": "Automatic",
-      "automaticHint": "The first model of the catalog"
+      "automaticHint": "The first model of the catalog",
+      "defaultPersona": "Default agent",
+      "defaultPersonaHint": "New chats start with this agent. You can pick another one, or none, in every chat.",
+      "noPersonaHint": "New chats start without an agent"
     },
     "common": {
       "cancel": "Cancel",
@@ -405,7 +408,7 @@
         "test": "Test",
         "testOk": "Answered in {{ms}} ms",
         "testFailed": "Failed",
-        "sortOrderHint": "Lower numbers come first",
+        "sortOrderHint": "Higher numbers come first",
         "modelIdHint": "The model name in the provider's API",
         "descriptionHint": "Shown in the model picker",
         "capabilitiesSection": "Capabilities",
@@ -597,7 +600,7 @@
     "byUser": "Hidden by you",
     "byPersona": "Hidden because its agent is",
     "agent": "Hidden",
-    "agentHint": "A hidden agent is hidden with all its chats and its own knowledge base.",
+    "agentHint": "A hidden agent is hidden with all its chats and its own knowledge base, and only its creator sees it at all.",
     "agentHidden": "Hidden agent",
     "note": "Hidden",
     "noteHint": "To hide single lines only, end them with #hidden.",
