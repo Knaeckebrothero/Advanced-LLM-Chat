@@ -73,13 +73,22 @@ export class SettingsRepository {
     return localSettings || DEFAULT_SETTINGS;
   }
 
-  async saveSettings(settings: AppSettings): Promise<void> {
+  /**
+   * Store the settings in this browser and on the server. The server gets autoHidePrompt only when
+   * the user changed it: until they have their own, it holds the server's text, which sending it
+   * back with another setting would make theirs.
+   */
+  async saveSettings(settings: AppSettings, autoHideChanged = false): Promise<void> {
     const db = await this.dbService.getDb();
     const storableSettings = { ...settings, id: SETTINGS_KEY };
     await db.put('settings', storableSettings);
 
+    const forServer: AppSettings = { ...settings };
+    if (!autoHideChanged) {
+      delete forServer.autoHidePrompt;
+    }
     try {
-      await this.apiService.saveSettings(settings);
+      await this.apiService.saveSettings(forServer);
     } catch (error) {
       console.error(
         'Failed to save settings to server. Will sync later.',

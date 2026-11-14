@@ -103,6 +103,17 @@ describe('SettingsStateService', () => {
       expect(mockTranslateService.use).toHaveBeenCalledWith(Language.German);
     });
 
+    it('should save autoHidePrompt as changed only when it is part of the update', async () => {
+      await service.updateSettings({ theme: Theme.Light });
+      expect(mockSettingsRepo.saveSettings.calls.mostRecent().args[1]).toBeFalse();
+
+      await service.updateSettings({ autoHidePrompt: 'gifts' });
+      expect(mockSettingsRepo.saveSettings.calls.mostRecent().args[1]).toBeTrue();
+
+      await service.updateSettings({ autoHidePrompt: '' });
+      expect(mockSettingsRepo.saveSettings.calls.mostRecent().args[1]).toBeTrue();
+    });
+
     it('should handle save errors gracefully', async () => {
       mockSettingsRepo.saveSettings.and.returnValue(
         Promise.reject(new Error('Save failed'))
