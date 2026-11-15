@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from typing import List, Optional
-from fastapi import APIRouter, Response, Depends, HTTPException, status
+from fastapi import APIRouter, Response, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -32,6 +32,9 @@ from backend.services.llm import generate_conversation_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Conversation"])
+
+# The most messages one request for a conversation's messages returns
+MESSAGES_PAGE_LIMIT = 50
 
 
 def _check_catalog_choice(current_user: dict, model_id: Optional[int], persona_id: Optional[int]) -> None:
@@ -515,6 +518,85 @@ async def delete_conversation(
     return {"message": "Conversation deleted successfully"}
 
 
+def _format_messages_for_client(messages_data: List[dict]) -> None:
+    """
+    Turn stored message rows into what the frontend expects, in place: an agent message's
+    columns become steps, finalResponse, status, error and its model, a text message
+    stored as JSON becomes its text and its attachments.
+    """
+    for msg in messages_data:
+        if msg.get('type') == 'agent':
+            # Steps come directly as array from JSONB, the response text is in 'content'
+            msg['steps'] = msg.get('agent_steps', [])
+            msg['finalResponse'] = msg.get('content', '')
+            msg['status'] = msg.get('agent_status', 'complete')
+            msg['error'] = msg.get('agent_error')
+            # Which model wrote the message, and its token usage
+            msg['modelId'] = msg.get('model_id')
+            msg['modelName'] = msg.get('model_name')
+            msg['usage'] = msg.get('usage')
+
+            # Clean up internal column names
+            msg.pop('agent_steps', None)
+            msg.pop('agent_status', None)
+            msg.pop('agent_error', None)
+            msg.pop('model_id', None)
+            msg.pop('model_name', None)
+        elif msg.get('type') == 'text' or not msg.get('type'):
+            # Parse JSON content for text messages with attachments
+            content = msg.get('content', '')
+            if content and isinstance(content, str) and content.startswith('{'):
+                try:
+                    content_obj = json.loads(content)
+                    if isinstance(content_obj, dict) and 'content' in content_obj:
+                        msg['content'] = content_obj.get('content', '')
+                        if 'attachments' in content_obj:
+                            msg['attachments'] = content_obj['attachments']
+                except json.JSONDecodeError:
+                    # Not valid JSON, keep as-is
+                    pass
+
+
+@router.get("/conversation/{conversation_id}/messages",
+            response_model=List[MessageResponse],
+            responses={
+                status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"}
+            })
+async def get_newest_messages(
+        conversation_id: str,
+        limit: int = Query(20, ge=1, le=MESSAGES_PAGE_LIMIT),
+        before_id: Optional[int] = Query(None),
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    A conversation's newest messages, oldest first: what a browser merges into its copy
+    of the conversation (by message id) every time it syncs, and with ``before_id`` the
+    page before a message, for scrolling up.
+
+    The messages are picked and ordered by id, never by time or by the browser's clock:
+    an answer carries the second its generation started in, the same as the message it
+    answers, and is stored only when it is complete. A browser that asked for "messages
+    later than my newest" in between never got the answer.
+
+    :param conversation_id: The conversation.
+    :param limit: How many messages at most.
+    :param before_id: Only the messages before this one.
+    :param current_user: The authenticated user.
+    :return: The messages, oldest first, an empty list if there are none.
+    :raises HTTPException: 403 without access to the conversation.
+    """
+    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+        logger.warning(f"Access denied for user {current_user['user_id']} to conversation {conversation_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this conversation"
+        )
+
+    messages_data = db.get_newest_messages(conversation_id, limit=limit, before_id=before_id)
+    _format_messages_for_client(messages_data)
+    return messages_data
+
+
 @router.get("/conversation/messages/{conversation_id}/{timestamp}/{messages_count}",
             response_model=List[MessageResponse],
             responses={
@@ -537,6 +619,9 @@ async def get_conversation_messages(
     Fetches messages from a specific conversation based on the provided pagination
     or timestamp criteria. This endpoint supports both incremental synchronization
     and traditional pagination of conversation messages.
+
+    Only kept for browsers that still run an older version of the app: asking by time
+    misses messages (see get_newest_messages(), which the app uses now).
 
     :param conversation_id: The unique identifier of the conversation to fetch messages from
     :param timestamp: The reference timestamp used for paginated message retrieval
@@ -591,40 +676,7 @@ async def get_conversation_messages(
             if after_timestamp is None:
                 messages_data = list(reversed(messages_data))
 
-            # Format agent messages for frontend (new JSONB schema)
-            for msg in messages_data:
-                if msg.get('type') == 'agent':
-                    # Transform JSONB columns to frontend-expected format
-                    # Steps come directly as array from JSONB
-                    msg['steps'] = msg.get('agent_steps', [])
-                    # Response text is now in unified 'content' column
-                    msg['finalResponse'] = msg.get('content', '')
-                    msg['status'] = msg.get('agent_status', 'complete')
-                    msg['error'] = msg.get('agent_error')
-                    # Which model wrote the message, and its token usage
-                    msg['modelId'] = msg.get('model_id')
-                    msg['modelName'] = msg.get('model_name')
-                    msg['usage'] = msg.get('usage')
-
-                    # Clean up internal column names
-                    msg.pop('agent_steps', None)
-                    msg.pop('agent_status', None)
-                    msg.pop('agent_error', None)
-                    msg.pop('model_id', None)
-                    msg.pop('model_name', None)
-                elif msg.get('type') == 'text' or not msg.get('type'):
-                    # Parse JSON content for text messages with attachments
-                    content = msg.get('content', '')
-                    if content and isinstance(content, str) and content.startswith('{'):
-                        try:
-                            content_obj = json.loads(content)
-                            if isinstance(content_obj, dict) and 'content' in content_obj:
-                                msg['content'] = content_obj.get('content', '')
-                                if 'attachments' in content_obj:
-                                    msg['attachments'] = content_obj['attachments']
-                        except json.JSONDecodeError:
-                            # Not valid JSON, keep as-is
-                            pass
+            _format_messages_for_client(messages_data)
 
             # Check if there might be more messages
             has_more = False
