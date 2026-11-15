@@ -186,6 +186,14 @@ export class DBService {
     return await this.db.add('chatMessages', serialized);
   }
 
+  /**
+   * Store a message whether or not this browser has it already: a sync may have brought the
+   * server's copy of a message (the answer that just finished streaming) a moment before.
+   */
+  async saveMessage(message: Message) {
+    return await this.db.put('chatMessages', message.toJSON());
+  }
+
   async getMessage(id: number) {
     const data = await this.db.get('chatMessages', id);
     // Deserialize the message when retrieving
@@ -377,36 +385,41 @@ export class DBService {
   }
 
   /**
-   * Replace all messages for a conversation atomically
-   * Used during sync to ensure data consistency
+   * Apply what the server has to a conversation's messages in this browser, in one transaction.
+   * The messages with the given ids are deleted. Each server message is handed to `merge`
+   * with the copy this browser has (read in the same transaction, so nothing that was written
+   * while the request ran is judged by an older reading), and what `merge` returns is stored;
+   * null leaves the copy as it is. Messages the server didn't name are not touched.
+   * @returns whether anything was written
    */
-  async replaceConversationMessages(
-    conversationId: string, 
-    messages: Message[]
-  ): Promise<void> {
+  async applyServerMessages(
+    conversationId: string,
+    serverMessages: Message[],
+    removedIds: number[],
+    merge: (server: Message, local: Message | undefined) => Message | null
+  ): Promise<boolean> {
     return this.executeTransaction(['chatMessages'], 'readwrite', async (tx) => {
       const store = tx.objectStore('chatMessages');
-      
-      // Get all existing messages for this conversation
-      const index = store.index('by-conversationId');
-      const existingMessages = await index.getAll(conversationId);
-      
-      // Delete existing messages
-      for (const msg of existingMessages) {
-        await store.delete(msg.id);
-      }
-      
-      // Add new messages
-      for (const msg of messages) {
-        // Ensure message has all required fields before adding
-        if (!msg.id) {
-          console.error('Message missing id:', msg);
-          throw new Error('Cannot add message without id');
+      let changed = false;
+
+      for (const id of removedIds) {
+        const data = await store.get(id);
+        if (data && data.conversationId === conversationId) {
+          await store.delete(id);
+          changed = true;
         }
-        // Serialize message before storing
-        const serialized = msg.toJSON();
-        await store.add(serialized);
       }
+
+      for (const server of serverMessages) {
+        const data = await store.get(server.id);
+        const merged = merge(server, data ? Message.fromJSON(data) : undefined);
+        if (merged) {
+          await store.put(merged.toJSON());
+          changed = true;
+        }
+      }
+
+      return changed;
     });
   }
 
@@ -480,21 +493,6 @@ export class DBService {
   }
 
   /**
-   * Add multiple messages in a single transaction
-   * Used for batch operations during sync
-   */
-  async addMessagesTransactional(messages: Message[]): Promise<void> {
-    return this.executeTransaction(['chatMessages'], 'readwrite', async (tx) => {
-      const store = tx.objectStore('chatMessages');
-      
-      for (const msg of messages) {
-        const serialized = msg.toJSON();
-        await store.add(serialized);
-      }
-    });
-  }
-
-  /**
    * Update multiple messages in a single transaction
    */
   async updateMessagesTransactional(messages: Message[]): Promise<void> {
@@ -508,61 +506,6 @@ export class DBService {
         
         const serialized = msg.toJSON();
         await store.put(serialized);
-      }
-    });
-  }
-
-  /**
-   * Create a backup of conversation data before sync operations
-   * Returns the backup data that can be restored if sync fails
-   */
-  async backupConversationData(conversationId: string): Promise<{
-    conversation: Conversation | undefined;
-    messages: Message[];
-  }> {
-    return this.executeTransaction(['conversations', 'chatMessages'], 'readonly', async (tx) => {
-      // Get conversation
-      const conversationData = await tx.objectStore('conversations').get(conversationId);
-      const conversation = conversationData ? Conversation.fromPlainObject(conversationData) : undefined;
-      
-      // Get all messages
-      const messageStore = tx.objectStore('chatMessages');
-      const index = messageStore.index('by-conversationId');
-      const rawMessages = await index.getAll(conversationId);
-      const messages = rawMessages.map((data: any) => Message.fromJSON(data));
-      
-      return { conversation, messages };
-    });
-  }
-
-  /**
-   * Restore conversation data from backup
-   * Used when sync operations fail
-   */
-  async restoreConversationData(
-    conversationId: string,
-    backup: { conversation: Conversation | undefined; messages: Message[] }
-  ): Promise<void> {
-    return this.executeTransaction(['conversations', 'chatMessages'], 'readwrite', async (tx) => {
-      // Restore conversation if it existed
-      if (backup.conversation) {
-        await tx.objectStore('conversations').put(backup.conversation);
-      }
-      
-      // Clear current messages and restore from backup
-      const messageStore = tx.objectStore('chatMessages');
-      const index = messageStore.index('by-conversationId');
-      const currentMessages = await index.getAll(conversationId);
-      
-      // Delete current messages
-      for (const msg of currentMessages) {
-        await messageStore.delete(msg.id);
-      }
-      
-      // Restore backup messages
-      for (const msg of backup.messages) {
-        const serialized = msg.toJSON();
-        await messageStore.add(serialized);
       }
     });
   }

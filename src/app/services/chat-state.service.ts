@@ -1236,13 +1236,13 @@ export class ChatStateService implements OnDestroy {
   /**
    * Load older messages for the active conversation
    */
-  async loadOlderMessages(beforeTime: Date, limit: number = 20): Promise<Message[]> {
+  async loadOlderMessages(beforeId: number, limit: number = 20): Promise<Message[]> {
     const conversationId = this.activeConversationId$.getValue();
     if (!conversationId || conversationId === '0') {
       return [];
     }
 
-    const messages = await this.conversationRepository.loadOlderMessages(conversationId, beforeTime, limit);
+    const messages = await this.conversationRepository.loadOlderMessages(conversationId, beforeId, limit);
 
     // If we got fewer messages than requested, we've likely reached the beginning
     if (messages.length < limit) {

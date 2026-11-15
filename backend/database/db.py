@@ -1193,6 +1193,31 @@ class Database:
             log.debug(f"Retrieved {len(msg_list)} messages for conversation {conversation_id}")
             return msg_list
 
+    def get_newest_messages(self, conversation_id: str, limit: int = 20, before_id: int = None) -> list[dict]:
+        """
+        A conversation's newest messages, oldest first, for the browsers' sync.
+
+        The order is the message id (the server's clock in milliseconds, unique), not the
+        time: that is in seconds, and a message and the answer to it share theirs, so a page
+        cut by time could end between the two.
+
+        Args:
+            conversation_id: The conversation's UUID.
+            limit: How many messages at most.
+            before_id: Only the messages before this one (the page before it).
+
+        Returns:
+            List of message dictionaries, oldest first.
+        """
+        with self.connection() as conn:
+            condition = messages.c.conversationId == conversation_id
+            if before_id is not None:
+                condition &= messages.c.id < before_id
+            results = conn.execute(
+                select(messages).where(condition).order_by(messages.c.id.desc()).limit(limit)
+            ).fetchall()
+            return [self._row_to_dict(row) for row in reversed(results)]
+
     def get_system_messages(self, conversation_id: str, before_id: int = None) -> list[dict]:
         """
         Get a conversation's system messages, oldest first.
