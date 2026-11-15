@@ -8,11 +8,12 @@ import { IPublicModel, IPublicPersona } from './models/catalog.model';
 export interface ConversationSyncMetadata {
   id: string;
   lastSynced: Date;
-  messageCount: number;
-  hash: number;
-  lastMessageTimestamp?: Date;
-  lastSyncedMessageId?: number;
-  lastSyncedTimestamp?: number;
+  /**
+   * The ids of the conversation's newest messages on the server at the last sync. One of them
+   * that the server doesn't return the next time was deleted there (on another device), so it
+   * is deleted here too. A message the server never had is never in this list, so it stays.
+   */
+  serverMessageIds?: number[];
   expiresAt?: Date;
   lastMessageSent?: Date;
 }

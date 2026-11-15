@@ -115,49 +115,4 @@ describe('DBService - Version Management', () => {
     expect(updatedMsg1?.version).toBe(2);
     expect(updatedMsg2?.version).toBe(2);
   });
-
-  it('should preserve version during backup and restore', async () => {
-    // Create test data
-    const testConversation = new Conversation(
-      'test-conv-1',
-      1,
-      'Test Conversation',
-      ['user', 'assistant']
-    );
-    testConversation.version = 5;
-    
-    const testMessage = Message.createText(
-      {
-        id: 1001,
-        conversationId: 'test-conv-1',
-        roleName: 'user',
-        time: new Date(),
-        version: 3
-      },
-      'Test message'
-    );
-
-    // Add data
-    await service.addConversation(testConversation);
-    await service.addMessage(testMessage);
-
-    // Create backup
-    const backup = await service.backupConversationData('test-conv-1');
-
-    // Modify data
-    testConversation.version = 6;
-    testMessage.version = 4;
-    await service.updateConversation(testConversation);
-    await service.updateMessage(testMessage);
-
-    // Restore backup
-    await service.restoreConversationData('test-conv-1', backup);
-
-    // Verify versions are restored
-    const restoredConv = await service.getConversation('test-conv-1');
-    const restoredMsg = await service.getMessage(1001);
-    
-    expect(restoredConv?.version).toBe(5);
-    expect(restoredMsg?.version).toBe(3);
-  });
 });

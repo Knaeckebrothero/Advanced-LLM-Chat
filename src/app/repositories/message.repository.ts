@@ -19,6 +19,8 @@ export interface MessageWithSyncStatus extends Message {
 export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   // Separate cache for each conversation
   private conversationCaches = new Map<string, BehaviorSubject<MessageWithSyncStatus[]>>();
+  /** When this browser last changed a message of a conversation itself (its own clock). */
+  private localChanges = new Map<string, number>();
   private pendingUploads = new Map<string, FilePreview[]>();
 
   constructor(
@@ -69,6 +71,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    * @param skipSync - Skip backend sync (used for agent messages already saved by SSE endpoint)
    */
   async save(message: MessageWithSyncStatus, skipSync: boolean = false): Promise<MessageWithSyncStatus> {
+    this.noteLocalChange(message.conversationId);
     try {
       // Being sent from the start: the chat shows a message of the user's that only this browser
       // has, and isn't being sent, as not sent
@@ -81,16 +84,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         await this.handleFileAttachments(message);
       }
 
-      // Save to IndexedDB first
-      await this.dbService.addMessage(message);
-
-      // Update cache
-      const conversationId = message.conversationId;
-      if (this.conversationCaches.has(conversationId)) {
-        const cache = this.conversationCaches.get(conversationId)!;
-        const current = cache.getValue();
-        cache.next([...current, message]);
-      }
+      // Save to IndexedDB first. A sync may have brought the server's copy of it a moment ago
+      // (an answer is stored on the server before its stream ends), so it replaces a copy
+      await this.dbService.saveMessage(message);
+      this.putInCache(message);
 
       // Skip sync for agent messages (already saved by backend during streaming)
       // or when explicitly requested
@@ -122,6 +119,8 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     } catch (error) {
       console.error('Failed to save message:', error);
       throw error;
+    } finally {
+      this.noteLocalChange(message.conversationId);
     }
   }
 
@@ -129,6 +128,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    * Update an existing message
    */
   async update(message: MessageWithSyncStatus): Promise<MessageWithSyncStatus> {
+    this.noteLocalChange(message.conversationId);
     try {
       await this.dbService.updateMessage(message);
 
@@ -153,6 +153,8 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     } catch (error) {
       console.error('Failed to update message:', error);
       throw error;
+    } finally {
+      this.noteLocalChange(message.conversationId);
     }
   }
 
@@ -167,10 +169,11 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       const message = await this.dbService.getMessage(numId);
       if (!message) return;
 
+      const conversationId = message.conversationId;
+      this.noteLocalChange(conversationId);
       await this.dbService.deleteMessage(numId);
 
       // Update cache
-      const conversationId = message.conversationId;
       if (this.conversationCaches.has(conversationId)) {
         const cache = this.conversationCaches.get(conversationId)!;
         const current = cache.getValue();
@@ -189,6 +192,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
           }
         }
       }
+      this.noteLocalChange(conversationId);
     } catch (error) {
       console.error('Failed to delete message:', error);
       throw error;
@@ -208,7 +212,12 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       await this.handleFileAttachments(message);
     }
     message.syncStatus = 'pending';
-    await this.syncMessage(message);
+    this.noteLocalChange(message.conversationId);
+    try {
+      await this.syncMessage(message);
+    } finally {
+      this.noteLocalChange(message.conversationId);
+    }
     return message;
   }
 
@@ -305,6 +314,7 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
    */
   async removeLocally(conversationId: string, ids: number[]): Promise<void> {
     if (ids.length === 0) return;
+    this.noteLocalChange(conversationId);
     for (const id of ids) {
       await this.dbService.deleteMessage(id);
     }
@@ -313,6 +323,31 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       const removed = new Set(ids);
       cache.next(cache.getValue().filter(m => !removed.has(m.id)));
     }
+  }
+
+  /**
+   * Whether this browser changed a message of the conversation itself (sent, edited, deleted or
+   * rated one) since the given time of its clock. A sync that asked the server before then got
+   * an answer older than the change, and leaves the conversation to the next sync.
+   */
+  changedLocallySince(conversationId: string, time: number): boolean {
+    return (this.localChanges.get(conversationId) ?? 0) >= time;
+  }
+
+  /** A message of the conversation is being changed here, or the server just took the change. */
+  private noteLocalChange(conversationId: string): void {
+    this.localChanges.set(conversationId, Date.now());
+  }
+
+  /**
+   * Put a message into its conversation's cache, in place of the copies it replaces: one with
+   * its own id, and the one with the id it had before the server gave it its own.
+   */
+  private putInCache(message: MessageWithSyncStatus, previousId: number = message.id): void {
+    const cache = this.conversationCaches.get(message.conversationId);
+    if (!cache) return;
+    const others = cache.getValue().filter(m => m.id !== message.id && m.id !== previousId);
+    cache.next([...others, message]);
   }
 
   /**
@@ -396,21 +431,10 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         message.id = stored.id;
         if (stored.time) message.time = new Date(stored.time * 1000);
 
-        // Update in IndexedDB with new ID
+        // Update in IndexedDB with new ID (a sync may have stored the server's copy already)
         await this.dbService.deleteMessage(oldId);
-        await this.dbService.addMessage(message);
-
-        // Update cache
-        const conversationId = message.conversationId;
-        if (this.conversationCaches.has(conversationId)) {
-          const cache = this.conversationCaches.get(conversationId)!;
-          const current = cache.getValue();
-          const index = current.findIndex(m => m.id === oldId);
-          if (index >= 0) {
-            current[index] = message;
-            cache.next([...current]);
-          }
-        }
+        await this.dbService.saveMessage(message);
+        this.putInCache(message, oldId);
       }
 
       message.syncStatus = 'synced';
@@ -512,7 +536,9 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   async rateMessage(messageId: number, conversationId: string, rating: number | null): Promise<MessageWithSyncStatus> {
     try {
       // Update in backend
+      this.noteLocalChange(conversationId);
       const updatedMessage = await this.apiService.rateMessage(messageId, conversationId, rating);
+      this.noteLocalChange(conversationId);
 
       // Convert to MessageWithSyncStatus
       const messageWithSync: MessageWithSyncStatus = Object.assign(
@@ -548,7 +574,9 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   async regenerateMessage(messageId: number, conversationId: string): Promise<MessageWithSyncStatus> {
     try {
       // Regenerate in backend
+      this.noteLocalChange(conversationId);
       const regeneratedMessage = await this.apiService.regenerateMessage(messageId, conversationId);
+      this.noteLocalChange(conversationId);
 
       // Convert to MessageWithSyncStatus
       const messageWithSync: MessageWithSyncStatus = Object.assign(

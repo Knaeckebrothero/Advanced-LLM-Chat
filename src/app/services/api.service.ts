@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { lastValueFrom } from 'rxjs';
 import { Message } from '../data/objects/message';
 import { environment } from '../environments/environment';
@@ -216,50 +216,35 @@ export class ApiService {
     }
   }
 
-  // TODO: Fix this one!
+  /**
+   * A conversation's newest messages, oldest first, or with beforeId the page before that
+   * message. The server picks them by message id: no time of this device's clock is involved,
+   * and a message and the answer to it, which share their second, never end up on two sides.
+   */
   async getConversationMessages(
     conversationId: string | number,
     count: number,
-    latestTimestamp: Date | null = null,
-    afterTimestamp?: Date
-  ): Promise<{ messages: Message[], hasMoreMessages?: boolean }> {
-    // Use the current time if no timestamp is provided
-    if (latestTimestamp === null) {
-      latestTimestamp = new Date();
-    }
-
-    let endpoint = `${this.baseUrl}/api/conversation/messages/${conversationId}/${Math.floor(latestTimestamp.getTime() / 1000)}/${count}`;
-
-    // Add after_timestamp query parameter for incremental sync
-    if (afterTimestamp) {
-      endpoint += `?after_timestamp=${Math.floor(afterTimestamp.getTime() / 1000)}`;
+    beforeId?: number
+  ): Promise<Message[]> {
+    let params = new HttpParams().set('limit', count);
+    if (beforeId !== undefined) {
+      params = params.set('before_id', beforeId);
     }
 
     try {
-      const response = await lastValueFrom(
-        this.http.get<any[]>(endpoint, {
+      const body = await lastValueFrom(
+        this.http.get<any[]>(`${this.baseUrl}/api/conversation/${conversationId}/messages`, {
           ...this.getHttpOptions(),
-          observe: 'response'
+          params
         })
       );
-
-      if ((response.status === 200 || response.status === 206) && response.body) {
-        // Convert all messages using the new factory method
-        const messages = response.body.map(messageData => Message.fromApiResponse(messageData));
-
-        // Check if server indicated more messages exist
-        const hasMoreMessages = response.headers.get('X-Has-More-Messages') === 'true';
-
-        return { messages, hasMoreMessages };
-      } else if (response.status === 204 && !response.body) {
-        return { messages: [], hasMoreMessages: false };
-      } else {
-        // Handle unexpected response statuses
-        console.warn(`Unexpected response status: ${response.status}`);
-        return { messages: [], hasMoreMessages: false };
+      // Anything but a list is not an answer: the sync must never take it for "no messages"
+      if (!Array.isArray(body)) {
+        throw new Error('Unexpected response to the request for messages');
       }
+      return body.map(messageData => Message.fromApiResponse(messageData));
     } catch (error) {
-      console.error('Error refreshing conversation:', error);
+      console.error('Error requesting messages:', error);
       throw error;
     }
   }

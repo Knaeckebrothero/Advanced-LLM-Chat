@@ -438,8 +438,9 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.isLoadingOlderMessages = true;
 
     try {
+      // The oldest message the server stored (the ones only this browser has sort last)
       const oldestMessage = this.currentMessages[0];
-      if (!oldestMessage) return;
+      if (!oldestMessage || oldestMessage.isLocal) return;
 
       // Store scroll position before loading
       const scrollContainer = this.messageContainer.nativeElement;
@@ -447,7 +448,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
       const scrollTopBefore = scrollContainer.scrollTop;
 
       // Load older messages
-      const newMessages = await this.chatState.loadOlderMessages(oldestMessage.time, 20);
+      const newMessages = await this.chatState.loadOlderMessages(oldestMessage.id, 20);
 
       // If no new messages were loaded, we've reached the beginning
       if (newMessages.length === 0) {
