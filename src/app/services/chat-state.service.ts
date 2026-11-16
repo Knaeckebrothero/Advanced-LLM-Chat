@@ -660,8 +660,6 @@ export class ChatStateService implements OnDestroy {
       attachments[0].id = voiceFile.id;
     }
 
-    // Mark message as modified
-    this.pendingVoiceMessage.version = (this.pendingVoiceMessage.version || 1) + 1;
     this.pendingVoiceMessage.lastModified = Math.floor(Date.now() / 1000);
 
     // Mark that we're sending a message to prevent immediate re-sync
@@ -961,11 +959,12 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Update (patch) a message's text with conflict resolution: a text message keeps its
-   * attachments, an agent message its steps.
-   * @param deleteFollowing - Also delete the messages after it (only online), so it can be answered again
+   * Save the edited text of a stored message: a text message keeps its attachments, an agent
+   * message its steps. Throws when the server doesn't take the edit (MessageRepository.patch());
+   * the message then stays as it was.
+   * @param deleteFollowing - Also delete the messages after it on the server, so it can be answered again
    */
-  async patchMessage(messageId: number, content: string, maxRetries: number = 3, deleteFollowing = false): Promise<void> {
+  async patchMessage(messageId: number, content: string, deleteFollowing = false): Promise<void> {
     const messages = await firstValueFrom(this.messages$);
     const message = messages.find(m => m.id === messageId);
 
@@ -973,68 +972,8 @@ export class ChatStateService implements OnDestroy {
       throw new Error('Message not found or not a text or agent message');
     }
 
-    const conversationId = this.activeConversationId$.getValue()!;
-    let retryCount = 0;
-    let success = false;
-
-    while (retryCount < maxRetries && !success) {
-      try {
-        // Update via API if online
-        if (await this.isBackendAvailable()) {
-          await this.apiService.patchMessage(conversationId, messageId, content, message.version, deleteFollowing);
-          success = true;
-        } else if (deleteFollowing) {
-          throw new Error('The server is not reachable');
-        } else {
-          // Offline mode - just update locally
-          success = true;
-        }
-
-        // The same message (rating, model, steps) with the new text and an incremented version
-        const updatedMessage = new Message(
-          { ...message.metadata, version: message.version + 1, lastModified: Math.floor(Date.now() / 1000) },
-          { ...message.content, content }
-        );
-
-        await this.messageRepository.update(updatedMessage);
-        this.dropSummaryCovering(messageId, message.roleName);
-
-        // Show success notification if we had retries
-        if (retryCount > 0) {
-          this.notificationService.showSuccess('Message updated successfully after resolving conflicts');
-        }
-
-      } catch (error: any) {
-        if (error.status === 409) {
-          // Version conflict - refresh and retry
-          console.warn(`Version conflict for message ${messageId}, retrying...`);
-          retryCount++;
-
-          if (retryCount < maxRetries) {
-            this.notificationService.showWarning(
-              `Version conflict detected. Refreshing and retrying... (Attempt ${retryCount}/${maxRetries})`
-            );
-
-            // Refresh the conversation to get latest versions
-            await this.syncEngine.syncConversation(conversationId);
-            const refreshedMessages = await firstValueFrom(this.messages$);
-            const refreshedMessage = refreshedMessages.find(m => m.id === messageId);
-
-            if (refreshedMessage) {
-              // Update our local reference for next retry
-              message.version = refreshedMessage.version;
-            }
-          } else {
-            const errorMsg = 'Unable to update message due to version conflicts. Please refresh and try again.';
-            this.error$.next(errorMsg);
-            this.notificationService.showError(errorMsg);
-            throw new Error(errorMsg);
-          }
-        } else {
-          throw error;
-        }
-      }
-    }
+    await this.messageRepository.patch(message, content, deleteFollowing);
+    this.dropSummaryCovering(messageId, message.roleName);
   }
 
   /**
@@ -1057,7 +996,7 @@ export class ChatStateService implements OnDestroy {
     const conversationId = this.activeConversationId$.getValue()!;
     this.error$.next(null);
 
-    await this.patchMessage(messageId, content, 3, true);
+    await this.patchMessage(messageId, content, true);
 
     // The server deleted the later messages; so does this browser (also the ones it only has itself)
     const messages = await firstValueFrom(this.messages$);

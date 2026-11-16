@@ -189,6 +189,8 @@ export class DBService {
   /**
    * Store a message whether or not this browser has it already: a sync may have brought the
    * server's copy of a message (the answer that just finished streaming) a moment before.
+   * It is stored as it is: a message's version is the one the server gave it, and the server
+   * refuses an edit of another version (MessageRepository.patch()), so nothing here counts it.
    */
   async saveMessage(message: Message) {
     return await this.db.put('chatMessages', message.toJSON());
@@ -198,16 +200,6 @@ export class DBService {
     const data = await this.db.get('chatMessages', id);
     // Deserialize the message when retrieving
     return data ? Message.fromJSON(data) : undefined;
-  }
-
-  async updateMessage(message: Message) {
-    // Increment version and update lastModified before saving
-    message.version = (message.version || 1) + 1;
-    message.lastModified = Math.floor(Date.now() / 1000);
-    
-    // Serialize the message before updating
-    const serialized = message.toJSON();
-    return await this.db.put('chatMessages', serialized);
   }
 
   async deleteMessage(id: number) {
@@ -440,40 +432,6 @@ export class DBService {
   }
 
   /**
-   * Update conversation with transaction support
-   * Ensures atomicity when updating conversation metadata
-   */
-  async updateConversationTransactional(
-    conversation: Conversation,
-    messageUpdates?: { messages: Message[] }
-  ): Promise<void> {
-    const stores: Array<'conversations' | 'chatMessages'> = ['conversations'];
-    if (messageUpdates) stores.push('chatMessages');
-    
-    return this.executeTransaction(stores, 'readwrite', async (tx) => {
-      // Increment version and update lastModified
-      conversation.version = (conversation.version || 1) + 1;
-      conversation.lastModified = Math.floor(Date.now() / 1000);
-      
-      // Update conversation
-      await tx.objectStore('conversations').put(conversation);
-      
-      // Update messages if provided
-      if (messageUpdates) {
-        const messageStore = tx.objectStore('chatMessages');
-        for (const msg of messageUpdates.messages) {
-          // Increment message version
-          msg.version = (msg.version || 1) + 1;
-          msg.lastModified = Math.floor(Date.now() / 1000);
-          
-          const serialized = msg.toJSON();
-          await messageStore.put(serialized);
-        }
-      }
-    });
-  }
-
-  /**
    * Delete conversation and all its messages atomically
    */
   async deleteConversationWithMessages(conversationId: string): Promise<void> {
@@ -488,24 +446,6 @@ export class DBService {
       
       for (const message of messages) {
         await messageStore.delete(message.id);
-      }
-    });
-  }
-
-  /**
-   * Update multiple messages in a single transaction
-   */
-  async updateMessagesTransactional(messages: Message[]): Promise<void> {
-    return this.executeTransaction(['chatMessages'], 'readwrite', async (tx) => {
-      const store = tx.objectStore('chatMessages');
-      
-      for (const msg of messages) {
-        // Increment version and update lastModified
-        msg.version = (msg.version || 1) + 1;
-        msg.lastModified = Math.floor(Date.now() / 1000);
-        
-        const serialized = msg.toJSON();
-        await store.put(serialized);
       }
     });
   }

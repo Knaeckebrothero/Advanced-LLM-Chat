@@ -125,24 +125,14 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
   }
 
   /**
-   * Update an existing message
+   * Store a changed message of this browser as it is. Its version stays: the server counts the
+   * versions of the messages it has (see patch()).
    */
   async update(message: MessageWithSyncStatus): Promise<MessageWithSyncStatus> {
     this.noteLocalChange(message.conversationId);
     try {
-      await this.dbService.updateMessage(message);
-
-      // Update cache
-      const conversationId = message.conversationId;
-      if (this.conversationCaches.has(conversationId)) {
-        const cache = this.conversationCaches.get(conversationId)!;
-        const current = cache.getValue();
-        const index = current.findIndex(m => m.id === message.id);
-        if (index >= 0) {
-          current[index] = message;
-          cache.next([...current]);
-        }
-      }
+      await this.dbService.saveMessage(message);
+      this.replaceInCache(message);
 
       // Sync with backend if online
       if (await this.isOnline() && message.syncStatus === 'pending') {
@@ -155,6 +145,50 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
       throw error;
     } finally {
       this.noteLocalChange(message.conversationId);
+    }
+  }
+
+  /**
+   * Save the edited text of a stored message on the server and in this browser. A text message
+   * keeps its attachments, an answer its steps.
+   *
+   * The server counts a version per message and takes an edit only of the version it has. It
+   * answers with the new version, which this browser's copy takes. The browser never counts
+   * versions itself: its copy would run ahead of the server's, and the next edit be refused.
+   *
+   * If the server has another version (the message was edited on another device since the last
+   * sync, or this browser's copy is from an app version that counted itself), the edit is saved
+   * once more on the version the server has: the text the user just wrote is the newest.
+   *
+   * Throws when the server doesn't take the edit; the message then stays as it was.
+   * @param deleteFollowing - Also delete the messages after it on the server, so it can be answered again
+   */
+  async patch(
+    message: MessageWithSyncStatus, content: string, deleteFollowing = false
+  ): Promise<MessageWithSyncStatus> {
+    const { conversationId, id } = message;
+    this.noteLocalChange(conversationId);
+    try {
+      let stored: Message;
+      try {
+        stored = await this.apiService.patchMessage(conversationId, id, content, message.version, deleteFollowing);
+      } catch (error: any) {
+        if (error?.status !== 409) throw error;
+        // The newest message up to this one: the message itself, as the server has it
+        const [current] = await this.apiService.getConversationMessages(conversationId, 1, id + 1);
+        if (current?.id !== id) throw error;
+        stored = await this.apiService.patchMessage(conversationId, id, content, current.version, deleteFollowing);
+      }
+
+      const updated: MessageWithSyncStatus = new Message(
+        { ...message.metadata, version: stored.version, lastModified: stored.lastModified },
+        { ...message.content, content }
+      );
+      await this.dbService.saveMessage(updated);
+      this.replaceInCache(updated);
+      return updated;
+    } finally {
+      this.noteLocalChange(conversationId);
     }
   }
 
@@ -350,6 +384,18 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     cache.next([...others, message]);
   }
 
+  /** Put a changed message in the place of its copy in the conversation's cache. */
+  private replaceInCache(message: MessageWithSyncStatus): void {
+    const cache = this.conversationCaches.get(message.conversationId);
+    if (!cache) return;
+    const current = cache.getValue();
+    const index = current.findIndex(m => m.id === message.id);
+    if (index >= 0) {
+      current[index] = message;
+      cache.next([...current]);
+    }
+  }
+
   /**
    * Refresh cache after external database updates (e.g., after sync)
    */
@@ -537,29 +583,20 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
     try {
       // Update in backend
       this.noteLocalChange(conversationId);
-      const updatedMessage = await this.apiService.rateMessage(messageId, conversationId, rating);
+      const rated = await this.apiService.rateMessage(messageId, conversationId, rating);
       this.noteLocalChange(conversationId);
 
-      // Convert to MessageWithSyncStatus
-      const messageWithSync: MessageWithSyncStatus = Object.assign(
-        Object.create(Object.getPrototypeOf(updatedMessage)),
-        updatedMessage,
-        { syncStatus: 'synced' as const }
-      );
+      // The server's answer to a rating has the message's text only: this browser's copy keeps
+      // its steps, model and attachments, and takes the rating and the version the server has
+      const local = this.conversationCaches.get(conversationId)?.getValue().find(m => m.id === messageId)
+        ?? await this.dbService.getMessage(messageId);
+      const messageWithSync: MessageWithSyncStatus = local
+        ? new Message({ ...local.metadata, rating: rated.rating, version: rated.version }, local.content)
+        : rated;
+      messageWithSync.syncStatus = 'synced';
 
-      // Update in local database
-      await this.dbService.updateMessage(messageWithSync);
-
-      // Update cache
-      if (this.conversationCaches.has(conversationId)) {
-        const cache = this.conversationCaches.get(conversationId)!;
-        const current = cache.getValue();
-        const index = current.findIndex(m => m.id === messageId);
-        if (index >= 0) {
-          current[index] = messageWithSync;
-          cache.next([...current]);
-        }
-      }
+      await this.dbService.saveMessage(messageWithSync);
+      this.replaceInCache(messageWithSync);
 
       return messageWithSync;
     } catch (error) {
@@ -585,19 +622,9 @@ export class MessageRepository extends BaseRepository<MessageWithSyncStatus> {
         { syncStatus: 'synced' as const }
       );
 
-      // Update in local database
-      await this.dbService.updateMessage(messageWithSync);
-
-      // Update cache
-      if (this.conversationCaches.has(conversationId)) {
-        const cache = this.conversationCaches.get(conversationId)!;
-        const current = cache.getValue();
-        const index = current.findIndex(m => m.id === messageId);
-        if (index >= 0) {
-          current[index] = messageWithSync;
-          cache.next([...current]);
-        }
-      }
+      // The server's copy, with the version it has now
+      await this.dbService.saveMessage(messageWithSync);
+      this.replaceInCache(messageWithSync);
 
       return messageWithSync;
     } catch (error) {
