@@ -9,6 +9,7 @@
 .summary-divider {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
 
   &::before,
@@ -97,7 +98,16 @@
   }
 }
 
-// With a background image (settings), the summary sits on a frosted card like the messages
+// With a background image (settings), the button stands alone: a rule in the border colour
+// is hardly visible on an image and looks like a flaw in it
+:host-context(body.has-background-image) .summary-divider {
+  &::before,
+  &::after {
+    display: none;
+  }
+}
+
+// With a background image, the summary sits on a frosted card like the messages
 :host-context(body.has-background-image) .summary-panel {
   border-radius: 14px;
   border-color: color-mix(in srgb, var(--theme-border) 70%, transparent);
