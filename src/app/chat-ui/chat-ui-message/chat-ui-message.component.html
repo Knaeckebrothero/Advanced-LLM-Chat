@@ -188,8 +188,9 @@
       <!-- == AGENT MESSAGE == -->
       <ng-container *ngIf="message.isAgent()">
         <div class="agent-message">
-          <!-- Status indicator while processing -->
-          <div class="agent-status" *ngIf="message.content.status !== 'complete'">
+          <!-- Waiting for the answer's first step or word. After that its steps' card and its text
+               show what it is doing -->
+          <div class="agent-status" *ngIf="statusLabelShown">
             <div class="status-indicator">
               <span class="status-dot"
                 *ngIf="message.content.status === 'thinking' || message.content.status === 'responding'"></span>

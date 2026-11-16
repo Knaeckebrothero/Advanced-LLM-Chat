@@ -103,6 +103,15 @@ export class AgentStepsComponent {
   }
 
   /**
+   * A step is in progress: the model thinks, or a tool runs. Not while the answer's text is
+   * written: the steps so far are done then, and the text shows that it grows. The panel is the
+   * only sign of a step in progress (the message shows no status label next to it).
+   */
+  get isWorking(): boolean {
+    return this.status === 'thinking';
+  }
+
+  /**
    * The end of the reasoning text while it streams in (step_delta events), shown in the
    * collapsed panel under its header, so the thinking is visible without opening it. Once the
    * answer is being written, or a tool runs, it goes. Blank lines are dropped: the panel shows
@@ -124,8 +133,8 @@ export class AgentStepsComponent {
    * Get dynamic header text based on status and current step
    */
   get headerText(): string {
-    if (this.isProcessing && this.currentStep) {
-      // Show current action while processing
+    if (this.isWorking && this.currentStep) {
+      // Show the step in progress
       return this.stepTitle(this.currentStep);
     } else if (this.status === 'error') {
       return this.translate.instant('message.steps.error');
