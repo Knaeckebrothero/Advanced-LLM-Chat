@@ -698,6 +698,19 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     return status === 'complete' ? '' : this.translate.instant(`message.status.${status}`);
   }
 
+  /**
+   * The status label of an answer in progress ("Thinking…") is shown only while nothing else says
+   * what the answer is doing: its steps' card shows the step in progress, its text that it is
+   * being written, and the error box what went wrong. Next to them the label said it twice.
+   */
+  get statusLabelShown(): boolean {
+    if (!this.message.isAgent()) return false;
+    const { status, steps, content, error } = this.message.content;
+    if (status === 'thinking') return steps.length === 0;
+    if (status === 'responding') return !content;
+    return status === 'error' && !error;
+  }
+
   // Handle steps panel expansion change - emit event for scroll adjustment
   onStepsExpandedChange(expanded: boolean): void {
     // Emit event with the message element for scroll adjustment
