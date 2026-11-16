@@ -4,17 +4,17 @@
   [expanded]="isExpanded"
   (expandedChange)="onExpandedChange($event)"
   class="agent-steps-panel"
-  [class.is-processing]="isProcessing"
+  [class.is-processing]="isWorking"
   [class.is-error]="status === 'error'">
 
   <!-- Header: Spinner/Icon + Current Action -->
   <mat-expansion-panel-header>
     <mat-panel-title class="panel-title">
       <div class="steps-header">
-        <!-- Spinner when processing -->
-        <mat-spinner *ngIf="isProcessing" diameter="18" class="header-spinner"></mat-spinner>
-        <!-- Checkmark when complete -->
-        <mat-icon *ngIf="!isProcessing && status !== 'error'" class="header-icon complete">check_circle</mat-icon>
+        <!-- Spinner while a step is in progress -->
+        <mat-spinner *ngIf="isWorking" diameter="18" class="header-spinner"></mat-spinner>
+        <!-- Checkmark when the steps are done -->
+        <mat-icon *ngIf="!isWorking && status !== 'error'" class="header-icon complete">check_circle</mat-icon>
         <!-- Error icon -->
         <mat-icon *ngIf="status === 'error'" class="header-icon error">error_outline</mat-icon>
 
@@ -34,7 +34,7 @@
       *ngFor="let step of steps; trackBy: trackStep; let last = last"
       [expanded]="false"
       class="step-item"
-      [class.step-current]="last && isProcessing"
+      [class.step-current]="last && isWorking"
       [ngClass]="'step-' + step.type">
 
       <mat-expansion-panel-header>
