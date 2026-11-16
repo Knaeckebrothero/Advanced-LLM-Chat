@@ -83,8 +83,9 @@
         [class.message-avatar--image]="!!agentAvatar">
         <span class="avatar-icon"><ng-container *ngTemplateOutlet="avatarIcon"></ng-container></span>
       </span>
-      <span class="role-name">{{ (message.roleName === 'user' ? 'message.insertUser' : (message.roleName === 'system' ?
-        'message.insertSystem' : 'message.insertAssistant')) | translate }}</span>
+      <!-- An answer carries the name of the conversation's agent, like its image -->
+      <span class="role-name">{{ agentName || ((message.roleName === 'user' ? 'message.insertUser' : (message.roleName === 'system' ?
+        'message.insertSystem' : 'message.insertAssistant')) | translate) }}</span>
       <!-- Which model wrote this answer; tokens and cost on hover or tap -->
       <button *ngIf="modelName && usage" type="button" class="model-label model-label--interactive"
         (click)="showUsage = !showUsage"

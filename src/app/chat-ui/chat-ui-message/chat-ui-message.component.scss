@@ -218,9 +218,12 @@
   gap: 8px;
 
   .role-name {
+    min-width: 0;
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--theme-text);
+    // An agent's name can be long
+    overflow-wrap: anywhere;
   }
 }
 
