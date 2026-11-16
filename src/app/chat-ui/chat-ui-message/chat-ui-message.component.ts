@@ -542,12 +542,17 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
       && (this.message.content.status === 'thinking' || this.message.content.status === 'responding');
   }
 
-  /** An answer of the assistant: not your message, nor a system message (an instruction to the model). */
   /** The image of the conversation's agent for an answer, or null (the icons are shown). */
   get agentAvatar(): string | null {
     return this.isAnswer ? this.chatUI.agentAvatar : null;
   }
 
+  /** The name of the conversation's agent for an answer, or null ("Assistant" is shown). */
+  get agentName(): string | null {
+    return this.isAnswer ? this.chatUI.agentName : null;
+  }
+
+  /** An answer of the assistant: not your message, nor a system message (an instruction to the model). */
   get isAnswer(): boolean {
     return this.message.roleName !== 'user' && this.message.roleName !== 'system';
   }

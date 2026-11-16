@@ -42,6 +42,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   aiName: string = 'Assistant';
   // The image of the conversation's agent, shown with its answers (null: none, an icon is shown)
   agentAvatar: string | null = null;
+  // The name of the conversation's agent, the name on its answers (null: no agent, "Assistant")
+  agentName: string | null = null;
   pendingFiles: FilePreview[] = [];
   isDarkMode: boolean = false; // Add this property
 
@@ -244,6 +246,7 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     this.destroy$.add(
       this.chatState.activePersona$.subscribe(persona => {
         this.agentAvatar = persona?.avatar ?? null;
+        this.agentName = persona?.name?.trim() || null;
         this.cdr.markForCheck();
       })
     );
