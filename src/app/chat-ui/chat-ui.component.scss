@@ -51,6 +51,13 @@
   scrollbar-color: var(--theme-border) transparent;
 }
 
+// Room under the last message for a turn that stands at the top of the view
+// (its height is set by ChatUiComponent.updateReserve())
+.turn-reserve {
+  height: 0;
+  pointer-events: none;
+}
+
 // Loading older messages indicator
 .loading-older-messages {
   display: flex;
