@@ -52,6 +52,7 @@ from backend.database.tables import (
     conversation_summaries,
     conversation_memory_snapshots,
     message_tool_records,
+    message_alternatives,
     sessions,
     guest_usage,
     user_settings,
@@ -104,6 +105,42 @@ def _message_attachments(content: str) -> list[dict]:
         return []
     attachments = parsed.get('attachments') if isinstance(parsed, dict) else None
     return [att for att in attachments if isinstance(att, dict)] if isinstance(attachments, list) else []
+
+
+# The columns of an answer that are one version of it: in messages for the version shown, in
+# message_alternatives for the others (docs/answer_versions.md)
+ANSWER_VERSION_COLUMNS = ('type', 'content', 'time', 'rating', 'agent_status', 'agent_steps', 'agent_error',
+                          'model_id', 'model_name', 'usage')
+
+
+def _version_values(row) -> dict:
+    """The columns of one version of an answer, from a messages or a message_alternatives row."""
+    return {column: _jsonb(row[column]) if column in ('agent_steps', 'usage') else row[column]
+            for column in ANSWER_VERSION_COLUMNS}
+
+
+def _failed_without_text(row) -> bool:
+    """An answer that failed before it wrote any text: not kept as a version when another replaces it."""
+    return row['agent_status'] == 'error' and not (row['content'] or '').strip()
+
+
+def _renumber_alternatives(conn: Connection, message_id: int) -> list[int]:
+    """
+    Close the gaps in the positions of an answer's other versions (1, 2, ... in their order).
+
+    Returns:
+        The positions they had, in their order: the new position of each is its index + 1.
+    """
+    old_positions = [row.position for row in conn.execute(
+        select(message_alternatives.c.position).where(message_alternatives.c.message_id == message_id)
+        .order_by(message_alternatives.c.position))]
+    # In ascending order a version only moves down into a place that is free by then
+    for index, position in enumerate(old_positions):
+        if position != index + 1:
+            conn.execute(update(message_alternatives).where(
+                (message_alternatives.c.message_id == message_id) & (message_alternatives.c.position == position)
+            ).values(position=index + 1))
+    return old_positions
 
 
 def _note_new_message(conn: Connection, conversation_id: str, message_id: int) -> None:
@@ -961,7 +998,9 @@ class Database:
             created_at: When the conversation was created (naive UTC).
             updated_at: When the conversation was last changed (naive UTC).
             message_rows: Column values of the messages in conversation order; 'id' is
-                the wanted id (the message's time in milliseconds).
+                the wanted id (the message's time in milliseconds). An answer's other versions
+                are in 'alternatives' (message_alternatives columns with their position), the place
+                of the one shown in 'alternative_position'.
             hidden: Hidden.
 
         Returns:
@@ -983,7 +1022,10 @@ class Database:
             previous_id = 0
             for row in message_rows:
                 values = {key: _jsonb(value) if key in ('agent_steps', 'usage') else value
-                          for key, value in row.items()}
+                          for key, value in row.items() if key != 'alternatives'}
+                alternatives = row.get('alternatives') or []
+                if not alternatives:
+                    values.pop('alternative_position', None)
                 message_id = max(values.pop('id'), previous_id + 1)
                 while True:
                     stmt = pg_insert(messages).values(
@@ -998,6 +1040,11 @@ class Database:
                         break
                     message_id += 1
                 previous_id = message_id
+                for alternative in alternatives:
+                    conn.execute(insert(message_alternatives).values(
+                        message_id=message_id, conversation_id=conversation_id, position=alternative['position'],
+                        tool_record=null(), **_version_values({column: alternative.get(column)
+                                                               for column in ANSWER_VERSION_COLUMNS})))
                 # Attachments in no conversation yet (the file's first conversation keeps it)
                 _link_message_files(conn, conversation_id, message_id, values.get('content') or '')
 
@@ -1455,12 +1502,14 @@ class Database:
 
     def last_answer_time(self, conversation_id: str) -> Optional[int]:
         """
-        When the newest answer of a conversation began (its id: the server's clock in milliseconds,
-        which time has in seconds), None without one.
+        When the newest answer of a conversation began, in milliseconds, None without one.
+
+        Its time, not its id: a new version of an answer keeps the answer's id (docs/answer_versions.md).
         """
         with self.connection() as conn:
-            return conn.execute(select(func.max(messages.c.id)).where(
+            newest = conn.execute(select(func.max(messages.c.time)).where(
                 (messages.c.conversationId == conversation_id) & (messages.c.type == 'agent'))).scalar()
+            return newest * 1000 if newest is not None else None
 
     @staticmethod
     def _drop_summary_covering(conn, conversation_id: str, message_id: int) -> None:
@@ -1879,6 +1928,207 @@ class Database:
             row = conn.execute(select(message_tool_records.c.record).where(
                 message_tool_records.c.message_id == message_id)).fetchone()
             return row.record if row else None
+
+    # ==================== The versions of an answer (docs/answer_versions.md) ====================
+
+    def store_answer_version(
+        self,
+        message_id: int,
+        conversation_id: str,
+        time: int,
+        content: str,
+        status: str = 'complete',
+        error: str = None,
+        steps: list = None,
+        model_id: int = None,
+        model_name: str = None,
+        usage: dict = None,
+        tool_record: list = None
+    ) -> Optional[dict]:
+        """
+        Store a new version of an answer (Regenerate): it becomes the version shown, the one shown
+        so far is kept as another version, unless it failed without any text.
+
+        The answer keeps its id, so its place in the conversation. The new version is the last
+        (position: the highest + 1), unrated, and the answer's version counter goes up, so an
+        edit of the old text is refused. A summary that covers the answer is dropped, and a
+        memory review that has read it reads it again.
+
+        Args:
+            message_id: The answer's id.
+            conversation_id: The conversation's UUID.
+            time: When the new version began (unix seconds).
+            content, status, error, steps, model_id, model_name, usage, tool_record: As for
+                create_agent_message().
+
+        Returns:
+            The stored message, None if the conversation has no such message.
+        """
+        with self.connection() as conn:
+            row = conn.execute(select(messages).where(
+                (messages.c.id == message_id) & (messages.c.conversationId == conversation_id)
+            ).with_for_update()).fetchone()
+            if row is None:
+                return None
+            row = row._mapping
+            shown = row['alternative_position'] or 1
+            if not _failed_without_text(row):
+                record = conn.execute(select(message_tool_records.c.record).where(
+                    message_tool_records.c.message_id == message_id)).scalar()
+                conn.execute(insert(message_alternatives).values(
+                    message_id=message_id, position=shown, conversation_id=conversation_id,
+                    tool_record=_jsonb(record), **_version_values(row)))
+            others = len(_renumber_alternatives(conn, message_id))
+
+            result = conn.execute(update(messages).where(messages.c.id == message_id).values(
+                type='agent',
+                content=content,
+                time=time,
+                rating=None,
+                agent_status=status,
+                agent_steps=_jsonb(steps),
+                agent_error=error,
+                model_id=model_id,
+                model_name=model_name,
+                usage=_jsonb(usage),
+                version=messages.c.version + 1,
+                lastModified=int(datetime.now(timezone.utc).timestamp()),
+                alternative_position=others + 1 if others else None,
+            ).returning(messages)).fetchone()
+            conn.execute(delete(message_tool_records).where(message_tool_records.c.message_id == message_id))
+            if tool_record:
+                conn.execute(insert(message_tool_records).values(
+                    message_id=message_id, conversation_id=conversation_id, record=tool_record))
+            _note_new_message(conn, conversation_id, int(datetime.now(timezone.utc).timestamp() * 1000))
+            self._drop_summary_covering(conn, conversation_id, message_id)
+            # The review has read the old text: it reads the new one too
+            conn.execute(update(conversations).where(
+                (conversations.c.id == conversation_id) & (conversations.c.memory_reviewed_until >= message_id)
+            ).values(memory_reviewed_until=message_id - 1, updatedAt=conversations.c.updatedAt))
+            log.info(f"Stored version {others + 1} of answer {message_id} in conversation {conversation_id}")
+            return self._row_to_dict(result)
+
+    def switch_answer_alternative(self, message_id: int, conversation_id: str, position: int) -> Optional[dict]:
+        """
+        Show another version of an answer: it takes the place of the one shown, which is kept
+        as another version. The answer's version counter goes up (an edit of the text shown
+        before is refused), and a summary that covers it is dropped.
+
+        Args:
+            message_id: The answer's id.
+            conversation_id: The conversation's UUID.
+            position: The version to show.
+
+        Returns:
+            The stored message, None if there is no such message or version.
+        """
+        with self.connection() as conn:
+            row = conn.execute(select(messages).where(
+                (messages.c.id == message_id) & (messages.c.conversationId == conversation_id)
+            ).with_for_update()).fetchone()
+            chosen = conn.execute(select(message_alternatives).where(
+                (message_alternatives.c.message_id == message_id) & (message_alternatives.c.position == position)
+            )).fetchone() if row is not None else None
+            if chosen is None:
+                return None
+            row, chosen = row._mapping, chosen._mapping
+            record = conn.execute(select(message_tool_records.c.record).where(
+                message_tool_records.c.message_id == message_id)).scalar()
+            conn.execute(delete(message_alternatives).where(
+                (message_alternatives.c.message_id == message_id) & (message_alternatives.c.position == position)))
+            conn.execute(insert(message_alternatives).values(
+                message_id=message_id, position=row['alternative_position'] or 1, conversation_id=conversation_id,
+                tool_record=_jsonb(record), **_version_values(row)))
+            result = self._show_version(conn, message_id, conversation_id, chosen, position)
+            log.info(f"Answer {message_id} shows its version {position}")
+            return result
+
+    def delete_answer_alternative(self, message_id: int, conversation_id: str) -> Optional[dict]:
+        """
+        Delete the version of an answer that is shown: the next one is shown in its place (the
+        previous one, if it was the last), and the others close the gap. Files its tools made stay
+        in the conversation.
+
+        Args:
+            message_id: The answer's id.
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            The stored message, None if there is no such message or it has no other version.
+        """
+        with self.connection() as conn:
+            row = conn.execute(select(messages).where(
+                (messages.c.id == message_id) & (messages.c.conversationId == conversation_id)
+            ).with_for_update()).fetchone()
+            if row is None:
+                return None
+            shown = row._mapping['alternative_position'] or 1
+            others = conn.execute(select(message_alternatives).where(
+                message_alternatives.c.message_id == message_id).order_by(message_alternatives.c.position)).fetchall()
+            if not others:
+                return None
+            later = [other for other in others if other.position > shown]
+            chosen = (later[0] if later else others[-1])._mapping
+            conn.execute(delete(message_alternatives).where(
+                (message_alternatives.c.message_id == message_id)
+                & (message_alternatives.c.position == chosen['position'])))
+            old_positions = _renumber_alternatives(conn, message_id)
+            # Its place among the others, now that the deleted one is gone
+            position = 1 + sum(1 for old in old_positions if old < chosen['position'])
+            result = self._show_version(conn, message_id, conversation_id, chosen, position)
+            log.info(f"Deleted the version shown of answer {message_id}; it shows another one now")
+            return result
+
+    def _show_version(self, conn, message_id: int, conversation_id: str, version, position: int) -> dict:
+        """Write a version (a message_alternatives row) into its answer's messages row, at this position."""
+        others = conn.execute(select(func.count()).select_from(message_alternatives).where(
+            message_alternatives.c.message_id == message_id)).scalar()
+        result = conn.execute(update(messages).where(messages.c.id == message_id).values(
+            version=messages.c.version + 1,
+            lastModified=int(datetime.now(timezone.utc).timestamp()),
+            alternative_position=position if others else None,
+            **_version_values(version),
+        ).returning(messages)).fetchone()
+        conn.execute(delete(message_tool_records).where(message_tool_records.c.message_id == message_id))
+        if version['tool_record']:
+            conn.execute(insert(message_tool_records).values(
+                message_id=message_id, conversation_id=conversation_id, record=version['tool_record']))
+        self._drop_summary_covering(conn, conversation_id, message_id)
+        return self._row_to_dict(result)
+
+    def get_alternative_counts(self, message_ids: Iterable[int]) -> dict:
+        """
+        How many other versions these answers have.
+
+        Returns:
+            {message id: number of versions not shown}, only for answers that have some.
+        """
+        ids = list(message_ids)
+        if not ids:
+            return {}
+        with self.connection() as conn:
+            rows = conn.execute(
+                select(message_alternatives.c.message_id, func.count())
+                .where(message_alternatives.c.message_id.in_(ids))
+                .group_by(message_alternatives.c.message_id)
+            ).fetchall()
+            return {row[0]: row[1] for row in rows}
+
+    def get_conversation_alternatives(self, conversation_id: str) -> dict:
+        """
+        The versions not shown of a conversation's answers (export).
+
+        Returns:
+            {message id: [message_alternatives rows as dicts, in the order of their positions]}.
+        """
+        with self.connection() as conn:
+            rows = conn.execute(select(message_alternatives).where(
+                message_alternatives.c.conversation_id == conversation_id
+            ).order_by(message_alternatives.c.message_id, message_alternatives.c.position)).fetchall()
+        result: dict = {}
+        for row in rows:
+            result.setdefault(row.message_id, []).append(self._row_to_dict(row))
+        return result
 
     def update_agent_message(
         self,

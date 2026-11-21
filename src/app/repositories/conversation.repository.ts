@@ -61,6 +61,7 @@ function serverView(message: Message): string {
     time: message.time.getTime(),
     version: message.version ?? 1,
     rating: message.rating ?? null,
+    alternatives: message.alternatives,
     type: content.type,
     text: content.content ?? ''
   };

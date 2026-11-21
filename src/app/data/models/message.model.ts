@@ -38,6 +38,14 @@ export interface IMessageMetadata {
   lastModified?: number;
   rating?: number | null;
   syncStatus?: SyncStatus;
+  // An answer with other versions (docs/answer_versions.md); null or missing for one without
+  alternatives?: IAnswerAlternatives | null;
+}
+
+/** Which version of an answer is shown (1 for the first) and how many there are. */
+export interface IAnswerAlternatives {
+  position: number;
+  count: number;
 }
 
 // ============================================================================

@@ -706,6 +706,10 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
 
     const elements = this.messageElementsInThread();
     const answerInProgress = elements.find(element => element.classList.contains('streaming-message'));
+    // Not before the thread shows the messages as they are now: an answer that is written again
+    // (a new version, docs/answer_versions.md) can still stand in it in the first check, and
+    // would make the turn an answer that goes on
+    if (elements.length - (answerInProgress ? 1 : 0) !== this.currentMessages.length) return false;
     const newest = elements
       .filter(element => element !== answerInProgress && element.dataset['role'] !== 'system').pop();
     if (newest?.dataset['role'] === 'user') {
@@ -1003,6 +1007,15 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   // Method to delete a message
   deleteMessage(messageId: number) {
     this.chatState.deleteMessage(messageId);
+  }
+
+  // Show another version of an answer, or delete the one shown (docs/answer_versions.md)
+  switchAlternative(message: Message, position: number): Promise<void> {
+    return this.chatState.switchAlternative(message, position);
+  }
+
+  deleteAlternative(message: Message): Promise<void> {
+    return this.chatState.deleteAlternative(message);
   }
 
   // Method to change a message's text

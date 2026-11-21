@@ -173,6 +173,11 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['message']) {
+      // Another text (an edit, another version of the answer): its speech is no longer this one's
+      const previous = changes['message'].previousValue as Message | undefined;
+      if (previous && this.ttsAudioUrl && (previous.id !== this.message.id || previous.version !== this.message.version)) {
+        this.closeTTSPlayer();
+      }
       this.updateFormattedContent();
     }
   }
@@ -413,9 +418,53 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     this.actionsOpen = !this.actionsOpen;
   }
 
-  // Delete message button
+  // Delete message button: of an answer with other versions only the version shown
   deleteMessage() {
+    if (this.message.alternatives && !this.message.isLocal) {
+      this.alternativeError = null;
+      this.chatUI.deleteAlternative(this.message).catch(error => {
+        console.error('Failed to delete the version:', error);
+        this.alternativeError = this.translate.instant('message.deleteVersionFailed',
+          { error: describeHttpError(error, this.translate) });
+      });
+      return;
+    }
     this.chatUI.deleteMessage(this.message.id!);
+  }
+
+  // ===== Versions of an answer (docs/answer_versions.md) =====
+
+  /** A version is being switched to. */
+  alternativeBusy = false;
+  /** Why switching or deleting a version failed. */
+  alternativeError: string | null = null;
+
+  /** While an answer is written, the versions stay as they are. */
+  get streaming(): boolean {
+    return this.chatUI.isStreaming;
+  }
+
+  /** Show the previous (-1) or the next (+1) version of the answer, which the next answers get. */
+  async showAlternative(step: -1 | 1): Promise<void> {
+    const versions = this.message.alternatives;
+    if (!versions || this.alternativeBusy || this.chatUI.isStreaming) {
+      return;
+    }
+    const position = versions.position + step;
+    if (position < 1 || position > versions.count) {
+      return;
+    }
+    this.alternativeBusy = true;
+    this.alternativeError = null;
+    try {
+      await this.chatUI.switchAlternative(this.message, position);
+    } catch (error) {
+      console.error('Failed to show the other version:', error);
+      this.alternativeError = this.translate.instant('message.switchFailed',
+        { error: describeHttpError(error, this.translate) });
+    } finally {
+      this.alternativeBusy = false;
+    }
   }
 
   /**
@@ -594,8 +643,8 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
   // Check if message can be regenerated
   get canRegenerate(): boolean {
-    // Only AI messages can be regenerated
-    if (!this.isAnswer) {
+    // Only AI messages can be regenerated, one answer at a time
+    if (!this.isAnswer || this.chatUI.isStreaming) {
       return false;
     }
 

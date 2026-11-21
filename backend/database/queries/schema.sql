@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS messages (
     usage JSONB,                 -- {"inputTokens", "outputTokens", "reasoningTokens", "cachedInputTokens", "cost", "currency"}
     -- The memory the message belongs to, set when it is stored (docs/past_chats.md): NULL none, 0 the shared
     -- knowledge base, else the personas.id of an agent with its own (no FK)
-    memory_vault INTEGER
+    memory_vault INTEGER,
+    -- An answer with other versions (message_alternatives): the place of the one shown, NULL = it has none
+    alternative_position INTEGER
 );
 
 -- name: create_message_tool_records_table
@@ -70,6 +72,29 @@ CREATE TABLE IF NOT EXISTS message_tool_records (
     record JSONB NOT NULL        -- messages in the OpenAI format
 );
 CREATE INDEX IF NOT EXISTS idx_message_tool_records_conversation ON message_tool_records(conversation_id);
+
+-- name: create_message_alternatives_table
+-- The versions of an answer that are not shown (docs/answer_versions.md). Regenerate keeps the version it
+-- replaces here, and switching swaps a version with the messages row, which always holds the one shown.
+-- A version keeps the columns it had as the answer, and its tool record while it is not shown.
+CREATE TABLE IF NOT EXISTS message_alternatives (
+    message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,   -- its place among the answer's versions, from 1 (the oldest)
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    type TEXT NOT NULL DEFAULT 'agent',
+    content TEXT NOT NULL,
+    time BIGINT NOT NULL,        -- when it was written (unix seconds)
+    rating INTEGER,
+    agent_status TEXT,
+    agent_steps JSONB,
+    agent_error TEXT,
+    model_id INTEGER,
+    model_name TEXT,
+    usage JSONB,
+    tool_record JSONB,           -- its tool calls and results (as in message_tool_records), NULL = none
+    PRIMARY KEY (message_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_message_alternatives_conversation ON message_alternatives(conversation_id);
 
 -- name: create_conversation_summaries_table
 -- The summary the model gets instead of a conversation's oldest messages, when they no longer
@@ -282,6 +307,10 @@ ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FA
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS hidden_by TEXT;
 ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS hidden_by TEXT;
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS auto_hide_prompt TEXT;
+
+-- name: add_message_alternatives
+-- Databases from before answers kept their versions (the CREATE TABLE above has the column)
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS alternative_position INTEGER;
 
 -- name: add_conversation_system_prompt
 -- The conversation's own system prompt, set in manual editing (docs/model_catalog_api.md)

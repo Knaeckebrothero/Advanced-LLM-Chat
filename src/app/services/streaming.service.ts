@@ -47,7 +47,7 @@ export interface StepDeltaEventData {
 /**
  * Data payload for 'done' events
  */
-export interface DoneEventData {
+export interface DoneEventData extends AnswerVersionsData {
   messageId: number;
   conversationId: string;
   modelId?: number | null;
@@ -56,10 +56,21 @@ export interface DoneEventData {
 }
 
 /**
+ * The stored answer's version counter and its versions (docs/answer_versions.md), sent with
+ * 'done' and with an 'error' the server stored
+ */
+export interface AnswerVersionsData {
+  version?: number;
+  alternativePosition?: number | null;
+  alternativeCount?: number | null;
+}
+
+/**
  * Data payload for 'error' events
  */
-export interface ErrorEventData {
+export interface ErrorEventData extends AnswerVersionsData {
   error: string;
+  messageId?: number;  // The server stored the failed answer with this id
 }
 
 /**
@@ -84,17 +95,19 @@ export class StreamingService {
    * @param conversationId - The ID of the conversation to generate a response for
    * @param aiParticipant - The name of the AI participant (default: 'Assistant')
    * @param modelId - Optional catalog model to answer with instead of the conversation's model
+   * @param regenerateId - Write a new version of this stored answer (Regenerate, docs/answer_versions.md)
    * @returns An Observable that emits StreamEvent objects
    */
   streamAgentResponse(
     conversationId: string,
     aiParticipant: string = 'Assistant',
-    modelId?: number
+    modelId?: number,
+    regenerateId?: number
   ): Observable<StreamEvent> {
     return new Observable(observer => {
       const controller = new AbortController();
 
-      this.initiateStream(conversationId, aiParticipant, modelId, observer, controller.signal);
+      this.initiateStream(conversationId, aiParticipant, modelId, regenerateId, observer, controller.signal);
 
       // Cleanup function - called when the subscription is unsubscribed
       return () => {
@@ -110,6 +123,7 @@ export class StreamingService {
     conversationId: string,
     aiParticipant: string,
     modelId: number | undefined,
+    regenerateId: number | undefined,
     observer: Subscriber<StreamEvent>,
     signal: AbortSignal
   ): Promise<void> {
@@ -139,7 +153,8 @@ export class StreamingService {
           conversationId,
           aiParticipant,
           // Only sent to answer with another model than the conversation's
-          ...(modelId !== undefined && { modelId })
+          ...(modelId !== undefined && { modelId }),
+          ...(regenerateId !== undefined && { regenerateId })
         }),
         signal,
       });

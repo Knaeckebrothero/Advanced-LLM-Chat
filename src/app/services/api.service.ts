@@ -404,6 +404,30 @@ export class ApiService {
     }
   }
 
+  /**
+   * Show another version of an answer (docs/answer_versions.md); the answer as the server now has it.
+   */
+  async switchAlternative(conversationId: string, messageId: number, position: number): Promise<Message> {
+    const response = await lastValueFrom(this.http.post<any>(
+      `${this.baseUrl}/api/message/alternatives/switch`,
+      { conversationId, messageId, position },
+      this.getHttpOptions()
+    ));
+    return Message.fromApiResponse(response);
+  }
+
+  /**
+   * Delete the version of an answer that is shown: the server shows the next one (docs/answer_versions.md).
+   */
+  async deleteAlternative(conversationId: string, messageId: number): Promise<Message> {
+    const response = await lastValueFrom(this.http.post<any>(
+      `${this.baseUrl}/api/message/alternatives/delete`,
+      { conversationId, messageId },
+      this.getHttpOptions()
+    ));
+    return Message.fromApiResponse(response);
+  }
+
   // Regenerate an AI message
   async regenerateMessage(messageId: number, conversationId: string): Promise<Message> {
     const endpoint = `${this.baseUrl}/api/message/regenerate`;

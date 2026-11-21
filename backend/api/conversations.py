@@ -291,7 +291,8 @@ async def export_conversation(conversation_id: str, current_user: dict = Depends
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
     messages = db.get_messages_by_conversation(conversation_id, limit=None)
-    content = conversation_file.export_conversation(conv, messages)
+    content = conversation_file.export_conversation(
+        conv, messages, db.get_conversation_alternatives(conversation_id))
     crud_logger.info(f"Conversation {conversation_id} exported by user {user_id} ({len(messages)} messages)")
     headers = {"Content-Disposition": 'attachment; filename="conversation.json"'}
     return JSONResponse(content=jsonable_encoder(content), headers=headers)
@@ -518,13 +519,20 @@ async def delete_conversation(
     return {"message": "Conversation deleted successfully"}
 
 
-def _format_messages_for_client(messages_data: List[dict]) -> None:
+def format_messages_for_client(messages_data: List[dict]) -> None:
     """
     Turn stored message rows into what the frontend expects, in place: an agent message's
     columns become steps, finalResponse, status, error and its model, a text message
-    stored as JSON becomes its text and its attachments.
+    stored as JSON becomes its text and its attachments. An answer with other versions gets
+    the place of the one shown and their number (docs/answer_versions.md).
     """
+    with_versions = [msg['id'] for msg in messages_data if msg.get('alternative_position')]
+    counts = db.get_alternative_counts(with_versions) if with_versions else {}
     for msg in messages_data:
+        position = msg.pop('alternative_position', None)
+        others = counts.get(msg['id'], 0)
+        msg['alternativePosition'] = position if others else None
+        msg['alternativeCount'] = others + 1 if others else None
         if msg.get('type') == 'agent':
             # Steps come directly as array from JSONB, the response text is in 'content'
             msg['steps'] = msg.get('agent_steps', [])
@@ -593,7 +601,7 @@ async def get_newest_messages(
         )
 
     messages_data = db.get_newest_messages(conversation_id, limit=limit, before_id=before_id)
-    _format_messages_for_client(messages_data)
+    format_messages_for_client(messages_data)
     return messages_data
 
 
@@ -676,7 +684,7 @@ async def get_conversation_messages(
             if after_timestamp is None:
                 messages_data = list(reversed(messages_data))
 
-            _format_messages_for_client(messages_data)
+            format_messages_for_client(messages_data)
 
             # Check if there might be more messages
             has_more = False

@@ -1,6 +1,7 @@
 """
 Message API endpoints.
 """
+import asyncio
 import json
 import logging
 import time
@@ -20,6 +21,8 @@ from backend.models.message import (
     RateMessageRequest,
     RegenerateMessageRequest,
     StreamGenerateRequest,
+    AlternativeSwitchRequest,
+    AlternativeDeleteRequest,
     SummarizeRequest,
     ContextSizeRequest,
     ContextSize,
@@ -30,6 +33,7 @@ from backend.models.message import (
     AgentStep
 )
 from backend.database import db
+from backend.api.conversations import format_messages_for_client
 from backend.security.auth import get_current_user, verify_conversation_ownership
 from backend.security.errors import answer_error
 from backend.security.guest_limits import count_guest_request, guest_write, rate_limit_guest
@@ -65,6 +69,7 @@ from backend.config import DEFAULT_CONTEXT_WINDOW
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
 from backend.models.attachments import AttachmentType
 from backend.services.tts_handler import (
+    delete_message_tts_cache,
     generate_speech,
     get_tts_audio_path,
     get_cached_tts_audio,
@@ -245,7 +250,8 @@ async def _answer_context(
     *,
     mcp: bool = True,
     answer_id: Optional[int] = None,
-    hide: bool = False
+    hide: bool = False,
+    before_message: Optional[dict] = None
 ) -> Tuple[Optional[ToolRegistry], ConversationHistoryBuilder, str, int, List[Notice], Optional[str]]:
     """
     What an answer in this conversation is built from (_answer_parts()): the tools, the
@@ -253,7 +259,8 @@ async def _answer_context(
     that gave no tools (to show as steps), and the note on what changed in the memory since
     the prompt's snapshot of it (for the newest user message, memory_snapshot.with_note()).
     """
-    parts = await _answer_parts(current_user, conversation_id, config, mcp=mcp, answer_id=answer_id, hide=hide)
+    parts = await _answer_parts(current_user, conversation_id, config, mcp=mcp, answer_id=answer_id, hide=hide,
+                                before_message=before_message)
     system_prompt = parts.system_prompt
     return (parts.tools, parts.history_builder, system_prompt,
             history_token_budget(config, system_prompt, parts.tools), parts.notices, parts.memory_note)
@@ -266,7 +273,8 @@ async def _answer_parts(
     *,
     mcp: bool = True,
     answer_id: Optional[int] = None,
-    hide: bool = False
+    hide: bool = False,
+    before_message: Optional[dict] = None
 ) -> AnswerParts:
     """
     What an answer in this conversation is built from: the tools, the history builder and
@@ -280,7 +288,8 @@ async def _answer_parts(
     agent's memory follows: the conversation's snapshot of it (backend/services/memory_snapshot.py),
     the same for every answer while the conversation goes on, and what changed since as a note
     for the newest user message (memory_note).
-    The conversation's system messages are instructions to the model and come last. With hide,
+    The conversation's system messages are instructions to the model and come last: those
+    before before_message, for a new version of that answer (Regenerate). With hide,
     the device is in family mode: the memory and the tools leave it out.
 
     A conversation with its own system prompt (manual editing, _own_system_prompt()) sends that
@@ -310,7 +319,8 @@ async def _answer_parts(
                              toolset.servers, toolset.unavailable()),
             current_user, conversation, tools, hide)
     return AnswerParts(tools, history_builder, base_prompt, own_prompt,
-                       history_builder.system_instructions(conversation_id), toolset.notices, memory_note)
+                       history_builder.system_instructions(conversation_id, before_message), toolset.notices,
+                       memory_note)
 
 
 async def _fold_into_summary(
@@ -716,6 +726,7 @@ async def patch_message(request_body: MessagePatch, response: Response,
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Version conflict during update"
             )
+        delete_message_tts_cache(request_body.id, request_body.conversationId)  # Speech of the old text
 
         # Parse content based on type
         message_type = updated_message.get('type') or 'text'
@@ -794,6 +805,7 @@ async def delete_message(conversation_id: str, message_id: int, response: Respon
                 detail="Message not found"
             )
 
+        delete_message_tts_cache(message_id, conversation_id)
         crud_logger.info(f"Message deleted successfully - Message ID: {message_id}")
         return None
 
@@ -938,6 +950,59 @@ async def rate_message(request_body: RateMessageRequest, response: Response,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to rate message"
         )
+
+
+def _alternative_response(row: Optional[dict], what: str) -> dict:
+    """The answer as stored after a switch or delete of a version, as the sync sends it."""
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=what)
+    delete_message_tts_cache(row['id'], row['conversationId'])
+    format_messages_for_client([row])
+    return row
+
+
+@router.post("/alternatives/switch",
+             response_model=MessageResponse,
+             responses={
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                 status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "No such answer or version"}
+             })
+async def switch_alternative(request_body: AlternativeSwitchRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Show another version of an answer (docs/answer_versions.md): it takes the answer's place in
+    the conversation, so the next answers get it, and the version shown so far is kept. The
+    answer keeps its id; its version counter goes up.
+
+    :return: The answer as now stored.
+    """
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+    row = db.switch_answer_alternative(request_body.messageId, request_body.conversationId, request_body.position)
+    crud_logger.info(f"Answer {request_body.messageId} switched to version {request_body.position} - "
+                     f"User: {current_user['user_id']}")
+    return _alternative_response(row, "The answer has no such version")
+
+
+@router.post("/alternatives/delete",
+             response_model=MessageResponse,
+             responses={
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
+                 status.HTTP_404_NOT_FOUND: {"model": ErrorResponse,
+                                             "description": "No such answer, or it has no other version"}
+             })
+async def delete_alternative(request_body: AlternativeDeleteRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Delete the version of an answer that is shown (docs/answer_versions.md): the next one is
+    shown in its place, the previous one if it was the last. An answer without other versions
+    is deleted with DELETE /api/message/delete.
+
+    :return: The answer as now stored.
+    """
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+    row = db.delete_answer_alternative(request_body.messageId, request_body.conversationId)
+    crud_logger.info(f"Deleted the version shown of answer {request_body.messageId} - User: {current_user['user_id']}")
+    return _alternative_response(row, "The answer has no other version")
 
 
 @router.post("/regenerate",
@@ -1230,6 +1295,18 @@ async def send_and_generate_message(
         )
 
 
+def _versions_of(row: Optional[dict]) -> dict:
+    """An answer's version counter and its versions, for the browser (docs/answer_versions.md)."""
+    row = row or {}
+    position = row.get('alternative_position')
+    others = db.get_alternative_counts([row['id']]).get(row['id'], 0) if position else 0
+    return {
+        "version": row.get('version') or 1,
+        "alternativePosition": position if others else None,
+        "alternativeCount": others + 1 if others else None,
+    }
+
+
 @router.post("/stream-generate",
              responses={
                  status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"},
@@ -1254,8 +1331,14 @@ async def stream_generate(
     - summary: A new summary of the oldest messages (ConversationSummary), written
       before the answer when the history nearly fills the model's context window;
       a step shows it being written
-    - done: Signals completion with the message ID, the model and the token usage
-    - error: An error occurred during processing
+    - done: Signals completion with the message ID, the model, the token usage and the
+      answer's version counter and versions (version, alternativePosition, alternativeCount)
+    - error: An error occurred during processing; with messageId (and the version fields) when
+      the failed answer was stored
+
+    With regenerateId, the answer is a new version of that answer (docs/answer_versions.md): it
+    keeps the answer's id, its history ends before it, and the version shown so far is kept.
+    A stopped stream (the browser closed it) keeps what the model wrote so far.
 
     The agent loop (backend/llm) runs the model with its tools (the conversation's
     files, web search and the optional Neo4j knowledge graph), limited to the tool
@@ -1271,6 +1354,14 @@ async def stream_generate(
             detail="Access denied to this conversation"
         )
 
+    # Regenerate: a new version of a stored answer (docs/answer_versions.md). An answer the server
+    # doesn't have (stopped in an older version of the app) gets a new answer instead
+    regenerated = None
+    if request_body.regenerateId is not None:
+        regenerated = db.get_message_by_id(request_body.regenerateId, request_body.conversationId)
+        if regenerated is not None and regenerated['roleName'] in ('user', 'system'):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only answers can be regenerated")
+
     # Resolve the model before the stream starts, so a model the user may not use is a 403
     try:
         config = _resolve_model(current_user, request_body.conversationId, request_body.modelId)
@@ -1280,7 +1371,8 @@ async def stream_generate(
 
     async def event_generator() -> AsyncGenerator[dict, None]:
         """Generate SSE events for agent reasoning and response."""
-        message_id = int(time.time() * 1000)
+        # A new version of an answer keeps the answer's id, so its place in the conversation
+        message_id = regenerated['id'] if regenerated else int(time.time() * 1000)
         current_time = int(time.time())
         steps = []  # Step dicts in order of first appearance (not models)
         step_positions: dict[str, int] = {}  # Step id -> index in steps, for replaced steps
@@ -1288,6 +1380,8 @@ async def stream_generate(
         answer_record: list = []  # The answer's tool calls and results as the model got them
         usage: Optional[Usage] = None
         summary_usage: Optional[Usage] = None
+        answered = False  # The model has begun to answer (stopped after this, the answer is kept)
+        stored = False
 
         def step_event(step_dict: dict) -> dict:
             """Record a step (a known id replaces the earlier one) and make its event."""
@@ -1308,6 +1402,37 @@ async def stream_generate(
             if usage is not None:
                 total.add(usage)
             return total
+
+        def store(answer_status: str, error: Optional[str] = None) -> Tuple[Optional[dict], Optional[dict]]:
+            """
+            Store the answer as it is now, with the model that answered and its usage: a new
+            message, or a new version of the regenerated answer. Never awaits (it also runs
+            for a stopped answer, whose cancellation would come again at every await).
+
+            :return: The stored row and the usage as stored.
+            """
+            nonlocal stored
+            answer_usage = total_usage()
+            fields = dict(
+                time=current_time,
+                content=final_response,  # Response text (unified with text messages)
+                status=answer_status,
+                error=error,
+                steps=steps,  # Stored as JSONB array
+                model_id=config.id,
+                model_name=config.display_name,
+                usage=answer_usage.to_api(config) if answer_usage else None,
+                tool_record=answer_record  # The tools that ran before an error or a stop did run
+            )
+            row = None
+            if regenerated is not None:
+                row = db.store_answer_version(message_id, request_body.conversationId, **fields)
+                delete_message_tts_cache(message_id, request_body.conversationId)
+            if row is None:  # Not regenerated, or the answer was deleted meanwhile
+                row = db.create_agent_message(message_id=message_id, conversation_id=request_body.conversationId,
+                                              role_name=request_body.aiParticipant, **fields)
+            stored = True
+            return row, fields['usage']
 
         # Send message envelope FIRST - provides metadata before any content
         message_start = MessageStartEvent(
@@ -1333,7 +1458,8 @@ async def stream_generate(
 
         try:
             tools, history_builder, system_prompt, token_budget, mcp_notices, memory_note = await _answer_context(
-                current_user, request_body.conversationId, config, answer_id=message_id, hide=hide)
+                current_user, request_body.conversationId, config, answer_id=message_id, hide=hide,
+                before_message=regenerated)
             # MCP servers of the agent that give no tools this time (unreachable, or not signed in)
             for notice in mcp_notices:
                 now_ms = int(time.time() * 1000)
@@ -1341,13 +1467,17 @@ async def stream_generate(
                                                          **notice_step(notice))))
 
             # Build conversation history with placeholders for previous attachments: the
-            # summary of the oldest messages, then as many messages as fit the model's context window
+            # summary of the oldest messages, then as many messages as fit the model's context window.
+            # A new version of an answer gets the history before it, without a summary that covers it
             summary = db.get_conversation_summary(request_body.conversationId)
+            if regenerated is not None and summary is not None and summary['covers_until'] >= message_id:
+                summary = None
             entries, available_attachments = await history_builder.build_entries(
                 request_body.conversationId,
                 include_latest_attachments=True,
                 supports_vision=config.supports_vision,
-                summary=summary
+                summary=summary,
+                before_message=regenerated
             )
 
             # Fold the oldest messages into the summary once the history nearly fills the window
@@ -1408,7 +1538,7 @@ async def stream_generate(
 
             crud_logger.info(
                 f"Running agent with {config.display_name} ({config.provider_name}) on "
-                f"{len(history_messages)} messages")
+                f"{len(history_messages)} messages" + (f", a new version of {message_id}" if regenerated else ""))
 
             async for event_type, event_data in run_agent(
                 config,
@@ -1417,6 +1547,7 @@ async def stream_generate(
                 tools=tools
             ):
                 if event_type == "step":
+                    answered = True
                     yield step_event(_step_to_dict(event_data))
                 elif event_type == "step_delta":
                     # Keep the stored step current, in case the stream breaks before the step completes
@@ -1428,6 +1559,7 @@ async def stream_generate(
                         "data": json.dumps(event_data)
                     }
                 elif event_type == "token":
+                    answered = True
                     final_response += event_data
                     yield {
                         "event": "token",
@@ -1439,20 +1571,7 @@ async def stream_generate(
                     usage = event_data
 
             # Save using JSONB storage, with the model that answered and its usage
-            usage_data = (total_usage() or Usage()).to_api(config)
-            db.create_agent_message(
-                message_id=message_id,
-                conversation_id=request_body.conversationId,
-                role_name=request_body.aiParticipant,
-                time=current_time,
-                content=final_response,  # Response text (unified with text messages)
-                status='complete',
-                steps=steps,  # Stored as JSONB array
-                model_id=config.id,
-                model_name=config.display_name,
-                usage=usage_data,
-                tool_record=answer_record
-            )
+            row, usage_data = store('complete')
 
             # Signal completion
             yield {
@@ -1462,7 +1581,8 @@ async def stream_generate(
                     "conversationId": request_body.conversationId,
                     "modelId": config.id,
                     "modelName": config.display_name,
-                    "usage": usage_data
+                    "usage": usage_data,
+                    **_versions_of(row)
                 })
             }
 
@@ -1470,29 +1590,30 @@ async def stream_generate(
                 f"Stream generate completed - Message ID: {message_id}, "
                 f"tokens in/out: {usage.input_tokens if usage else 0}/{usage.output_tokens if usage else 0}")
 
+        except (asyncio.CancelledError, GeneratorExit):
+            # Stopped: the browser closed the stream (Stop), or the server shuts down. What the model
+            # wrote so far is kept, as the browser keeps it
+            if answered and not stored:
+                try:
+                    store('complete')
+                    crud_logger.info(f"Stream generate stopped - Message ID: {message_id}, kept what was written")
+                except Exception as e:
+                    crud_logger.error(f"Could not keep the stopped answer {message_id}: {e}", exc_info=True)
+            raise
+
         except Exception as e:
             crud_logger.error(f"Error in stream generate: {str(e)}", exc_info=True)
             error_text = answer_error(e, current_user)
 
             # Save error state using JSONB storage, with the usage until the error
-            db.create_agent_message(
-                message_id=message_id,
-                conversation_id=request_body.conversationId,
-                role_name=request_body.aiParticipant,
-                time=current_time,
-                content=final_response,  # Response text (unified with text messages)
-                status='error',
-                error=error_text,
-                steps=steps,
-                model_id=config.id,
-                model_name=config.display_name,
-                usage=total_usage().to_api(config) if total_usage() else None,
-                tool_record=answer_record  # The tools that ran before the error did run
-            )
+            error_event = {"error": error_text}
+            if not stored:
+                row, _ = store('error', error_text)
+                error_event.update(messageId=message_id, **_versions_of(row))
 
             yield {
                 "event": "error",
-                "data": json.dumps({"error": error_text})
+                "data": json.dumps(error_event)
             }
 
     return EventSourceResponse(event_generator())

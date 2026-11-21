@@ -91,6 +91,8 @@ messages = Table(
     # The memory it belongs to, set by a trigger when it is stored (docs/past_chats.md): None none,
     # 0 the shared knowledge base, else the personas.id of an agent with its own
     Column('memory_vault', Integer),
+    # An answer with other versions (message_alternatives): the place of the one shown, None = it has none
+    Column('alternative_position', Integer),
 )
 
 # The tool record of an answer: its tool calls and their results as the model got them
@@ -101,6 +103,27 @@ message_tool_records = Table(
     Column('message_id', BigInteger, ForeignKey('messages.id', ondelete='CASCADE'), primary_key=True),
     Column('conversation_id', Text, ForeignKey('conversations.id', ondelete='CASCADE'), nullable=False),
     Column('record', JSONB, nullable=False),  # Messages in the OpenAI format
+)
+
+# The versions of an answer that are not shown (docs/answer_versions.md): the messages row holds the
+# one shown, a version here keeps the columns it had as the answer and its tool record
+message_alternatives = Table(
+    'message_alternatives',
+    metadata,
+    Column('message_id', BigInteger, ForeignKey('messages.id', ondelete='CASCADE'), primary_key=True),
+    Column('position', Integer, primary_key=True),  # Its place among the answer's versions, from 1
+    Column('conversation_id', Text, ForeignKey('conversations.id', ondelete='CASCADE'), nullable=False),
+    Column('type', Text, nullable=False, server_default='agent'),
+    Column('content', Text, nullable=False),
+    Column('time', BigInteger, nullable=False),  # When it was written (unix seconds)
+    Column('rating', Integer),
+    Column('agent_status', Text),
+    Column('agent_steps', JSONB),
+    Column('agent_error', Text),
+    Column('model_id', Integer),
+    Column('model_name', Text),
+    Column('usage', JSONB),
+    Column('tool_record', JSONB),  # Its tool calls and results (as in message_tool_records), None = none
 )
 
 # The summary the model gets instead of a conversation's oldest messages (one per conversation)
@@ -433,6 +456,8 @@ mcp_auto_accept = Table(
 idx_conversation_time = Index('idx_conversation_time', messages.c.conversationId, messages.c.time)
 idx_message_tool_records_conversation = Index(
     'idx_message_tool_records_conversation', message_tool_records.c.conversation_id)
+idx_message_alternatives_conversation = Index(
+    'idx_message_alternatives_conversation', message_alternatives.c.conversation_id)
 idx_conversations_user = Index('idx_conversations_user', conversations.c.userId)
 idx_sessions_expires = Index('idx_sessions_expires', sessions.c.expires_at)
 idx_sessions_user = Index('idx_sessions_user', sessions.c.user_id)
