@@ -1105,13 +1105,14 @@ async def test_memory_snapshot():
         assert (row["vault"], row["family_mode"], row["content"], row["day"]) == \
             (3, True, "- New line.", date(2026, 11, 17)), row
 
-        # The newest answer began at its id (milliseconds); the user's messages don't count
+        # The newest answer began at its time (seconds: a new version of an answer keeps the answer's id,
+        # docs/answer_versions.md); the user's messages don't count
         now_ms = int(time.time() * 1000)
         with db.connection() as conn:
             for offset, role, kind in ((-5000, "user", "text"), (-4000, "Assistant", "agent"), (-1000, "user", "text")):
                 conn.execute(insert(messages).values(id=now_ms + offset, conversationId=conversation_id, roleName=role,
                                                      content="x", time=(now_ms + offset) // 1000, type=kind))
-        assert db.last_answer_time(conversation_id) == now_ms - 4000
+        assert db.last_answer_time(conversation_id) == (now_ms - 4000) // 1000 * 1000
 
         # The real memory: the prompt keeps the snapshot while the agent saves, the note has the new line
         registry = tools()

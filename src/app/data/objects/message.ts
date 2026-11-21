@@ -13,6 +13,7 @@
 import {
   IMessage,
   IMessageMetadata,
+  IAnswerAlternatives,
   IMessageContent,
   ITextContent,
   IAgentContent,
@@ -151,6 +152,8 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
   get version() { return this.metadata.version || 1; }
   get lastModified() { return this.metadata.lastModified || Math.floor(this.time.getTime() / 1000); }
   get rating() { return this.metadata.rating; }
+  /** The versions of an answer (docs/answer_versions.md), null for a message without others. */
+  get alternatives() { return this.metadata.alternatives ?? null; }
 
   // Setters for metadata (maintaining compatibility with existing code)
   set id(newId: number) { this.metadata.id = newId; }
@@ -245,7 +248,8 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
       time: new Date(data.time * 1000),
       version: data.version || 1,
       lastModified: data.lastModified || data.time,
-      rating: data.rating !== undefined ? data.rating : null
+      rating: data.rating !== undefined ? data.rating : null,
+      alternatives: Message.readAlternatives(data.alternativePosition, data.alternativeCount)
     };
 
     if (data.type === 'agent') {
@@ -279,6 +283,14 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
         attachments
       );
     }
+  }
+
+  /** The versions of an answer from the server's two fields; null unless it has others. */
+  static readAlternatives(position: unknown, count: unknown): IAnswerAlternatives | null {
+    if (typeof position !== 'number' || typeof count !== 'number' || count < 2) {
+      return null;
+    }
+    return { position, count };
   }
 
   /**
@@ -519,6 +531,7 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
       version: this.version,
       lastModified: this.lastModified,
       rating: this.rating,
+      alternatives: this.alternatives,
       content: this.content
     };
   }
@@ -531,7 +544,8 @@ export class Message<T extends IMessageContent = IMessageContent> implements IMe
       time: new Date(data.time),
       version: data.version || 1,
       lastModified: data.lastModified || Math.floor(new Date(data.time).getTime() / 1000),
-      rating: data.rating !== undefined ? data.rating : null
+      rating: data.rating !== undefined ? data.rating : null,
+      alternatives: data.alternatives ? Message.readAlternatives(data.alternatives.position, data.alternatives.count) : null
     };
 
     if (data.content) {

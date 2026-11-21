@@ -142,6 +142,28 @@ describe('ConversationRepository - sync of messages', () => {
     expect(reply.rating).toBe(1);
   });
 
+  it('takes another version of an answer that another device regenerated or switched to', async () => {
+    server = [text(USER, 'Hello'), answer(ANSWER, 'Hi there')];
+    await repository.syncConversation(conversationId);
+
+    // Regenerated: the answer keeps its id, says something else and has two versions
+    server[1] = answer(ANSWER, 'Hello you', { version: 2, alternativePosition: 2, alternativeCount: 2 });
+    expect(await repository.syncConversation(conversationId)).toBe(true);
+    let reply = (await localMessages())[1];
+    expect(reply.getDisplayContent()).toBe('Hello you');
+    expect(reply.version).toBe(2);
+    expect(reply.alternatives).toEqual({ position: 2, count: 2 });
+
+    // A third version that another device keeps while it shows the second: only the versions changed
+    server[1] = answer(ANSWER, 'Hello you', { version: 3, alternativePosition: 2, alternativeCount: 3 });
+    expect(await repository.syncConversation(conversationId)).toBe(true);
+    reply = (await localMessages())[1];
+    expect(reply.alternatives).toEqual({ position: 2, count: 3 });
+
+    // The same again: nothing to write
+    expect(await repository.syncConversation(conversationId)).toBe(false);
+  });
+
   it('removes what another device deleted: an answer that was generated again', async () => {
     const again = ANSWER + 30000;
     server = [text(USER, 'Hello'), answer(ANSWER, 'Hi there')];

@@ -63,38 +63,51 @@ def _file_id(attachment: dict):
     return attachment.get('fileId', attachment.get('id'))
 
 
-def export_conversation(conversation: dict, messages: list[dict]) -> dict:
+def _export_content(entry: dict, row: dict) -> dict:
+    """Add the content of a message, or of a version of an answer, to its entry in the file."""
+    msg_type = row.get('type') or 'text'
+    if msg_type == 'text':
+        entry["content"], attachments = _split_text(row['content'])
+        if attachments:
+            entry["attachments"] = attachments
+    else:
+        entry["content"] = row.get('content') or ''
+    if row.get('rating') is not None:
+        entry["rating"] = row['rating']
+    if msg_type == 'agent':
+        entry["steps"] = row.get('agent_steps') or []
+        entry["status"] = row.get('agent_status') or 'complete'
+        for key, column in (("error", 'agent_error'), ("modelName", 'model_name'), ("usage", 'usage')):
+            if row.get(column) is not None:
+                entry[key] = row[column]
+    return entry
+
+
+def export_conversation(conversation: dict, messages: list[dict], alternatives: dict | None = None) -> dict:
     """
     A conversation and its messages as a conversation file.
 
     :param conversation: The conversations row.
     :param messages: All messages rows of the conversation.
+    :param alternatives: The other versions of its answers (db.get_conversation_alternatives()).
     :return: The conversation file (JSON-serializable).
     """
     exported = []
     for msg in sorted(messages, key=lambda m: m['id']):
-        msg_type = msg.get('type') or 'text'
         # The id is the server's clock in milliseconds; rows where it isn't only have the time in seconds
         ms = msg['id'] if msg['id'] // 1000 == msg['time'] else msg['time'] * 1000
-        entry = {
+        entry = _export_content({
             "roleName": msg['roleName'],
-            "type": msg_type,
+            "type": msg.get('type') or 'text',
             "time": _iso(datetime.fromtimestamp(ms / 1000, tz=timezone.utc)),
-        }
-        if msg_type == 'text':
-            entry["content"], attachments = _split_text(msg['content'])
-            if attachments:
-                entry["attachments"] = attachments
-        else:
-            entry["content"] = msg.get('content') or ''
-        if msg.get('rating') is not None:
-            entry["rating"] = msg['rating']
-        if msg_type == 'agent':
-            entry["steps"] = msg.get('agent_steps') or []
-            entry["status"] = msg.get('agent_status') or 'complete'
-            for key, column in (("error", 'agent_error'), ("modelName", 'model_name'), ("usage", 'usage')):
-                if msg.get(column) is not None:
-                    entry[key] = msg[column]
+        }, msg)
+        versions = (alternatives or {}).get(msg['id'])
+        if versions:
+            entry["alternatives"] = [_export_content({
+                "type": version.get('type') or 'agent',
+                "time": _iso(datetime.fromtimestamp(version['time'], tz=timezone.utc)),
+            }, version) for version in versions]
+            entry["alternativePosition"] = msg.get('alternative_position') or len(versions) + 1
         exported.append(entry)
 
     return {
@@ -110,6 +123,38 @@ def export_conversation(conversation: dict, messages: list[dict]) -> dict:
         },
         "messages": exported,
     }
+
+
+def _agent_columns(msg) -> dict:
+    """The agent columns of an answer, or of a version of one, from the file."""
+    return {
+        "agent_status": msg.status or 'complete',
+        "agent_steps": [_step_to_dict(step) for step in msg.steps or []],
+        "agent_error": msg.error,
+        "model_name": msg.modelName,
+        "usage": msg.usage.model_dump() if msg.usage else None,
+    }
+
+
+def _alternatives(msg, index: int) -> dict:
+    """The other versions of an answer from the file, with their positions around the one shown."""
+    if msg.roleName.lower() in ('user', 'system'):
+        raise ConversationFileError(f"Message {index + 1} has other versions, but only answers can have them")
+    count = len(msg.alternatives) + 1
+    shown = msg.alternativePosition or count
+    if shown > count:
+        raise ConversationFileError(f"Message {index + 1} is version {shown} of only {count}")
+    versions = []
+    for position, version in zip([p for p in range(1, count + 1) if p != shown], msg.alternatives):
+        versions.append({
+            "position": position,
+            "type": version.type,
+            "time": round(_utc(version.time).timestamp()),
+            "content": version.content,
+            "rating": version.rating,
+            **(_agent_columns(version) if version.type == 'agent' else {}),
+        })
+    return {"alternatives": versions, "alternative_position": shown}
 
 
 def import_conversation(file: ConversationFile, user_id: int) -> dict:
@@ -146,13 +191,9 @@ def import_conversation(file: ConversationFile, user_id: int) -> dict:
             if attachments:
                 row["content"] = json.dumps({"content": msg.content, "attachments": attachments})
         elif msg.type == 'agent':
-            row.update(
-                agent_status=msg.status or 'complete',
-                agent_steps=[_step_to_dict(step) for step in msg.steps or []],
-                agent_error=msg.error,
-                model_name=msg.modelName,
-                usage=msg.usage.model_dump() if msg.usage else None,
-            )
+            row.update(_agent_columns(msg))
+        if msg.alternatives:
+            row.update(_alternatives(msg, index))
         rows.append(row)
 
     now = datetime.now(timezone.utc)

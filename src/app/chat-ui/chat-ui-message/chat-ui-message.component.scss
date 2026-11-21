@@ -17,7 +17,8 @@
   // Hover, or keyboard focus on one of the actions, shows them
   &:hover,
   &:has(.message-actions :focus-visible) {
-    .message-actions {
+    .message-actions,
+    .message-actions--versions > * {
       opacity: 1;
     }
   }
@@ -145,6 +146,20 @@
     .message-row--user .message-actions {
       left: auto;
       right: 0;
+    }
+
+    // The versions of an answer are always shown, on a backing of their own until the rest shows
+    .message-row:not(:hover):not(:has(.message-actions :focus-visible)) .message-actions--versions {
+      background: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+
+      .answer-versions {
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
     }
   }
 }
@@ -1037,6 +1052,16 @@
     opacity: 1;
   }
 
+  // An answer with other versions: they are always shown, the other actions wait for hover
+  &--versions {
+    opacity: 1;
+
+    > :not(.answer-versions) {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+  }
+
   .action-btn {
     // The icon centred in the 32px button (Material's padding is for 48px buttons)
     display: inline-flex;
@@ -1105,6 +1130,26 @@
     margin-left: auto;
     font-size: 12px;
     color: var(--theme-text-secondary);
+  }
+}
+
+// ‹ 2/3 ›: which version of the answer is shown (docs/answer_versions.md)
+.answer-versions {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+
+  &__count {
+    min-width: 2.4em;
+    text-align: center;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--theme-text-secondary);
+    user-select: none;
+  }
+
+  .action-btn:disabled mat-icon {
+    opacity: 0.35;
   }
 }
 
@@ -1491,9 +1536,13 @@ em {
     }
   }
 
-  // Actions and time on one line
-  .message-actions {
+  // Actions and time on one line, always shown (also next to the versions of an answer)
+  .message-actions,
+  .message-actions--versions > :not(.answer-versions) {
     opacity: 1;
+  }
+
+  .message-actions {
     gap: 0;
     margin-top: 2px;
 
