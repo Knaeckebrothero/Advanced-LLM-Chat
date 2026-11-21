@@ -10,6 +10,23 @@ from backend.models.message import AgentStep, MessageUsage
 CONVERSATION_FILE_TYPE = "advanced-llm-chat-conversation"
 CONVERSATION_FILE_VERSION = 1
 MAX_IMPORTED_MESSAGES = 10000
+MAX_IMPORTED_VERSIONS = 1000  # Other versions of one answer
+
+
+class ConversationFileVersion(BaseModel):
+    """
+    Another version of an answer (docs/answer_versions.md): what the answer was before it was
+    regenerated, or after. The fields are those of an answer.
+    """
+    type: Literal["text", "agent"] = "agent"
+    time: datetime
+    content: str = ""
+    rating: Optional[int] = Field(None, ge=0, le=1)
+    steps: Optional[List[AgentStep]] = None
+    status: Optional[Literal["thinking", "responding", "complete", "error"]] = None
+    error: Optional[str] = None
+    modelName: Optional[str] = None
+    usage: Optional[MessageUsage] = None
 
 
 class ConversationFileMessage(BaseModel):
@@ -28,6 +45,9 @@ class ConversationFileMessage(BaseModel):
     :ivar error: The error of an agent message that failed.
     :ivar modelName: The model that wrote an agent message.
     :ivar usage: Tokens and cost of an agent message.
+    :ivar alternatives: The other versions of an answer, in their order (the one shown not among them).
+    :ivar alternativePosition: The place of the version shown among all of them (1 for the first);
+        without it, the version shown is the last.
     """
     roleName: str
     type: Literal["text", "voice", "agent"] = "text"
@@ -40,6 +60,8 @@ class ConversationFileMessage(BaseModel):
     error: Optional[str] = None
     modelName: Optional[str] = None
     usage: Optional[MessageUsage] = None
+    alternatives: Optional[List[ConversationFileVersion]] = Field(None, max_length=MAX_IMPORTED_VERSIONS)
+    alternativePosition: Optional[int] = Field(None, ge=1)
 
 
 class ConversationFileHeader(BaseModel):

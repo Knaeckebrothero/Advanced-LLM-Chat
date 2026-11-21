@@ -392,6 +392,10 @@ class MessageResponse(BaseModel):
     modelId: Optional[int] = None
     modelName: Optional[str] = None
     usage: Optional[MessageUsage] = None
+    # An answer with other versions (docs/answer_versions.md): the place of the one shown, and how many
+    # there are with it; None for one without
+    alternativePosition: Optional[int] = None
+    alternativeCount: Optional[int] = None
 
 
 class SendAndGenerateResponse(BaseModel):
@@ -435,6 +439,31 @@ class RateMessageRequest(BaseModel):
     rating: Optional[int] = Field(None, ge=0, le=1)
 
 
+class AlternativeSwitchRequest(BaseModel):
+    """
+    Show another version of an answer (docs/answer_versions.md).
+
+    :ivar conversationId: The conversation.
+    :ivar messageId: The answer.
+    :ivar position: The version to show, 1 for the first.
+    """
+    conversationId: str
+    messageId: int
+    position: int = Field(ge=1)
+
+
+class AlternativeDeleteRequest(BaseModel):
+    """
+    Delete the version of an answer that is shown; another one is shown in its place
+    (docs/answer_versions.md).
+
+    :ivar conversationId: The conversation.
+    :ivar messageId: The answer.
+    """
+    conversationId: str
+    messageId: int
+
+
 class RegenerateMessageRequest(BaseModel):
     """
     Represents a request to regenerate a message within a specific conversation.
@@ -469,6 +498,9 @@ class StreamGenerateRequest(BaseModel):
     aiParticipant: str = "Assistant"
     # Optional: answer with this catalog model instead of the conversation's model
     modelId: Optional[int] = None
+    # Optional: write a new version of this answer (Regenerate, docs/answer_versions.md): the history
+    # ends before it, and the earlier version is kept
+    regenerateId: Optional[int] = None
 
 
 class SummarizeRequest(BaseModel):

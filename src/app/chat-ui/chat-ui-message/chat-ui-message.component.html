@@ -241,6 +241,7 @@
     </div>
 
     <p class="message-action-error" *ngIf="editError" role="alert">{{ editError }}</p>
+    <p class="message-action-error" *ngIf="alternativeError" role="alert">{{ alternativeError }}</p>
 
     <!-- TTS Audio Player (expandable) -->
     <div class="tts-player-container" *ngIf="ttsAudioUrl || isGeneratingTTS || ttsError">
@@ -278,8 +279,25 @@
     </div>
 
     <!-- Message Actions -->
-    <div class="message-actions" [class.message-actions--visible]="editing">
+    <div class="message-actions" [class.message-actions--visible]="editing"
+      [class.message-actions--versions]="message.alternatives && !editing && !inProgress">
       <ng-container *ngIf="!editing && !inProgress">
+        <!-- The versions of an answer (docs/answer_versions.md), shown without hovering -->
+        <div *ngIf="message.alternatives as versions" class="answer-versions" role="group"
+          [attr.aria-label]="'message.versionOf' | translate: versions">
+          <button mat-icon-button class="action-btn" (click)="showAlternative(-1)"
+            [disabled]="versions.position <= 1 || alternativeBusy || streaming"
+            [title]="'message.previousVersion' | translate" [attr.aria-label]="'message.previousVersion' | translate">
+            <mat-icon>chevron_left</mat-icon>
+          </button>
+          <span class="answer-versions__count" aria-hidden="true">{{ versions.position }}/{{ versions.count }}</span>
+          <button mat-icon-button class="action-btn" (click)="showAlternative(1)"
+            [disabled]="versions.position >= versions.count || alternativeBusy || streaming"
+            [title]="'message.nextVersion' | translate" [attr.aria-label]="'message.nextVersion' | translate">
+            <mat-icon>chevron_right</mat-icon>
+          </button>
+        </div>
+
         <!-- Read out loud button - only for AI messages with content -->
         <button *ngIf="canReadOutLoud" mat-icon-button class="action-btn" [class.action-btn--active]="ttsAudioUrl"
           (click)="toggleReadOutLoud()" [disabled]="isGeneratingTTS" [title]="'message.readOutLoud' | translate"
@@ -341,7 +359,8 @@
 
         <!-- Delete button -->
         <button mat-icon-button class="action-btn action-btn--danger" (click)="deleteMessage()"
-          [title]="'message.delete' | translate" [attr.aria-label]="'message.delete' | translate">
+          [title]="(message.alternatives ? 'message.deleteVersion' : 'message.delete') | translate"
+          [attr.aria-label]="(message.alternatives ? 'message.deleteVersion' : 'message.delete') | translate">
           <mat-icon>delete_outline</mat-icon>
         </button>
       </ng-container>

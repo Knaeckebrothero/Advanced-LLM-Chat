@@ -74,6 +74,10 @@ export class ChatStateService implements OnDestroy {
   private streamingMessage$ = new BehaviorSubject<Message<AgentContent> | null>(null);
   private isStreaming$ = new BehaviorSubject<boolean>(false);
   private streamingSubscription: Subscription | null = null;
+  // Answers that failed and that the server stored (with its error): kept when their stream ends
+  private storedErrors = new WeakSet<Message>();
+  // The answer a running stream writes a new version of (Regenerate), null for a new answer
+  private regenerating: Message | null = null;
 
   // Model catalog selection
   private draftSelection$ = new BehaviorSubject<DraftSelection>(EMPTY_DRAFT);
@@ -703,6 +707,13 @@ export class ChatStateService implements OnDestroy {
       case 'message_start':
         // Message envelope received - apply metadata immediately
         const startData = event.data as MessageStartEventData;
+        // The server didn't have the answer being regenerated (only this browser did): it writes a
+        // new answer, and this browser's copy goes
+        const replaced = this.regenerating;
+        if (replaced && replaced.id !== startData.messageId) {
+          void this.messageRepository.removeLocally(replaced.conversationId, [replaced.id]);
+          this.regenerating = null;
+        }
         message.id = startData.messageId;
         message.time = new Date(startData.time * 1000);
         message.roleName = startData.roleName;
@@ -763,19 +774,34 @@ export class ChatStateService implements OnDestroy {
         if (doneData.modelId !== undefined) message.content.modelId = doneData.modelId;
         if (doneData.modelName !== undefined) message.content.modelName = doneData.modelName;
         if (doneData.usage !== undefined) message.content.usage = doneData.usage;
+        this.takeVersions(message, doneData);
         message.content.status = 'complete';
         break;
       }
 
-      case 'error':
+      case 'error': {
         // Handle error
+        const errorData = event.data as ErrorEventData;
         message.content.status = 'error';
-        message.content.error = (event.data as ErrorEventData).error;
+        message.content.error = errorData.error;
+        if (errorData.messageId !== undefined) {
+          // The server stored the failed answer: it stays here too
+          message.id = errorData.messageId;
+          this.takeVersions(message, errorData);
+          this.storedErrors.add(message);
+        }
         break;
+      }
     }
 
     // Emit the updated message (create a new reference to trigger change detection)
     this.streamingMessage$.next(message);
+  }
+
+  /** The stored answer's version counter and versions, from a 'done' or a stored 'error' event. */
+  private takeVersions(message: Message<AgentContent>, data: DoneEventData | ErrorEventData): void {
+    if (data.version !== undefined) message.version = data.version;
+    message.metadata.alternatives = Message.readAlternatives(data.alternativePosition, data.alternativeCount);
   }
 
   /**
@@ -787,6 +813,13 @@ export class ChatStateService implements OnDestroy {
     // Update message to show error state
     message.content.status = 'error';
     message.content.error = error.message || 'An error occurred during streaming';
+
+    // A new version that failed this way doesn't replace the stored answer here: its error is
+    // shown on its own after it, as only this browser has it
+    if (this.regenerating && message.id === this.regenerating.id) {
+      message.id = Message.localId();
+    }
+    this.regenerating = null;
 
     // Save the error message to the repository (the server stored it too if it had started it)
     await this.messageRepository.save(message);
@@ -803,8 +836,9 @@ export class ChatStateService implements OnDestroy {
    * Handle stream completion
    */
   private async handleStreamComplete(message: Message<AgentContent>): Promise<void> {
-    // Only save if the message completed successfully
-    if (message.content.status === 'complete') {
+    // Save what the server stored: a complete answer, or one that failed (with its error)
+    const complete = message.content.status === 'complete';
+    if (complete || this.storedErrors.has(message)) {
       // The message was already saved on the backend by the SSE endpoint,
       // but we need to save it locally to IndexedDB
       await this.messageRepository.save(message);
@@ -812,10 +846,13 @@ export class ChatStateService implements OnDestroy {
       // The conversation moves up in the sidebar
       await this.conversationRepository.recordMessage(message.conversationId, message.id);
 
-      this.notificationService.showSuccess('Response generated');
+      if (complete) {
+        this.notificationService.showSuccess('Response generated');
+      }
     }
 
     // Clean up streaming state
+    this.regenerating = null;
     this.isStreaming$.next(false);
     this.streamingMessage$.next(null);
     this.streamingSubscription = null;
@@ -834,8 +871,11 @@ export class ChatStateService implements OnDestroy {
 
     // Get the current streaming message before clearing
     const streamingMessage = this.streamingMessage$.getValue();
+    const regenerated = this.regenerating;
+    this.regenerating = null;
 
-    // Save partial response if we have any content
+    // Save partial response if we have any content. The server keeps it too, once it notices
+    // the closed stream: as a new answer, or as a new version of the regenerated one
     if (streamingMessage && streamingMessage.content) {
       const hasContent = streamingMessage.content.content?.trim().length > 0;
       const hasSteps = streamingMessage.content.steps?.length > 0;
@@ -849,7 +889,13 @@ export class ChatStateService implements OnDestroy {
 
         // The conversation moves up in the sidebar
         await this.conversationRepository.recordMessage(streamingMessage.conversationId, streamingMessage.id);
+
+        // The version counter and the versions are the server's: ask for them once it has the answer
+        if (regenerated && streamingMessage.id === regenerated.id) {
+          void this.refreshStoppedVersion(streamingMessage, regenerated.version);
+        }
       }
+      // Otherwise nothing changed: the version shown before appears again
     }
 
     // Clean up streaming state
@@ -858,13 +904,40 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
+   * After a stopped regeneration: take the answer as the server stored it (its version counter
+   * and versions), once it is newer than the version this browser regenerated. The server
+   * stores it when it notices the closed stream, so this asks again a moment later.
+   */
+  private async refreshStoppedVersion(message: Message, regeneratedVersion: number): Promise<void> {
+    for (const wait of [500, 2000]) {
+      await new Promise(resolve => setTimeout(resolve, wait));
+      try {
+        const [stored] = await this.apiService.getConversationMessages(message.conversationId, 1, message.id + 1);
+        if (stored?.id === message.id && stored.version > regeneratedVersion) {
+          await this.messageRepository.save(stored, true);
+          return;
+        }
+      } catch {
+        return;  // The next sync brings it
+      }
+    }
+  }
+
+  /**
    * Internal helper to start streaming an AI response.
    * Creates a placeholder agent message and streams the response.
    * @param modelId - Answer with this catalog model instead of the conversation's model
    */
-  private async _streamResponse(conversationId: string, modelId?: number): Promise<void> {
+  private async _streamResponse(conversationId: string, modelId?: number, regenerate?: Message): Promise<void> {
     // Create placeholder agent message for streaming
     const agentMessage = Message.createAgent(conversationId, [], '', 'thinking');
+    if (regenerate) {
+      // A new version of a stored answer takes its place and id: the chat hides the stored copy
+      // while it streams (and shows it again if it is stopped before the model wrote anything)
+      agentMessage.id = regenerate.id;
+      agentMessage.roleName = regenerate.roleName;
+    }
+    this.regenerating = regenerate ?? null;
     this.streamingMessage$.next(agentMessage);
     this.isStreaming$.next(true);
 
@@ -875,7 +948,7 @@ export class ChatStateService implements OnDestroy {
 
     // Start streaming
     this.streamingSubscription = this.streamingService
-      .streamAgentResponse(conversationId, 'Assistant', modelId)
+      .streamAgentResponse(conversationId, 'Assistant', modelId, regenerate?.id)
       .subscribe({
         next: (event) => this.handleStreamEvent(event, agentMessage),
         error: (error) => this.handleStreamError(error, agentMessage),
@@ -986,6 +1059,27 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
+   * Show another version of an answer (docs/answer_versions.md): the server swaps it in, so the
+   * next answers get it; the answer keeps its place and id.
+   * @param position - The version to show, 1 for the first
+   */
+  async switchAlternative(message: Message, position: number): Promise<void> {
+    const shown = await this.apiService.switchAlternative(message.conversationId, message.id, position);
+    await this.messageRepository.save(shown, true);  // The server's copy: nothing to send
+    this.dropSummaryCovering(message.id, message.roleName);
+  }
+
+  /**
+   * Delete the version of an answer that is shown: the server shows the next one in its place
+   * (the previous one after the last). An answer without other versions is deleted with deleteMessage().
+   */
+  async deleteAlternative(message: Message): Promise<void> {
+    const shown = await this.apiService.deleteAlternative(message.conversationId, message.id);
+    await this.messageRepository.save(shown, true);  // The server's copy: nothing to send
+    this.dropSummaryCovering(message.id, message.roleName);
+  }
+
+  /**
    * Save the edited text of one of the user's messages and answer it again (guided editing):
    * the messages after it are deleted, then a new answer streams in.
    */
@@ -1037,8 +1131,9 @@ export class ChatStateService implements OnDestroy {
   }
 
   /**
-   * Regenerate a message using streaming.
-   * Deletes the old AI message and streams a new response.
+   * Regenerate an answer using streaming: a new version of it (docs/answer_versions.md), written in
+   * its place with the history before it. The version shown so far is kept, and the chat switches
+   * between them. An answer only this browser has is deleted and answered anew.
    * @param modelId - Answer with this catalog model instead of the conversation's model (once)
    */
   async regenerateMessage(message: Message, modelId?: number): Promise<void> {
@@ -1047,19 +1142,24 @@ export class ChatStateService implements OnDestroy {
     }
 
     // Check if it's an AI message
-    if (message.roleName === 'user') {
+    if (message.roleName === 'user' || message.roleName === 'system') {
       throw new Error('Can only regenerate AI messages');
+    }
+    if (this.isStreaming$.getValue()) {
+      throw new Error('Wait until the answer is complete');
     }
 
     this.error$.next(null);
 
     try {
-      // Delete the old AI message immediately
-      await this.messageRepository.delete(message.id);
       this.dropSummaryCovering(message.id);
-
-      // Start streaming a new response (backend will use the last user message)
-      await this._streamResponse(message.conversationId, modelId);
+      if (message.isLocal) {
+        // It failed before the server stored it: only this browser has it
+        await this.messageRepository.delete(message.id);
+        await this._streamResponse(message.conversationId, modelId);
+      } else {
+        await this._streamResponse(message.conversationId, modelId, message);
+      }
     } catch (error) {
       console.error('Error regenerating message:', error);
       this.error$.next('Failed to regenerate message');
