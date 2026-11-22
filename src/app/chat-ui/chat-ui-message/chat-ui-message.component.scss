@@ -865,7 +865,8 @@
 // A MESSAGE WITH ONE PHOTO
 // ============================================
 // The message's only attachment is an image: it is shown large, as in a messenger. The bubble
-// is as wide as the image, and the text wraps under it
+// is as wide as the image, and the text wraps under it. A text longer than a caption gets the
+// width of a message instead (message-body--photo-wide); the image stays as it is
 .message-body--photo:not(.message-body--editing) {
   .message-attachments {
     margin-bottom: 0;
@@ -896,9 +897,70 @@
 }
 
 // As wide as the photo (the widest thing in it that can't wrap), but wide enough for a line of text
-.message-row--user .message-body--photo:not(.message-body--editing) {
+.message-row--user .message-body--photo:not(.message-body--editing):not(.message-body--photo-wide) {
   width: min-content;
   min-width: min(200px, 100%);
+}
+
+// ============================================
+// YOUR OWN LONG MESSAGE, FOLDED
+// ============================================
+// It shows its first lines (--fold-lines) and "Read more", which shows the rest in place. The fold
+// is there from the first layout, so a message that was just sent has its height at once (the
+// component shows a text only a few lines longer whole after measuring it). "Read more" lies on
+// the last line, which the fade has hidden, so it takes no height of its own
+.text-fold {
+  position: relative;
+}
+
+// Its children's margins count to its height
+.text-fold-content {
+  display: flow-root;
+}
+
+.text-fold.is-folded .text-fold-clip {
+  max-height: calc(var(--fold-lines) * 1lh);
+  overflow: hidden;
+}
+
+.text-fold.is-folded.is-cut .text-fold-clip {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 3lh), transparent calc(100% - 1.2lh));
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3lh), transparent calc(100% - 1.2lh));
+}
+
+.text-fold-toggle {
+  display: block;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--theme-primary);
+  font: inherit;
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.text-fold.is-folded .text-fold-toggle {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  margin: 0;
+}
+
+// Under a photo the text keeps a little room to the bubble's edge, and so does the button
+.message-body--photo:not(.message-body--editing) .text-fold-toggle {
+  padding-left: 8px;
 }
 
 // ============================================
@@ -1476,6 +1538,73 @@ em {
   .message-row--user .message-body--photo:not(.message-body--editing) {
     padding: 4px 4px 8px;
   }
+
+  // One photo with more than a caption: the photo stands on its own above the bubble of its text,
+  // as in Open WebUI and ChatGPT, so the wider bubble leaves no empty strip next to it
+  .message-row--user .message-body--photo-wide:not(.message-body--editing) {
+    padding: 0;
+    border-radius: 0;
+    background: none;
+
+    .message-attachments {
+      margin-bottom: 4px;
+    }
+
+    .text-fold {
+      padding: 8px 14px;
+      border-radius: 16px 6px 4px 16px;
+      background: color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface));
+    }
+
+    .message-text {
+      padding: 0;
+    }
+
+    .text-fold-toggle {
+      padding-left: 0;
+    }
+
+    .text-fold.is-folded .text-fold-toggle {
+      left: 14px;
+      bottom: 8px;
+    }
+  }
+}
+
+// On a background image the message's card is the bubble (see above). Here too the photo stands on
+// its own: the card is the text's, and the name gets a small frosted backing of its own
+@media (min-width: 769px) {
+  :host-context(body.has-background-image)
+    .message-row--user .message-content-wrapper:has(.message-body--photo-wide:not(.message-body--editing)) {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+
+    .message-role-label {
+      padding: 0 10px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .text-fold {
+      padding: 10px 14px;
+      border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+      border-radius: 14px 6px 14px 14px;
+      background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .text-fold.is-folded .text-fold-toggle {
+      left: 14px;
+      bottom: 10px;
+    }
+  }
 }
 
 // ============================================
@@ -1619,5 +1748,83 @@ em {
 @media (max-width: 768px) and (hover: none) {
   .message-row--user:not(.message-row--actions-open) .message-actions:not(.message-actions--visible) .action-btn {
     display: none;
+  }
+}
+// Phones: one photo with more than a caption stands on its own above the bubble too, as on larger
+// screens. The whole message is the bubble here, with its time and actions, so the bubble is drawn
+// behind what follows the photo: the message is a grid whose rows are the photo, the text and the
+// rest, and the bubble a layer from the second row to the bottom
+@media (max-width: 768px) {
+  .message-row--user .message-content-wrapper:has(.message-body--photo-wide:not(.message-body--editing)) {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+    border-radius: 0;
+    background: none;
+
+    &::before {
+      content: '';
+      position: absolute;
+      grid-column: 1;
+      grid-row: 2 / auto;
+      inset: 0;
+      z-index: -1;
+      border-radius: 16px 6px 4px 16px;
+      background: color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface));
+    }
+
+    // Its photo and its text are rows of their own
+    .message-body {
+      display: contents;
+    }
+
+    .message-attachments {
+      margin-bottom: 4px;
+    }
+
+    .text-fold {
+      padding: 6px 10px 0;
+    }
+
+    .message-text {
+      padding: 0;
+    }
+
+    .text-fold-toggle {
+      padding-left: 0;
+    }
+
+    .text-fold.is-folded .text-fold-toggle {
+      left: 10px;
+    }
+
+    // The time, the actions and what else shows under the text keep the bubble's inner edge
+    > :not(.message-body) {
+      padding-inline: 10px;
+    }
+
+    .message-actions {
+      padding-bottom: 2px;
+    }
+  }
+
+  // On a background image the bubble is frosted
+  :host-context(body.has-background-image)
+    .message-row--user .message-content-wrapper:has(.message-body--photo-wide:not(.message-body--editing)) {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+
+    &::before {
+      border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+      background: color-mix(in srgb, color-mix(in srgb, var(--theme-primary) 16%, var(--theme-surface)) 88%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
   }
 }
