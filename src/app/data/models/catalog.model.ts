@@ -164,7 +164,8 @@ export interface IPersonaBase {
   ownMemory?: boolean;  // With the knowledge base: its own knowledge base and memory per user (default: the shared one)
   mcpServers?: string[] | null;  // Slugs of the admin MCP servers it uses (docs/mcp.md); null or [] = none
   skills?: string[] | null;  // Names of its skills (docs/skills.md), in this order; null or [] = none
-  hidden?: boolean;  // Hidden with all its chats and its own knowledge base
+  hidden?: boolean;  // Hidden with all its chats and its own knowledge base in family mode
+  public?: boolean;  // Every user's (guests too with availableToGuests); else only its creator's (default)
   // Its image, a data URL: sent, any image (at most 10 MB); returned, a WebP of at most 256 pixels.
   // null takes it away; left out (in an update) keeps it
   avatar?: string | null;

@@ -120,6 +120,7 @@ PERSONA_FIELDS = {
     "mcpServers": "mcp_servers",
     "skills": "skills",
     "hidden": "hidden",
+    "public": "public",
     "avatar": "avatar",
 }
 # tools: NULL = every enabled tool, so null in an update selects all tools again; mcp_servers, skills: NULL = none
@@ -371,6 +372,7 @@ def persona_out(row: dict) -> PersonaOut:
         mcpServers=list(row["mcp_servers"]) if row.get("mcp_servers") else None,
         skills=list(row["skills"]) if row.get("skills") else None,
         hidden=bool(row.get("hidden")),
+        public=bool(row.get("public")),
         avatar=row.get("avatar"),
     )
 
@@ -509,7 +511,7 @@ def delete_model(model_id: int) -> None:
 def list_personas(user: Optional[dict] = None) -> list[PersonaOut]:
     """
     All personas (including disabled ones), higher sort order first, then name. With a user,
-    without the hidden ones of other creators.
+    without the ones of other creators that aren't public.
     """
     return [persona_out(row) for row in db.get_personas()
             if user is None or not persona_of_another(row, user)]
@@ -520,7 +522,7 @@ def _persona_for(persona_id: int, user: Optional[dict]) -> dict:
     The persona row to change, as the user may see it.
 
     Raises:
-        CatalogNotFound: The persona does not exist, or is another creator's hidden one.
+        CatalogNotFound: The persona does not exist, or is another creator's that isn't public.
     """
     row = db.get_persona_by_id(persona_id)
     if not row or (user is not None and persona_of_another(row, user)):
@@ -551,18 +553,18 @@ def create_persona(data: PersonaCreate, user: Optional[dict] = None) -> PersonaO
 def update_persona(persona_id: int, data: PersonaUpdate, user: Optional[dict] = None) -> PersonaOut:
     """
     Update the fields of a persona that were sent, as user (the admin, None when importing
-    without one). A hidden persona without a creator becomes the user's.
+    without one). A persona without a creator that isn't public becomes the user's.
 
     tools: left out keeps the selection, null selects every enabled tool, [] none.
 
     Raises:
-        CatalogNotFound: The persona does not exist, or is another creator's hidden one.
+        CatalogNotFound: The persona does not exist, or is another creator's that isn't public.
         CatalogError: A variable is declared twice.
         CatalogConflict: The new name is taken.
     """
     existing = _persona_for(persona_id, user)
     values = _to_columns(data, PERSONA_FIELDS, PERSONA_NULLABLE, partial=True)
-    if values.get("hidden", existing.get("hidden")) and existing.get("created_by") is None:
+    if not values.get("public", existing.get("public")) and existing.get("created_by") is None:
         values["created_by"] = _creator_id(user)
     _prepare_avatar(values, existing)
     if "variables" in values:
@@ -577,7 +579,7 @@ def update_persona(persona_id: int, data: PersonaUpdate, user: Optional[dict] = 
 
 
 def delete_persona(persona_id: int, user: Optional[dict] = None) -> None:
-    """Delete a persona (not another creator's hidden one)."""
+    """Delete a persona (not another creator's that isn't public)."""
     _persona_for(persona_id, user)
     if not db.delete_persona(persona_id):
         raise CatalogNotFound(f"Persona {persona_id} not found")

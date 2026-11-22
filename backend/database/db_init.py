@@ -306,7 +306,8 @@ def drop_all_tables(engine, logger: logging.Logger) -> None:
 
 
 def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfill_file_owners: bool = False,
-                       link_files: bool = False, fill_memory: bool = False, add_creators: bool = False) -> bool:
+                       link_files: bool = False, fill_memory: bool = False, add_creators: bool = False,
+                       add_public: bool = False) -> bool:
     """
     Execute the schema SQL file to create tables, indexes, and triggers.
 
@@ -324,6 +325,8 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
             (when this run adds messages.memory_vault, docs/past_chats.md).
         add_creators: Turn the sort orders around and give hidden agents their creator in the
             same transaction (when this run adds personas.created_by).
+        add_public: Keep the existing agents public, except hidden ones with a creator, in the same
+            transaction (when this run adds personas.public).
 
     Returns:
         True if successful, False otherwise.
@@ -355,6 +358,9 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
                 from backend.database.db import backfill_persona_creators, reverse_sort_orders
                 reverse_sort_orders(conn)
                 creators = backfill_persona_creators(conn)
+            if add_public:
+                from backend.database.db import backfill_persona_public
+                public = backfill_persona_public(conn)
             conn.commit()
 
         logger.info(f"  ✓ Executed schema from {schema_path.name}")
@@ -373,6 +379,9 @@ def execute_schema_sql(engine, schema_path: Path, logger: logging.Logger, backfi
         if add_creators:
             logger.info(f"  ✓ Higher sort orders come first now: turned the existing ones around; {creators} "
                         f"hidden agent(s) got the user who talks to them as creator")
+        if add_public:
+            logger.info(f"  ✓ Agents are their creator's until made public now: {public} existing agent(s) "
+                        f"are public, hidden ones with a creator stay their creator's")
         return True
 
     except Exception as e:
@@ -658,14 +667,15 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
 
     # Rebuild the indexes once after the switch from the Alpine image, enable pgvector
     from backend.database.db import (files_lack_conversations, messages_lack_memory, personas_lack_creator,
-                                     prepare_database)
+                                     personas_lack_public, prepare_database)
     prepare_database(engine)
 
     # Before the migration adds the columns: this run links the existing files to their conversations,
-    # gives the existing messages their memory, and turns the sort orders around
+    # gives the existing messages their memory, turns the sort orders around and keeps the agents public
     link_files = files_lack_conversations(engine)
     fill_memory = messages_lack_memory(engine)
     add_creators = personas_lack_creator(engine)
+    add_public = personas_lack_public(engine)
 
     # Step 2: Production migration (runs FIRST if --prod is set)
     if prod_mode:
@@ -695,7 +705,7 @@ def initialize_database(args: argparse.Namespace, logger: logging.Logger) -> boo
     logger.info(f"[{current_step}/{total_steps}] Creating/updating tables from schema...")
     backfill_file_owners = not inspect(engine).has_table("uploaded_files")
     if not execute_schema_sql(engine, SCHEMA_FILE, logger, backfill_file_owners, link_files, fill_memory,
-                              add_creators):
+                              add_creators, add_public):
         return False
 
     # Step 5: Insert seed data if requested (runs LAST)
