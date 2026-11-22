@@ -1,4 +1,7 @@
-import { Component, Input, Output, EventEmitter, OnChanges, OnDestroy, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
+import {
+  ChangeDetectorRef, Component, Input, Output, EventEmitter, NgZone, OnChanges, OnDestroy, SimpleChanges, ViewChild,
+  ElementRef
+} from '@angular/core';
 import { Message, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
@@ -26,6 +29,15 @@ import { AnswerPart, FILE_LINK, answerParts, findFile } from './answer-parts';
 
 // The IDs the server gives stored files (backend FILE_ID_PATTERN); a file not uploaded yet has another
 const SERVER_FILE_ID = /^file_\d+_[0-9a-f]+$/;
+
+// Your own long message shows this many lines and "Read more". One that is at most FOLD_SLACK
+// lines longer is shown whole: "Read more" for a line or two would only be in the way
+const FOLD_LINES = 10;
+const FOLD_SLACK = 3;
+// The text of a photo up to this many characters is its caption: the bubble stays as wide as the photo
+const CAPTION_CHARS = 200;
+// The messages read in full, while the app runs (a message's component can be made anew)
+const unfoldedMessages = new Set<Message['id']>();
 
 @Component({
   selector: 'app-chat-ui-message',
@@ -69,6 +81,12 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   // Phones: your own messages show edit and delete only after a tap on them
   actionsOpen = false;
 
+  // Your own long message: its text is folded until it is measured ('unknown'), then shown
+  // whole, or folded ('cut') with "Read more"
+  readonly foldLines = FOLD_LINES;
+  foldState: 'unknown' | 'whole' | 'cut' = 'unknown';
+  private foldObserver?: ResizeObserver;
+
   // The copy button shows a check for a moment after copying
   copied = false;
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,7 +114,9 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
     private translate: TranslateService,
     private router: Router,
     private filePreviews: FilePreviewsService,
-    private conversationFiles: ConversationFilesService
+    private conversationFiles: ConversationFilesService,
+    private changeDetector: ChangeDetectorRef,
+    private ngZone: NgZone
   ) {
     this.catalogModels$ = this.catalogService.models$;
   }
@@ -108,6 +128,83 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   get singlePhoto(): boolean {
     const attachments = this.message?.attachments;
     return !!attachments && attachments.length === 1 && attachments[0].type === 'image';
+  }
+
+  /**
+   * A photo with more than a caption: the bubble gets the width of a message, so the text isn't a
+   * narrow column under the photo. The photo stays as it is.
+   */
+  get photoWithText(): boolean {
+    return this.singlePhoto && (this.message.textContent?.length ?? 0) > CAPTION_CHARS;
+  }
+
+  /** Your own messages are folded when they are long; answers and system messages never. */
+  get foldable(): boolean {
+    return this.message?.roleName === 'user';
+  }
+
+  /** Your own long message that was opened with "Read more". */
+  get unfolded(): boolean {
+    return unfoldedMessages.has(this.message.id);
+  }
+
+  /**
+   * The text of your own message, as long as it is shown. Its height is measured whenever it
+   * changes: the text inside the fold keeps its own height, so folding it doesn't change it.
+   */
+  @ViewChild('foldContent') set foldContent(ref: ElementRef<HTMLElement> | undefined) {
+    this.foldObserver?.disconnect();
+    this.foldObserver = undefined;
+    if (!ref || !this.foldable || typeof ResizeObserver === 'undefined') return;
+    const content = ref.nativeElement;
+    this.ngZone.runOutsideAngular(() => {
+      this.foldObserver = new ResizeObserver(() => this.measureFold(content));
+      this.foldObserver.observe(content);
+    });
+  }
+
+  /**
+   * Fold the text or show it whole. Called after the layout and before the browser paints, so the
+   * fold (there from the first layout) and "Read more" are drawn at once.
+   */
+  private measureFold(content: HTMLElement): void {
+    const style = getComputedStyle(content);
+    const lineHeight = parseFloat(style.lineHeight) || (parseFloat(style.fontSize) || 16) * 1.6;
+    const state = content.offsetHeight > lineHeight * (FOLD_LINES + FOLD_SLACK) ? 'cut' : 'whole';
+    if (state !== this.foldState) {
+      this.foldState = state;
+      this.changeDetector.detectChanges();
+    }
+  }
+
+  /** "Read more" shows the whole text in place, "Show less" folds it again. */
+  toggleFold(event: MouseEvent): void {
+    const id = this.message.id;
+    if (!unfoldedMessages.has(id)) {
+      unfoldedMessages.add(id);
+      return;
+    }
+    // Folding a long text moves its end up: the view goes with it, so "Read more" is where
+    // "Show less" was, under the pointer, with the text's first lines above it
+    const button = event.currentTarget as HTMLElement;
+    const before = button.getBoundingClientRect().top;
+    unfoldedMessages.delete(id);
+    this.changeDetector.detectChanges();
+    const scroller = this.scrollParent(button);
+    if (scroller) {
+      scroller.scrollTop += button.getBoundingClientRect().top - before;
+    }
+  }
+
+  /** The element the thread scrolls in. */
+  private scrollParent(element: HTMLElement): HTMLElement | null {
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const overflow = getComputedStyle(parent).overflowY;
+      if ((overflow === 'auto' || overflow === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+        return parent;
+      }
+    }
+    return null;
   }
 
   // The server's previews of this message's uploaded files, by file ID
@@ -931,6 +1028,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
    * Cleanup on destroy
    */
   ngOnDestroy(): void {
+    this.foldObserver?.disconnect();
     this.closeTTSPlayer();
     if (this.copiedTimer) {
       clearTimeout(this.copiedTimer);

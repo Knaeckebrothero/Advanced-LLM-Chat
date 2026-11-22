@@ -479,8 +479,9 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
 
   // How much of the message before a turn stays in view above it
   private readonly TURN_PEEK = 48;
-  // A message of the user taller than this share of the view shows only its last lines ...
-  private readonly TALL_QUESTION_SHARE = 0.4;
+  // A message of the user taller than this share of the view shows only its last lines (a long
+  // text is folded after ten lines and fits in it whole, so this is above all one with a photo) ...
+  private readonly TALL_QUESTION_SHARE = 0.6;
   // ... this many pixels of them
   private readonly TALL_QUESTION_VISIBLE = 112;
   // How long a turn that was just placed follows its message's changes of height (milliseconds)

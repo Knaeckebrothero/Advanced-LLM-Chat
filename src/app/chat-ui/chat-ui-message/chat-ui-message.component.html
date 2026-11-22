@@ -112,7 +112,7 @@
 
     <!-- Message Body (links to knowledge base notes open in the app) -->
     <div class="message-body" [class.message-body--editing]="editing" [class.message-body--photo]="singlePhoto"
-      (click)="onBodyClick($event)">
+      [class.message-body--photo-wide]="photoWithText" (click)="onBodyClick($event)">
       <!-- == TEXT MESSAGE == -->
       <ng-container *ngIf="message.isText()">
         <!-- Attachments -->
@@ -174,10 +174,21 @@
           </ng-container>
         </div>
 
-        <!-- Display formatted message when not editing (only if not a voice message with just transcript) -->
-        <ng-container *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()">
-          <ng-container *ngTemplateOutlet="messageParts; context: { cssClass: 'message-text' }"></ng-container>
-        </ng-container>
+        <!-- Display formatted message when not editing (only if not a voice message with just transcript).
+             Your own long message shows its first lines and "Read more" -->
+        <div *ngIf="!editing && message.textContent && !isVoiceMessageWithTranscript()" class="text-fold"
+          [class.is-folded]="foldable && foldState !== 'whole' && !unfolded"
+          [class.is-cut]="foldable && foldState === 'cut'" [style.--fold-lines]="foldLines">
+          <div class="text-fold-clip">
+            <div class="text-fold-content" #foldContent>
+              <ng-container *ngTemplateOutlet="messageParts; context: { cssClass: 'message-text' }"></ng-container>
+            </div>
+          </div>
+          <button *ngIf="foldable && foldState === 'cut'" type="button" class="text-fold-toggle"
+            [attr.aria-expanded]="unfolded" (click)="toggleFold($event)">
+            {{ (unfolded ? 'message.showLess' : 'message.readMore') | translate }}
+          </button>
+        </div>
 
         <!-- Edit mode -->
         <div *ngIf="editing" contenteditable="true" class="editable-message" #editableDiv

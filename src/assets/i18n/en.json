@@ -209,6 +209,8 @@
     "switchFailed": "The other version couldn't be shown: {{error}}",
     "deleteVersionFailed": "The version couldn't be deleted: {{error}}",
     "openAttachment": "Open",
+    "readMore": "Read more",
+    "showLess": "Show less",
     "notSent": "Not sent",
     "sendAgain": "Send again",
     "loadingOlder": "Loading older messages…",
