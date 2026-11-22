@@ -67,6 +67,12 @@ Built on the official `openai` and `anthropic` SDKs. LangChain and LangGraph are
   - `render_persona_prompt(persona_id, values, *, user_name, language) -> str | None`.
   - `persona_prompt_for_conversation(user, conversation)` and `persona_tool_groups(user, conversation) -> list[str] | None`: the rendered prompt and the tool groups of the conversation's persona, for the runtime (`None` without a usable persona; for the tools also when the persona has no selection).
 - **Visibility:** guests only see and use models and personas with `available_to_guests`. A guest without any guest model gets the environment model, as today. Disabled providers hide their models.
+- **Agents are their creator's until made public** (`personas.public`, since 2026-11-22). Only the admin who created an agent in the app (`created_by`) sees and uses it, until **Public** is on. Then every signed-in user does, and guests too with `available_to_guests`.
+  - **The rule** is `persona_of_another()`. It decides the pickers, the Agents page, changes (404), the export, the skills' agents, the knowledge bases, the default agent and new chats (403).
+  - **Without a creator** an agent is everybody's: seeded, or from before creators existed. Turning Public off on one makes the admin who saves it its creator.
+  - **Defaults:** the API creates agents private (`public = false`). A catalog file creates an agent without the key `public` as public, so seed files and older exports keep working.
+  - **The start that added the column** made every existing agent public, except hidden ones with a creator, which only their creator saw before (`backfill_persona_public()`).
+  - **Hidden** only hides an agent in family mode and no longer decides who sees it.
 - **Order:** models, agents and MCP servers are listed by `sort_order`, higher numbers first, then by name (since 2026-11-14; lower ones came first before). So a new entry goes to the top with a number above the others, without renumbering them. The start that adds `personas.created_by` turned the existing numbers around once (lowest + highest - number, `reverse_sort_orders()`), so every list kept its order.
 - **Providers** are defined only by the catalog file (`MODEL_CATALOG_FILE`) and are read-only in the API. Changing one means editing the file and running `app_init` again (Docker's `db-init` does it on every `docker compose up`).
 - **API keys** only come from environment variables: a provider names one in `api_key_env` (it must end in `_KEY` or `_TOKEN`), and its key is `os.getenv(api_key_env)`. Keys are never stored or returned; the API only says whether the variable is set (`apiKeySet`). Databases from before this change keep an unused `api_key_encrypted` column (`ALTER TABLE llm_providers DROP COLUMN api_key_encrypted` removes it).
@@ -132,6 +138,7 @@ PersonaCreate    name, description?, systemPrompt, variables = [], tools = null,
                  ownMemory = false (with knowledge_base: its own knowledge base and memory per user),
                  mcpServers = null (slugs of admin MCP servers, docs/mcp.md),
                  skills = null (names of skills, docs/skills.md),
+                 public = false (every user's; else only its creator's, see "Agents are their creator's"),
                  avatar = null (its image as a data URL: any image up to 10 MB is sent, the server keeps
                  a WebP of at most 256 pixels on its longer edge, never cropped, file_store.agent_image();
                  an update that sends the kept one back, or leaves it out, keeps it; null takes it away)
@@ -223,10 +230,11 @@ Used for `MODEL_CATALOG_FILE` seeding and for import and export. JSON with snake
       "system_prompt": "You are a helpful assistant who always talks like a {{style}}. Today is {{date}}.",
       "variables": [{"name": "style", "label": "Style", "default": "pirate"}],
       "tools": ["files", "web_search"],
-      "available_to_guests": true
+      "available_to_guests": true,
+      "public": true
     }
   ]
 }
 ```
 
-Every model column from `schema.sql` may appear; left-out columns take their defaults. A persona's `tools` may be left out (or `null`) for every enabled tool except the opt-in `"knowledge_base"`, or `[]` for none.
+Every model column from `schema.sql` may appear; left-out columns take their defaults. A persona's `tools` may be left out (or `null`) for every enabled tool except the opt-in `"knowledge_base"`, or `[]` for none. A new persona without `public` is public (the API's default is `false`), and the importing admin is the creator of the personas an import creates.

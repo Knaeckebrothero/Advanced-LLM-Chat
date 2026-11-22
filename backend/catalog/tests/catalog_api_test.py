@@ -56,7 +56,7 @@ TOGGLE_KEY_ENV = "ZZ_CATALOG_TOGGLE_API_KEY"
 PROVIDER_OUT_FIELDS = {"id", "name", "kind", "baseUrl", "apiKeyEnv", "apiKeySet", "privacyTier", "currency",
                        "reportedCostUnit", "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
 PERSONA_OUT_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "availableToGuests",
-                      "enabled", "sortOrder", "ownMemory", "mcpServers", "skills", "hidden", "avatar"}
+                      "enabled", "sortOrder", "ownMemory", "mcpServers", "skills", "hidden", "public", "avatar"}
 PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "hidden", "avatar"}
 
 
@@ -348,18 +348,18 @@ def run_personas(c, admin, user, guest):
         "systemPrompt": "Talk like a {{style}} to {{user_name}} in {{language}} on {{date}}. {{unknown}} {{ mood }}",
         "variables": [{"name": "style", "label": "Style", "default": "pirate"},
                       {"name": "mood", "label": "Mood"}],
-        "tools": ["web_search", "files", "files"], "availableToGuests": True, "sortOrder": 2,
+        "tools": ["web_search", "files", "files"], "availableToGuests": True, "sortOrder": 2, "public": True,
     })
     c.check(r.status_code == 201, "create persona -> 201", r.text)
     pirate = r.json()
     c.check(set(pirate) == PERSONA_OUT_FIELDS, "PersonaOut fields (no defaultModelId)", str(sorted(pirate)))
     c.check(pirate["tools"] == ["files", "web_search"], "tools deduplicated, in group order", str(pirate["tools"]))
     r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Private", "systemPrompt": "Private",
-                                                 "sortOrder": 1})
+                                                 "sortOrder": 1, "public": True})
     private = r.json()
     c.check(private["tools"] is None, "tools left out -> null (every enabled tool)", r.text)
     r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Off", "systemPrompt": "Off", "enabled": False,
-                                                 "availableToGuests": True})
+                                                 "availableToGuests": True, "public": True})
     off = r.json()
     c.check(admin.post("/api/admin/personas", json={"name": f"{PREFIX} Pirate", "systemPrompt": "x"}
                        ).status_code == 409, "duplicate persona name -> 409")
@@ -469,24 +469,23 @@ def run_conversations_and_settings(c, user, guest, models, personas):
     return conversation
 
 
-def run_hidden_agents_and_default(c, admin, user, guest, personas, admin_email, user_id):
+def run_private_agents_and_default(c, admin, user, guest, personas, admin_email, user_id):
     from backend.catalog import resolver
-    from backend.database.db import backfill_persona_creators, reverse_sort_orders
+    from backend.database.db import backfill_persona_creators, backfill_persona_public, reverse_sort_orders
     from sqlalchemy import text
 
-    c.section("Hidden agents are their creator's, the default agent, the switch to higher numbers first")
+    c.section("Agents are their creator's until made public, the default agent, the switch to higher numbers first")
     pirate, private, off = personas
     admin_id = db.get_user_by_email(admin_email)["id"]
     names = lambda session: [p["name"] for p in session.get("/api/personas").json()]  # noqa: E731
 
-    # A hidden agent is its creator's: nobody else sees or uses it
-    r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Secret", "systemPrompt": "Secret",
-                                                 "hidden": True, "sortOrder": 5})
+    # A new agent is its creator's: nobody else sees or uses it
+    r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Secret", "systemPrompt": "Secret", "sortOrder": 5})
     secret = r.json()
-    c.check(r.status_code == 201 and db.get_persona_by_id(secret["id"])["created_by"] == admin_id,
-            "a created agent has its admin as creator", r.text)
+    c.check(r.status_code == 201 and db.get_persona_by_id(secret["id"])["created_by"] == admin_id
+            and secret["public"] is False, "a created agent has its admin as creator and isn't public", r.text)
     c.check(f"{PREFIX} Secret" in names(admin) and secret["id"] in [p["id"] for p in admin.get(
-        "/api/admin/personas").json()], "the creator sees their hidden agent")
+        "/api/admin/personas").json()], "the creator sees their agent")
     c.check(f"{PREFIX} Secret" not in names(user), "another user's picker leaves it out", str(names(user)))
     c.check(user.post("/api/conversation/create", json={"name": "x", "participants": [], "personaId": secret["id"]}
                       ).status_code == 403, "another user can't start a chat with it -> 403")
@@ -497,26 +496,50 @@ def run_hidden_agents_and_default(c, admin, user, guest, personas, admin_email, 
             and not resolver.persona_usable(row, {"user_id": user_id}),
             "persona_usable: the creator (a session or a users row of the background jobs), not another user")
 
-    # Another creator's hidden agent: not on the Agents page, not changeable, not exported
-    r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Theirs", "systemPrompt": "Theirs",
-                                                 "hidden": True})
+    # Public: everybody's, also when it is hidden (that only hides it in family mode)
+    r = admin.put(f"/api/admin/personas/{secret['id']}", json={"public": True, "hidden": True})
+    c.check(r.status_code == 200 and r.json()["public"] is True and f"{PREFIX} Secret" in names(user)
+            and resolver.persona_usable(db.get_persona_by_id(secret["id"]), {"user_id": user_id}),
+            "a public agent is everybody's, a hidden one too", r.text)
+    r = admin.put(f"/api/admin/personas/{secret['id']}", json={"public": False, "hidden": False})
+    c.check(r.status_code == 200 and f"{PREFIX} Secret" not in names(user)
+            and db.get_persona_by_id(secret["id"])["created_by"] == admin_id,
+            "made private again: only its creator's", r.text)
+
+    # Another creator's private agent: not on the Agents page, not changeable, not exported
+    r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Theirs", "systemPrompt": "Theirs"})
     theirs = r.json()
     db.update_persona(theirs["id"], {"created_by": user_id})
     c.check(theirs["id"] not in [p["id"] for p in admin.get("/api/admin/personas").json()]
-            and f"{PREFIX} Theirs" not in names(admin), "another creator's hidden agent: not listed for the admin")
-    c.check(admin.put(f"/api/admin/personas/{theirs['id']}", json={"hidden": False}).status_code == 404
+            and f"{PREFIX} Theirs" not in names(admin), "another creator's private agent: not listed for the admin")
+    c.check(admin.put(f"/api/admin/personas/{theirs['id']}", json={"public": True}).status_code == 404
             and admin.delete(f"/api/admin/personas/{theirs['id']}").status_code == 404,
-            "another creator's hidden agent: update and delete -> 404")
-    exported = [p["name"] for p in admin.get("/api/admin/catalog/export").json()["personas"]]
-    c.check(f"{PREFIX} Theirs" not in exported and f"{PREFIX} Secret" in exported,
-            "the export leaves out other creators' hidden agents", str(exported))
+            "another creator's private agent: update and delete -> 404")
+    exported = {p["name"]: p for p in admin.get("/api/admin/catalog/export").json()["personas"]}
+    c.check(f"{PREFIX} Theirs" not in exported and exported.get(f"{PREFIX} Secret", {}).get("public") is False
+            and exported.get(pirate["name"], {}).get("public") is True,
+            "the export leaves out other creators' private agents and carries public", str(list(exported)))
     c.check(f"{PREFIX} Theirs" in names(user), "its creator sees it (also without admin rights)")
 
-    # A hidden agent without a creator is everybody's; whoever saves it hidden becomes its creator
+    # An import creates an agent without the key public as public, one with public false as the importer's
+    r = admin.post("/api/admin/catalog/import", json={"version": 2, "personas": [
+        {"name": f"{PREFIX} Imported", "system_prompt": "Imported"},
+        {"name": f"{PREFIX} Imported private", "system_prompt": "Mine", "public": False}]})
+    imported = {p["name"]: p for p in admin.get("/api/admin/personas").json()}
+    mine = imported.get(f"{PREFIX} Imported private", {})
+    c.check(r.status_code == 200 and imported.get(f"{PREFIX} Imported", {}).get("public") is True
+            and f"{PREFIX} Imported" in names(user) and mine.get("public") is False
+            and f"{PREFIX} Imported private" not in names(user)
+            and db.get_persona_by_id(mine["id"])["created_by"] == admin_id,
+            "import: left out -> public, public false -> the importing admin's", r.text)
+    for name in (f"{PREFIX} Imported", f"{PREFIX} Imported private"):
+        admin.delete(f"/api/admin/personas/{imported[name]['id']}")
+
+    # An agent without a creator is everybody's; whoever saves it while it isn't public becomes its creator
     unowned = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Unowned", "systemPrompt": "Unowned",
                                                        "sortOrder": 3}).json()
     db.update_persona(unowned["id"], {"created_by": None, "hidden": True})
-    c.check(f"{PREFIX} Unowned" in names(user), "a hidden agent without a creator is everybody's (as before)")
+    c.check(f"{PREFIX} Unowned" in names(user), "an agent without a creator is everybody's (as before)")
     r = user.post("/api/conversation/create", json={"name": "Unowned chat", "participants": [],
                                                      "personaId": unowned["id"]})
     unowned_chat = r.json()
@@ -525,6 +548,8 @@ def run_hidden_agents_and_default(c, admin, user, guest, personas, admin_email, 
         filled = backfill_persona_creators(conn)
         creator = conn.execute(text("SELECT created_by FROM personas WHERE id = :id"),
                                {"id": unowned["id"]}).scalar()
+        backfill_persona_public(conn)
+        public = dict(conn.execute(text("SELECT id, public FROM personas")).all())
         before = dict(conn.execute(text("SELECT id, COALESCE(sort_order, 0) FROM personas")).all())
         reverse_sort_orders(conn)
         after = dict(conn.execute(text("SELECT id, COALESCE(sort_order, 0) FROM personas")).all())
@@ -532,13 +557,16 @@ def run_hidden_agents_and_default(c, admin, user, guest, personas, admin_email, 
     total = min(before.values()) + max(before.values())
     c.check(filled >= 1 and creator == user_id,
             "the switch gives a hidden agent the user with the most chats with it as creator", f"{filled} {creator}")
+    c.check(public[unowned["id"]] is False and public[secret["id"]] is True and public[pirate["id"]] is True,
+            "the start that adds public keeps hidden agents with a creator theirs, makes the others public",
+            str({key: public[key] for key in (unowned["id"], secret["id"], pirate["id"])}))
     c.check(after == {pid: total - order for pid, order in before.items()},
             "the switch turns the sort orders around and keeps their range", f"{before} -> {after}")
     user.delete(f"/api/conversation/{unowned_chat['id']}")
     r = admin.put(f"/api/admin/personas/{unowned['id']}", json={"description": "now saved"})
     c.check(r.status_code == 200 and db.get_persona_by_id(unowned["id"])["created_by"] == admin_id
             and f"{PREFIX} Unowned" not in names(user),
-            "saving a hidden agent without a creator makes the admin its creator", r.text)
+            "saving an agent without a creator that isn't public makes the admin its creator", r.text)
 
     # The default agent of new chats
     r = user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": private["id"]})
@@ -548,7 +576,7 @@ def run_hidden_agents_and_default(c, admin, user, guest, personas, admin_email, 
     c.check(r.json()["defaultPersonaId"] == private["id"] and user.get("/api/settings").json()[
         "defaultPersonaId"] == private["id"], "settings without defaultPersonaId keep it; GET returns it")
     c.check(user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": secret["id"]}
-                     ).status_code == 403, "another creator's hidden agent as default -> 403")
+                     ).status_code == 403, "another creator's private agent as default -> 403")
     c.check(user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": off["id"]}
                      ).status_code == 403, "a disabled agent as default -> 403")
     c.check(user.put("/api/settings", json={"theme": "auto", "language": "de", "defaultPersonaId": 999999}
@@ -592,7 +620,7 @@ def run_agent_images(c, admin, guest):
     c.section("Agents' images")
     wide = image_data_url(600, 300)
     r = admin.post("/api/admin/personas", json={"name": f"{PREFIX} Pictured", "systemPrompt": "Hi",
-                                                 "availableToGuests": True, "avatar": wide})
+                                                 "availableToGuests": True, "public": True, "avatar": wide})
     pictured = r.json()
     avatar = pictured.get("avatar") or ""
     c.check(r.status_code == 201 and avatar.startswith("data:image/webp;base64,")
@@ -726,7 +754,7 @@ def run_stream_tools(c, admin, user, user_id, available_groups):
         for name, prompt, tools in [("No tools", "You only chat.", []), ("Files only", "You read files.", ["files"]),
                                     ("All tools", "You use everything.", None),
                                     ("Notebook", "You keep notes.", ["knowledge_base"])]:
-            body = {"name": f"{PREFIX} {name}", "systemPrompt": prompt}
+            body = {"name": f"{PREFIX} {name}", "systemPrompt": prompt, "public": True}
             if tools is not None:
                 body["tools"] = tools
             personas.append(admin.post("/api/admin/personas", json=body).json())
@@ -971,6 +999,7 @@ def run_seeding(c, admin, main, models, personas):
             "existing persona untouched by the seed", str(pirate_now))
     seeded = {p["name"]: p for p in admin.get("/api/admin/personas").json()}[f"{PREFIX} Seeded Persona"]
     c.check(seeded["tools"] == ["files"], "new persona from the seed has its tools")
+    c.check(seeded["public"] is True, "a new persona from a seed without the key public is public", str(seeded))
 
     # An edit in the app survives the next deploy
     admin.put(f"/api/admin/models/{guest_model['id']}", json={"description": "edited in the app"})
@@ -1213,7 +1242,7 @@ def main():
     models = run_models(c, admin, user, guest, main_provider, env, disabled)
     personas = run_personas(c, admin, user, guest)
     conversation = run_conversations_and_settings(c, user, guest, models, personas)
-    run_hidden_agents_and_default(c, admin, user, guest, personas, args.admin_email, user_id)
+    run_private_agents_and_default(c, admin, user, guest, personas, args.admin_email, user_id)
     run_agent_images(c, admin, guest)
     run_message_sync(c, user, user_id, models)
     run_stream_tools(c, admin, user, user_id, available_groups)

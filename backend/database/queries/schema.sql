@@ -256,8 +256,9 @@ CREATE TABLE IF NOT EXISTS personas (
     own_memory BOOLEAN DEFAULT FALSE,        -- its own knowledge base and memory per user instead of the user's shared one
     mcp_servers JSONB,                       -- slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
     skills JSONB,                            -- names of its skills (docs/skills.md), NULL = none
-    hidden BOOLEAN NOT NULL DEFAULT FALSE,     -- hidden with its chats and its own knowledge base
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,     -- hidden with its chats and its own knowledge base in family mode
     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- who created it in the app, NULL = seeded or from before
+    public BOOLEAN NOT NULL DEFAULT FALSE,     -- every user's, else only its creator's (one without a creator is everybody's)
     avatar TEXT,                             -- its image: a data URL of a WebP, at most 256 pixels on its longer edge
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -343,6 +344,11 @@ ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS details TEXT;
 -- run that adds created_by also turns the sort orders around, as higher numbers come first since then
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS default_persona_id INTEGER;
+
+-- name: add_persona_public
+-- Databases from before agents were only their creator's until made public (the CREATE TABLE above has it). The
+-- run that adds it makes the existing agents public, except hidden ones with a creator (backfill_persona_public())
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS public BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- name: add_persona_avatar
 -- Databases from before agents had an image (the CREATE TABLE above has it)

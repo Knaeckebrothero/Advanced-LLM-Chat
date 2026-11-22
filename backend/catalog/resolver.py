@@ -86,12 +86,12 @@ def model_usable(model: Optional[dict], user: Optional[dict]) -> bool:
 
 def persona_of_another(persona: dict, user: Optional[dict]) -> bool:
     """
-    Whether a persona is hidden and someone else's: only its creator sees and uses a hidden one.
-    A hidden persona without a creator (seeded, or nobody talked to it before personas had one)
-    is everybody's, as before.
+    Whether a persona is someone else's: only its creator sees and uses one that isn't public.
+    A persona without a creator (seeded, or from before personas had one) is everybody's. Hidden
+    has nothing to do with it: that only hides a persona in family mode.
     """
     creator = persona.get("created_by")
-    return bool(persona.get("hidden")) and creator is not None and creator != _user_id(user)
+    return not persona.get("public") and creator is not None and creator != _user_id(user)
 
 
 def persona_usable(persona: Optional[dict], user: Optional[dict]) -> bool:
@@ -103,7 +103,7 @@ def persona_usable(persona: Optional[dict], user: Optional[dict]) -> bool:
         user: The current user.
 
     Returns:
-        True if the persona is enabled, not someone else's hidden one and, for guests,
+        True if the persona is enabled, not someone else's that isn't public and, for guests,
         available to guests.
     """
     if not persona:

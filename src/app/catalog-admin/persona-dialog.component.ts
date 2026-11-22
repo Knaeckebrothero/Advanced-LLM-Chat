@@ -150,8 +150,22 @@ export class PersonaDialogComponent {
       enabled: [p?.enabled ?? true],
       sortOrder: [p?.sortOrder ?? 0],
       ownMemory: [p?.ownMemory ?? false],
-      hidden: [p?.hidden ?? false]
+      hidden: [p?.hidden ?? false],
+      // A new agent (also a copy) is only its creator's until it is made public
+      public: [this.persona?.public ?? false]
     });
+    this.publicChanged(this.form.controls['public'].value);
+  }
+
+  /** Guests see only public agents: the switch for them is off and can't be used while the agent isn't public. */
+  publicChanged(isPublic: boolean): void {
+    const guests = this.form.controls['availableToGuests'];
+    if (isPublic) {
+      guests.enable();
+    } else {
+      guests.setValue(false);
+      guests.disable();
+    }
   }
 
   /** The agent has the knowledge base (picked), so it can have its own memory instead of the shared one. */
@@ -373,6 +387,7 @@ export class PersonaDialogComponent {
       sortOrder: numberOrNull(v.sortOrder) ?? 0,
       ownMemory: !!v.ownMemory,
       hidden: !!v.hidden,
+      public: !!v.public,
       // [] for none: unambiguous for create and update
       mcpServers: this.mcpOptions.map(o => o.slug).filter(slug => this.pickedMcp.has(slug)),
       skills: this.skillOptions.map(o => o.name).filter(name => this.pickedSkills.has(name)),

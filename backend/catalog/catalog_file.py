@@ -98,7 +98,7 @@ MODEL_EXPORT_COLUMNS = [
 ]
 PERSONA_EXPORT_COLUMNS = [
     "name", "description", "system_prompt", "variables", "tools", "available_to_guests",
-    "enabled", "sort_order", "own_memory", "mcp_servers", "skills", "hidden", "avatar",
+    "enabled", "sort_order", "own_memory", "mcp_servers", "skills", "hidden", "public", "avatar",
 ]
 MCP_SERVER_EXPORT_COLUMNS = list(MCP_SERVER_KEYS)
 # Skills (docs/skills.md); natural key name
@@ -144,7 +144,7 @@ def _export_value(column: str, value):
 def export_catalog(user: Optional[dict] = None) -> dict:
     """
     The whole catalog in the catalog file format, usable as MODEL_CATALOG_FILE. With a user
-    (the admin), without the hidden personas of other creators.
+    (the admin), without the personas of other creators that aren't public.
 
     Returns:
         The catalog file as a dict.
@@ -301,13 +301,18 @@ def _fill_cached_price(existing: dict, fields: dict, label: str) -> str:
 
 def _import_persona(entry: dict, label: str, errors: list, *, create_only: bool,
                     user: Optional[dict] = None) -> str:
-    """Create or update (unless create_only) a persona, as user (the importing admin, None when seeding)."""
+    """
+    Create or update (unless create_only) a persona, as user (the importing admin, None when seeding).
+    A new one without the key public is public, as every persona was before it had one.
+    """
     fields = _fields(entry, PERSONA_KEYS, label, errors)
     name = str(entry.get("name") or "").strip()
     if not name:
         raise CatalogError("name is required")
     fields["name"] = name
     existing = db.get_persona_by_name(name)
+    if not existing:
+        fields.setdefault("public", True)
     return _save(existing, PersonaCreate, PersonaUpdate,
                  lambda data: service.create_persona(data, user),
                  lambda persona_id, data: service.update_persona(persona_id, data, user),
