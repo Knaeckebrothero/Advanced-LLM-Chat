@@ -213,11 +213,13 @@
     <h3 class="form-section">{{ 'catalog.admin.personas.visibilitySection' | translate }}</h3>
     <div class="toggle-grid">
       <mat-slide-toggle formControlName="enabled">{{ 'catalog.admin.fields.enabled' | translate }}</mat-slide-toggle>
+      <mat-slide-toggle formControlName="public" (change)="publicChanged($event.checked)">{{ 'catalog.admin.fields.public' | translate }}</mat-slide-toggle>
       <mat-slide-toggle formControlName="availableToGuests">{{ 'catalog.admin.fields.availableToGuests' | translate }}</mat-slide-toggle>
       @if (familyModeAvailable) {
         <mat-slide-toggle formControlName="hidden">{{ 'hide.agent' | translate }}</mat-slide-toggle>
       }
     </div>
+    <p class="tool-reason">{{ 'catalog.admin.personas.publicHint' | translate }}</p>
     @if (familyModeAvailable) {
       <p class="tool-reason">{{ 'hide.agentHint' | translate }}</p>
     }

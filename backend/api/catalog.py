@@ -306,7 +306,7 @@ async def admin_test_model(model_id: int, admin: dict = Depends(require_admin)):
 async def admin_list_personas(admin: dict = Depends(require_admin)):
     """
     Lists all personas, including disabled ones, higher sort order first, then name; without
-    the hidden ones of other creators.
+    the ones of other creators that aren't public.
 
     :return: The personas.
     :rtype: List[PersonaOut]
@@ -391,7 +391,7 @@ async def admin_delete_persona(persona_id: int, admin: dict = Depends(require_ad
 # =========================================================================
 
 def _shown_agents(skill_list: list[dict], admin: dict) -> list[dict]:
-    """The skills without the hidden agents of other creators in their agents."""
+    """The skills without the agents of other creators that aren't public in their agents."""
     others = {row["id"] for row in db.get_personas() if persona_of_another(row, admin)}
     if not others:
         return skill_list

@@ -351,6 +351,27 @@ def backfill_persona_creators(conn: Connection) -> int:
     """)).rowcount
 
 
+def personas_lack_public(engine: Engine) -> bool:
+    """Whether personas has no public yet: this run of the schema adds it (backfill_persona_public())."""
+    inspector = inspect(engine)
+    if not inspector.has_table("personas"):
+        return False  # A new database: no agents to keep public
+    return "public" not in {column["name"] for column in inspector.get_columns("personas")}
+
+
+def backfill_persona_public(conn: Connection) -> int:
+    """
+    Keep the agents from before agents were only their creator's until made public as they were: every
+    one public, except a hidden one with a creator, which only its creator saw. Runs once, in the
+    transaction that adds personas.public (init_tables() or db_init), after backfill_persona_creators().
+
+    Returns:
+        Number of agents that are public.
+    """
+    conn.execute(text("UPDATE personas SET public = NOT (hidden AND created_by IS NOT NULL)"))
+    return conn.execute(text("SELECT COUNT(*) FROM personas WHERE public")).scalar() or 0
+
+
 def reverse_sort_orders(conn: Connection) -> None:
     """
     Turn the sort orders of models, agents and MCP servers around, as higher numbers come first now:
@@ -675,6 +696,7 @@ class Database:
         link_files = files_lack_conversations(self.engine)
         fill_memory = messages_lack_memory(self.engine)
         add_creators = personas_lack_creator(self.engine)
+        add_public = personas_lack_public(self.engine)
 
         with self.connection() as conn:
             for block in blocks:
@@ -705,6 +727,10 @@ class Database:
                 creators = backfill_persona_creators(conn)
                 log.info(f"Higher sort orders come first now: turned the existing ones around; {creators} hidden "
                          f"agent(s) got the user who talks to them as creator")
+            if add_public:
+                public = backfill_persona_public(conn)
+                log.info(f"Agents are their creator's until made public now: {public} existing agent(s) are "
+                         f"public, hidden ones with a creator stay their creator's")
 
         log.info("Database tables initialized successfully")
 

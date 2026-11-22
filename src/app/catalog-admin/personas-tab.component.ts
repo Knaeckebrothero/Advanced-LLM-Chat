@@ -48,7 +48,9 @@ import { AgentAvatarComponent } from '../components/catalog/agent-avatar.compone
                   @if (!persona.enabled) {
                     <span class="state-tag">{{ 'catalog.admin.disabled' | translate }}</span>
                   }
-                  @if (persona.availableToGuests) {
+                  @if (!persona.public) {
+                    <span class="state-tag" [title]="'catalog.admin.personas.onlyMeHint' | translate">{{ 'catalog.admin.fields.onlyMe' | translate }}</span>
+                  } @else if (persona.availableToGuests) {
                     <span class="state-tag state-tag--accent">{{ 'catalog.admin.fields.guests' | translate }}</span>
                   }
                   @if (persona.hidden && familyMode.available) {

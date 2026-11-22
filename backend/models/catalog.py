@@ -170,7 +170,9 @@ class PersonaBase(BaseModel):
     ownMemory: bool = False  # With the knowledge base: its own knowledge base and memory per user, not the shared one
     mcpServers: Optional[List[str]] = None  # Slugs of the admin MCP servers it uses (docs/mcp.md); None = none
     skills: Optional[List[str]] = None  # Names of its skills (docs/skills.md), in this order; None = none
-    hidden: bool = False  # Hidden with all its chats and its own knowledge base
+    hidden: bool = False  # Hidden with all its chats and its own knowledge base in family mode
+    # Every user's (guests too with availableToGuests); else only its creator's. Catalog files: left out = public
+    public: bool = False
     # Its image, a data URL. Sent: any image (at most 10 MB), kept as a WebP of at most 256 pixels
     # (file_store.agent_image()); None = none, the pages show an icon
     avatar: Optional[str] = None
@@ -194,6 +196,7 @@ class PersonaUpdate(BaseModel):
     mcpServers: Optional[List[str]] = None  # Send null or [] for none
     skills: Optional[List[str]] = None  # Send null or [] for none
     hidden: Optional[bool] = None
+    public: Optional[bool] = None
     avatar: Optional[str] = None  # Send null to take the image away
 
 
