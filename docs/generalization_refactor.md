@@ -84,8 +84,8 @@ The contract for the runtime, the catalog, agents, tools and the history budget 
 |---|---|---|---|---|
 | Cortecs (EU router, Vienna; account settings to use: Sovereign Cloud and ZDR on, Nebius excluded) | DeepSeek V4.1 Flash, DeepSeek V4 Pro, Mistral Large 4, Kimi K3, GLM-5.3 (added 2026-11-12 for conversation, `docs/model_provider_strategy.md`) | 512k | high | Prices in EUR from `api.cortecs.ai/v1/models` |
 | Homelab router (`${MODEL_ROUTER_API}`) | Gemma 4 MoE (`gemma-4-26b-a4b`) | 128k | – | Auxiliary model (titles, speech preprocessing) and the guest model |
-| Anthropic | Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 | 512k | xhigh | Disabled until `ANTHROPIC_API_KEY` is set |
-| OpenAI | GPT-6 Astra (replaced GPT-5.2 in `25144bf`; databases seeded before keep GPT-5.2) | 512k (of 1.05M) | xhigh | Without tools (see "Model test results"); $10/$50 per million tokens, above 272k input twice the input and 1.5 times the output price |
+| Anthropic | Claude Fable 5.2 (added 2026-11-23), Opus 5.5, Sonnet 5.5, Haiku 5.5 | 512k | xhigh | Disabled until `ANTHROPIC_API_KEY` is set |
+| OpenAI | GPT-6.2 Astra and GPT-6.2 Sol (added 2026-11-23), GPT-6 Astra. GPT-6.2 Sol replaces GPT-5.2 (GPT-6 Astra did in `25144bf`): databases seeded before keep GPT-5.2 until it is changed on the Agents page; the dev database's GPT-5.2 became GPT-6.2 Sol on 2026-11-23 | 512k (of 1.05M) | xhigh | Without tools (see "Model test results"); per million tokens $8/$40 (6.2 Astra), $2/$10 (6.2 Sol), $10/$50 (6 Astra), above 272k input twice the input and 1.5 times the output price |
 
 Personas: Pirate (all tools) and Translator (no tools).
 
@@ -115,6 +115,8 @@ Skills: `image-generation` and `character-writing`, as `SKILL.md` files in `cata
 - **Cortecs** accepts every effort value and maps a level a model lacks to the next lower one.
 - **Homelab router:** about 15% of requests failed with "Backend unavailable: All connection attempts failed", in bursts, and some requests stalled for 60–90 s. Long prompts work (45k tokens tested). This is a router problem to look at, not an app problem. The router also serves Whisper (`whisper-large-v3`), Kokoro TTS (`kokoro`, `tts-1`, `tts-1-hd`), Qwen3 embeddings and rerankers, which the app's voice features (`WHISPER_BASE_URL`, `TTS_BASE_URL`) and a future vector search could use.
 - **GPT-6 Astra** (`gpt-6-astra`, official specs: 1.05M context with 922k input, 128k output, effort low…max, knowledge cutoff 2026-04-30): plain chats work. On Chat Completions it always reasons (`reasoning_effort: none` is rejected) and rejects tools together with any `reasoning_effort` (400), so tools with reasoning need the **Responses API**, which the runtime doesn't use. The catalog marks it `supports_tools: false`, so the app sends it no tools. It's disabled in the dev database.
+- **Claude Fable 5.2** (`claude-fable-5-2`, 2026-11-23; 1M context, 128k output, $8/$40, cache reads $0.20, needs the organization's 30-day data retention): the smoke test passed (text, streamed tool call, the three-step chain with its thinking blocks passed back, image input).
+- **GPT-6.2 Astra and GPT-6.2 Sol** (`gpt-6.2-astra`, `gpt-6.2-sol`, released 2026-11-17; official specs: 1.05M context with 922k input, 128k output, `reasoning_effort: none` rejected): not tested yet, since the OpenAI account had no credits (429 on every call, 2026-11-23). Marked `supports_tools: false` like GPT-6 Astra; their model pages list function calling and Chat Completions without saying whether the two work together with reasoning. Once there are credits: `LLM_PROVIDER=openai OPENAI_MODEL=gpt-6.2-sol REASONING_LEVEL=xhigh python -m backend.llm.smoke_test --env` (the tools check shows whether Chat Completions takes tools with reasoning now; if it does, switch tools on for both).
 - **The original GPT-4** can't be added: `gpt-4`, `gpt-4-0613`, `gpt-4-turbo` and `gpt-3.5-turbo` answer 404 "deprecated" although `/v1/models` still lists them. `gpt-4o` and `gpt-4.1` still work (the user doesn't want GPT-4o).
 
 ### Homelab deployment (2026-11-13)
@@ -136,7 +138,7 @@ The HomeLab repository (`~/Repositories/HomeLab`, private) deploys the chart thr
 ### Next steps
 
 1. **Releases:** done up to 0.1.239 (2026-11-14); the procedure is under "Status on 2026-11-14". Ask the user before a release and before a HomeLab push (a push deploys). Still open from the first release plan: import the converted 2023/24 conversations (not recorded as done).
-2. **GPT-6 Astra with tools:** a Responses API adapter in `backend/llm/` (tools together with reasoning, its reasoning shown as "Thinking"). Waiting for the user's decision.
+2. **GPT-6 Astra (and GPT-6.2 Astra and Sol) with tools:** a Responses API adapter in `backend/llm/` (tools together with reasoning, its reasoning shown as "Thinking"). Waiting for the user's decision.
 3. **Sidebar banner and app icons:** the robot logo is gone; the redesign is open. Options discussed: A, a quiet wordmark; B, a custom SVG mark plus wordmark that also replaces the favicon and PWA icons (still the 2024 cyborg portrait; recommended); C, no brand in the sidebar. Also the name: "LLM Chat" or "Advanced LLM Chat".
 4. **Refused guest login:** done on 2026-11-13 (item 11): guest logins have their own limit, so used-up answers no longer refuse the login, the chat shows the limit with its reset time, and the limits are settings (`GUEST_MAX_ANSWERS`, ...).
 5. Look at the homelab router's failures.
