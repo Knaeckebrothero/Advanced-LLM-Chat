@@ -28,7 +28,7 @@ import httpx
 from backend.llm.tests.fake_openai_server import (
     FakeOpenAIServer, chunk, completion, tool_call_delta, usage_chunk,
 )
-from backend.llm.prompts import IDENTITY_PROMPT, INSTRUCTIONS_HEADING, hide_prompt
+from backend.llm.prompts import FORMAT_PROMPT, IDENTITY_PROMPT, INSTRUCTIONS_HEADING, hide_prompt
 from backend.llm.tests.test_history import LONG_ROWS, FakeDB, assistant, system, user
 from backend.llm.tools import Tool, ToolRegistry
 from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
@@ -688,8 +688,9 @@ async def test_system_prompt_is_shown_and_can_be_replaced(server):
     with message_api(fake_db, config) as client:
         # Built from the agent: shown without the conversation's system messages, which follow it
         shown = (await client.get("/api/message/system-prompt", params=where)).json()
-        assert shown == {"content": IDENTITY_PROMPT, "custom": False, "tokens": estimate_tokens(IDENTITY_PROMPT)}, shown
-        assert await sent_system(client) == f"{IDENTITY_PROMPT}\n\n{instructions}"
+        built = f"{IDENTITY_PROMPT}\n\n{FORMAT_PROMPT}"
+        assert shown == {"content": built, "custom": False, "tokens": estimate_tokens(built)}, shown
+        assert await sent_system(client) == f"{built}\n\n{instructions}"
 
         # The conversation's own: sent as it is
         response = await client.put("/api/message/system-prompt", json={**where, "content": "You are a pirate."})
@@ -708,7 +709,7 @@ async def test_system_prompt_is_shown_and_can_be_replaced(server):
 
         # Back to the one built from the agent
         response = await client.put("/api/message/system-prompt", json={**where, "content": None})
-        assert response.json()["custom"] is False and response.json()["content"] == IDENTITY_PROMPT, response.text
+        assert response.json()["custom"] is False and response.json()["content"] == built, response.text
         assert fake_db.conversation == {"system_prompt": None}
         assert (await client.put("/api/message/system-prompt", json={**where, "content": "x" * 200_001})).status_code == 422
 

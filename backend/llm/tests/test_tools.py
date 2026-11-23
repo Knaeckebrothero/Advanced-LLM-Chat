@@ -37,9 +37,9 @@ from typing import get_args
 from backend.api import messages
 from backend.catalog import resolver
 from backend.llm import tools as tools_module
-from backend.llm.prompts import (_ALSO_KEPT_FILES, CHAT_PROMPT, FILE_ACCESS_PROMPT, GRAPH_PROMPT, KB_PROMPT, MEMORY_EMPTY,
-                                 MEMORY_HEADING, WEB_FETCH_PROMPT, WEB_SEARCH_PROMPT, build_system_prompt,
-                                 with_instructions, with_memory)
+from backend.llm.prompts import (_ALSO_KEPT_FILES, CHAT_PROMPT, FILE_ACCESS_PROMPT, FORMAT_PROMPT, GRAPH_PROMPT,
+                                 KB_PROMPT, MEMORY_EMPTY, MEMORY_HEADING, WEB_FETCH_PROMPT, WEB_SEARCH_PROMPT,
+                                 build_system_prompt, with_instructions, with_memory)
 from backend.llm.tools import (OPT_IN_GROUPS, TOOL_GROUPS, ToolInputError, ToolText, default_tools,
                                knowledge_base_tools,
                                tool_group_status, tool_message_content, tools_for_groups)
@@ -163,7 +163,9 @@ async def test_prompt_only_describes_selected_tools():
         notebook = build_system_prompt("You keep notes.", tools_for_groups(["knowledge_base"], user_id=1))
         assert notebook.startswith("You keep notes.") and notebook.endswith(KB_PROMPT)
         assert FILE_ACCESS_PROMPT not in notebook
-        assert build_system_prompt("You translate.", None) == "You translate."
+        # How the chat shows answers goes with a persona's prompt too, with tools or without
+        assert build_system_prompt("You translate.", None) == f"You translate.\n\n{FORMAT_PROMPT}"
+        assert FORMAT_PROMPT in files_only and FORMAT_PROMPT in everything
 
 
 async def test_past_chats_need_the_knowledge_base():

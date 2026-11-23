@@ -42,6 +42,7 @@ import httpx  # noqa: E402
 from backend.catalog import catalog_file  # noqa: E402
 from backend.config import POSTGRES_DB  # noqa: E402
 from backend.database import db  # noqa: E402
+from backend.llm.prompts import FORMAT_PROMPT  # noqa: E402
 from backend.llm.tools import OPT_IN_GROUPS, TOOL_GROUPS  # noqa: E402
 
 # The key variable of the test providers; the backend must have it set to TEST_KEY
@@ -778,8 +779,8 @@ def run_stream_tools(c, admin, user, user_id, available_groups):
         names, has_tools, system, text = sent[f"{PREFIX} No tools"]
         c.check("event: done" in text and "Ahoy" in text, "stream-generate answers through the fake server",
                 text[-300:])
-        c.check(not has_tools and system == "You only chat.", "persona tools [] -> no tools, prompt without tool "
-                "sections", f"{names} {system!r}")
+        c.check(not has_tools and system == f"You only chat.\n\n{FORMAT_PROMPT}",
+                "persona tools [] -> no tools, prompt without tool sections", f"{names} {system!r}")
         names, has_tools, system, _ = sent[f"{PREFIX} Files only"]
         c.check(names == ["list_files", "read_file"] and "## Files:" in system
                 and "## Knowledge Graph" not in system,
