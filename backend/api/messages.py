@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Dict, AsyncGenerator, Iterable, List, Optional, Tuple
-from fastapi import APIRouter, Request, Response, Depends, HTTPException, status
+from fastapi import APIRouter, Request, Response, Depends, HTTPException, Query, status
 from sse_starlette.sse import EventSourceResponse
 from backend.models.common import ErrorResponse
 from backend.models.message import (
@@ -21,6 +21,8 @@ from backend.models.message import (
     RateMessageRequest,
     RegenerateMessageRequest,
     StreamGenerateRequest,
+    StopAnswerRequest,
+    StopAnswerResponse,
     AlternativeSwitchRequest,
     AlternativeDeleteRequest,
     SummarizeRequest,
@@ -55,6 +57,7 @@ from backend.catalog.resolver import (
     resolve_auxiliary_model,
     resolve_model,
 )
+from backend.services import answer_runs
 from backend.services import knowledge_base as kb
 from backend.services import memory_snapshot
 from backend.services.hidden_content import auto_hide_definition, family_mode, restore_hidden, visible
@@ -88,6 +91,8 @@ NO_MODEL_MESSAGE = (
     "No language model is configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, "
     "or add a model to the model catalog."
 )
+# stream-generate while the conversation's last answer is still being written (another device's)
+ANSWER_RUNNING_MESSAGE = "An answer is still being written in this conversation"
 
 
 class NoModelAvailableError(Exception):
@@ -1338,7 +1343,12 @@ async def stream_generate(
 
     With regenerateId, the answer is a new version of that answer (docs/answer_versions.md): it
     keeps the answer's id, its history ends before it, and the version shown so far is kept.
-    A stopped stream (the browser closed it) keeps what the model wrote so far.
+
+    The answer runs on the server on its own (docs/background_answers.md): a closed stream only
+    stops watching it, and GET /api/message/stream/{conversationId} follows it again. Every event
+    has a number (the SSE id), and message_start the run's id (runId). Only POST /api/message/stop
+    stops it, which keeps what the model wrote so far (done with stopped). One answer runs per
+    conversation at a time: 409 while another one is written.
 
     The agent loop (backend/llm) runs the model with its tools (the conversation's
     files, web search and the optional Neo4j knowledge graph), limited to the tool
@@ -1353,6 +1363,8 @@ async def stream_generate(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied to this conversation"
         )
+    if answer_runs.running(request_body.conversationId) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ANSWER_RUNNING_MESSAGE)
 
     # Regenerate: a new version of a stored answer (docs/answer_versions.md). An answer the server
     # doesn't have (stopped in an older version of the app) gets a new answer instead
@@ -1369,8 +1381,8 @@ async def stream_generate(
         config = None
         crud_logger.error(f"Stream generate without a model: {e}")
 
-    async def event_generator() -> AsyncGenerator[dict, None]:
-        """Generate SSE events for agent reasoning and response."""
+    async def event_generator(run: answer_runs.AnswerRun) -> AsyncGenerator[dict, None]:
+        """The events of the answer, which its run (a task of its own) passes on to the streams."""
         # A new version of an answer keeps the answer's id, so its place in the conversation
         message_id = regenerated['id'] if regenerated else int(time.time() * 1000)
         current_time = int(time.time())
@@ -1434,6 +1446,21 @@ async def stream_generate(
             stored = True
             return row, fields['usage']
 
+        def done_event(row: Optional[dict], usage_data: Optional[dict], **extra) -> dict:
+            """The done event of the stored answer."""
+            return {
+                "event": "done",
+                "data": json.dumps({
+                    "messageId": message_id,
+                    "conversationId": request_body.conversationId,
+                    "modelId": config.id,
+                    "modelName": config.display_name,
+                    "usage": usage_data,
+                    **_versions_of(row),
+                    **extra
+                })
+            }
+
         # Send message envelope FIRST - provides metadata before any content
         message_start = MessageStartEvent(
             messageId=message_id,
@@ -1442,7 +1469,8 @@ async def stream_generate(
             time=current_time,
             type="agent",
             modelId=config.id if config else None,
-            modelName=config.display_name if config else None
+            modelName=config.display_name if config else None,
+            runId=run.id
         )
         yield {
             "event": "message_start",
@@ -1574,28 +1602,20 @@ async def stream_generate(
             row, usage_data = store('complete')
 
             # Signal completion
-            yield {
-                "event": "done",
-                "data": json.dumps({
-                    "messageId": message_id,
-                    "conversationId": request_body.conversationId,
-                    "modelId": config.id,
-                    "modelName": config.display_name,
-                    "usage": usage_data,
-                    **_versions_of(row)
-                })
-            }
+            yield done_event(row, usage_data)
 
             crud_logger.info(
                 f"Stream generate completed - Message ID: {message_id}, "
                 f"tokens in/out: {usage.input_tokens if usage else 0}/{usage.output_tokens if usage else 0}")
 
         except (asyncio.CancelledError, GeneratorExit):
-            # Stopped: the browser closed the stream (Stop), or the server shuts down. What the model
-            # wrote so far is kept, as the browser keeps it
+            # Stopped: Stop (POST /api/message/stop), or the server shuts down. What the model wrote
+            # so far is kept, as the browser keeps it, and the streams that still follow get it as
+            # done (emitted, not yielded: nothing may await here)
             if answered and not stored:
                 try:
-                    store('complete')
+                    row, usage_data = store('complete')
+                    run.emit(done_event(row, usage_data, stopped=True))
                     crud_logger.info(f"Stream generate stopped - Message ID: {message_id}, kept what was written")
                 except Exception as e:
                     crud_logger.error(f"Could not keep the stopped answer {message_id}: {e}", exc_info=True)
@@ -1616,7 +1636,66 @@ async def stream_generate(
                 "data": json.dumps(error_event)
             }
 
-    return EventSourceResponse(event_generator())
+    # The answer runs on its own; this stream only follows it (a closed stream doesn't stop it)
+    try:
+        run = answer_runs.start(request_body.conversationId, current_user['user_id'], event_generator)
+    except answer_runs.AnswerRunning:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ANSWER_RUNNING_MESSAGE)
+    return EventSourceResponse(run.follow())
+
+
+@router.get("/stream/{conversation_id}",
+            responses={
+                status.HTTP_204_NO_CONTENT: {"description": "No answer is being written"},
+                status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"}
+            })
+async def follow_answer(
+    conversation_id: str,
+    run_id: Optional[str] = Query(None, alias="runId"),
+    after: int = Query(0, ge=0),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Follow the answer that is being written in a conversation (docs/background_answers.md): an SSE
+    stream as stream-generate's, with what was written so far merged into few events, then the
+    rest as it comes, to its done (or error).
+
+    Without runId only an answer that is still running is followed (a browser that opens the
+    conversation or comes back to it). With runId (from message_start) and after (the number of
+    the last event the browser got), a browser whose stream broke gets the rest of that answer,
+    also if it ended meanwhile (kept for a while, answer_runs.KEEP_SECONDS). 204 when there is
+    nothing to follow: the stored answer comes with the next sync.
+    """
+    if not verify_conversation_ownership(conversation_id, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+    run = answer_runs.current(conversation_id) if run_id else answer_runs.running(conversation_id)
+    if run is None or run.user_id != current_user['user_id'] or (run_id and run.id != run_id):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return EventSourceResponse(run.follow(after))
+
+
+@router.post("/stop",
+             response_model=StopAnswerResponse,
+             responses={
+                 status.HTTP_403_FORBIDDEN: {"model": ErrorResponse, "description": "Access denied"}
+             })
+async def stop_answer(
+    request_body: StopAnswerRequest,
+    current_user: dict = Depends(get_current_user)
+) -> StopAnswerResponse:
+    """
+    Stop the answer that is being written in a conversation (the Stop button; closing the app
+    doesn't stop it). What the model wrote so far is kept, as a message or as a new version of a
+    regenerated answer; this returns once it is stored. With runId only that answer is stopped,
+    so a late Stop can't stop a newer one. Stopping an answer that has ended does nothing.
+    """
+    if not verify_conversation_ownership(request_body.conversationId, current_user['user_id']):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
+    run = answer_runs.running(request_body.conversationId)
+    if run is None or run.user_id != current_user['user_id'] or (request_body.runId and run.id != request_body.runId):
+        return StopAnswerResponse(stopped=False)
+    crud_logger.info(f"Stop answer - User: {current_user['user_id']}, Conversation: {request_body.conversationId}")
+    return StopAnswerResponse(stopped=await answer_runs.stop(run))
 
 
 @router.post("/summarize",

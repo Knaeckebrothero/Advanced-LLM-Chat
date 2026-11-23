@@ -176,6 +176,7 @@ Unchanged events keep their meaning. Additions:
 - `step`: if a step with the same `id` already exists, the new one replaces it (the reasoning step is sent once empty at its start and once complete at its end).
 - `step_delta` (new): `{"id": "<step id>", "delta": "<text>"}`, append `delta` to that step's content.
 - `done`: adds `modelId`, `modelName` and `usage` (`MessageUsage`).
+- Every event has a number (the SSE `id:`), `message_start` adds `runId`, and `done` adds `stopped` for an answer Stop stopped. The answer runs on without the stream; `GET /api/message/stream/{conversationId}` follows it again and `POST /api/message/stop` stops it (`docs/background_answers.md`). 409 while an answer is being written in the conversation.
 
 ## Catalog file
 

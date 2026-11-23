@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Import configuration
 from backend.config import (CORS_ORIGINS, USE_DEV_CERTS, SSL_CERTFILE, SSL_KEYFILE, HOST, PORT, MAX_REQUEST_MB,
-                            MAX_UPLOAD_FILES)
+                            MAX_UPLOAD_FILES, ANSWER_SHUTDOWN_WAIT)
 
 # Import logging module to initialize centralized logging
 # This must happen before other backend imports that use logging
@@ -26,6 +26,7 @@ from backend.config import AUTH_MODE
 from backend.security import oidc
 from backend.security.auth import cleanup_expired_sessions
 from backend.services.memory_review import review_loop
+from backend.services import answer_runs
 from backend.services.mcp.pool import pool as mcp_pool
 from backend.utils.certificates import setup_development_certificates
 
@@ -68,10 +69,18 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(cleanup_expired_sessions())
     # Review quiet conversations of knowledge base agents for their memory (backend/services/memory_review.py)
     asyncio.create_task(review_loop())
+    # At a shutdown, let the answers that are being written end, up to ANSWER_SHUTDOWN_WAIT
+    # (they run without a browser, backend/services/answer_runs.py), then stop them
+    answer_runs.watch_exit_signals()
+    drain = asyncio.create_task(answer_runs.drain_on_shutdown(ANSWER_SHUTDOWN_WAIT))
 
     yield
 
-    # Shutdown: close the connections to MCP servers (and stop their stdio processes), then the database's
+    # Shutdown: drain_on_shutdown() has let the running answers end or stopped them; without
+    # uvicorn's exit signal (another server) this waits for them here
+    drain.cancel()
+    await answer_runs.shutdown(ANSWER_SHUTDOWN_WAIT)
+    # Close the connections to MCP servers (and stop their stdio processes), then the database's
     await mcp_pool.close_all()
     db.close_all()
 

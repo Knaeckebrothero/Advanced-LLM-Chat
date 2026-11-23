@@ -107,6 +107,8 @@ services:
     ports:
       - "8443:8443"
     restart: unless-stopped
+    # Answers run on without the browser: a stopping backend waits up to ANSWER_SHUTDOWN_WAIT (100 s) for them
+    stop_grace_period: 2m
     environment:
       # SSL/TLS
       - USE_DEV_CERTS=True

@@ -219,6 +219,7 @@
     "emptyHint": "Write a message below to start the conversation.",
     "guestLimitLogin": "Log in for full access.",
     "guestLimitTryLater": "You have reached your request limit. Please try again later.",
+    "answerStillRunning": "An answer is still being written in this chat. It is shown here now.",
     "guestLimitUntil": "You have reached your request limit. You can get more answers after {{time}}.",
     "status": {
       "thinking": "Thinking…",

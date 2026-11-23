@@ -45,6 +45,11 @@ backend:
     pullPolicy: IfNotPresent
   # Uploaded files are on a ReadWriteOnce volume, so keep one replica unless it's ReadWriteMany
   replicas: 1
+  # Answers run on the server without the browser (docs/background_answers.md): a stopping pod
+  # waits ANSWER_SHUTDOWN_WAIT seconds (default 100) for running answers, then stops them. Keep
+  # this above it. With the Recreate strategy (a ReadWriteOnce volume) the new pod starts only
+  # after the old one is gone, so an update can wait this long while an answer is written.
+  terminationGracePeriodSeconds: 120
   service:
     type: ClusterIP
     port: 8000

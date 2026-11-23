@@ -529,7 +529,8 @@ def test_error_texts():
             "generateResponse": True, "aiParticipant": "Assistant"})
         stream = visitor.post("/api/message/stream-generate", json={"conversationId": conversation_id})
         assert generate.status_code == 500 and both.status_code == 500 and stream.status_code == 200
-        error = next(line for line in stream.text.split("\r\n\r\n") if line.startswith("event: error"))
+        # An event's block starts with its number (id:, docs/background_answers.md)
+        error = next(block for block in stream.text.split("\r\n\r\n") if "event: error" in block)
         stored = [m for m in db.get_messages_by_conversation(conversation_id, limit=100)
                   if m.get("agent_status") == "error"]
         assert len(stored) == 1, stored

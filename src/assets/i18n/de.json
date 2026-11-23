@@ -219,6 +219,7 @@
     "emptyHint": "Schreib unten eine Nachricht, um das Gespräch zu beginnen.",
     "guestLimitLogin": "Melde dich an, um vollen Zugriff zu haben.",
     "guestLimitTryLater": "Du hast dein Limit an Anfragen erreicht. Versuch es später noch einmal.",
+    "answerStillRunning": "In diesem Chat wird noch eine Antwort geschrieben. Sie wird jetzt hier angezeigt.",
     "guestLimitUntil": "Du hast dein Limit an Anfragen erreicht. Ab {{time}} Uhr kannst du weitere Antworten bekommen.",
     "status": {
       "thinking": "Denkt nach…",
