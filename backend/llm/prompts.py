@@ -1,12 +1,13 @@
 """
 System prompt for the agent.
 
-The prompt is the identity paragraph (or a persona's prompt in its place),
-followed by one section per enabled tool group, so the file access, graph and
-knowledge base and past chat instructions stay when a persona is used. The agent's
-skills (with_skills()) and MCP servers (with_mcp_servers()) come next. With the
-knowledge base, the agent's memory follows (with_memory()). A conversation's system
-messages come last (with_instructions()).
+The prompt is the identity paragraph (or a persona's prompt in its place) and
+how the chat shows answers, followed by one section per enabled tool group, so
+the file access, graph and knowledge base and past chat instructions stay when
+a persona is used. The agent's skills (with_skills()) and MCP servers
+(with_mcp_servers()) come next. With the knowledge base, the agent's memory
+follows (with_memory()). A conversation's system messages come last
+(with_instructions()).
 """
 import logging
 import re
@@ -23,6 +24,14 @@ log = logging.getLogger(__name__)
 IDENTITY_PROMPT = (
     "You are a helpful and knowledgeable assistant. Answer clearly and accurately, and say so honestly "
     "when you don't know something. Respond in the same language as the user."
+)
+
+# How the chat shows an answer; follows the identity paragraph or a persona's prompt. Models break the
+# lines of a code block (a prompt to copy) and of list items to keep them short, and the user copies the breaks
+FORMAT_PROMPT = (
+    "The chat shows your answer as Markdown and wraps long lines to fit the screen. Write each paragraph and "
+    "each list item as a single line, also in a code block that holds text rather than code: a line break you "
+    "add to keep lines short stays in what the user copies."
 )
 
 # Added when the model has any tools
@@ -218,7 +227,7 @@ def build_system_prompt(
         names = set(tools)
 
     identity = persona_prompt.strip() if persona_prompt and persona_prompt.strip() else IDENTITY_PROMPT
-    sections = [identity]
+    sections = [identity, FORMAT_PROMPT]
 
     if names:
         tool_paragraph = TOOLS_PROMPT
