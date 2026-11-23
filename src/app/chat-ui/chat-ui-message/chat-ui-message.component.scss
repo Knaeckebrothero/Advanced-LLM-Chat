@@ -408,6 +408,22 @@
         font-size: 0.875em;
         line-height: 1.5;
       }
+
+      // A block of text rather than code (a prompt to copy, a letter): its lines wrap like the rest of the
+      // answer, since models write a paragraph or list item as one line (FORMAT_PROMPT in backend/llm/prompts.py)
+      &.language-none,
+      &.language-text,
+      &.language-txt,
+      &.language-plaintext,
+      &.language-markdown,
+      &.language-md {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+
+        code {
+          white-space: inherit;
+        }
+      }
     }
 
     // Blockquotes - compact margins
