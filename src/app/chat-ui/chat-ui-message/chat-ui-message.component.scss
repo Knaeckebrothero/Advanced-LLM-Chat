@@ -306,16 +306,27 @@
   ::ng-deep .message-text,
   ::ng-deep .response-text {
     // ===== MARKDOWN STYLES =====
-    // Compact spacing for modern chat UIs (similar to OpenAI, Claude, Google)
+    // A blank line in the text is space between its paragraphs, as in the editor: each block has a gap
+    // under it (as GitHub shows Markdown), the last one none, so the message ends with its text
+    $block-gap: 1em;
 
-    // Headings - tight margins for compact layout
+    > :first-child {
+      margin-top: 0;
+    }
+
+    > :last-child,
+    > :last-child > pre {
+      margin-bottom: 0;
+    }
+
+    // Headings
     h1,
     h2,
     h3,
     h4,
     h5,
     h6 {
-      margin: 0.5em 0 0.15em 0;
+      margin: 1.25em 0 0.5em 0;
       font-weight: 600;
       line-height: 1.3;
       color: var(--theme-text);
@@ -343,9 +354,8 @@
       font-size: 1em;
     }
 
-    // Paragraphs - minimal margins
     p {
-      margin: 0 0 0.25em 0;
+      margin: 0 0 $block-gap 0;
 
       &:last-child {
         margin-bottom: 0;
@@ -392,13 +402,13 @@
       border: 1px solid var(--theme-border);
     }
 
-    // Code blocks - compact margin
+    // Code blocks
     pre {
       background-color: var(--theme-code-bg);
       padding: 14px;
       border-radius: 8px;
       overflow-x: auto;
-      margin: 0.35em 0;
+      margin: 0 0 $block-gap;
       border: 1px solid var(--theme-border);
 
       code {
@@ -426,33 +436,45 @@
       }
     }
 
-    // Blockquotes - compact margins
     blockquote {
-      margin: 0.35em 0;
-      padding: 0.3em 0 0.3em 0.8em;
+      margin: 0 0 $block-gap;
+      padding: 0.3em 0.8em;
       border-left: 3px solid var(--theme-primary);
       background-color: var(--theme-hover);
       border-radius: 0 6px 6px 0;
 
-      p {
-        margin: 0;
+      > :last-child {
+        margin-bottom: 0;
       }
     }
 
-    // Lists - compact spacing
+    // Lists: items close together; items with a blank line between them (each one a paragraph) as far
+    // apart as paragraphs
     ul,
     ol {
-      margin: 0.2em 0;
+      margin: 0 0 $block-gap;
       padding-left: 1.4em;
 
       li {
-        margin: 0.1em 0;
+        margin: 0;
         line-height: 1.5;
+
+        + li {
+          margin-top: 0.25em;
+        }
+
+        + li > p:first-child {
+          margin-top: $block-gap;
+        }
+
+        > :last-child {
+          margin-bottom: 0;
+        }
 
         // Nested lists
         ul,
         ol {
-          margin: 0.1em 0;
+          margin: 0.25em 0 0;
         }
       }
     }
@@ -473,7 +495,7 @@
       list-style-type: decimal;
     }
 
-    // Tables - Modern design with clear borders, compact margin
+    // Tables - Modern design with clear borders
     // Scrollable on mobile for tables that exceed viewport width. A block (for the scrolling) is
     // as wide as the answer, and its rows only as wide as their content: the frame hugs the table
     // instead, up to the answer's width
@@ -483,7 +505,7 @@
       max-width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
-      margin: 0.35em 0;
+      margin: 0 0 $block-gap;
       font-size: 0.9em;
       border: 2px solid var(--theme-border);
       border-radius: 10px;
@@ -542,11 +564,10 @@
       }
     }
 
-    // Horizontal rule - compact margin
     hr {
       border: none;
       border-top: 1px solid var(--theme-border);
-      margin: 0.5em 0;
+      margin: 1.5em 0;
     }
 
     // Images
@@ -555,91 +576,6 @@
       height: auto;
       border-radius: 8px;
       margin: 0.35em 0;
-    }
-
-    // ===== Copy/Download Button Wrappers =====
-
-    // Table wrapper with hover buttons - compact margin
-    .table-wrapper {
-      position: relative;
-      display: inline-block;
-      min-width: 100%;
-      margin: 0.35em 0;
-
-      &:hover .copy-download-buttons {
-        opacity: 1;
-        visibility: visible;
-      }
-
-      table {
-        margin: 0 !important; // Remove margin since wrapper handles it
-      }
-
-      .copy-download-buttons {
-        top: 10px;
-        right: 10px;
-      }
-    }
-
-    // Code block wrapper with hover buttons - compact margin
-    .code-wrapper {
-      position: relative;
-      margin: 0.35em 0;
-
-      &:hover .copy-download-buttons {
-        opacity: 1;
-        visibility: visible;
-      }
-
-      pre {
-        margin: 0 !important; // Remove margin since wrapper handles it
-      }
-
-      .copy-download-buttons {
-        top: 8px;
-        right: 8px;
-      }
-    }
-
-    // Copy/download buttons container
-    .copy-download-buttons {
-      position: absolute;
-      display: flex;
-      gap: 4px;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.2s ease, visibility 0.2s ease;
-      z-index: 10;
-    }
-
-    // Action icon button style
-    .action-icon-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      padding: 0;
-      border: none;
-      border-radius: 6px;
-      background-color: rgba(var(--theme-surface-rgb, 30, 30, 30), 0.9);
-      color: var(--theme-text-secondary);
-      cursor: pointer;
-      transition: all 0.15s ease;
-      backdrop-filter: blur(4px);
-
-      .material-icons {
-        font-size: 16px;
-      }
-
-      &:hover {
-        background-color: var(--theme-hover);
-        color: var(--theme-text);
-      }
-
-      &:active {
-        transform: scale(0.95);
-      }
     }
   }
 }
