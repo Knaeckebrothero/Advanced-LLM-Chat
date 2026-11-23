@@ -19,7 +19,9 @@ import {
   MessageStartEventData,
   ErrorEventData,
   StepDeltaEventData,
-  DoneEventData
+  DoneEventData,
+  NoAnswerRunningError,
+  StreamHttpError
 } from './streaming.service';
 import { CatalogService } from './catalog.service';
 import { FamilyModeService } from './family-mode.service';
@@ -45,6 +47,20 @@ import { TranslateService } from '@ngx-translate/core';
  */
 type DraftSelection = Omit<IConversationSelection, 'personaId'> & { personaId: number | null | undefined };
 const EMPTY_DRAFT: DraftSelection = { modelId: null, personaId: undefined, personaValues: null };
+
+/**
+ * The answer this browser follows. It runs on the server on its own (docs/background_answers.md):
+ * a stream that breaks only stops watching it, so it is followed again from the last event it got.
+ */
+interface Following {
+  conversationId: string;
+  message: Message<AgentContent>;
+  runId: string | null;  // From message_start: to follow it again and to stop it
+  lastEventId: number;  // The number of the last event it got
+  attempts: number;  // Attempts in a row to follow it again without getting anything
+  shown: boolean;  // The chat shows it (an answer followed again shows once its first event arrives)
+  stored?: Message[];  // Followed again: the conversation's messages, to find the answer it writes a new version of
+}
 
 export interface ChatState {
   activeConversation: Conversation | null;
@@ -78,6 +94,10 @@ export class ChatStateService implements OnDestroy {
   private storedErrors = new WeakSet<Message>();
   // The answer a running stream writes a new version of (Regenerate), null for a new answer
   private regenerating: Message | null = null;
+  // The answer this browser follows, also while it tries to follow it again (Following)
+  private following: Following | null = null;
+  // Waits before following an answer again after its stream broke without anything new
+  private static readonly FOLLOW_AGAIN_DELAYS = [0, 2000, 5000, 10000];
 
   // Model catalog selection
   private draftSelection$ = new BehaviorSubject<DraftSelection>(EMPTY_DRAFT);
@@ -418,6 +438,10 @@ export class ChatStateService implements OnDestroy {
     this.hasReachedEnd$.next(false); // Reset when loading a conversation
 
     try {
+      // The answer of another conversation goes on on the server; opening it again follows it again
+      if (this.following && this.following.conversationId !== conversationId) {
+        this.leaveAnswer();
+      }
       if (conversationId === '0') {
         this.isNewConversation$.next(true);
         this.activeConversationId$.next('0');
@@ -428,6 +452,8 @@ export class ChatStateService implements OnDestroy {
         // Trigger sync for this conversation if online
         if (await this.isBackendAvailable()) {
           this.conversationRepository.syncConversation(conversationId).catch(console.error);
+          // An answer that is being written in it (started before the app was closed, or on another device)
+          void this.followAnswer(conversationId);
         }
       }
 
@@ -444,6 +470,8 @@ export class ChatStateService implements OnDestroy {
    * Create a new conversation (not saved until first message)
    */
   async createNewConversation(): Promise<void> {
+    // An answer that is being written goes on on the server; opening its conversation follows it again
+    this.leaveAnswer();
     // A new conversation starts with the default model and no persona
     this.draftSelection$.next(EMPTY_DRAFT);
     this.isNewConversation$.next(true);
@@ -714,6 +742,11 @@ export class ChatStateService implements OnDestroy {
           void this.messageRepository.removeLocally(replaced.conversationId, [replaced.id]);
           this.regenerating = null;
         }
+        // Followed again (the app was closed): a new version of a stored answer hides it, as Regenerate does
+        const stored = this.following?.message === message ? this.following.stored : undefined;
+        if (!this.regenerating && stored) {
+          this.regenerating = stored.find(m => m.id === startData.messageId && !m.isText()) ?? null;
+        }
         message.id = startData.messageId;
         message.time = new Date(startData.time * 1000);
         message.roleName = startData.roleName;
@@ -826,6 +859,8 @@ export class ChatStateService implements OnDestroy {
     await this.conversationRepository.recordMessage(message.conversationId, message.id);
 
     // Clean up streaming state
+    this.following = null;
+    this.streamingSubscription = null;
     this.isStreaming$.next(false);
     this.streamingMessage$.next(null);
 
@@ -853,6 +888,7 @@ export class ChatStateService implements OnDestroy {
 
     // Clean up streaming state
     this.regenerating = null;
+    this.following = null;
     this.isStreaming$.next(false);
     this.streamingMessage$.next(null);
     this.streamingSubscription = null;
@@ -863,19 +899,30 @@ export class ChatStateService implements OnDestroy {
    * Saves the partial response if any content was generated.
    */
   async cancelStreaming(): Promise<void> {
-    // Unsubscribe first to stop receiving more tokens
+    // Unsubscribe first to stop receiving more tokens; nothing follows the answer again
+    const following = this.following;
+    this.following = null;
     if (this.streamingSubscription) {
       this.streamingSubscription.unsubscribe();
       this.streamingSubscription = null;
     }
+
+    // The answer runs on the server on its own (docs/background_answers.md): closing its stream
+    // doesn't stop it, the server does, and keeps what was written (as a new answer, or as a new
+    // version of the regenerated one). Only that run, so a late Stop can't stop a newer answer
+    const stopped = following
+      ? this.streamingService.stopAgentResponse(following.conversationId, following.runId).catch(error => {
+          console.warn('Could not stop the answer:', error);
+          return false;
+        })
+      : Promise.resolve(false);
 
     // Get the current streaming message before clearing
     const streamingMessage = this.streamingMessage$.getValue();
     const regenerated = this.regenerating;
     this.regenerating = null;
 
-    // Save partial response if we have any content. The server keeps it too, once it notices
-    // the closed stream: as a new answer, or as a new version of the regenerated one
+    // Save partial response if we have any content. The server keeps it too
     if (streamingMessage && streamingMessage.content) {
       const hasContent = streamingMessage.content.content?.trim().length > 0;
       const hasSteps = streamingMessage.content.steps?.length > 0;
@@ -892,7 +939,7 @@ export class ChatStateService implements OnDestroy {
 
         // The version counter and the versions are the server's: ask for them once it has the answer
         if (regenerated && streamingMessage.id === regenerated.id) {
-          void this.refreshStoppedVersion(streamingMessage, regenerated.version);
+          void stopped.then(() => this.refreshStoppedVersion(streamingMessage, regenerated.version));
         }
       }
       // Otherwise nothing changed: the version shown before appears again
@@ -905,8 +952,8 @@ export class ChatStateService implements OnDestroy {
 
   /**
    * After a stopped regeneration: take the answer as the server stored it (its version counter
-   * and versions), once it is newer than the version this browser regenerated. The server
-   * stores it when it notices the closed stream, so this asks again a moment later.
+   * and versions), once it is newer than the version this browser regenerated. Called once Stop
+   * returned (the server has stored it then); it asks again a moment later in case it hadn't.
    */
   private async refreshStoppedVersion(message: Message, regeneratedVersion: number): Promise<void> {
     for (const wait of [500, 2000]) {
@@ -941,19 +988,154 @@ export class ChatStateService implements OnDestroy {
     this.streamingMessage$.next(agentMessage);
     this.isStreaming$.next(true);
 
-    // Cancel any existing streaming subscription
-    if (this.streamingSubscription) {
-      this.streamingSubscription.unsubscribe();
-    }
+    // Start streaming (an earlier stream, e.g. an attempt to follow an answer, is closed)
+    this.watch(
+      { conversationId, message: agentMessage, runId: null, lastEventId: 0, attempts: 0, shown: true },
+      this.streamingService.streamAgentResponse(conversationId, 'Assistant', modelId, regenerate?.id)
+    );
+  }
 
-    // Start streaming
-    this.streamingSubscription = this.streamingService
-      .streamAgentResponse(conversationId, 'Assistant', modelId, regenerate?.id)
-      .subscribe({
-        next: (event) => this.handleStreamEvent(event, agentMessage),
-        error: (error) => this.handleStreamError(error, agentMessage),
-        complete: () => this.handleStreamComplete(agentMessage)
-      });
+  /**
+   * Follow the answer that is being written in a conversation, if there is one
+   * (docs/background_answers.md): it was started before the app was closed or the phone locked,
+   * or on another device. Called when the conversation opens and when the app comes back; the
+   * answer shows once its first events arrive, with what was written so far.
+   */
+  async followAnswer(conversationId: string): Promise<void> {
+    if (!conversationId || conversationId === '0' || this.following) {
+      return;
+    }
+    const stored = await firstValueFrom(this.messages$);
+    if (this.following || this.activeConversationId$.getValue() !== conversationId) {
+      return;
+    }
+    const message = Message.createAgent(conversationId, [], '', 'thinking');
+    this.watch(
+      { conversationId, message, runId: null, lastEventId: 0, attempts: 0, shown: false, stored },
+      this.streamingService.followAgentResponse(conversationId)
+    );
+  }
+
+  /** Put an answer's events into its message; how its stream ends decides what follows (onStreamEnd()). */
+  private watch(following: Following, events$: Observable<StreamEvent>): void {
+    this.streamingSubscription?.unsubscribe();
+    this.following = following;
+    this.streamingSubscription = events$.subscribe({
+      next: event => {
+        if (this.following !== following) return;
+        if (event.id !== undefined) following.lastEventId = event.id;
+        if (event.type === 'message_start') {
+          following.runId = (event.data as MessageStartEventData).runId ?? null;
+        }
+        following.attempts = 0;
+        this.handleStreamEvent(event, following.message);
+        if (!following.shown) {
+          // Followed again: the chat shows it from now on (its turn goes to the top of the view)
+          following.shown = true;
+          this.isStreaming$.next(true);
+        }
+      },
+      error: error => void this.onStreamEnd(following, error),
+      complete: () => void this.onStreamEnd(following)
+    });
+  }
+
+  /**
+   * An answer's stream ended. With its done or error event the answer is complete; otherwise only
+   * the stream broke (the network, a phone that locked, a server that restarts) and the answer
+   * goes on on the server: it is followed again from the last event this browser got.
+   */
+  private async onStreamEnd(following: Following, error?: unknown): Promise<void> {
+    if (this.following !== following) {
+      return;  // Stopped, left or replaced meanwhile
+    }
+    const message = following.message;
+    if (message.content.status === 'complete' || message.content.status === 'error') {
+      await this.handleStreamComplete(message);
+      return;
+    }
+    if (error instanceof NoAnswerRunningError) {
+      // Nothing to follow (any more): the stored answer, if any, comes with the sync
+      this.finishFollowing(following);
+      return;
+    }
+    if (error instanceof StreamHttpError && error.status === 409 && !following.runId) {
+      // Another answer is being written in this conversation (another device's): follow that one
+      this.finishFollowing(following);
+      this.notificationService.showInfo(this.translate.instant('message.answerStillRunning'));
+      void this.followAnswer(following.conversationId);
+      return;
+    }
+    if (!following.runId) {
+      if (!following.shown) {
+        this.finishFollowing(following);  // Following an answer failed
+      } else if (error) {
+        await this.handleStreamError(error, message);  // The answer never began
+      } else {
+        await this.handleStreamComplete(message);
+      }
+      return;
+    }
+    if (error instanceof StreamHttpError) {
+      this.finishFollowing(following);  // E.g. the session ended: the sync brings what is stored
+      return;
+    }
+    await this.followAgain(following);
+  }
+
+  /** Follow an answer again after its stream broke, after a short wait and once the app is visible. */
+  private async followAgain(following: Following): Promise<void> {
+    const wait = ChatStateService.FOLLOW_AGAIN_DELAYS[following.attempts];
+    if (wait === undefined) {
+      // Unreachable for now (offline, or the server restarts): the sync and coming back to the
+      // conversation bring the answer, or follow it again while it is written
+      this.finishFollowing(following);
+      return;
+    }
+    following.attempts++;
+    if (wait) {
+      await new Promise(resolve => setTimeout(resolve, wait));
+    }
+    // A hidden page (a locked phone) can't hold a connection: wait until it is visible
+    while (document.hidden && this.following === following) {
+      await new Promise<void>(resolve => document.addEventListener('visibilitychange', () => resolve(), { once: true }));
+    }
+    if (this.following !== following) {
+      return;
+    }
+    this.watch(following, this.streamingService.followAgentResponse(
+      following.conversationId, following.runId, following.lastEventId));
+  }
+
+  /** Stop following an answer that can't be followed: what the server stored comes with the sync. */
+  private finishFollowing(following: Following): void {
+    if (this.following !== following) {
+      return;
+    }
+    const shown = following.shown;
+    this.leaveAnswer();
+    if (shown) {
+      this.conversationRepository.syncConversation(following.conversationId).catch(console.error);
+    }
+  }
+
+  /**
+   * Stop following the answer this browser follows, without stopping it: it goes on on the
+   * server (another conversation opens, or a new one), and opening its conversation follows it again.
+   */
+  private leaveAnswer(): void {
+    const following = this.following;
+    if (!following) {
+      return;
+    }
+    this.following = null;
+    this.streamingSubscription?.unsubscribe();
+    this.streamingSubscription = null;
+    if (following.shown) {
+      this.regenerating = null;
+      this.isStreaming$.next(false);
+      this.streamingMessage$.next(null);
+    }
   }
 
   /**
@@ -1254,6 +1436,8 @@ export class ChatStateService implements OnDestroy {
   async syncNow(): Promise<void> {
     const conversationId = this.activeConversationId$.getValue();
     if (conversationId && conversationId !== '0') {
+      // An answer that is being written in it (back to the app, or one another device started)
+      void this.followAnswer(conversationId);
       await this.syncEngine.syncConversation(conversationId);
     }
   }

@@ -123,6 +123,12 @@ HISTORY_MAX_MESSAGES = int(os.getenv("HISTORY_MAX_MESSAGES", "1000"))
 HISTORY_TOOL_CALLS = os.getenv("HISTORY_TOOL_CALLS", "true").lower() == "true"
 HISTORY_TOOL_RESULT_CHARS = int(os.getenv("HISTORY_TOOL_RESULT_CHARS", "20000"))
 
+# Answers run on the server on their own, also when the browser is closed (backend/services/answer_runs.py,
+# docs/background_answers.md). At shutdown the server waits this many seconds for running answers,
+# then stops them (they keep what was written). Keep it below the time the platform gives the
+# process to stop (the chart's backend.terminationGracePeriodSeconds, docker compose's stop_grace_period).
+ANSWER_SHUTDOWN_WAIT = float(os.getenv("ANSWER_SHUTDOWN_WAIT", "100"))
+
 # Memory review (backend/services/memory_review.py): once a conversation with a knowledge base
 # agent has had no new message for MEMORY_REVIEW_IDLE_MINUTES, a model reads what was said since
 # the last review and saves what matters to the agent's memory and knowledge base. Conversations
