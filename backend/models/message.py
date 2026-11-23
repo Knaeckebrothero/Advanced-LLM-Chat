@@ -503,6 +503,23 @@ class StreamGenerateRequest(BaseModel):
     regenerateId: Optional[int] = None
 
 
+class StopAnswerRequest(BaseModel):
+    """
+    Stop the answer that is being written in a conversation (POST /api/message/stop,
+    docs/background_answers.md).
+
+    :ivar conversationId: The conversation.
+    :ivar runId: Only stop this answer (message_start's runId), so a late Stop can't stop a newer one.
+    """
+    conversationId: str
+    runId: Optional[str] = None
+
+
+class StopAnswerResponse(BaseModel):
+    """Whether an answer was stopped (False: it had ended, or another one runs)."""
+    stopped: bool
+
+
 class SummarizeRequest(BaseModel):
     """
     Asks for a summary of a conversation now (POST /api/message/summarize), not
@@ -611,6 +628,9 @@ class MessageStartEvent(BaseModel):
     type: Literal["agent"] = "agent"
     modelId: Optional[int] = None  # None for the environment model
     modelName: Optional[str] = None
+    # The answer's run (docs/background_answers.md): follow it again with
+    # GET /api/message/stream/{conversationId}?runId=, stop it with POST /api/message/stop
+    runId: Optional[str] = None
 
 
 class ConversationSummary(BaseModel):

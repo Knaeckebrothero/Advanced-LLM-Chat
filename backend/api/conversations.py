@@ -19,7 +19,7 @@ from backend.models.conversation import (
 )
 from backend.models.conversation_file import ConversationFile
 from backend.models.message import ConversationSummary, MessageResponse
-from backend.services import conversation_file
+from backend.services import answer_runs, conversation_file
 from backend.catalog.service import CatalogError, check_model_choice, check_persona_choice
 from backend.catalog.resolver import resolve_auxiliary_model
 from backend.database import db
@@ -505,6 +505,10 @@ async def delete_conversation(
     """
     user_id = current_user['user_id']
     logger.debug(f"Deleting conversation {conversation_id} for user_id: {user_id}")
+
+    # An answer that is being written goes with the conversation: stopped first, so it isn't stored after
+    if verify_conversation_ownership(conversation_id, user_id):
+        await answer_runs.stop_conversation(conversation_id)
 
     # Delete conversation (messages are cascade-deleted via ON DELETE CASCADE)
     deleted = db.delete_conversation(conversation_id, user_id)

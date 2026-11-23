@@ -55,16 +55,16 @@
 
 ## Stopped answers
 
-Stop closes the stream. sse-starlette notices the closed connection and cancels the generator: an `asyncio.CancelledError` where it awaits, or a `GeneratorExit` at a `yield` when it is closed.
+Stop sends `POST /api/message/stop` (`docs/background_answers.md`). Closing the stream stops nothing, since the answer runs as a task of its own. Stop cancels that task, which raises an `asyncio.CancelledError` in stream-generate's generator where it awaits.
 
-- **What is kept:** once the model has begun (a step or text), stream-generate stores what it has with status `complete`, as a new message or a new version, and raises again. A server that shuts down does the same.
+- **What is kept:** once the model has begun (a step or text), stream-generate stores what it has with status `complete`, as a new message or a new version, and raises again. Streams that still follow the answer get `done` with `"stopped": true`. A server that shuts down does the same for the answers it no longer waits for.
 - **No `await` in that handler:** anyio raises the cancellation again at every `await` in a cancelled scope. The database calls are synchronous.
 - **Stopped before the model began:** nothing is stored. A regeneration then leaves the answer as it was.
 - **No tool record:** `run_agent()` gives the record at its end, so later answers get only the text of a stopped answer.
 
 **In the browser:**
 - `cancelStreaming()` keeps the text it has, as before.
-- After a stopped regeneration it asks the server for that message once, half a second and again two seconds later, until the stored version is newer than the regenerated one. Only then does it have the server's counter and versions.
+- After a stopped regeneration it asks the server for that message half a second after Stop has returned (the server has stored it then), and again two seconds later, until the stored version is newer than the regenerated one. Only then does it have the server's counter and versions.
 - The sync replaces its copy when the server stored more text than the browser had shown.
 
 ## Frontend
@@ -95,7 +95,7 @@ An answer in a conversation file can carry `alternatives` (the other versions wi
 - deleting versions
 - export and import
 - unknown and invalid `regenerateId`
-- stopped answers: at a `yield`, inside the model call, and before the model began
+- stopped answers, with Stop: a new answer and a regeneration inside the model call, and before the model began
 - only the owner
 
 Frontend specs: `src/app/data/objects/message.spec.ts` and `conversation.repository.sync.spec.ts`.

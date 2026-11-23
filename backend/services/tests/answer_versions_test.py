@@ -15,8 +15,8 @@ up so an edit of the old text is refused, a summary that covers the answer and t
 go); a third version; a failed version without text, which the next one replaces; deleting the
 version shown, down to one, and the whole answer with its versions; the export and import of a
 conversation with them; a regenerateId the server doesn't have and one of a user message; stopping
-a new answer and a regeneration, at a yield and inside the model call, and before the model wrote
-anything; and that only the owner can switch or delete versions.
+a new answer and a regeneration with Stop (docs/background_answers.md), also before the model
+wrote anything; and that only the owner can switch or delete versions.
 
 It creates the database <POSTGRES_DB>_versions_test if needed (or --database, whose name must
 contain "test") and deletes its own test users, so it never touches the real database:
@@ -391,14 +391,13 @@ class HeldAnswer:
         self.release.wait(10)
 
 
-async def stop(browser: Browser, conversation_id: str, how: str, regenerate: bool = False,
-               first: str = "Once upon") -> None:
+async def stop(browser: Browser, conversation_id: str, regenerate: bool = False, first: str = "Once upon") -> None:
     """
-    Start an answer, then stop it as a closed browser does: how='close' closes the stream at a
-    yield (GeneratorExit), how='cancel' cancels it inside the model call (CancelledError).
+    Start an answer, then stop it with Stop (POST /api/message/stop, docs/background_answers.md)
+    while the model call waits for more; closing the stream would not stop it.
     """
     from backend.api import messages as messages_api
-    from backend.models.message import StreamGenerateRequest
+    from backend.models.message import StopAnswerRequest, StreamGenerateRequest
     held = HeldAnswer(first)
     server.reset()
     server.script(held)
@@ -406,27 +405,17 @@ async def stop(browser: Browser, conversation_id: str, how: str, regenerate: boo
     response = await messages_api.stream_generate(request, current_user=browser.user(), hide=False)
     stream = response.body_iterator
     try:
-        if how == "close":
-            async for event in stream:
-                if event["event"] == "token":
-                    break
-            await stream.aclose()
-        else:
-            written = asyncio.Event()
-
-            async def read():
-                async for event in stream:
-                    if event["event"] == "token" or (first is None and event["event"] == "message_start"):
-                        written.set()
-
-            task = asyncio.create_task(read())
-            await asyncio.wait_for(written.wait(), 10)
-            await asyncio.sleep(0.3)  # Inside the model call, waiting for more
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        run_id = None
+        async for event in stream:
+            if event["event"] == "message_start":
+                run_id = json.loads(event["data"])["runId"]
+            if event["event"] == "token" or (first is None and run_id):
+                break
+        await asyncio.sleep(0.3)  # Inside the model call, waiting for more
+        result = await messages_api.stop_answer(StopAnswerRequest(conversationId=conversation_id, runId=run_id),
+                                                current_user=browser.user())
+        assert result.stopped, result
+        await stream.aclose()
     finally:
         held.release.set()
 
@@ -437,22 +426,22 @@ def test_stopped_answers_are_kept():
     conversation_id = browser.conversation()
     seed(conversation_id)
 
-    # A new answer, closed at a yield
-    asyncio.run(stop(browser, conversation_id, "close"))
+    # A new answer
+    asyncio.run(stop(browser, conversation_id))
     ids = [m["id"] for m in browser.messages(conversation_id)]
     assert len(ids) == 3, ids
     kept = row(ids[2])
     assert (kept["content"], kept["agent_status"]) == ("Once upon", "complete"), kept
     db.delete_message(ids[2], conversation_id)
 
-    # A regeneration, cancelled inside the model call
-    asyncio.run(stop(browser, conversation_id, "cancel", regenerate=True))
+    # A regeneration
+    asyncio.run(stop(browser, conversation_id, regenerate=True))
     kept = row(ANSWER)
     assert (kept["content"], kept["alternative_position"]) == ("Once upon", 2), kept
     assert alternatives(ANSWER)[0][1] == "The first story"
 
     # Stopped before the model wrote anything: nothing changes
-    asyncio.run(stop(browser, conversation_id, "cancel", regenerate=True, first=None))
+    asyncio.run(stop(browser, conversation_id, regenerate=True, first=None))
     assert row(ANSWER)["content"] == "Once upon" and len(alternatives(ANSWER)) == 1
     assert len(browser.messages(conversation_id)) == 2
 

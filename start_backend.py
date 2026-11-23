@@ -12,7 +12,7 @@ import argparse
 import logging
 import uvicorn
 
-from backend.config import USE_DEV_CERTS, SSL_CERTFILE, SSL_KEYFILE, HOST, PORT
+from backend.config import USE_DEV_CERTS, SSL_CERTFILE, SSL_KEYFILE, HOST, PORT, ANSWER_SHUTDOWN_WAIT
 from backend.security.logging import get_uvicorn_log_config
 from backend.utils.certificates import setup_development_certificates
 
@@ -58,6 +58,10 @@ def main():
         port=args.port,
         reload=args.reload,
         log_config=get_uvicorn_log_config(),
+        # At a shutdown the running answers get ANSWER_SHUTDOWN_WAIT to end, and their streams stay
+        # open meanwhile (backend/services/answer_runs.py); a connection still open after that
+        # is closed, so the app's shutdown stores the stopped answers before the process is killed
+        timeout_graceful_shutdown=int(ANSWER_SHUTDOWN_WAIT) + 10,
         **ssl_config
     )
 

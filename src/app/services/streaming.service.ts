@@ -19,6 +19,9 @@ export type StreamEventType = 'message_start' | 'step' | 'step_delta' | 'token' 
 export interface StreamEvent {
   type: StreamEventType;
   data: MessageStartEventData | AgentStep | StepDeltaEventData | string | IConversationSummary | DoneEventData | ErrorEventData;
+  // The event's number in its answer (the SSE id): following the answer again with this number
+  // gets only the events after it (docs/background_answers.md)
+  id?: number;
 }
 
 /**
@@ -33,6 +36,7 @@ export interface MessageStartEventData {
   type: 'agent';
   modelId?: number | null;  // null for the environment model
   modelName?: string | null;
+  runId?: string | null;  // The answer's run on the server: to follow it again, or to stop it
 }
 
 /**
@@ -53,6 +57,7 @@ export interface DoneEventData extends AnswerVersionsData {
   modelId?: number | null;
   modelName?: string | null;
   usage?: IMessageUsage | null;
+  stopped?: boolean;  // Stop stopped it: what was written so far is stored
 }
 
 /**
@@ -73,6 +78,27 @@ export interface ErrorEventData extends AnswerVersionsData {
   messageId?: number;  // The server stored the failed answer with this id
 }
 
+/** The server refused the request (its status), e.g. 409: an answer is being written in the conversation. */
+export class StreamHttpError extends Error {
+  constructor(public readonly status: number, statusText: string) {
+    super(`HTTP ${status}: ${statusText}`);
+  }
+}
+
+/** Nothing is being written in the conversation (204): the stored answer comes with the sync. */
+export class NoAnswerRunningError extends Error {
+  constructor() {
+    super('No answer is being written');
+  }
+}
+
+/** The stream got nothing for a while, not even the server's pings: its connection is gone. */
+export class StreamStalledError extends Error {
+  constructor() {
+    super('The stream stalled');
+  }
+}
+
 /**
  * Service for handling Server-Sent Events (SSE) streaming from the backend.
  *
@@ -82,10 +108,17 @@ export interface ErrorEventData extends AnswerVersionsData {
  * - Token streaming for the final response
  * - A new summary of the conversation's oldest messages
  * - Completion and error events
+ *
+ * An answer runs on the server on its own (docs/background_answers.md): a stream that ends only
+ * stops watching it. followAgentResponse() follows it again, stopAgentResponse() stops it.
+ * The requests bypass the service worker (ngsw-bypass): a stream it passes on can be cut after
+ * about 70 seconds on iOS.
  */
 @Injectable({ providedIn: 'root' })
 export class StreamingService {
   private apiUrl = environment.apiUrl;
+  // The server pings an open stream every 15 seconds; a stream that got nothing for this long is gone
+  private static readonly STALLED_MS = 45000;
 
   constructor(private apiService: ApiService, private familyMode: FamilyModeService) {}
 
@@ -104,13 +137,90 @@ export class StreamingService {
     modelId?: number,
     regenerateId?: number
   ): Observable<StreamEvent> {
+    return this.stream(`${this.apiUrl}/api/message/stream-generate?ngsw-bypass=true`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        conversationId,
+        aiParticipant,
+        // Only sent to answer with another model than the conversation's
+        ...(modelId !== undefined && { modelId }),
+        ...(regenerateId !== undefined && { regenerateId })
+      })
+    });
+  }
+
+  /**
+   * Follow the answer that is being written in a conversation (opened again, back to the app, or
+   * after its stream broke): the same events, with what was written so far at once. Without runId
+   * only an answer that still runs; with runId and after (the number of the last event this
+   * browser got), the rest of that answer, also if it ended a moment ago. Fails with
+   * NoAnswerRunningError when there is nothing to follow.
+   */
+  followAgentResponse(conversationId: string, runId?: string | null, after?: number): Observable<StreamEvent> {
+    const query = new URLSearchParams({ 'ngsw-bypass': 'true' });
+    if (runId) {
+      query.set('runId', runId);
+      query.set('after', String(after ?? 0));
+    }
+    return this.stream(`${this.apiUrl}/api/message/stream/${encodeURIComponent(conversationId)}?${query}`, {
+      method: 'GET',
+      headers: this.headers()
+    });
+  }
+
+  /**
+   * Stop the answer that is being written in a conversation (the Stop button: closing the stream
+   * doesn't stop it). Resolves once the server stored what was written; false if it had ended.
+   */
+  async stopAgentResponse(conversationId: string, runId?: string | null): Promise<boolean> {
+    const response = await fetch(`${this.apiUrl}/api/message/stop?ngsw-bypass=true`, {
+      method: 'POST',
+      headers: { ...this.headers(), 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ conversationId, ...(runId && { runId }) })
+    });
+    if (!response.ok) {
+      throw new StreamHttpError(response.status, response.statusText);
+    }
+    return (await response.json()).stopped === true;
+  }
+
+  /** The headers of the answer requests: the CSRF token and family mode. */
+  private headers(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const csrfToken = this.apiService.csrfToken;
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    } else {
+      console.warn('StreamingService: No CSRF token available');
+    }
+    // The agent leaves out hidden content while this device is in family mode
+    Object.assign(headers, this.familyMode.headers());
+    return headers;
+  }
+
+  /** The events of an SSE request; unsubscribing closes the connection. */
+  private stream(url: string, init: RequestInit): Observable<StreamEvent> {
     return new Observable(observer => {
       const controller = new AbortController();
+      const watch = { lastActivity: Date.now(), stalled: false };
+      // A stream that got nothing for a while is closed and reported as stalled, so the answer is
+      // followed again (a connection that died while the phone was locked doesn't always end)
+      const watchdog = setInterval(() => {
+        if (Date.now() - watch.lastActivity > StreamingService.STALLED_MS) {
+          watch.stalled = true;
+          controller.abort();
+        }
+      }, 5000);
 
-      this.initiateStream(conversationId, aiParticipant, modelId, regenerateId, observer, controller.signal);
+      this.read(url, init, observer, controller.signal, watch).finally(() => clearInterval(watchdog));
 
       // Cleanup function - called when the subscription is unsubscribed
       return () => {
+        clearInterval(watchdog);
         controller.abort();
       };
     });
@@ -119,48 +229,26 @@ export class StreamingService {
   /**
    * Internal method to handle the actual streaming connection.
    */
-  private async initiateStream(
-    conversationId: string,
-    aiParticipant: string,
-    modelId: number | undefined,
-    regenerateId: number | undefined,
+  private async read(
+    url: string,
+    init: RequestInit,
     observer: Subscriber<StreamEvent>,
-    signal: AbortSignal
+    signal: AbortSignal,
+    watch: { lastActivity: number; stalled: boolean }
   ): Promise<void> {
     let currentEventType: StreamEventType | null = null;
+    let currentId: number | undefined;
 
     try {
-      // Build headers with CSRF token
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
+      const response = await fetch(url, { ...init, credentials: 'include', signal });
+      watch.lastActivity = Date.now();
 
-      // Add CSRF token if available
-      const csrfToken = this.apiService.csrfToken;
-      if (csrfToken) {
-        headers['X-CSRF-Token'] = csrfToken;
-      } else {
-        console.warn('StreamingService: No CSRF token available');
+      if (response.status === 204) {
+        observer.error(new NoAnswerRunningError());
+        return;
       }
-      // The agent leaves out hidden content while this device is in family mode
-      Object.assign(headers, this.familyMode.headers());
-
-      const response = await fetch(`${this.apiUrl}/api/message/stream-generate`, {
-        method: 'POST',
-        headers,
-        credentials: 'include',
-        body: JSON.stringify({
-          conversationId,
-          aiParticipant,
-          // Only sent to answer with another model than the conversation's
-          ...(modelId !== undefined && { modelId }),
-          ...(regenerateId !== undefined && { regenerateId })
-        }),
-        signal,
-      });
-
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new StreamHttpError(response.status, response.statusText);
       }
 
       const reader = response.body!.getReader();
@@ -172,6 +260,7 @@ export class StreamingService {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        watch.lastActivity = Date.now();  // Also the server's pings (comments) keep the stream alive
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -181,7 +270,11 @@ export class StreamingService {
           // SSE spec: lines can have \r\n or \n endings, trim only \r
           const cleanLine = line.endsWith('\r') ? line.slice(0, -1) : line;
 
-          if (cleanLine.startsWith('event:')) {
+          if (cleanLine.startsWith('id:')) {
+            // The event's number in its answer
+            const id = Number(cleanLine.slice(3).trim());
+            currentId = Number.isFinite(id) ? id : undefined;
+          } else if (cleanLine.startsWith('event:')) {
             // Parse the event type
             currentEventType = cleanLine.slice(6).trim() as StreamEventType;
           } else if (cleanLine.startsWith('data:') && currentEventType) {
@@ -198,10 +291,12 @@ export class StreamingService {
               : fullData.trim();  // Trim for JSON events
             const event = this.parseEvent(currentEventType, data);
             if (event) {
+              if (currentId !== undefined) event.id = currentId;
               observer.next(event);
             }
             // Reset for next event
             currentEventType = null;
+            currentId = undefined;
             dataLines = [];
           }
         }
@@ -213,14 +308,17 @@ export class StreamingService {
         const data = currentEventType === 'token' ? fullData : fullData.trim();
         const event = this.parseEvent(currentEventType, data);
         if (event) {
+          if (currentId !== undefined) event.id = currentId;
           observer.next(event);
         }
       }
 
       observer.complete();
     } catch (error: any) {
-      // Don't report abort errors (these happen when the user cancels)
-      if (error.name !== 'AbortError') {
+      if (watch.stalled) {
+        observer.error(new StreamStalledError());
+      } else if (error.name !== 'AbortError') {
+        // Don't report abort errors (these happen when the user cancels)
         console.error('Streaming error:', error);
         observer.error(error);
       }
