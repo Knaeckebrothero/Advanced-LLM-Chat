@@ -117,6 +117,10 @@ LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 # DEFAULT_CONTEXT_WINDOW for models without one), at most HISTORY_MAX_MESSAGES
 DEFAULT_CONTEXT_WINDOW = int(os.getenv("DEFAULT_CONTEXT_WINDOW", "32768"))
 HISTORY_MAX_MESSAGES = int(os.getenv("HISTORY_MAX_MESSAGES", "1000"))
+# The most (estimated) tokens one message of the history takes, at most 10% of the model's window: a longer
+# one goes to the model as its start and its end, from the answer to it on. Also how much of the newest
+# messages stays word for word next to a summary of the older ones. 0: no limit (half the budget is kept)
+HISTORY_MESSAGE_TOKENS = int(os.getenv("HISTORY_MESSAGE_TOKENS", "30000"))
 # Earlier answers go back to the model with their tool calls and the results (backend/llm/tool_record.py),
 # so it knows what it did. Off: only their text, as before. A result longer than
 # HISTORY_TOOL_RESULT_CHARS is cut in later turns (0: never); the model can call the tool again.
