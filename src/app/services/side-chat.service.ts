@@ -5,6 +5,10 @@ import { BehaviorSubject, Observable, Subject, combineLatest, firstValueFrom, in
 import { distinctUntilChanged, map, shareReplay, switchMap, takeUntil } from 'rxjs/operators';
 import { Conversation } from '../data/objects/conversation';
 import { AgentContent, Message } from '../data/objects/message';
+import { FilePreview, UploadStatus } from '../data/objects/file-preview';
+import { IConversationSelection, IPublicModel, IPublicPersona, PersonaValues } from '../data/models/catalog.model';
+import { CatalogService } from './catalog.service';
+import { SettingsStateService } from './settings-state.service';
 import { ConversationRepository } from '../repositories/conversation.repository';
 import { MessageRepository, MessageWithSyncStatus } from '../repositories/message.repository';
 import { AnswerFollower } from './answer-follower';
@@ -97,6 +101,43 @@ export class SideChatService implements OnDestroy {
   /** Whether an answer is being written in the open side chat. */
   readonly isStreaming$: Observable<boolean> = this.answers.isStreaming$.asObservable();
 
+  // A new side chat's model and agent, where its composer picked others than its conversation's
+  private draftSelection$ = new BehaviorSubject<Partial<IConversationSelection>>({});
+
+  /**
+   * The model and agent of the side chat the panel shows (the picker in its composer): a new one
+   * has its conversation's, unless picked otherwise before its first message.
+   */
+  readonly selection$: Observable<IConversationSelection> = combineLatest([
+    this.state$, this.openSideChat$, this.chatState.activeConversation$, this.draftSelection$
+  ]).pipe(
+    map(([state, open, parent, draft]) => {
+      if (state?.view === 'chat' && state.sideId && open) {
+        return open.selection;
+      }
+      const base = parent?.selection ?? { modelId: null, personaId: null, personaValues: null };
+      return { ...base, ...draft };
+    }),
+    shareReplay(1)
+  );
+
+  /** The catalog model that answers in the side chat the panel shows; null without a catalog. */
+  readonly effectiveModel$: Observable<IPublicModel | null> = combineLatest([
+    this.selection$, this.catalogService.models$, this.settingsState.settings$
+  ]).pipe(
+    map(([selection, models, settings]) =>
+      this.catalogService.resolveModel(selection.modelId, settings?.defaultModelId, models)),
+    shareReplay(1)
+  );
+
+  /** The agent of the side chat the panel shows, if it is (still) in the catalog. */
+  readonly activePersona$: Observable<IPublicPersona | null> = combineLatest([
+    this.selection$, this.catalogService.personas$
+  ]).pipe(
+    map(([selection, personas]) => personas.find(persona => persona.id === selection.personaId) ?? null),
+    shareReplay(1)
+  );
+
   /** The stored messages of the open side chat (without the answer being written), in order. */
   readonly messages$: Observable<Message[]> = combineLatest([
     this.openSideId$.pipe(switchMap(id => (id ? this.messageRepository.getByConversationId(id) : of([])))),
@@ -115,7 +156,9 @@ export class SideChatService implements OnDestroy {
     private apiService: ApiService,
     private streamingService: StreamingService,
     private notificationService: NotificationService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private catalogService: CatalogService,
+    private settingsState: SettingsStateService
   ) {
     // The panel belongs to its conversation: opening another one closes it
     this.chatState.activeConversation$.pipe(takeUntil(this.destroy$)).subscribe(conversation => {
@@ -175,6 +218,7 @@ export class SideChatService implements OnDestroy {
   openNew(message: Message): void {
     const parentId = this.chatState.getActiveConversationId();
     if (!parentId || parentId === '0' || message.isLocal || message.conversationId !== parentId) return;
+    this.draftSelection$.next({});
     this.state$.next({ parentId, view: 'chat', sideId: null, forkMessageId: message.id, focusForkId: null });
   }
 
@@ -200,38 +244,75 @@ export class SideChatService implements OnDestroy {
   }
 
   // =========================================================================
+  // The model and agent (the picker in the panel's composer)
+  // =========================================================================
+
+  /** The model of the side chat the panel shows (null: the user's default model). */
+  async selectModel(modelId: number | null): Promise<void> {
+    await this.select({ modelId });
+  }
+
+  /** The agent of the side chat the panel shows (null: none), with the values for its variables. */
+  async selectPersona(persona: IPublicPersona | null, values: PersonaValues | null = null): Promise<void> {
+    await this.select({
+      personaId: persona ? persona.id : null,
+      personaValues: persona && values && Object.keys(values).length > 0 ? values : null
+    });
+  }
+
+  private async select(changes: Partial<IConversationSelection>): Promise<void> {
+    const id = this.openSideId;
+    if (id) {
+      await this.conversationRepository.updateSelection(id, changes);
+    } else {
+      this.draftSelection$.next({ ...this.draftSelection$.getValue(), ...changes });
+    }
+  }
+
+  // =========================================================================
   // Writing
   // =========================================================================
 
   /**
-   * Send a message in the open side chat and stream its answer. A new side chat is created with
-   * it, forked from its message, with a title from the model.
+   * Send a message in the open side chat, with files attached, and stream its answer. A new side
+   * chat is created with it, forked from its message, with a title from the model.
    */
-  async send(text: string): Promise<void> {
+  async send(text: string, files: FilePreview[] = []): Promise<void> {
     const state = this.state$.getValue();
     const content = text.trim();
-    if (!state || state.view !== 'chat' || !content || this.answers.isStreaming$.getValue()) return;
+    if (!state || state.view !== 'chat' || (!content && !files.length) || this.answers.isStreaming$.getValue()) return;
 
     let sideId = state.sideId;
     if (!sideId) {
       if (state.forkMessageId == null) return;
-      const draft = new Conversation('', 0, content.length > 50 ? content.substring(0, 47).trim() + '...' : content,
+      const name = content || files.map(file => file.name).join(', ') || this.translate.instant('sideChat.new');
+      const draft = new Conversation('', 0, name.length > 50 ? name.substring(0, 47).trim() + '...' : name,
                                      ['user', 'Assistant']);
       draft.parentId = state.parentId;
       draft.forkMessageId = state.forkMessageId;
+      // A model or agent its composer picked (else the server gives it its conversation's)
+      const picked = this.draftSelection$.getValue();
+      if (picked.modelId !== undefined) draft.modelId = picked.modelId;
+      if (picked.personaId !== undefined) {
+        draft.personaId = picked.personaId;
+        draft.personaValues = picked.personaValues ?? null;
+      }
       const created = await this.apiService.createConversation(draft);
       await this.conversationRepository.save(created);
       sideId = created.id;
       if (this.state$.getValue() === state) {
         this.state$.next({ ...state, sideId });
       }
-      this.apiService.generateConversationTitle(sideId, content)
-        .then(titled => this.conversationRepository.saveFromServer(titled))
-        .catch(error => console.warn('Failed to generate the side chat\'s title:', error));
+      if (content) {
+        this.apiService.generateConversationTitle(sideId, content)
+          .then(titled => this.conversationRepository.saveFromServer(titled))
+          .catch(error => console.warn('Failed to generate the side chat\'s title:', error));
+      }
     }
 
+    await this.uploadPending(files);
     const userMessage: MessageWithSyncStatus = Message.createText(
-      { id: Message.localId(), conversationId: sideId, roleName: 'user', time: new Date() }, content);
+      { id: Message.localId(), conversationId: sideId, roleName: 'user', time: new Date() }, content, files);
     await this.conversationRepository.markMessageSent(sideId);
     await this.messageRepository.save(userMessage);
     if (userMessage.isLocal) {
@@ -240,6 +321,26 @@ export class SideChatService implements OnDestroy {
     }
     await this.conversationRepository.recordMessage(sideId, userMessage.id);
     this.answers.start(sideId);
+  }
+
+  /** Files the composer couldn't upload yet (it uploads them as they are attached) go now. */
+  private async uploadPending(files: FilePreview[]): Promise<void> {
+    const pending = files.filter(file => file.uploadStatus === UploadStatus.PENDING);
+    if (!pending.length) return;
+    try {
+      const uploaded = await this.apiService.uploadFiles(pending);
+      pending.forEach((file, index) => {
+        file.uploadStatus = UploadStatus.COMPLETED;
+        file.id = uploaded[index]?.fileId || file.id;
+        file.transcript = uploaded[index]?.transcript || file.transcript;
+      });
+    } catch (error) {
+      pending.forEach(file => {
+        file.uploadStatus = UploadStatus.FAILED;
+        file.error = 'Upload failed';
+      });
+      throw error;
+    }
   }
 
   /** Stop the answer being written in the open side chat; what was written is kept. */

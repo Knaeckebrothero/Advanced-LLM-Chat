@@ -291,67 +291,11 @@
   font-size: 12px;
 }
 
-// The composer: what is written here stays out of the main chat
+// The composer (the chat's): what is written here stays out of the main chat
 .side-panel__composer {
   flex: 0 0 auto;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--theme-border);
-}
-
-.side-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 4px 4px 4px 12px;
-  border: 1px solid var(--theme-border);
-  border-radius: 14px;
-  background: var(--theme-input-bg, var(--theme-background));
-
-  &:focus-within {
-    border-color: color-mix(in srgb, var(--theme-primary) 55%, var(--theme-border));
-  }
-}
-
-.side-composer__label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.side-composer__input {
-  flex: 1;
-  min-width: 0;
-  // cdkTextareaAutosize sets the height of the text, without the padding
-  box-sizing: content-box;
-  padding: 10px 0;
-  border: none;
-  outline: none;
-  resize: none;
-  background: transparent;
-  color: var(--theme-text);
-  font: inherit;
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.side-composer__send {
-  flex: 0 0 auto;
-  margin-bottom: 1px;
-  background: var(--theme-primary);
-  color: var(--theme-primary-contrast);
-
-  &:disabled {
-    background: var(--theme-border);
-    color: var(--theme-text-secondary);
-  }
-
-  &--stop {
-    background: var(--theme-text);
-    color: var(--theme-surface);
-  }
 }
 
 .side-composer__hint {
@@ -360,13 +304,14 @@
   color: var(--theme-text-secondary);
 }
 
+.side-panel__transcribing {
+  margin: 0 4px 8px;
+  font-size: 12.5px;
+  color: var(--theme-text-secondary);
+}
+
 @media (max-width: 768px) {
   .side-panel__composer {
     padding-bottom: max(12px, env(safe-area-inset-bottom));
-  }
-
-  // 16px: iOS doesn't zoom into a field with it
-  .side-composer__input {
-    font-size: 16px;
   }
 }

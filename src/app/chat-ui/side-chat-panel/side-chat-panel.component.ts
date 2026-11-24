@@ -9,6 +9,10 @@ import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
 import { ChatStateService } from '../../services/chat-state.service';
 import { SideChatService, SidePanelState } from '../../services/side-chat.service';
 import { MessageHost } from '../message-host';
+import { ChatUiInputfieldComponent } from '../chat-ui-inputfield/chat-ui-inputfield.component';
+import { FilePreview } from '../../data/objects/file-preview';
+import { UIStateService } from '../../services/ui-state.service';
+import { ConversationFilesDialogService } from '../../components/conversation-files/conversation-files-dialog.service';
 
 /** A side chat in the panel's list. */
 interface SideChatItem {
@@ -59,18 +63,23 @@ const WIDTH_STEP = 24;
   styleUrls: ['./side-chat-panel.component.scss'],
   // Its messages ask it for what they need (ChatUiMessageComponent)
   providers: [{ provide: MessageHost, useExisting: SideChatPanelComponent }],
+  // Files dropped on the panel are its composer's, not the chat's (ChatUiInputfieldComponent.ownDrops)
+  host: { 'data-drop-area': '' },
   standalone: false
 })
 export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
-  @ViewChild('composer') private composer?: ElementRef<HTMLTextAreaElement>;
+  @ViewChild(ChatUiInputfieldComponent) private composer?: ChatUiInputfieldComponent;
 
   userName = 'user';
   aiName = 'Assistant';
   agentAvatar: string | null = null;
   agentName: string | null = null;
 
-  draft = '';
+  // Files attached in the composer, sent with the next message
+  pendingFiles: FilePreview[] = [];
   sending = false;
+  // A voice message waits for its transcript before it is sent
+  transcribing = false;
   promoting = false;
   // The width the user set (null: the default), and whether its edge is being dragged
   width: number | null = null;
@@ -101,15 +110,22 @@ export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
     private translate: TranslateService,
     private cdr: ChangeDetectorRef,
     private host: ElementRef<HTMLElement>,
-    private zone: NgZone
+    private zone: NgZone,
+    private uiState: UIStateService,
+    private filesDialog: ConversationFilesDialogService
   ) {}
+
+  get isMobile(): boolean {
+    return this.uiState.isMobile;
+  }
 
   ngOnInit(): void {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
     if (saved > 0) {
       this.setWidth(saved);
     }
-    this.subscriptions.add(this.chatState.activePersona$.subscribe(persona => {
+    // The side chat's agent (its own, which may differ from its conversation's)
+    this.subscriptions.add(this.sideChats.activePersona$.subscribe(persona => {
       this.agentAvatar = persona?.avatar ?? null;
       this.agentName = persona?.name?.trim() || null;
       this.cdr.markForCheck();
@@ -119,7 +135,7 @@ export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
     // A new side chat: the composer is ready to type in
     this.subscriptions.add(this.sideChats.panel$.subscribe(panel => {
       if (panel?.view === 'chat' && !panel.sideId && !this.isPhone()) {
-        setTimeout(() => this.composer?.nativeElement.focus());
+        setTimeout(() => this.composer?.focusInput());
       }
     }));
   }
@@ -277,16 +293,39 @@ export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
   // Writing
   // =========================================================================
 
-  async send(): Promise<void> {
-    const text = this.draft.trim();
-    if (!text || this.sending || this.streaming) return;
+  /** The composer sent a message: with the files attached in it. */
+  async onMessageSent(text: string): Promise<void> {
+    const files = this.pendingFiles;
+    if ((!text.trim() && !files.length) || this.sending || this.streaming) return;
+    this.pendingFiles = [];
+    await this.send(text, files);
+  }
+
+  /**
+   * Files attached in the composer: kept for the next message. A voice message is sent on its own,
+   * with its transcript as its text, once the transcript is there.
+   */
+  async onFilesSelected(files: FilePreview[]): Promise<void> {
+    const voice = files.length === 1 && files[0].mimeType.startsWith('audio/') && files[0].name.includes('Voice message')
+      ? files[0] : null;
+    if (!voice) {
+      this.pendingFiles = files;
+      return;
+    }
+    if ((voice as any).isSent) return;
+    (voice as any).isSent = true;
+    this.transcribing = true;
+    const transcript = await this.waitForTranscript(voice, 30000);
+    this.transcribing = false;
+    await this.send(transcript, [voice]);
+  }
+
+  private async send(text: string, files: FilePreview[]): Promise<void> {
     this.sending = true;
-    this.draft = '';
     try {
-      await this.sideChats.send(text);
+      await this.sideChats.send(text, files);
     } catch (error) {
       console.error('Failed to send in the side chat:', error);
-      this.draft = text;
       this.showError('sideChat.sendFailed', error);
     } finally {
       this.sending = false;
@@ -294,12 +333,23 @@ export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
     }
   }
 
-  /** Enter sends, Shift+Enter starts a new line (not while an input method composes a word). */
-  onEnter(event: Event): void {
-    const key = event as KeyboardEvent;
-    if (key.shiftKey || key.isComposing) return;
-    event.preventDefault();
-    void this.send();
+  /** The transcript of a voice message the composer uploads, once it is there (else a stand-in text). */
+  private waitForTranscript(voice: FilePreview, timeoutMs: number): Promise<string> {
+    const started = Date.now();
+    return new Promise(resolve => {
+      const check = () => {
+        if (voice.transcript) return resolve(voice.transcript);
+        if (voice.uploadStatus === 'failed') return resolve('Voice message (transcription failed)');
+        if (Date.now() - started > timeoutMs) return resolve('Voice message');
+        setTimeout(check, 200);
+      };
+      check();
+    });
+  }
+
+  /** "Files of this chat" in the composer: the side chat's files (with its conversation's up to the fork). */
+  showFiles(sideId: string | null, title: string): void {
+    if (sideId) void this.filesDialog.open(sideId, title);
   }
 
   stop(): void {

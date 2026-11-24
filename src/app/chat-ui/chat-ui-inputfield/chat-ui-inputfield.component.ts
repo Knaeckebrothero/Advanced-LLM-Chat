@@ -93,8 +93,22 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     private sanitizer: DomSanitizer,
     private dialog: MatDialog,
     private translate: TranslateService,
-    private snackBar: MatSnackBar
+    private snackBar: MatSnackBar,
+    private host: ElementRef<HTMLElement>
   ) {}
+
+  /**
+   * Files dropped where: false, anywhere on the window but in an area of its own ([data-drop-area],
+   * the side chat panel); true, only in the area of its own it is in (the side chat panel's composer).
+   */
+  @Input() ownDrops = false;
+
+  /** The translation key of the empty field's text; unset: "Type your message...". */
+  @Input() placeholderKey: string | null = null;
+
+  // A recording this composer started: there is one recorder, and another composer (the side chat
+  // panel's or the chat's) may be the one recording
+  private recordingHere = false;
 
   // ViewChild to access the textarea element directly
   @ViewChild('messageTextarea') private messageTextarea!: ElementRef<HTMLTextAreaElement>;
@@ -198,16 +212,27 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
     }
   }
 
+  /** Whether files dropped at the event's target are this composer's (ownDrops). */
+  private acceptsDrop(event: DragEvent): boolean {
+    const target = event.target instanceof Element ? event.target : null;
+    const area = target?.closest('[data-drop-area]') ?? null;
+    return this.ownDrops ? !!area && area.contains(this.host.nativeElement) : !area;
+  }
+
   // Accepting the drop also keeps the browser from opening the file in place of the app
   private readonly onDragOver = (event: DragEvent) => {
     if (!ChatUiInputfieldComponent.carriesFiles(event)) return;
+    if (!this.acceptsDrop(event)) {
+      this.setDragging(false);
+      return;
+    }
     event.preventDefault();
     event.dataTransfer!.dropEffect = 'copy';
     this.setDragging(true);
   };
 
   private readonly onDrop = (event: DragEvent) => {
-    if (!ChatUiInputfieldComponent.carriesFiles(event)) return;
+    if (!ChatUiInputfieldComponent.carriesFiles(event) || !this.acceptsDrop(event)) return;
     event.preventDefault();
     const files = Array.from(event.dataTransfer?.files ?? []);
     this.setDragging(false);
@@ -238,6 +263,12 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
 
     // Subscribe to recording state
     this.recordingStateSubscription = this.voiceRecordingService.getRecordingState().subscribe(state => {
+      if (state.isRecording && !this.recordingHere) {
+        return;  // Another composer records
+      }
+      if (!state.isRecording) {
+        this.recordingHere = false;
+      }
       const started = state.isRecording && !this.isRecording;
       const stopped = !state.isRecording && this.isRecording;
       this.isRecording = state.isRecording;
@@ -595,6 +626,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       };
 
       // Start recording with visualization
+      this.recordingHere = true;
       await this.voiceRecordingService.startRecording(
         config,
         this.waveformCanvas?.nativeElement
@@ -603,6 +635,7 @@ export class ChatUiInputfieldComponent implements AfterViewInit, OnInit, OnDestr
       // Recording state is updated via subscription in ngOnInit
 
     } catch (error) {
+      this.recordingHere = false;
       console.error('Error starting recording:', error);
 
       // Show error to user
