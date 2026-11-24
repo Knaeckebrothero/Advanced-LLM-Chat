@@ -98,6 +98,7 @@ Until the side chat becomes a conversation, the parent is read live: an edit or 
 ## Not built
 
 - **"Ask on the side" on selected text,** which would put the selected text into the composer as a quote: open, the owner hasn't decided.
+- **Telling the model it is in a side chat:** it isn't; it sees its conversation going on. Discussed on 2026-11-24, left open to see how it behaves in use. For: an aside isn't taken for the next turn, and a side chat forked from the user's own message (two user messages in a row then) doesn't answer that message too, as one did in testing. Against: a side chat used as another branch of a story should just go on, and a note could make a roleplay agent step out of the scene. If added: a note with the side chat's first own message, built into each request and not stored (as the memory note), never in the system prompt, so the prompt cache keeps covering the parent's part.
 - **Editing a side chat's messages** (and inserting, sending again).
 - **"Side chat in <conversation>" in All files:** a side chat's files are listed under its own title.
 - **A conversation's export with its side chats.**
