@@ -43,6 +43,15 @@ class ApiConversationsCheck(BaseModel):
     conversations: List[ConversationState]
 
 
+def side_chat_fields(row: dict) -> dict:
+    """The side chat fields of the API (docs/side_chats.md) from a conversations row."""
+    return {
+        'parentId': row.get('parent_id'),
+        'forkMessageId': row.get('fork_message_id'),
+        'sideChat': bool(row.get('side_chat') and row.get('parent_id')),
+    }
+
+
 class ConversationResponse(BaseModel):
     """
     Represents the response of a conversation with its associated details.
@@ -98,6 +107,10 @@ class ConversationResponse(BaseModel):
     personaValues: Optional[Dict[str, str]] = None
     hidden: bool = False
     hiddenBy: Optional[str] = None  # Who set hidden: "user" or "agent" (agents leave the user's decision alone)
+    # Side chats (docs/side_chats.md): the conversation it was forked from, and the message
+    parentId: Optional[str] = None
+    forkMessageId: Optional[int] = None
+    sideChat: bool = False  # A side chat; one whose conversation was deleted counts as a conversation
 
 
 class Conversation(BaseModel):
@@ -147,6 +160,10 @@ class Conversation(BaseModel):
     personaValues: Optional[Dict[str, str]] = None
     hidden: bool = False
     hiddenBy: Optional[str] = None  # Who set hidden: "user" or "agent" (agents leave the user's decision alone)
+    # Side chats (docs/side_chats.md): the conversation it was forked from, and the message
+    parentId: Optional[str] = None
+    forkMessageId: Optional[int] = None
+    sideChat: bool = False  # A side chat; one whose conversation was deleted counts as a conversation
 
     @classmethod
     def from_row(cls, row: dict) -> "Conversation":
@@ -171,6 +188,7 @@ class Conversation(BaseModel):
             personaValues=row.get('persona_values'),
             hidden=bool(row.get('hidden')),
             hiddenBy=row.get('hidden_by'),
+            **side_chat_fields(row),
         )
 
 
@@ -193,6 +211,11 @@ class ConversationCreateRequest(BaseModel):
     :type personaValues: Optional[Dict[str, str]]
     :ivar hidden: Hidden from the start.
     :type hidden: bool
+    :ivar parentId: A side chat (docs/side_chats.md): the conversation it is forked from. It
+        takes that conversation's agent, model and system prompt; modelId and personaId are ignored.
+    :type parentId: Optional[str]
+    :ivar forkMessageId: A side chat: the message of that conversation it is forked from.
+    :type forkMessageId: Optional[int]
     """
     name: str = Field(max_length=MAX_NAME_LENGTH)
     participants: List[str]
@@ -200,6 +223,8 @@ class ConversationCreateRequest(BaseModel):
     personaId: Optional[int] = None
     personaValues: Optional[Dict[str, str]] = None
     hidden: bool = False
+    parentId: Optional[str] = None
+    forkMessageId: Optional[int] = None
 
 
 class ConversationUpdateRequest(BaseModel):

@@ -215,6 +215,8 @@ def _conversation_info(conn, scope: Scope, ids: list[str]) -> dict[str, dict]:
         return {}
     rows = conn.execute(text(f"""
         SELECT c.id, c.name, c.persona_id, p.name AS agent, count(*) AS messages,
+                   (c.side_chat AND c.parent_id IS NOT NULL) AS side_chat, c.parent_id,
+                   (SELECT pc.name FROM conversations pc WHERE pc.id = c.parent_id) AS parent_name,
                min(m.id) AS first_id, max(m.id) AS last_id
         FROM messages m
         JOIN conversations c ON c.id = m."conversationId"
@@ -227,8 +229,12 @@ def _conversation_info(conn, scope: Scope, ids: list[str]) -> dict[str, dict]:
 
 def _info(row) -> dict:
     agent = row["agent"] or ("a deleted agent" if row["persona_id"] is not None else None)
-    return {"id": row["id"], "title": row["name"], "agent": agent, "message_count": row["messages"],
+    info = {"id": row["id"], "title": row["name"], "agent": agent, "message_count": row["messages"],
             "first": row["first_id"], "last": row["last_id"]}
+    if row["side_chat"]:
+        # A side chat (docs/side_chats.md): its messages follow its conversation's up to where it was forked
+        info["side_chat_of"] = {"id": row["parent_id"], "title": row["parent_name"]}
+    return info
 
 
 # =========================================================================
@@ -346,6 +352,8 @@ def list_chats(scope: Scope, after: Optional[str] = None, before: Optional[str] 
     with db.connection() as conn:
         rows = conn.execute(text(f"""
             SELECT c.id, c.name, c.persona_id, p.name AS agent, count(*) AS messages,
+                   (c.side_chat AND c.parent_id IS NOT NULL) AS side_chat, c.parent_id,
+                   (SELECT pc.name FROM conversations pc WHERE pc.id = c.parent_id) AS parent_name,
                    min(m.id) AS first_id, max(m.id) AS last_id,
                    (SELECT s.content FROM conversation_summaries s
                      WHERE s.conversation_id = c.id

@@ -574,9 +574,17 @@ def _persona_hidden(persona_id: Optional[int]) -> bool:
 
 
 def conversation_hidden(conversation: Optional[dict]) -> bool:
-    """The conversation (a conversations row) is hidden: marked, or its agent is."""
+    """
+    The conversation (a conversations row) is hidden: marked, or its agent is, or it is a side
+    chat of a hidden conversation (docs/side_chats.md).
+    """
     conversation = conversation or {}
-    return bool(conversation.get("hidden")) or _persona_hidden(conversation.get("persona_id"))
+    if bool(conversation.get("hidden")) or _persona_hidden(conversation.get("persona_id")):
+        return True
+    if conversation.get("side_chat") and conversation.get("parent_id"):
+        parent = db.get_conversation_by_id(conversation["parent_id"]) or {}
+        return bool(parent.get("hidden")) or _persona_hidden(parent.get("persona_id"))
+    return False
 
 
 def writes_hidden(conversation: Optional[dict], vault: int) -> bool:

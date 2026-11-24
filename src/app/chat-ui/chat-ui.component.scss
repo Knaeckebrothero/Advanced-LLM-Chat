@@ -1,13 +1,155 @@
 // src/app/chat-ui/chat-ui.component.scss
 // Modern AI Chat Container Styles
 
+// The chat, and the side chat panel next to it while it is open (docs/side_chats.md; on a phone a sheet over it)
+.chat-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
 .chat-ui-container {
   height: 100%;
   width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   background-color: transparent;
   position: relative;
+}
+
+// "Side chats 2": opens the panel with the conversation's side chats
+.side-chats-button {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 6px 0 11px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--theme-shadow-sm);
+  color: var(--theme-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+
+  mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    color: var(--theme-primary);
+  }
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--theme-primary) 45%, var(--theme-border));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+  }
+}
+
+.side-chats-button__count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: var(--theme-primary);
+  color: var(--theme-primary-contrast);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .side-chats-button {
+    top: 8px;
+    right: 10px;
+    padding-left: 9px;
+  }
+
+  .side-chats-button__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+// The message the open side chat was forked from, and the one "Forked from" shows for a moment
+app-chat-ui-message.side-chat-fork ::ng-deep .message-content-wrapper,
+app-chat-ui-message.side-chat-fork--flash ::ng-deep .message-content-wrapper {
+  border-radius: 14px;
+  background-color: color-mix(in srgb, var(--theme-primary) 7%, transparent);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--theme-primary) 7%, transparent);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+app-chat-ui-message.side-chat-fork--flash ::ng-deep .message-content-wrapper {
+  background-color: color-mix(in srgb, var(--theme-primary) 16%, transparent);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--theme-primary) 16%, transparent);
+}
+
+// A side chat made a conversation of its own: where its own messages start
+.fork-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 768px;
+  margin: 18px auto;
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+}
+
+.fork-divider__line {
+  flex: 1;
+  height: 1px;
+  background: var(--theme-border);
+}
+
+.fork-divider__text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 80%;
+
+  mat-icon {
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+  }
+}
+
+.fork-divider__link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--theme-link);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 // Message container with centered layout

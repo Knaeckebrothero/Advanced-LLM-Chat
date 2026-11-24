@@ -365,9 +365,7 @@ class ConversationHistoryBuilder:
         Returns:
             Tuple of (messages in the OpenAI message format, available_attachments)
         """
-        summary = self.db.get_conversation_summary(conversation_id)
-        if summary and before_message is not None and summary['covers_until'] >= before_message['id']:
-            summary = None
+        summary = self.history_summary(conversation_id, before_message)
         entries, available_attachments = await self.build_entries(
             conversation_id,
             limit=limit,
@@ -377,6 +375,22 @@ class ConversationHistoryBuilder:
             summary=summary
         )
         return self.assemble(conversation_id, entries, summary, token_budget), available_attachments
+
+    def history_summary(self, conversation_id: str, before_message: Optional[dict] = None) -> Optional[dict]:
+        """
+        The summary the history starts with: the conversation's own, not when regenerating a message
+        it covers (before_message). A side chat has none of its own: its history starts with its
+        parent's summary, when that covers only messages up to the one it was forked from
+        (docs/side_chats.md).
+        """
+        fork = self.db.get_fork(conversation_id)
+        if fork:
+            summary = self.db.get_conversation_summary(fork['parent_id'])
+            return summary if summary and summary['covers_until'] <= fork['fork_message_id'] else None
+        summary = self.db.get_conversation_summary(conversation_id)
+        if summary and before_message is not None and summary['covers_until'] >= before_message['id']:
+            return None
+        return summary
 
     async def build_entries(
         self,
@@ -391,7 +405,9 @@ class ConversationHistoryBuilder:
         The conversation's messages in the OpenAI message format, with their ids, oldest first.
 
         Arguments as in build_history(); without the messages that summary covers.
-        Nothing is cut to a token budget here (see assemble()).
+        Nothing is cut to a token budget here (see assemble()). A side chat's entries start with
+        those of its parent up to the message it was forked from (docs/side_chats.md); summary
+        is then the parent's (history_summary()).
 
         Returns:
             Tuple of (history entries, available_attachments)
@@ -415,7 +431,33 @@ class ConversationHistoryBuilder:
         if summary:
             raw_messages = [msg for msg in raw_messages if (msg.get('id') or 0) > summary['covers_until']]
         logger.debug(f"Building history for conversation {conversation_id}: {len(raw_messages)} messages")
+        entries, available_attachments = await self._entries(
+            conversation_id, raw_messages, include_latest_attachments, supports_vision)
 
+        fork = self.db.get_fork(conversation_id)
+        if fork:
+            # A side chat: its parent's messages up to the fork come first, chosen by id (a regenerated
+            # answer keeps its id and place, but its time is when it was written again)
+            parent_messages = self.db.get_newest_messages(
+                fork['parent_id'], limit=limit, before_id=fork['fork_message_id'] + 1)
+            if summary:
+                parent_messages = [msg for msg in parent_messages if msg['id'] > summary['covers_until']]
+            parent_entries, parent_attachments = await self._entries(
+                fork['parent_id'], parent_messages, False, supports_vision)
+            entries = parent_entries + entries
+            available_attachments = parent_attachments + available_attachments
+
+        logger.debug(f"Built history: {len(entries)} messages, {len(available_attachments)} attachments")
+        return entries, available_attachments
+
+    async def _entries(
+        self,
+        conversation_id: str,
+        raw_messages: List[dict],
+        include_latest_attachments: bool,
+        supports_vision: bool
+    ) -> Tuple[List[HistoryEntry], List[AttachmentPlaceholder]]:
+        """The history entries of these messages of the conversation (oldest first), see build_entries()."""
         entries: List[HistoryEntry] = []
         available_attachments = []
         latest_user_idx = self._find_latest_user_message_idx(raw_messages)
@@ -447,8 +489,6 @@ class ConversationHistoryBuilder:
                                                 TOOL_RECORD_KEY: replayed_record(tool_record)}))
                 elif text and text.strip():
                     entries.append((msg['id'], {"role": "assistant", "content": text}))
-
-        logger.debug(f"Built history: {len(entries)} messages, {len(available_attachments)} attachments")
         return entries, available_attachments
 
     def system_instructions(self, conversation_id: str, before_message: Optional[dict] = None) -> List[str]:
@@ -461,8 +501,14 @@ class ConversationHistoryBuilder:
         Args:
             conversation_id: The conversation.
             before_message: Only the ones before this message row (regenerating it).
+
+        A side chat's start with those of its parent up to the message it was forked from.
         """
-        rows = self.db.get_system_messages(
+        rows = []
+        fork = self.db.get_fork(conversation_id)
+        if fork:
+            rows += self.db.get_system_messages(fork['parent_id'], before_id=fork['fork_message_id'] + 1)
+        rows += self.db.get_system_messages(
             conversation_id, before_id=before_message['id'] if before_message is not None else None)
         return [text for text in (self._extract_text(row).strip() for row in rows) if text]
 

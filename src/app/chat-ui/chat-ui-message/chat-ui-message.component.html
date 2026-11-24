@@ -291,8 +291,15 @@
 
     <!-- Message Actions -->
     <div class="message-actions" [class.message-actions--visible]="editing"
-      [class.message-actions--versions]="message.alternatives && !editing && !inProgress">
+      [class.message-actions--versions]="(message.alternatives || sideChatCount) && !editing && !inProgress">
       <ng-container *ngIf="!editing && !inProgress">
+        <!-- The side chats forked from this message (docs/side_chats.md), shown without hovering -->
+        <button *ngIf="sideChatCount as count" type="button" class="side-chats-badge" (click)="openSideChats()"
+          [title]="'sideChat.openOfMessage' | translate">
+          <mat-icon aria-hidden="true">forum</mat-icon>
+          <span>{{ (count === 1 ? 'sideChat.countOne' : 'sideChat.count') | translate: { count: count } }}</span>
+        </button>
+
         <!-- The versions of an answer (docs/answer_versions.md), shown without hovering -->
         <div *ngIf="message.alternatives as versions" class="answer-versions" role="group"
           [attr.aria-label]="'message.versionOf' | translate: versions">
@@ -321,6 +328,12 @@
           (click)="copyMessage()" [title]="(copied ? 'message.copied' : 'message.copy') | translate"
           [attr.aria-label]="(copied ? 'message.copied' : 'message.copy') | translate">
           <mat-icon>{{ copied ? 'check' : 'content_copy' }}</mat-icon>
+        </button>
+
+        <!-- Ask about it, or make something of it, in a side chat (docs/side_chats.md) -->
+        <button *ngIf="canForkSideChat" mat-icon-button class="action-btn" (click)="openSideChat()"
+          [title]="'sideChat.start' | translate" [attr.aria-label]="'sideChat.start' | translate">
+          <mat-icon>forum</mat-icon>
         </button>
 
         <!-- Edit button: guided editing your own messages, manual editing every message -->

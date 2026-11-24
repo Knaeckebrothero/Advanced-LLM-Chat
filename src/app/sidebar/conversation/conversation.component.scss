@@ -100,6 +100,8 @@ button.conversation-button {
 }
 
 .conversation-content {
+  display: flex;
+  align-items: center;
   width: 100%;
   text-align: left;
   white-space: nowrap;
@@ -107,8 +109,33 @@ button.conversation-button {
   text-overflow: ellipsis;
 
   .hidden-mark {
+    flex: 0 0 auto;
     margin-right: 6px;
-    vertical-align: -2px;
+  }
+
+  .conversation-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  // How many side chats it has (docs/side_chats.md)
+  .side-chat-count {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--theme-primary);
+
+    mat-icon {
+      width: 15px;
+      height: 15px;
+      font-size: 15px;
+    }
   }
 
   &:has(.edit-input) {

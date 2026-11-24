@@ -1,6 +1,7 @@
 """
 Conversation API endpoints.
 """
+import asyncio
 import json
 import logging
 import time
@@ -15,11 +16,12 @@ from backend.models.conversation import (
     ConversationResponse,
     ConversationCreateRequest,
     ConversationUpdateRequest,
-    ConversationWithDetails
+    ConversationWithDetails,
+    side_chat_fields
 )
 from backend.models.conversation_file import ConversationFile
 from backend.models.message import ConversationSummary, MessageResponse
-from backend.services import answer_runs, conversation_file
+from backend.services import answer_runs, conversation_file, side_chats
 from backend.catalog.service import CatalogError, check_model_choice, check_persona_choice
 from backend.catalog.resolver import resolve_auxiliary_model
 from backend.database import db
@@ -123,7 +125,8 @@ async def get_conversations(response: Response, current_user: dict = Depends(get
                 personaId=conv.get('persona_id'),
                 personaValues=conv.get('persona_values'),
                 hidden=bool(conv.get('hidden')),
-                hiddenBy=conv.get('hidden_by')
+                hiddenBy=conv.get('hidden_by'),
+                **side_chat_fields(conv)
             ))
 
         logger.info(f"Returning {len(conversation_responses)} conversations for user_id: {user_id}")
@@ -211,7 +214,8 @@ async def get_conversation(conversation_id: str, response: Response, current_use
             personaId=conv.get('persona_id'),
             personaValues=conv.get('persona_values'),
             hidden=bool(conv.get('hidden')),
-            hiddenBy=conv.get('hidden_by')
+            hiddenBy=conv.get('hidden_by'),
+            **side_chat_fields(conv)
         )
 
     except HTTPException:
@@ -246,10 +250,13 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     logger.debug(f"Creating conversation for user_id: {user_id}, name: {req.name[:100]}, "
                  f"model: {req.modelId}, persona: {req.personaId}")
 
-    _check_catalog_choice(current_user, req.modelId, req.personaId)
-
     participants_json = json.dumps(req.participants)
     new_id = generate_conversation_id()  # Generate UUID
+
+    if req.parentId is not None:
+        return _create_side_chat(req, new_id, participants_json, user_id)
+
+    _check_catalog_choice(current_user, req.modelId, req.personaId)
 
     new_conv = db.create_conversation(
         conversation_id=new_id,
@@ -266,6 +273,65 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
                      f"model_id: {req.modelId}, persona_id: {req.personaId}")
 
     return Conversation.from_row(new_conv)
+
+
+def _create_side_chat(req: ConversationCreateRequest, new_id: str, participants_json: str, user_id: int) -> Conversation:
+    """
+    A side chat (docs/side_chats.md) of the user's conversation req.parentId, forked from its message
+    req.forkMessageId. It takes the conversation's agent, model, own system prompt and hidden mark.
+
+    :raises HTTPException: 404 if the conversation isn't the user's, 400 if it is a side chat itself
+        or the message isn't one of its messages.
+    """
+    parent = db.get_conversation_by_id(req.parentId, user_id)
+    if not parent:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    if parent.get('side_chat') and parent.get('parent_id'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A side chat has no side chats of its own")
+    if req.forkMessageId is None or db.get_message_by_id(req.forkMessageId, req.parentId) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="The message to fork from isn't in the conversation")
+    new_conv = db.create_conversation(
+        conversation_id=new_id,
+        user_id=user_id,
+        name=req.name,
+        participants=participants_json,
+        model_id=parent.get('model_id'),
+        persona_id=parent.get('persona_id'),
+        persona_values=parent.get('persona_values'),
+        hidden=bool(parent.get('hidden')),
+        hidden_by=parent.get('hidden_by'),
+        system_prompt=parent.get('system_prompt'),
+        parent_id=req.parentId,
+        fork_message_id=req.forkMessageId,
+        side_chat=True
+    )
+    crud_logger.info(f"Side chat created - id: {new_id}, user_id: {user_id}, of {req.parentId} "
+                     f"at message {req.forkMessageId}")
+    return Conversation.from_row(new_conv)
+
+
+@router.post("/conversation/{conversation_id}/promote",
+             response_model=Conversation,
+             dependencies=[Depends(guest_write)],
+             responses={
+                 status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Conversation not found"}
+             })
+async def promote_side_chat(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Make a side chat a conversation of its own (docs/side_chats.md): the messages of its
+    conversation up to the one it was forked from are copied into it, with their files, and it
+    no longer is a side chat. A conversation that isn't a side chat is returned as it is.
+
+    :return: The conversation.
+    :raises HTTPException: 404 if the conversation does not exist for the user.
+    """
+    user_id = current_user['user_id']
+    if not db.get_conversation_by_id(conversation_id, user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    row = await asyncio.to_thread(side_chats.promote, conversation_id, user_id)
+    crud_logger.info(f"Side chat {conversation_id} made a conversation by user {user_id}")
+    return Conversation.from_row(row)
 
 
 @router.get("/conversation/{conversation_id}/export",
@@ -291,8 +357,16 @@ async def export_conversation(conversation_id: str, current_user: dict = Depends
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
     messages = db.get_messages_by_conversation(conversation_id, limit=None)
-    content = conversation_file.export_conversation(
-        conv, messages, db.get_conversation_alternatives(conversation_id))
+    alternatives = db.get_conversation_alternatives(conversation_id)
+    fork = db.get_fork(conversation_id)
+    if fork:
+        # A side chat: with its conversation's messages up to the one it was forked from (docs/side_chats.md)
+        until = fork['fork_message_id']
+        messages = [m for m in db.get_messages_by_conversation(fork['parent_id'], limit=None) if m['id'] <= until] + messages
+        alternatives = {**{message_id: versions for message_id, versions
+                            in db.get_conversation_alternatives(fork['parent_id']).items() if message_id <= until},
+                        **alternatives}
+    content = conversation_file.export_conversation(conv, messages, alternatives)
     crud_logger.info(f"Conversation {conversation_id} exported by user {user_id} ({len(messages)} messages)")
     headers = {"Content-Disposition": 'attachment; filename="conversation.json"'}
     return JSONResponse(content=jsonable_encoder(content), headers=headers)
@@ -492,6 +566,7 @@ async def update_conversation(
                status_code=status.HTTP_200_OK)
 async def delete_conversation(
         conversation_id: str,
+        sideChats: str = Query("keep", pattern="^(keep|delete)$"),
         current_user: dict = Depends(get_current_user)
 ):
     """
@@ -499,15 +574,28 @@ async def delete_conversation(
     current user. If the specified conversation does not exist or does not
     belong to the user, a 204 No Content response is returned.
 
+    Its side chats (docs/side_chats.md) are kept as conversations of their own (sideChats=keep,
+    also what an older version of the app gets), or deleted with it (sideChats=delete).
+
     :param current_user: Dictionary containing details of the currently authorized user.
     :param conversation_id: The unique identifier of the conversation to be deleted.
     :type conversation_id: str
+    :param sideChats: "keep" or "delete": what becomes of its side chats.
+    :type sideChats: str
     """
     user_id = current_user['user_id']
     logger.debug(f"Deleting conversation {conversation_id} for user_id: {user_id}")
 
     # An answer that is being written goes with the conversation: stopped first, so it isn't stored after
     if verify_conversation_ownership(conversation_id, user_id):
+        for side_chat in db.get_side_chats(conversation_id):
+            if sideChats == "delete":
+                await answer_runs.stop_conversation(side_chat['id'])
+                db.delete_conversation(side_chat['id'], user_id)
+            else:
+                await asyncio.to_thread(side_chats.promote, side_chat['id'], user_id)
+            crud_logger.info(f"Side chat {side_chat['id']} of {conversation_id} "
+                             f"{'deleted' if sideChats == 'delete' else 'kept as a conversation'}")
         await answer_runs.stop_conversation(conversation_id)
 
     # Delete conversation (messages are cascade-deleted via ON DELETE CASCADE)

@@ -1,5 +1,6 @@
 // Components
 import { ChatUiComponent } from './chat-ui/chat-ui.component';
+import { SideChatPanelComponent } from './chat-ui/side-chat-panel/side-chat-panel.component';
 import { ChatUiMessageComponent } from './chat-ui/chat-ui-message/chat-ui-message.component';
 import { SettingsComponent } from './settings/settings.component';
 import { settingsDialogGuard } from './settings/settings-dialog';
@@ -97,6 +98,7 @@ export function HttpLoaderFactory(http: HttpClient) {
     ChatUiMessageComponent,
     AgentStepsComponent,
     ChatUiSummaryComponent,
+    SideChatPanelComponent,
     StatusBarComponent,
     AuthCallbackComponent,
     LoginComponent,

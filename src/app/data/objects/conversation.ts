@@ -35,6 +35,13 @@ export class Conversation implements IConversation {
   hidden?: boolean;
   hiddenBy?: HiddenBy | null;  // Who set it: the user (agents leave it alone) or an agent
   hiddenPending?: boolean;
+  // Side chats (docs/side_chats.md): forked from this conversation at this message; a side chat
+  // until made a conversation of its own
+  parentId?: string | null;
+  forkMessageId?: number | null;
+  sideChat?: boolean;
+  // Local only, not stored: when its newest side chat got its newest message (the sidebar's order)
+  sideActivity?: Date;
 
   constructor(
     id: string,
@@ -92,9 +99,13 @@ export class Conversation implements IConversation {
   // Order in the sidebar
   // =========================================================================
 
-  /** What the sidebar sorts by: the newest message, or the creation of a conversation without one. */
+  /**
+   * What the sidebar sorts by: the newest message, or the creation of a conversation without one;
+   * a newer message of one of its side chats (sideActivity) moves it up too.
+   */
   get lastActivity(): Date {
-    return this.lastMessageAt ?? this.createdAt;
+    const own = this.lastMessageAt ?? this.createdAt;
+    return this.sideActivity && this.sideActivity > own ? this.sideActivity : own;
   }
 
   /** Newest activity first. */
@@ -143,6 +154,24 @@ export class Conversation implements IConversation {
     }
   }
 
+  /** The side chat fields (docs/side_chats.md) of an API response or a stored object. */
+  private static readFork(conv: Conversation, data: any): void {
+    if (data.parentId !== undefined) conv.parentId = data.parentId;
+    if (data.forkMessageId !== undefined) conv.forkMessageId = data.forkMessageId;
+    if (typeof data.sideChat === 'boolean') conv.sideChat = data.sideChat;
+  }
+
+  /** Takes the server's side chat fields; returns whether they changed (made a conversation of its own). */
+  mergeFork(server: Conversation): boolean {
+    if (server.sideChat === undefined) return false;
+    const changed = this.sideChat !== server.sideChat || (this.parentId ?? null) !== (server.parentId ?? null)
+      || (this.forkMessageId ?? null) !== (server.forkMessageId ?? null);
+    this.parentId = server.parentId ?? null;
+    this.forkMessageId = server.forkMessageId ?? null;
+    this.sideChat = server.sideChat;
+    return changed;
+  }
+
   // =========================================================================
   // Factory Methods
   // =========================================================================
@@ -170,6 +199,7 @@ export class Conversation implements IConversation {
       conv.hashsum = data.hashsum;
     }
     Conversation.readSelection(conv, data);
+    Conversation.readFork(conv, data);
     return conv;
   }
 
@@ -192,6 +222,7 @@ export class Conversation implements IConversation {
     conv.version = data.version || 1;
     conv.lastModified = data.lastModified || Math.floor(Date.now() / 1000);
     Conversation.readSelection(conv, data);
+    Conversation.readFork(conv, data);
     if (data.selectionPending) {
       conv.selectionPending = true;
     }
@@ -226,7 +257,10 @@ export class Conversation implements IConversation {
       selectionPending: this.selectionPending,
       hidden: this.hidden,
       hiddenBy: this.hiddenBy,
-      hiddenPending: this.hiddenPending
+      hiddenPending: this.hiddenPending,
+      parentId: this.parentId,
+      forkMessageId: this.forkMessageId,
+      sideChat: this.sideChat
     };
   }
 }

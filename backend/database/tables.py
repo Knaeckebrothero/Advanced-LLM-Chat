@@ -63,6 +63,10 @@ conversations = Table(
     Column('hidden_by', Text),  # Who set hidden: 'user' (agents leave it alone) or 'agent', None = nobody
     # The conversation's own system prompt (manual editing): None = built from its agent, '' = none
     Column('system_prompt', Text),
+    # Side chats (docs/side_chats.md): the conversation it was forked from and the message, a position
+    Column('parent_id', Text, ForeignKey('conversations.id', ondelete='SET NULL')),
+    Column('fork_message_id', BigInteger),
+    Column('side_chat', Boolean, nullable=False, server_default='false'),  # Until made a conversation of its own
 )
 
 # Messages table

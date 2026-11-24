@@ -76,6 +76,9 @@ class FakeDB:
     def get_conversation_summary(self, conversation_id):
         return None
 
+    def get_fork(self, conversation_id):
+        return None  # No side chats here (backend/services/tests/side_chats_test.py)
+
     def get_owned_file_ids(self, user_id, file_ids):
         return {file_id for file_id in file_ids if FILE_OWNERS.get(file_id) == user_id}
 

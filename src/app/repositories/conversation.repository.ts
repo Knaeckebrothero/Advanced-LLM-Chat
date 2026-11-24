@@ -337,25 +337,54 @@ export class ConversationRepository extends BaseRepository<Conversation> {
     return true;
   }
 
-  async delete(id: string): Promise<void> {
+  /**
+   * Delete a conversation. Its side chats (docs/side_chats.md) are kept as conversations of their
+   * own (the server copies the messages they need into them; they come with their next sync), or
+   * deleted with it.
+   */
+  async delete(id: string, sideChats: 'keep' | 'delete' = 'keep'): Promise<void> {
     try {
       // Call API to delete conversation on backend
-      await this.apiService.deleteConversation(id);
-      
-      // Use transactional delete to remove conversation and all messages atomically from local DB
-      await this.dbService.deleteConversationWithMessages(id);
-      
-      const conversations = this.cache$.getValue();
-      const filtered = conversations.filter(c => c.id !== id);
-      this.updateCache(filtered);
-      
-      // Delete sync metadata from memory and database
-      this.syncMetadata.delete(id);
-      await this.dbService.deleteSyncMetadata(id);
+      await this.apiService.deleteConversation(id, sideChats);
+
+      const sides = this.cache$.getValue().filter(c => c.sideChat && c.parentId === id);
+      for (const side of sides) {
+        if (sideChats === 'delete') {
+          await this.removeLocally(side.id);
+        } else {
+          side.sideChat = false;
+          await this.save(side);
+          this.syncMetadata.delete(side.id);
+          await this.dbService.deleteSyncMetadata(side.id);
+        }
+      }
+      await this.removeLocally(id);
     } catch (error) {
       console.error('Failed to delete conversation:', error);
       throw error;
     }
+  }
+
+  /** A conversation leaves this browser: with its messages and sync metadata. */
+  private async removeLocally(id: string): Promise<void> {
+    // Use transactional delete to remove conversation and all messages atomically from local DB
+    await this.dbService.deleteConversationWithMessages(id);
+    this.updateCache(this.cache$.getValue().filter(c => c.id !== id));
+    // Delete sync metadata from memory and database
+    this.syncMetadata.delete(id);
+    await this.dbService.deleteSyncMetadata(id);
+  }
+
+  /**
+   * Make a side chat a conversation of its own (docs/side_chats.md). The server copies the
+   * messages and files it needs into it; they come with its sync, which runs now.
+   */
+  async promote(id: string): Promise<Conversation> {
+    const conversation = await this.saveFromServer(await this.apiService.promoteSideChat(id));
+    this.syncMetadata.delete(id);
+    await this.dbService.deleteSyncMetadata(id);
+    this.syncConversation(id).catch(console.error);
+    return conversation;
   }
 
   async computeHash(conversations: Conversation[]): Promise<string> {
@@ -485,9 +514,10 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         await this.dbService.addConversation(localConv);
       }
 
-      // Model and persona may have been switched, messages written on another device
+      // Model and persona may have been switched, messages written on another device, a side chat made a conversation
       const selectionChanged = await this.mergeSelection(localConv, serverConv);
-      if (localConv.mergeLastMessageAt(serverConv.lastMessageAt) || selectionChanged) {
+      const forkChanged = localConv.mergeFork(serverConv);
+      if (localConv.mergeLastMessageAt(serverConv.lastMessageAt) || selectionChanged || forkChanged) {
         await this.save(localConv);
       }
 
@@ -561,6 +591,10 @@ export class ConversationRepository extends BaseRepository<Conversation> {
         // Existing conversation - only update timestamp if server has newer timestamp
         // This prevents updating just from viewing/syncing
         let changed = await this.mergeSelection(localConv, serverConv);
+        // A side chat made a conversation of its own (docs/side_chats.md)
+        if (localConv.mergeFork(serverConv)) {
+          changed = true;
+        }
         // Messages written on another device move it up
         if (localConv.mergeLastMessageAt(serverConv.lastMessageAt)) {
           changed = true;

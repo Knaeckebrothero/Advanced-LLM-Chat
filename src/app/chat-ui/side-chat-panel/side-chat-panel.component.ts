@@ -1,0 +1,331 @@
+import { ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { TranslateService } from '@ngx-translate/core';
+import { Observable, Subscription, combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { Conversation } from '../../data/objects/conversation';
+import { AgentContent, Message } from '../../data/objects/message';
+import { describeHttpError } from '../../catalog-admin/catalog-admin.utils';
+import { ChatStateService } from '../../services/chat-state.service';
+import { SideChatService, SidePanelState } from '../../services/side-chat.service';
+import { MessageHost } from '../message-host';
+
+/** A side chat in the panel's list. */
+interface SideChatItem {
+  id: string;
+  title: string;
+  // The start of the message it was forked from, if this browser has it
+  from: string;
+  fromUser: boolean;
+  // When it got its newest message, or was created
+  when: Date;
+  // One of the side chats of the message whose badge opened the list
+  focus: boolean;
+}
+
+/** What the panel shows. */
+interface PanelView {
+  panel: SidePanelState;
+  parentName: string;
+  items: SideChatItem[];
+  // The open side chat
+  title: string;
+  isNew: boolean;
+  forkId: number | null;
+  forkFromUser: boolean;
+  forkTime: Date | null;
+  forkExcerpt: string;
+}
+
+/** How long the main chat marks the message a side chat was forked from, after "Forked from". */
+const FLASH_MS = 1600;
+
+/**
+ * The side chat panel (docs/side_chats.md): next to the chat on wide screens, a sheet over it on a
+ * phone. It lists the side chats of the open conversation, or shows one of them: the message it
+ * was forked from, its messages (the chat's message component, without editing) and a composer.
+ */
+@Component({
+  selector: 'app-side-chat-panel',
+  templateUrl: './side-chat-panel.component.html',
+  styleUrls: ['./side-chat-panel.component.scss'],
+  // Its messages ask it for what they need (ChatUiMessageComponent)
+  providers: [{ provide: MessageHost, useExisting: SideChatPanelComponent }],
+  standalone: false
+})
+export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
+  @ViewChild('composer') private composer?: ElementRef<HTMLTextAreaElement>;
+
+  userName = 'user';
+  aiName = 'Assistant';
+  agentAvatar: string | null = null;
+  agentName: string | null = null;
+
+  draft = '';
+  sending = false;
+  promoting = false;
+
+  readonly messages$: Observable<Message[]> = this.sideChats.messages$;
+  readonly streamingMessage$: Observable<Message<AgentContent> | null> = this.sideChats.streamingMessage$;
+  readonly isStreaming$: Observable<boolean> = this.sideChats.isStreaming$;
+
+  readonly view$: Observable<PanelView | null> = combineLatest([
+    this.sideChats.panel$, this.sideChats.sideChats$, this.sideChats.openSideChat$,
+    this.chatState.messages$, this.chatState.activeConversation$
+  ]).pipe(
+    map(([panel, sides, open, parentMessages, parent]) => panel
+      ? this.buildView(panel, sides, open, parentMessages, parent)
+      : null)
+  );
+
+  private streaming = false;
+  private messages: Message[] = [];
+  private subscriptions = new Subscription();
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    public sideChats: SideChatService,
+    private chatState: ChatStateService,
+    private snackBar: MatSnackBar,
+    private translate: TranslateService,
+    private cdr: ChangeDetectorRef,
+    private host: ElementRef<HTMLElement>
+  ) {}
+
+  ngOnInit(): void {
+    this.subscriptions.add(this.chatState.activePersona$.subscribe(persona => {
+      this.agentAvatar = persona?.avatar ?? null;
+      this.agentName = persona?.name?.trim() || null;
+      this.cdr.markForCheck();
+    }));
+    this.subscriptions.add(this.sideChats.isStreaming$.subscribe(streaming => this.streaming = streaming));
+    this.subscriptions.add(this.sideChats.messages$.subscribe(messages => this.messages = messages));
+    // A new side chat: the composer is ready to type in
+    this.subscriptions.add(this.sideChats.panel$.subscribe(panel => {
+      if (panel?.view === 'chat' && !panel.sideId && !this.isPhone()) {
+        setTimeout(() => this.composer?.nativeElement.focus());
+      }
+    }));
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+  }
+
+  private buildView(panel: SidePanelState, sides: Conversation[], open: Conversation | null,
+                    parentMessages: Message[], parent: Conversation | null): PanelView {
+    const byId = new Map(parentMessages.map(message => [message.id, message]));
+    const items = [...sides]
+      .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())
+      .map(side => {
+        const fork = side.forkMessageId != null ? byId.get(side.forkMessageId) : undefined;
+        return {
+          id: side.id,
+          title: side.name,
+          from: fork ? this.excerpt(fork, 70) : '',
+          fromUser: fork?.roleName === 'user',
+          when: side.lastActivity,
+          focus: panel.focusForkId != null && side.forkMessageId === panel.focusForkId
+        };
+      });
+    const forkId = panel.view === 'chat' ? (panel.sideId ? open?.forkMessageId ?? null : panel.forkMessageId) : null;
+    const fork = forkId != null ? byId.get(forkId) : undefined;
+    return {
+      panel,
+      parentName: parent?.name ?? '',
+      items,
+      title: open?.name ?? this.translate.instant('sideChat.new'),
+      isNew: panel.view === 'chat' && !panel.sideId,
+      forkId,
+      forkFromUser: fork?.roleName === 'user',
+      // A message id is the server's clock in milliseconds: its time, also when this browser hasn't loaded it
+      forkTime: forkId != null && forkId > 0 ? new Date(forkId) : null,
+      forkExcerpt: fork ? this.excerpt(fork, 180) : ''
+    };
+  }
+
+  /** The start of a message's text, on one line. */
+  private excerpt(message: Message, length: number): string {
+    const text = (message.isText() ? message.content.content : message.isAgent() ? message.content.content : '') ?? '';
+    const plain = text.replace(/[#*_`>]+/g, '').replace(/\s+/g, ' ').trim();
+    return plain.length > length ? plain.slice(0, length).replace(/\s+\S*$/, '') + '…' : plain;
+  }
+
+  private isPhone(): boolean {
+    return window.matchMedia('(max-width: 768px)').matches;
+  }
+
+  // =========================================================================
+  // The panel
+  // =========================================================================
+
+  close(): void {
+    this.sideChats.close();
+  }
+
+  openList(): void {
+    this.sideChats.openList();
+  }
+
+  openSide(id: string): void {
+    this.sideChats.openSide(id);
+  }
+
+  /** Show the message the side chat was forked from in the chat, marked for a moment (the sheet closes on a phone). */
+  showFork(forkId: number | null): void {
+    if (forkId == null) return;
+    if (this.isPhone()) {
+      this.close();
+    }
+    setTimeout(() => {
+      const element = document.querySelector<HTMLElement>(`app-chat-ui app-chat-ui-message[data-message-id="${forkId}"]`);
+      if (!element || this.host.nativeElement.contains(element)) return;
+      element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      element.classList.add('side-chat-fork--flash');
+      if (this.flashTimer) clearTimeout(this.flashTimer);
+      this.flashTimer = setTimeout(() => element.classList.remove('side-chat-fork--flash'), FLASH_MS);
+    });
+  }
+
+  // =========================================================================
+  // Writing
+  // =========================================================================
+
+  async send(): Promise<void> {
+    const text = this.draft.trim();
+    if (!text || this.sending || this.streaming) return;
+    this.sending = true;
+    this.draft = '';
+    try {
+      await this.sideChats.send(text);
+    } catch (error) {
+      console.error('Failed to send in the side chat:', error);
+      this.draft = text;
+      this.showError('sideChat.sendFailed', error);
+    } finally {
+      this.sending = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** Enter sends, Shift+Enter starts a new line (not while an input method composes a word). */
+  onEnter(event: Event): void {
+    const key = event as KeyboardEvent;
+    if (key.shiftKey || key.isComposing) return;
+    event.preventDefault();
+    void this.send();
+  }
+
+  stop(): void {
+    void this.sideChats.stop();
+  }
+
+  async promote(): Promise<void> {
+    if (this.promoting) return;
+    this.promoting = true;
+    try {
+      const conversation = await this.sideChats.promote();
+      if (conversation) {
+        this.snackBar.open(this.translate.instant('sideChat.promoted', { name: conversation.name }),
+                           this.translate.instant('sideChat.openPromoted'), { duration: 6000 })
+          .onAction().subscribe(() => void this.chatState.loadConversation(conversation.id));
+      }
+    } catch (error) {
+      console.error('Failed to make the side chat a conversation:', error);
+      this.showError('sideChat.promoteFailed', error);
+    } finally {
+      this.promoting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  async deleteSide(id: string): Promise<void> {
+    if (!confirm(this.translate.instant('sideChat.deleteConfirm'))) return;
+    try {
+      await this.sideChats.deleteSideChat(id);
+    } catch (error) {
+      console.error('Failed to delete the side chat:', error);
+      this.showError('sideChat.deleteFailed', error);
+    }
+  }
+
+  private showError(key: string, error: unknown): void {
+    this.snackBar.open(this.translate.instant(key, { error: describeHttpError(error, this.translate) }),
+                       undefined, { duration: 6000 });
+  }
+
+  /** The newest answer of the side chat (it can be regenerated). */
+  isLastAiMessage(message: Message, index: number, messages: Message[]): boolean {
+    if (message.roleName === 'user' || message.roleName === 'system') return false;
+    return !messages.slice(index + 1).some(later => later.roleName !== 'user' && later.roleName !== 'system');
+  }
+
+  trackById(_: number, message: Message): number {
+    return message.id;
+  }
+
+  // =========================================================================
+  // MessageHost: what the side chat's messages ask for
+  // =========================================================================
+
+  get isStreaming(): boolean {
+    return this.streaming;
+  }
+
+  get canEdit(): boolean {
+    return false;
+  }
+
+  get canForkSideChats(): boolean {
+    return false;
+  }
+
+  sideChatCount(): number {
+    return 0;
+  }
+
+  openSideChat(): void {}
+
+  openSideChatsOf(): void {}
+
+  deleteMessage(messageId: number): void {
+    this.sideChats.deleteMessage(messageId).catch(error => this.showError('sideChat.deleteFailed', error));
+  }
+
+  switchAlternative(message: Message, position: number): Promise<void> {
+    return this.chatState.switchAlternative(message, position);
+  }
+
+  deleteAlternative(message: Message): Promise<void> {
+    return this.chatState.deleteAlternative(message);
+  }
+
+  patchMessage(): Promise<void> {
+    return Promise.reject(new Error('Side chats are not edited'));
+  }
+
+  resendEditedMessage(): Promise<void> {
+    return Promise.reject(new Error('Side chats are not edited'));
+  }
+
+  insertMessage(): Promise<void> {
+    return Promise.reject(new Error('Side chats are not edited'));
+  }
+
+  resendMessage(): Promise<void> {
+    return Promise.reject(new Error('Side chats are not edited'));
+  }
+
+  countMessagesAfter(message: Message): number {
+    return this.messages.filter(other => Message.compare(other, message) > 0).length;
+  }
+
+  regenerateMessage(message: Message, modelId?: number): void {
+    this.sideChats.regenerate(message, modelId).catch(error => this.showError('sideChat.sendFailed', error));
+  }
+
+  rateMessage(message: Message, rating: number | null): void {
+    this.chatState.rateMessage(message, rating).catch(error => console.error('Failed to rate message:', error));
+  }
+}
