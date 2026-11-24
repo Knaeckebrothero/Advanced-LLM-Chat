@@ -986,10 +986,7 @@
     "forkedFromAnswer": "Abgezweigt von der Antwort",
     "showFork": "Diese Nachricht im Chat zeigen",
     "emptyHint": "Frag alles zu dieser Nachricht. Der Nebenchat kennt das Gespräch bis hierher, und nichts, was du hier schreibst, kommt in den Chat.",
-    "placeholder": "Nebenbei fragen…",
-    "send": "Senden",
-    "stop": "Stopp",
-    "composerHint": "Bleibt aus dem Hauptchat heraus · derselbe Agent",
+    "composerHint": "Bleibt aus dem Hauptchat heraus",
     "promote": "Zum Gespräch machen",
     "promoteHint": "Diesen Nebenchat als eigenes Gespräch in die Seitenleiste verschieben, mit den Nachrichten, die er braucht",
     "promoted": "„{{name}}“ ist jetzt ein eigenes Gespräch",
@@ -1008,6 +1005,8 @@
     "deleteAll": "Mit Nebenchats löschen",
     "deleteAllOne": "Mit seinem Nebenchat löschen",
     "resize": "Breite der Nebenchats ändern",
-    "resizeHint": "Ziehen ändert die Breite, Doppelklick stellt sie zurück"
+    "resizeHint": "Ziehen ändert die Breite, Doppelklick stellt sie zurück",
+    "transcribing": "Die Sprachnachricht wird transkribiert…",
+    "placeholder": "Nebenbei fragen…"
   }
 }

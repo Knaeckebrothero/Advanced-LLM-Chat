@@ -986,10 +986,7 @@
     "forkedFromAnswer": "Forked from the answer",
     "showFork": "Show this message in the chat",
     "emptyHint": "Ask anything about this message. The side chat knows the conversation up to here, and nothing you write here goes into the chat.",
-    "placeholder": "Ask on the side…",
-    "send": "Send",
-    "stop": "Stop",
-    "composerHint": "Stays out of the main chat · same agent",
+    "composerHint": "Stays out of the main chat",
     "promote": "Make it a conversation",
     "promoteHint": "Move this side chat to the sidebar as a conversation of its own, with the messages it needs",
     "promoted": "“{{name}}” is a conversation of its own now",
@@ -1008,6 +1005,8 @@
     "deleteAll": "Delete with side chats",
     "deleteAllOne": "Delete with its side chat",
     "resize": "Resize side chats",
-    "resizeHint": "Drag to change the width, double-click for the default"
+    "resizeHint": "Drag to change the width, double-click for the default",
+    "transcribing": "Transcribing the voice message…",
+    "placeholder": "Ask on the side…"
   }
 }

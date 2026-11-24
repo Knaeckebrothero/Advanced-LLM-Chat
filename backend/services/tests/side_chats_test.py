@@ -218,6 +218,15 @@ def test_creating_a_side_chat():
     assert row["system_prompt"] == "You are a philosophy tutor.", "the parent's own system prompt"
     assert row["hidden"] and row["hidden_by"] == "user", "the parent's hidden mark"
 
+    # Its composer may pick another model (here: the user's default one) than the parent's; the parent's
+    # own system prompt then stays, since the agent is the same
+    db.update_conversation(parent, model_id=987654)
+    assert conversation_row(me.side_chat(parent, A1))["model_id"] == 987654, "the parent's model"
+    response = me.create(parentId=parent, forkMessageId=A1, modelId=None)
+    assert response.status_code == 201, response.text
+    picked = conversation_row(response.json()["id"])
+    assert picked["model_id"] is None and picked["system_prompt"] == "You are a philosophy tutor."
+
     listed = {c["id"]: c for c in me.client.get("/api/conversations").json()}
     assert listed[side]["sideChat"] is True and listed[side]["parentId"] == parent, listed[side]
     assert listed[side]["forkMessageId"] == A1

@@ -191,9 +191,12 @@ def _memory_prompt(system_prompt: str, current_user: dict, conversation: Optiona
     content = memory['content'] if memory else None
     if not (conversation or {}).get('id'):
         return with_memory(system_prompt, content), None  # No conversation to keep a snapshot for
-    # A side chat shows its parent's snapshot, so its requests begin as the parent's do (docs/side_chats.md)
+    # A side chat with its parent's agent shows its parent's snapshot, so its requests begin as the
+    # parent's do (docs/side_chats.md); with another agent (another memory) it keeps its own
     fork = db.get_fork(conversation['id'])
-    shown = memory_snapshot.prompt_memory(fork['parent_id'] if fork else conversation['id'], content, vault, hide)
+    parent = db.get_conversation_by_id(fork['parent_id']) if fork else None
+    owner = parent['id'] if parent and parent.get('persona_id') == conversation.get('persona_id') else conversation['id']
+    shown = memory_snapshot.prompt_memory(owner, content, vault, hide)
     return with_memory(system_prompt, shown.content, today=shown.day), shown.note
 
 

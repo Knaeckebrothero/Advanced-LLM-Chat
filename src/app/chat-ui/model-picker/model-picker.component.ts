@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ViewEncapsulation } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, OnInit, ViewEncapsulation } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,10 +9,22 @@ import { combineLatest, Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { ChatStateService } from '../../services/chat-state.service';
 import { CatalogService } from '../../services/catalog.service';
-import { IConversationSelection, IPublicModel, IPublicPersona } from '../../data/models/catalog.model';
+import { IConversationSelection, IPublicModel, IPublicPersona, PersonaValues } from '../../data/models/catalog.model';
 import { ModelSelectComponent } from '../../components/catalog/model-select.component';
 import { AgentAvatarComponent } from '../../components/catalog/agent-avatar.component';
 import { askPersonaValues, personaInputVariables } from './persona-values-dialog.component';
+
+/**
+ * Whose model and agent the picker shows and changes: the open conversation (ChatStateService, the
+ * default), or the side chat of the side chat panel (SideChatService, docs/side_chats.md).
+ */
+export interface SelectionSource {
+  selection$: Observable<IConversationSelection>;
+  effectiveModel$: Observable<IPublicModel | null>;
+  activePersona$: Observable<IPublicPersona | null>;
+  selectModel(modelId: number | null): Promise<void>;
+  selectPersona(persona: IPublicPersona | null, values?: PersonaValues | null): Promise<void>;
+}
 
 interface PickerView {
   models: IPublicModel[];
@@ -23,8 +35,9 @@ interface PickerView {
 }
 
 /**
- * Model and persona dropdowns for the active conversation, shown in the chat composer.
- * Hidden when the catalog is empty (the backend then answers with its environment model).
+ * Model and persona dropdowns for the active conversation, shown in the chat composer (or for
+ * another source, the side chat panel's). Hidden when the catalog is empty (the backend then answers
+ * with its environment model).
  */
 @Component({
   selector: 'app-model-picker',
@@ -115,20 +128,29 @@ interface PickerView {
   `,
   styleUrls: ['./model-picker.component.scss']
 })
-export class ModelPickerComponent {
-  view$: Observable<PickerView>;
+export class ModelPickerComponent implements OnInit {
+  /** Whose model and agent: the open conversation's unless set. */
+  @Input() source: SelectionSource | null = null;
+
+  view$!: Observable<PickerView>;
 
   constructor(
     private chatState: ChatStateService,
     private catalog: CatalogService,
     private dialog: MatDialog
-  ) {
+  ) {}
+
+  private get target(): SelectionSource {
+    return this.source ?? this.chatState;
+  }
+
+  ngOnInit(): void {
     this.view$ = combineLatest([
       this.catalog.models$,
       this.catalog.visiblePersonas$,  // Without hidden agents while this device is in family mode
-      this.chatState.selection$,
-      this.chatState.effectiveModel$,
-      this.chatState.activePersona$
+      this.target.selection$,
+      this.target.effectiveModel$,
+      this.target.activePersona$
     ]).pipe(
       map(([models, personas, selection, effectiveModel, persona]) =>
         ({ models, personas, selection, effectiveModel, persona }))
@@ -145,12 +167,12 @@ export class ModelPickerComponent {
   }
 
   selectModel(modelId: number | null): void {
-    this.chatState.selectModel(modelId).catch(error => console.error('Failed to select model:', error));
+    this.target.selectModel(modelId).catch(error => console.error('Failed to select model:', error));
   }
 
   async selectPersona(persona: IPublicPersona | null, view: PickerView): Promise<void> {
     if (!persona) {
-      if (view.persona) await this.chatState.selectPersona(null);
+      if (view.persona) await this.target.selectPersona(null);
       return;
     }
 
@@ -160,6 +182,6 @@ export class ModelPickerComponent {
     if (values === undefined) return;  // Cancelled
     if (values === null && samePersona) return;  // Nothing to change
 
-    await this.chatState.selectPersona(persona, values);
+    await this.target.selectPersona(persona, values);
   }
 }
