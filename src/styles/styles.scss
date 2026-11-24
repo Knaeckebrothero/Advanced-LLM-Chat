@@ -524,3 +524,11 @@ pre[class*="language-"] {
 .token.variable {
   color: var(--prism-variable);
 }
+
+// Dragging the side chat panel's edge (SideChatPanelComponent): no text gets selected on the way,
+// and the resize cursor stays wherever the pointer is
+body.side-chat-resizing {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}

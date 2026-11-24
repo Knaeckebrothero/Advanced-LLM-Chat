@@ -3,9 +3,12 @@
 
 :host {
   display: block;
-  flex: 0 0 440px;
-  width: 440px;
-  min-width: 0;
+  // --side-panel-width: the width the user set by dragging the edge (SideChatPanelComponent)
+  flex: 0 0 var(--side-panel-width, 440px);
+  width: var(--side-panel-width, 440px);
+  min-width: 300px;
+  // The chat next to it keeps room, also when the window gets narrower after a drag
+  max-width: calc(100% - 360px);
   height: 100%;
   border-left: 1px solid var(--theme-border);
   background: var(--theme-surface);
@@ -15,8 +18,8 @@
 
 @media (max-width: 1100px) {
   :host {
-    flex-basis: 380px;
-    width: 380px;
+    flex-basis: var(--side-panel-width, 380px);
+    width: var(--side-panel-width, 380px);
   }
 }
 
@@ -25,9 +28,50 @@
     position: fixed;
     inset: 0;
     width: auto;
+    min-width: 0;
+    max-width: none;
     height: 100dvh;
     border-left: none;
     z-index: 1100;
+  }
+}
+
+// The left edge, dragged to change the width: a line shows on hover, while dragging and with the focus
+.side-panel__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  z-index: 4;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 2px;
+    background: transparent;
+    transition: background-color 0.15s ease;
+  }
+
+  &:hover::after,
+  &.is-resizing::after,
+  &:focus-visible::after {
+    background: var(--theme-primary);
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .side-panel__resize {
+    display: none;
   }
 }
 

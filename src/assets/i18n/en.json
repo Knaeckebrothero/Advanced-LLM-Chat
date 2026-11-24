@@ -1006,6 +1006,8 @@
     "deleteKeep": "Keep side chats as conversations",
     "deleteKeepOne": "Keep the side chat as a conversation",
     "deleteAll": "Delete with side chats",
-    "deleteAllOne": "Delete with its side chat"
+    "deleteAllOne": "Delete with its side chat",
+    "resize": "Resize side chats",
+    "resizeHint": "Drag to change the width, double-click for the default"
   }
 }
