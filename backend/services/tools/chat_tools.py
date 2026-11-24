@@ -28,8 +28,11 @@ def _heading(conversation: dict) -> str:
     agent = f" with {conversation['agent']}" if conversation["agent"] else " (no agent)"
     first, last = when(conversation["first"]), when(conversation["last"])
     dates = first if first == last else f"{first} to {last[11:]}" if first[:10] == last[:10] else f"{first} to {last}"
+    side = conversation.get("side_chat_of")
+    side_chat = (f", a side chat of conversation {side['id']}: \"{side['title']}\" (it goes on from there)"
+                 if side else "")
     return (f"Conversation {conversation['id']}: \"{conversation['title']}\"{agent}, {dates}, "
-            f"{conversation['message_count']} message(s)")
+            f"{conversation['message_count']} message(s){side_chat}")
 
 
 def chat_search(pattern: str, literal: Optional[bool] = None, after: Optional[str] = None,

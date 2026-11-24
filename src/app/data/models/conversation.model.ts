@@ -32,6 +32,12 @@ export interface IConversation {
   hiddenBy?: HiddenBy | null;
   // Local only: the mark changed offline and still has to be sent to the backend
   hiddenPending?: boolean;
+  // Side chats (docs/side_chats.md): the conversation it was forked from, and the message (once
+  // made a conversation of its own: the copy of that message, "Forked from" follows it)
+  parentId?: string | null;
+  forkMessageId?: number | null;
+  // A side chat: shown in its conversation's side panel, not in the sidebar
+  sideChat?: boolean;
 }
 
 /**

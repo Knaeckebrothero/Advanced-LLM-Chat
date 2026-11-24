@@ -37,6 +37,10 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   // Without the hidden ones while this device is in family mode
   conversations$: Observable<Conversation[]> = this.chatState.visibleConversations$;
+  // How many side chats each conversation has (docs/side_chats.md)
+  sideChatCounts$: Observable<ReadonlyMap<string, number>> = this.chatState.sideChatsByParent$.pipe(
+    map(byParent => new Map([...byParent].map(([parentId, sides]) => [parentId, sides.length])))
+  );
   activeConversationId$: Observable<string | null> = this.uiState.activeConversationId$;
   isSidebarOpen$: Observable<boolean> = this.uiState.sidebarOpen$;
   isAdmin$: Observable<boolean> = this.authService.isAdmin$;  // The Agents page is for admins

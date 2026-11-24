@@ -17,15 +17,19 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslateService } from '@ngx-translate/core';
 import { FamilyModeService } from '../services/family-mode.service';
 import { ConversationFilesDialogService } from '../components/conversation-files/conversation-files-dialog.service';
+import { MessageHost } from './message-host';
+import { SideChatService } from '../services/side-chat.service';
 
 
 @Component({
   selector: 'app-chat-ui',
   templateUrl: './chat-ui.component.html',
   styleUrls: ['./chat-ui.component.scss'],
+  // Its messages ask it for what they need (ChatUiMessageComponent)
+  providers: [{ provide: MessageHost, useExisting: ChatUiComponent }],
   standalone: false
 })
-export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit, OnDestroy {
+export class ChatUiComponent implements MessageHost, AfterViewChecked, AfterViewInit, OnInit, OnDestroy {
 
   // The messageContainer property is bound to the message container in the template.
   @ViewChild('messageContainer') private messageContainer!: ElementRef<HTMLElement>;
@@ -46,6 +50,8 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
   agentName: string | null = null;
   pendingFiles: FilePreview[] = [];
   isDarkMode: boolean = false; // Add this property
+  // How many side chats each message of the conversation has (docs/side_chats.md)
+  private sideChatCounts: ReadonlyMap<number, number> = new Map();
 
   // The inputField property is bound to the input field in the template.
   inputField: string = '';
@@ -237,10 +243,43 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
     private translate: TranslateService,
     private familyMode: FamilyModeService,
     private filesDialog: ConversationFilesDialogService,
-    private ngZone: NgZone
+    private ngZone: NgZone,
+    public sideChats: SideChatService
   ) { }
 
+  // Side chats (docs/side_chats.md): the panel, the button that opens it, the message the open side
+  // chat was forked from (marked), and in a side chat made a conversation where its own messages start
+  readonly sidePanelOpen$: Observable<boolean> = this.sideChats.panel$.pipe(map(panel => !!panel));
+  readonly sideChatsButton$: Observable<number> = combineLatest([this.sideChats.sideChats$, this.sideChats.panel$]).pipe(
+    map(([sides, panel]) => (panel ? 0 : sides.length))
+  );
+  readonly openForkId$: Observable<number | null> = combineLatest([this.sideChats.panel$, this.sideChats.openSideChat$]).pipe(
+    map(([panel, open]) => (panel?.view === 'chat' ? (panel.sideId ? open?.forkMessageId ?? null : panel.forkMessageId) : null))
+  );
+  readonly forkDivider$: Observable<{ afterId: number; parentId: string; parentName: string } | null> = combineLatest([
+    this.chatState.activeConversation$, this.chatState.conversations$
+  ]).pipe(
+    map(([conversation, conversations]) => {
+      if (!conversation || conversation.sideChat || !conversation.parentId || conversation.forkMessageId == null) {
+        return null;
+      }
+      const parent = conversations.find(other => other.id === conversation.parentId);
+      return parent ? { afterId: conversation.forkMessageId, parentId: parent.id, parentName: parent.name } : null;
+    })
+  );
+
+  openConversation(conversationId: string): void {
+    void this.chatState.loadConversation(conversationId);
+  }
+
   ngOnInit() {
+    // How many side chats each message has (its badge), docs/side_chats.md
+    this.destroy$.add(
+      this.sideChats.countsByMessage$.subscribe(counts => {
+        this.sideChatCounts = counts;
+        this.cdr.markForCheck();
+      })
+    );
     this.destroy$.add(
       this.chatState.activePersona$.subscribe(persona => {
         this.agentAvatar = persona?.avatar ?? null;
@@ -1043,6 +1082,27 @@ export class ChatUiComponent implements AfterViewChecked, AfterViewInit, OnInit,
 
   get isStreaming(): boolean {
     return this.chatState.isCurrentlyStreaming();
+  }
+
+  // The main chat edits its messages and forks side chats from them (docs/side_chats.md)
+  get canEdit(): boolean {
+    return true;
+  }
+
+  get canForkSideChats(): boolean {
+    return true;
+  }
+
+  sideChatCount(message: Message): number {
+    return this.sideChatCounts.get(message.id) ?? 0;
+  }
+
+  openSideChat(message: Message): void {
+    this.sideChats.openNew(message);
+  }
+
+  openSideChatsOf(message: Message): void {
+    void this.sideChats.openForMessage(message.id);
   }
 
   // Send a message again that the server didn't take

@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS conversations (
     memory_review_failed_at TIMESTAMP,   -- the last review that failed (retried an hour later), NULL after a success
     hidden BOOLEAN NOT NULL DEFAULT FALSE, -- hidden, hidden in family mode
     hidden_by TEXT,                        -- who set hidden: 'user' (agents leave it alone) or 'agent', NULL = nobody
-    system_prompt TEXT                     -- the conversation's own system prompt (manual editing), NULL = built from its agent, '' = none
+    system_prompt TEXT,                    -- the conversation's own system prompt (manual editing), NULL = built from its agent, '' = none
+    -- Side chats (docs/side_chats.md): the conversation it was forked from, and the message (a position, no FK)
+    parent_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    fork_message_id BIGINT,
+    side_chat BOOLEAN NOT NULL DEFAULT FALSE  -- a side chat, until it is made a conversation of its own
 );
 
 -- name: create_messages_table
@@ -317,6 +321,12 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS alternative_position INTEGER;
 -- The conversation's own system prompt, set in manual editing (docs/model_catalog_api.md)
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS system_prompt TEXT;
 
+-- name: add_side_chat_columns
+-- Databases from before side chats (the CREATE TABLE above has the columns, docs/side_chats.md)
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS parent_id TEXT REFERENCES conversations(id) ON DELETE SET NULL;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS fork_message_id BIGINT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS side_chat BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- name: add_mcp_columns
 -- Databases from before MCP servers (the CREATE TABLE above has it)
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS mcp_servers JSONB;
@@ -488,6 +498,7 @@ CREATE TABLE IF NOT EXISTS kb_files (
 -- name: create_indexes
 CREATE INDEX IF NOT EXISTS idx_conversation_time ON messages("conversationId", time);
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations("userId");
+CREATE INDEX IF NOT EXISTS idx_conversations_parent ON conversations(parent_id) WHERE parent_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_agent_status ON messages(agent_status) WHERE type = 'agent';
