@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslateService } from '@ngx-translate/core';
 import { Observable, Subscription, combineLatest } from 'rxjs';
@@ -40,6 +40,14 @@ interface PanelView {
 /** How long the main chat marks the message a side chat was forked from, after "Forked from". */
 const FLASH_MS = 1600;
 
+/** The panel's width the user set by dragging its edge, kept on this device; none: the default. */
+const WIDTH_KEY = 'sideChatPanelWidth';
+const MIN_WIDTH = 300;
+// What the chat next to the panel keeps at least
+const CHAT_MIN_WIDTH = 360;
+// One press of an arrow key on the edge
+const WIDTH_STEP = 24;
+
 /**
  * The side chat panel (docs/side_chats.md): next to the chat on wide screens, a sheet over it on a
  * phone. It lists the side chats of the open conversation, or shows one of them: the message it
@@ -64,6 +72,9 @@ export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
   draft = '';
   sending = false;
   promoting = false;
+  // The width the user set (null: the default), and whether its edge is being dragged
+  width: number | null = null;
+  resizing = false;
 
   readonly messages$: Observable<Message[]> = this.sideChats.messages$;
   readonly streamingMessage$: Observable<Message<AgentContent> | null> = this.sideChats.streamingMessage$;
@@ -89,10 +100,15 @@ export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
     private snackBar: MatSnackBar,
     private translate: TranslateService,
     private cdr: ChangeDetectorRef,
-    private host: ElementRef<HTMLElement>
+    private host: ElementRef<HTMLElement>,
+    private zone: NgZone
   ) {}
 
   ngOnInit(): void {
+    const saved = Number(localStorage.getItem(WIDTH_KEY));
+    if (saved > 0) {
+      this.setWidth(saved);
+    }
     this.subscriptions.add(this.chatState.activePersona$.subscribe(persona => {
       this.agentAvatar = persona?.avatar ?? null;
       this.agentName = persona?.name?.trim() || null;
@@ -186,6 +202,75 @@ export class SideChatPanelComponent implements MessageHost, OnInit, OnDestroy {
       if (this.flashTimer) clearTimeout(this.flashTimer);
       this.flashTimer = setTimeout(() => element.classList.remove('side-chat-fork--flash'), FLASH_MS);
     });
+  }
+
+  // =========================================================================
+  // Its width: the edge is dragged like a splitter (wide screens only)
+  // =========================================================================
+
+  /** Drag the panel's left edge: wider to the left, narrower to the right. */
+  startResize(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = this.host.nativeElement.getBoundingClientRect().width;
+    this.resizing = true;
+    document.body.classList.add('side-chat-resizing');
+    // Outside Angular: a move changes only a style, the chat doesn't need to be checked for it
+    this.zone.runOutsideAngular(() => {
+      const move = (moved: PointerEvent) => this.setWidth(startWidth + startX - moved.clientX);
+      const end = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', end);
+        handle.removeEventListener('pointercancel', end);
+        document.body.classList.remove('side-chat-resizing');
+        this.zone.run(() => {
+          this.resizing = false;
+          this.saveWidth();
+        });
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', end);
+      handle.addEventListener('pointercancel', end);
+    });
+  }
+
+  /** The arrow keys on the focused edge: left widens, right narrows; Home and End go to the limits. */
+  onResizeKey(event: KeyboardEvent): void {
+    const current = this.host.nativeElement.getBoundingClientRect().width;
+    const widths: Record<string, number> = {
+      ArrowLeft: current + WIDTH_STEP, ArrowRight: current - WIDTH_STEP, Home: this.maxWidth(), End: MIN_WIDTH
+    };
+    if (!(event.key in widths)) return;
+    event.preventDefault();
+    this.setWidth(widths[event.key]);
+    this.saveWidth();
+  }
+
+  /** Back to the default width (a double-click on the edge). */
+  resetWidth(): void {
+    this.width = null;
+    this.host.nativeElement.style.removeProperty('--side-panel-width');
+    localStorage.removeItem(WIDTH_KEY);
+  }
+
+  /** The widest the panel may get: the chat next to it keeps CHAT_MIN_WIDTH. */
+  maxWidth(): number {
+    const layout = this.host.nativeElement.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+    return Math.max(MIN_WIDTH, Math.round(layout - CHAT_MIN_WIDTH));
+  }
+
+  private setWidth(width: number): void {
+    this.width = Math.round(Math.min(Math.max(width, MIN_WIDTH), this.maxWidth()));
+    this.host.nativeElement.style.setProperty('--side-panel-width', `${this.width}px`);
+  }
+
+  private saveWidth(): void {
+    if (this.width !== null) {
+      localStorage.setItem(WIDTH_KEY, String(this.width));
+    }
   }
 
   // =========================================================================
