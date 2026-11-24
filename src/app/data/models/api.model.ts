@@ -82,6 +82,9 @@ export interface IApiConversationCreate {
   modelId?: number | null;
   personaId?: number | null;
   personaValues?: PersonaValues | null;
+  // A side chat (docs/side_chats.md): forked from this conversation at this message
+  parentId?: string;
+  forkMessageId?: number;
 }
 
 /** PATCH /api/conversation/{id}. The name is always sent, for backends that still require it. */

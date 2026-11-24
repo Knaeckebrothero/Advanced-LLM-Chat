@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { ChatStateService } from "../../services/chat-state.service";
 import { FormsModule } from "@angular/forms";
 import { firstValueFrom } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -17,6 +18,11 @@ import { CatalogService } from '../../services/catalog.service';
 import { AuthService } from '../../auth/auth.service';
 import { FamilyModeService } from '../../services/family-mode.service';
 import { ConversationFilesDialogService } from '../../components/conversation-files/conversation-files-dialog.service';
+import { MatDialog } from '@angular/material/dialog';
+import { SideChatService } from '../../services/side-chat.service';
+import {
+  DeleteConversationChoice, DeleteConversationDialogComponent, DeleteConversationDialogData
+} from './delete-conversation-dialog.component';
 
 
 @Component({
@@ -29,6 +35,8 @@ import { ConversationFilesDialogService } from '../../components/conversation-fi
 export class ConversationComponent implements OnInit, OnDestroy {
   @Input() conversation!: Conversation;
   @Input() highlighted: boolean = false; // Added Input
+  // How many side chats it has (docs/side_chats.md)
+  @Input() sideChatCount = 0;
   @Output() selected = new EventEmitter<Conversation>();
   @Output() delete = new EventEmitter<string>();
   @ViewChild(MatMenuTrigger) menuTrigger!: MatMenuTrigger;
@@ -51,7 +59,9 @@ export class ConversationComponent implements OnInit, OnDestroy {
     private auth: AuthService,
     private router: Router,
     private familyMode: FamilyModeService,
-    private filesDialog: ConversationFilesDialogService
+    private filesDialog: ConversationFilesDialogService,
+    private dialog: MatDialog,
+    private sideChats: SideChatService
   ) {}
 
   onSelect(): void {
@@ -146,9 +156,32 @@ export class ConversationComponent implements OnInit, OnDestroy {
    * @return {Promise<void>} A promise that resolves when the conversation is successfully deleted or is rejected if an error occurs.
    */
   async deleteConversation(): Promise<void> {
+    if (this.sideChatCount > 0) {
+      // Its side chats (docs/side_chats.md): kept as conversations of their own, or deleted with it
+      const choice = await firstValueFrom(this.dialog.open<DeleteConversationDialogComponent,
+        DeleteConversationDialogData, DeleteConversationChoice>(DeleteConversationDialogComponent, {
+          data: { name: this.conversation.name, sideChats: this.sideChatCount },
+          autoFocus: 'dialog',
+          backdropClass: 'custom-backdrop'
+        }).afterClosed());
+      if (choice) {
+        await this.chatState.deleteConversation(this.conversation.id, choice);
+      }
+      return;
+    }
     if (confirm(this.translate.instant('conversationMenu.deleteConfirm'))) {
       await this.chatState.deleteConversation(this.conversation.id);
     }
+  }
+
+  /** The conversation opens with the panel of its side chats (docs/side_chats.md). */
+  async showSideChats(): Promise<void> {
+    if (!this.highlighted) {
+      this.selected.emit(this.conversation);
+      await firstValueFrom(this.chatState.activeConversation$.pipe(
+        filter(conversation => conversation?.id === this.conversation.id)));
+    }
+    this.sideChats.openList();
   }
 
   /**

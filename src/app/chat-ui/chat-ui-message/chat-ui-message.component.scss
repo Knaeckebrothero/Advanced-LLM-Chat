@@ -154,7 +154,8 @@
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
 
-      .answer-versions {
+      .answer-versions,
+      .side-chats-badge {
         border-radius: 10px;
         background: color-mix(in srgb, var(--theme-surface) 84%, transparent);
         backdrop-filter: blur(10px);
@@ -1066,11 +1067,12 @@
     opacity: 1;
   }
 
-  // An answer with other versions: they are always shown, the other actions wait for hover
+  // An answer with other versions, a message with side chats: they are always shown, the other
+  // actions wait for hover
   &--versions {
     opacity: 1;
 
-    > :not(.answer-versions) {
+    > :not(.answer-versions):not(.side-chats-badge) {
       opacity: 0;
       transition: opacity 0.2s ease;
     }
@@ -1144,6 +1146,40 @@
     margin-left: auto;
     font-size: 12px;
     color: var(--theme-text-secondary);
+  }
+}
+
+// "2 side chats": the side chats forked from the message (docs/side_chats.md), always shown
+.side-chats-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  margin-right: 4px;
+  padding: 0 10px 0 8px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-primary) 10%, transparent);
+  color: var(--theme-primary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  mat-icon {
+    width: 17px;
+    height: 17px;
+    font-size: 17px;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--theme-primary) 18%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
   }
 }
 
@@ -1619,7 +1655,7 @@ em {
 
   // Actions and time on one line, always shown (also next to the versions of an answer)
   .message-actions,
-  .message-actions--versions > :not(.answer-versions) {
+  .message-actions--versions > :not(.answer-versions):not(.side-chats-badge) {
     opacity: 1;
   }
 

@@ -1,4 +1,13 @@
+<!-- The chat, and next to it the panel of its side chats (docs/side_chats.md) -->
+<div class="chat-layout" *ngIf="{ forkId: openForkId$ | async, forked: forkDivider$ | async } as side">
 <div class="chat-ui-container">
+  <!-- The conversation's side chats, while the panel is closed -->
+  <button *ngIf="sideChatsButton$ | async as count" type="button" class="side-chats-button"
+    (click)="sideChats.openList()" [title]="'sideChat.openList' | translate">
+    <mat-icon aria-hidden="true">forum</mat-icon>
+    <span class="side-chats-button__label">{{ 'sideChat.title' | translate }}</span>
+    <span class="side-chats-button__count">{{ count }}</span>
+  </button>
   <div class="message-container" #messageContainer (scroll)="onScroll($event)">
     <div class="loading-older-messages" *ngIf="isLoadingOlderMessages" role="status">
       <mat-spinner diameter="30" aria-hidden="true"></mat-spinner>
@@ -21,9 +30,21 @@
       <ng-container *ngIf="{ divider: summaryDivider$ | async } as view">
         <ng-container *ngFor="let message of messages | async; let i = index">
           <app-chat-ui-message [message]="message"
+                               [attr.data-message-id]="message.id"
+                               [class.side-chat-fork]="side.forkId === message.id"
                                [attr.data-role]="message.roleName === 'user' ? 'user' : (message.roleName === 'system' ? 'system' : 'answer')"
                                [isLastAiMessage]="isLastAiMessage(message, i)"
                                (stepsExpanded)="onAgentStepsExpanded($event)"></app-chat-ui-message>
+          <!-- A side chat made a conversation of its own: its own messages start here -->
+          <div *ngIf="side.forked && side.forked.afterId === message.id" class="fork-divider">
+            <span class="fork-divider__line" aria-hidden="true"></span>
+            <span class="fork-divider__text">
+              <mat-icon aria-hidden="true">call_split</mat-icon>
+              {{ 'sideChat.forkedFrom' | translate }}
+              <button type="button" class="fork-divider__link" (click)="openConversation(side.forked.parentId)">{{ side.forked.parentName }}</button>
+            </span>
+            <span class="fork-divider__line" aria-hidden="true"></span>
+          </div>
           <!-- From here on the model gets the summary instead of the messages above -->
           <app-chat-ui-summary *ngIf="view.divider && view.divider.afterId === message.id"
                                [summary]="view.divider.summary"></app-chat-ui-summary>
@@ -77,4 +98,6 @@
     (stopRequested)="cancelStreaming()">
     <app-model-picker composerTools></app-model-picker>
   </app-chat-ui-inputfield>
+</div>
+<app-side-chat-panel *ngIf="sidePanelOpen$ | async"></app-side-chat-panel>
 </div>

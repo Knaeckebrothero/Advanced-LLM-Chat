@@ -34,7 +34,8 @@
       <ng-container *ngIf="groupedConversations[label]?.length">
         <div class="group-label">{{ label | translate }}</div>
         <app-conversation *ngFor="let conv of groupedConversations[label]" [conversation]="conv"
-          [highlighted]="view.selectedId === conv.id" (selected)="onSelectConversation($event)">
+          [highlighted]="view.selectedId === conv.id" [sideChatCount]="(sideChatCounts$ | async)?.get(conv.id) ?? 0"
+          (selected)="onSelectConversation($event)">
         </app-conversation>
       </ng-container>
     </ng-container>

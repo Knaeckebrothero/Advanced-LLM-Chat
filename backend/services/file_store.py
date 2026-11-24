@@ -17,6 +17,7 @@ import logging
 import math
 import re
 import secrets
+import shutil
 import threading
 import time
 from dataclasses import dataclass
@@ -117,6 +118,47 @@ class FileStoreError(Exception):
 def new_file_id() -> str:
     """A new file ID: file_<milliseconds>_<hex> (FILE_ID_PATTERN)."""
     return f"file_{int(time.time() * 1000)}_{secrets.token_hex(8)}"
+
+
+def copy_stored_file(file_id: str) -> Optional[str]:
+    """
+    A copy of a stored file under a new file ID, with what was made from it (a PDF's pages and
+    text, previews: all named <file ID>_...): hard links where the file system allows, else copies.
+    No row in uploaded_files is made. For a side chat made a conversation (docs/side_chats.md).
+
+    Returns:
+        The copy's file ID, or None if the file isn't stored (any more).
+    """
+    if not is_file_id(file_id) or get_file_path(file_id) is None:
+        return None
+    files_dir = Path(file_utils.FILES_DIR)
+    sources = [path for path in files_dir.glob(f"{file_id}*")
+               if path.is_file() and path.name[len(file_id):len(file_id) + 1] in ("", ".", "_")]
+    copy_id = new_file_id()
+    made = []
+    try:
+        for source in sources:
+            target = source.with_name(copy_id + source.name[len(file_id):])
+            try:
+                target.hardlink_to(source)
+            except OSError:
+                shutil.copy2(source, target)
+            made.append(target)
+    except OSError:
+        for target in made:
+            target.unlink(missing_ok=True)
+        raise
+    return copy_id
+
+
+def remove_stored_file(file_id: str) -> None:
+    """Remove a stored file and what was made from it (a copy that wasn't kept, copy_stored_file())."""
+    if not is_file_id(file_id):
+        return
+    files_dir = Path(file_utils.FILES_DIR)
+    for path in files_dir.glob(f"{file_id}*"):
+        if path.is_file() and path.name[len(file_id):len(file_id) + 1] in ("", ".", "_"):
+            path.unlink(missing_ok=True)
 
 
 def base_type(mime_type: Optional[str]) -> str:

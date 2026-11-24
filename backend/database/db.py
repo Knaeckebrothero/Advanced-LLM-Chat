@@ -95,6 +95,24 @@ def _jsonb(value):
     return null() if value is None else value
 
 
+def _with_file_ids(value, file_ids: dict):
+    """
+    A copied message's column (text, or JSON data) with the ids of copied files replaced by those of
+    their copies (file ids are unique words, file_<ms>_<hex>). A side chat made a conversation.
+    """
+    if not file_ids or value is None:
+        return value
+    if isinstance(value, str):
+        for original, copy in file_ids.items():
+            value = value.replace(original, copy)
+        return value
+    if isinstance(value, (list, dict)):
+        text_value = json.dumps(value)
+        replaced = _with_file_ids(text_value, file_ids)
+        return json.loads(replaced) if replaced != text_value else value
+    return value
+
+
 def _message_attachments(content: str) -> list[dict]:
     """The attachments of a stored message content ({"content", "attachments"} JSON), else []."""
     if not content or not content.startswith('{'):
@@ -964,7 +982,12 @@ class Database:
         model_id: int = None,
         persona_id: int = None,
         persona_values: dict = None,
-        hidden: bool = False
+        hidden: bool = False,
+        hidden_by: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        fork_message_id: Optional[int] = None,
+        side_chat: bool = False
     ) -> dict:
         """
         Create a new conversation.
@@ -979,6 +1002,11 @@ class Database:
             persona_id: Persona (personas.id); None = no persona.
             persona_values: Values for the persona's variables, stored as JSONB.
             hidden: Hidden.
+            hidden_by: Who set hidden ('user' or 'agent'), None = nobody.
+            system_prompt: The conversation's own system prompt (manual editing), None = built from its agent.
+            parent_id: A side chat: the conversation it was forked from (docs/side_chats.md).
+            fork_message_id: A side chat: the message of the parent it was forked from.
+            side_chat: A side chat.
 
         Returns:
             The created conversation dictionary.
@@ -994,6 +1022,11 @@ class Database:
                 persona_id=persona_id,
                 persona_values=_jsonb(persona_values),
                 hidden=bool(hidden),
+                hidden_by=hidden_by,
+                system_prompt=system_prompt,
+                parent_id=parent_id,
+                fork_message_id=fork_message_id,
+                side_chat=bool(side_chat),
             ).returning(conversations)
             result = conn.execute(stmt).fetchone()
             log.info(f"Created conversation: {conversation_id}")
@@ -1079,6 +1112,120 @@ class Database:
                 result = conn.execute(select(conversations).where(conversations.c.id == conversation_id)).fetchone()
 
             log.info(f"Imported conversation {conversation_id} with {len(message_rows)} messages")
+            return self._row_to_dict(result)
+
+    # ==================== Side chats (docs/side_chats.md) ====================
+
+    def get_side_chats(self, parent_id: str) -> list[dict]:
+        """The side chats of a conversation (not the ones made conversations of their own), oldest first."""
+        with self.connection() as conn:
+            rows = conn.execute(select(conversations).where(
+                conversations.c.parent_id == parent_id, conversations.c.side_chat.is_(True)
+            ).order_by(conversations.c.createdAt, conversations.c.id)).fetchall()
+            return [self._row_to_dict(row) for row in rows]
+
+    def get_fork(self, conversation_id: str) -> Optional[dict]:
+        """
+        Where a side chat was forked from: {'parent_id', 'fork_message_id'}, or None for a conversation
+        that isn't a side chat (any more), or whose conversation is gone.
+        """
+        with self.connection() as conn:
+            row = conn.execute(select(conversations.c.parent_id, conversations.c.fork_message_id).where(
+                conversations.c.id == conversation_id, conversations.c.side_chat.is_(True),
+                conversations.c.parent_id.is_not(None), conversations.c.fork_message_id.is_not(None)
+            )).fetchone()
+            return {'parent_id': row.parent_id, 'fork_message_id': row.fork_message_id} if row else None
+
+    def get_files_until(self, conversation_id: str, user_id: int, until_id: int) -> list[dict]:
+        """A conversation's files that came with its messages up to until_id (a side chat's fork), oldest first."""
+        with self.connection() as conn:
+            stmt = (
+                select(uploaded_files)
+                .where(uploaded_files.c.conversation_id == conversation_id, uploaded_files.c.user_id == user_id,
+                       uploaded_files.c.message_id <= until_id)
+                .order_by(uploaded_files.c.created_at, uploaded_files.c.file_id)
+            )
+            return [self._row_to_dict(row) for row in conn.execute(stmt)]
+
+    def promote_side_chat(self, conversation_id: str, file_ids: Optional[dict] = None) -> Optional[dict]:
+        """
+        Make a side chat a conversation of its own: copy the messages of its parent up to the one
+        it was forked from into it, with their tool records and the other versions of answers, and
+        the files of those messages (file_ids: {the parent's file id: the id of its copy}, whose
+        stored bytes the caller has copied already; the copies' rows are made here, and the copied
+        messages refer to them). The copies get ids as import_conversation() picks them: the
+        original's, else the next free millisecond, in order, so they stay before the side chat's
+        own messages. A summary isn't copied: the next answer writes one when the history needs it.
+        Its fork_message_id then is the copy of the message it was forked from.
+
+        Returns:
+            The conversation's row, or None if it doesn't exist. A conversation that isn't a side
+            chat is returned unchanged.
+        """
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        file_ids = file_ids or {}
+        with self.connection() as conn:
+            conv = conn.execute(select(conversations).where(
+                conversations.c.id == conversation_id).with_for_update()).fetchone()
+            if conv is None or not conv.side_chat:
+                return self._row_to_dict(conv)
+            parent_id, fork = conv.parent_id, conv.fork_message_id
+            copied = {}  # The parent's message id: the copy's
+            if parent_id is not None and fork is not None:
+                rows = conn.execute(select(messages).where(
+                    messages.c.conversationId == parent_id, messages.c.id <= fork).order_by(messages.c.id)).fetchall()
+                records = {row.message_id: row.record for row in conn.execute(
+                    select(message_tool_records).where(message_tool_records.c.conversation_id == parent_id,
+                                                       message_tool_records.c.message_id <= fork))}
+                versions: dict = {}
+                for row in conn.execute(select(message_alternatives).where(
+                        message_alternatives.c.conversation_id == parent_id, message_alternatives.c.message_id <= fork
+                ).order_by(message_alternatives.c.message_id, message_alternatives.c.position)):
+                    versions.setdefault(row.message_id, []).append(self._row_to_dict(row))
+
+                previous_id = 0
+                for row in rows:
+                    values = self._row_to_dict(row)
+                    original_id = values.pop('id')
+                    for column in ('conversationId', 'updated_at', 'memory_vault'):
+                        values.pop(column, None)
+                    values = {key: _jsonb(_with_file_ids(value, file_ids)) if key in ('agent_steps', 'usage')
+                              else _with_file_ids(value, file_ids) for key, value in values.items()}
+                    message_id = max(original_id, previous_id + 1)
+                    while not conn.execute(pg_insert(messages).values(
+                            **values, id=message_id, conversationId=conversation_id
+                    ).on_conflict_do_nothing(index_elements=['id'])).rowcount:
+                        message_id += 1
+                    previous_id = message_id
+                    copied[original_id] = message_id
+                    if original_id in records:
+                        conn.execute(insert(message_tool_records).values(
+                            message_id=message_id, conversation_id=conversation_id,
+                            record=_with_file_ids(records[original_id], file_ids)))
+                    for version in versions.get(original_id, []):
+                        conn.execute(insert(message_alternatives).values(
+                            message_id=message_id, conversation_id=conversation_id, position=version['position'],
+                            tool_record=_jsonb(_with_file_ids(version.get('tool_record'), file_ids)),
+                            **{column: _jsonb(_with_file_ids(value, file_ids)) if column in ('agent_steps', 'usage')
+                               else value for column, value in _version_values(version).items()}))
+
+            # The copies of the files: rows of their own in this conversation, at the copied messages
+            for original, copy in file_ids.items():
+                row = conn.execute(select(uploaded_files).where(uploaded_files.c.file_id == original)).fetchone()
+                if row is None:
+                    continue
+                values = self._row_to_dict(row)
+                values.update(file_id=copy, conversation_id=conversation_id,
+                              message_id=copied.get(values.get('message_id')))
+                conn.execute(insert(uploaded_files).values(**values))
+
+            # fork_message_id now names the copy of the message it was forked from: the chat shows
+            # "Forked from" after it (the last copy, if that message was deleted from the parent)
+            result = conn.execute(update(conversations).where(conversations.c.id == conversation_id).values(
+                side_chat=False, fork_message_id=copied.get(fork, max(copied.values(), default=None))
+            ).returning(conversations)).fetchone()
+            log.info(f"Side chat {conversation_id} made a conversation: {len(copied)} messages and "
+                     f"{len(file_ids)} files of {parent_id} copied")
             return self._row_to_dict(result)
 
     def update_conversation(
@@ -2711,16 +2858,22 @@ class Database:
     def get_conversation_files(self, conversation_id: str, user_id: int) -> list[dict]:
         """
         The files of a conversation, oldest first: what its messages attach and what tools
-        created in it. Only the user's own files.
+        created in it. Only the user's own files. A side chat also has those of its parent's
+        messages up to the one it was forked from (docs/side_chats.md).
 
         Args:
             conversation_id: The conversation's UUID.
             user_id: The conversation's owner.
         """
+        fork = self.get_fork(conversation_id)
+        condition = uploaded_files.c.conversation_id == conversation_id
+        if fork:
+            condition = or_(condition, (uploaded_files.c.conversation_id == fork['parent_id'])
+                            & (uploaded_files.c.message_id <= fork['fork_message_id']))
         with self.connection() as conn:
             stmt = (
                 select(uploaded_files)
-                .where(uploaded_files.c.conversation_id == conversation_id, uploaded_files.c.user_id == user_id)
+                .where(condition, uploaded_files.c.user_id == user_id)
                 .order_by(uploaded_files.c.created_at, uploaded_files.c.file_id)
             )
             return [self._row_to_dict(row) for row in conn.execute(stmt)]

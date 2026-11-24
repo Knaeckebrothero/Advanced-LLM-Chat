@@ -6,7 +6,7 @@ import { Message, AgentStatus } from '../../data/objects/message';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
-import { ChatUiComponent } from '../chat-ui.component';
+import { MessageHost } from '../message-host';
 import { FileType, FilePreviewUtil, FilePreview } from '../../data/objects/file-preview';
 import {
   FilePreviewDialogComponent, FilePreviewDialogData, openFilePreview
@@ -105,7 +105,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
   constructor(
     private sanitizer: DomSanitizer,
-    private chatUI: ChatUiComponent,
+    private chatUI: MessageHost,
     private dialog: MatDialog,
     private apiService: ApiService,
     private settingsState: SettingsStateService,
@@ -577,7 +577,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
 
   /** Sending it again answers it, so not while another answer streams. */
   get canResend(): boolean {
-    return this.notSent && !this.chatUI.isStreaming;
+    return this.notSent && !this.chatUI.isStreaming && this.chatUI.canEdit;
   }
 
   resendMessage(event: Event) {
@@ -668,7 +668,7 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
    * messages. Not while an answer streams, nor for messages only this browser has.
    */
   get isEditable(): boolean {
-    if (this.message.isLocal || this.chatUI.isStreaming) {
+    if (this.message.isLocal || this.chatUI.isStreaming || !this.chatUI.canEdit) {
       return false;
     }
     if (this.manualEditing) {
@@ -704,7 +704,25 @@ export class ChatUiMessageComponent implements OnChanges, OnDestroy {
   }
 
   get canInsert(): boolean {
-    return this.manualEditing && !this.message.isLocal && !this.chatUI.isStreaming;
+    return this.manualEditing && !this.message.isLocal && !this.chatUI.isStreaming && this.chatUI.canEdit;
+  }
+
+  /** A side chat can be forked from a stored message (docs/side_chats.md), not in a side chat. */
+  get canForkSideChat(): boolean {
+    return this.chatUI.canForkSideChats && !this.message.isLocal;
+  }
+
+  /** How many side chats this message has (its badge). */
+  get sideChatCount(): number {
+    return this.chatUI.canForkSideChats && !this.message.isLocal ? this.chatUI.sideChatCount(this.message) : 0;
+  }
+
+  openSideChat(): void {
+    this.chatUI.openSideChat(this.message);
+  }
+
+  openSideChats(): void {
+    this.chatUI.openSideChatsOf(this.message);
   }
 
   startInsert() {

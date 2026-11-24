@@ -1,0 +1,104 @@
+<aside class="side-panel" *ngIf="view$ | async as view" [attr.aria-label]="'sideChat.title' | translate">
+
+  <!-- The side chats of the conversation -->
+  <ng-container *ngIf="view.panel.view === 'list'">
+    <header class="side-panel__bar">
+      <div class="side-panel__heading side-panel__heading--padded">
+        <h2 class="side-panel__title">
+          {{ 'sideChat.title' | translate }} <span class="side-panel__count">{{ view.items.length }}</span>
+        </h2>
+        <span class="side-panel__subtitle">{{ 'sideChat.in' | translate: { name: view.parentName } }}</span>
+      </div>
+      <button mat-icon-button type="button" (click)="close()"
+        [title]="'sideChat.close' | translate" [attr.aria-label]="'sideChat.close' | translate">
+        <mat-icon>close</mat-icon>
+      </button>
+    </header>
+    <div class="side-panel__body side-panel__body--list">
+      <button *ngFor="let item of view.items" type="button" class="side-item" [class.side-item--focus]="item.focus"
+        (click)="openSide(item.id)">
+        <span class="side-item__icon" aria-hidden="true"><mat-icon>forum</mat-icon></span>
+        <span class="side-item__text">
+          <span class="side-item__title">{{ item.title }}</span>
+          <span class="side-item__from" *ngIf="item.from">
+            {{ (item.fromUser ? 'sideChat.fromYours' : 'sideChat.fromAnswer') | translate }} · “{{ item.from }}”
+          </span>
+          <span class="side-item__meta">{{ item.when | date:'short' }}</span>
+        </span>
+      </button>
+      <p class="side-panel__hint">
+        {{ (view.items.length ? 'sideChat.listHint' : 'sideChat.listEmpty') | translate }}
+      </p>
+    </div>
+  </ng-container>
+
+  <!-- One side chat -->
+  <ng-container *ngIf="view.panel.view === 'chat'">
+    <header class="side-panel__bar">
+      <button mat-icon-button type="button" (click)="openList()"
+        [title]="'sideChat.all' | translate" [attr.aria-label]="'sideChat.all' | translate">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <div class="side-panel__heading">
+        <h2 class="side-panel__title">{{ view.title }}</h2>
+        <span class="side-panel__subtitle">{{ 'sideChat.subtitle' | translate: { name: view.parentName } }}</span>
+      </div>
+      <ng-container *ngIf="!view.isNew && view.panel.sideId as sideId">
+        <button mat-icon-button type="button" (click)="promote()" [disabled]="promoting || (isStreaming$ | async)"
+          [matTooltip]="'sideChat.promoteHint' | translate" [attr.aria-label]="'sideChat.promote' | translate">
+          <mat-icon>open_in_new</mat-icon>
+        </button>
+        <button mat-icon-button type="button" (click)="deleteSide(sideId)"
+          [title]="'sideChat.delete' | translate" [attr.aria-label]="'sideChat.delete' | translate">
+          <mat-icon>delete_outline</mat-icon>
+        </button>
+      </ng-container>
+      <button mat-icon-button type="button" (click)="close()"
+        [title]="'sideChat.close' | translate" [attr.aria-label]="'sideChat.close' | translate">
+        <mat-icon>close</mat-icon>
+      </button>
+    </header>
+
+    <div class="side-panel__body">
+      <!-- Where it was forked from: shows that message in the chat -->
+      <button type="button" class="fork-card" (click)="showFork(view.forkId)" [title]="'sideChat.showFork' | translate">
+        <span class="fork-card__label">
+          <mat-icon aria-hidden="true">call_split</mat-icon>
+          {{ (view.forkFromUser ? 'sideChat.forkedFromYours' : 'sideChat.forkedFromAnswer') | translate }}
+          <ng-container *ngIf="view.forkTime"> · {{ view.forkTime | date:'shortTime' }}</ng-container>
+        </span>
+        <span class="fork-card__excerpt" *ngIf="view.forkExcerpt">{{ view.forkExcerpt }}</span>
+      </button>
+
+      <p class="side-panel__empty" *ngIf="view.isNew">{{ 'sideChat.emptyHint' | translate }}</p>
+
+      <div class="side-panel__messages" *ngIf="messages$ | async as messages">
+        <app-chat-ui-message *ngFor="let message of messages; let i = index; trackBy: trackById"
+          [message]="message" [isLastAiMessage]="isLastAiMessage(message, i, messages)"></app-chat-ui-message>
+      </div>
+      <app-chat-ui-message *ngIf="streamingMessage$ | async as streamingMessage" class="streaming-message"
+        [message]="streamingMessage" [isLastAiMessage]="true"></app-chat-ui-message>
+    </div>
+
+    <footer class="side-panel__composer">
+      <div class="side-composer">
+        <label class="side-composer__label" for="side-chat-input">{{ 'sideChat.placeholder' | translate }}</label>
+        <textarea #composer id="side-chat-input" class="side-composer__input" rows="1" cdkTextareaAutosize
+          cdkAutosizeMinRows="1" cdkAutosizeMaxRows="8" [(ngModel)]="draft" (keydown.enter)="onEnter($event)"
+          [placeholder]="'sideChat.placeholder' | translate"></textarea>
+        <button *ngIf="!(isStreaming$ | async); else stopButton" mat-icon-button type="button"
+          class="side-composer__send" (click)="send()" [disabled]="!draft.trim() || sending"
+          [title]="'sideChat.send' | translate" [attr.aria-label]="'sideChat.send' | translate">
+          <mat-icon>arrow_upward</mat-icon>
+        </button>
+        <ng-template #stopButton>
+          <button mat-icon-button type="button" class="side-composer__send side-composer__send--stop" (click)="stop()"
+            [title]="'sideChat.stop' | translate" [attr.aria-label]="'sideChat.stop' | translate">
+            <mat-icon>stop</mat-icon>
+          </button>
+        </ng-template>
+      </div>
+      <p class="side-composer__hint">{{ 'sideChat.composerHint' | translate }}</p>
+    </footer>
+  </ng-container>
+</aside>

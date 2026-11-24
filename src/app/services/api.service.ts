@@ -499,6 +499,10 @@ export class ApiService {
     if (conversation.modelId !== undefined) body.modelId = conversation.modelId;
     if (conversation.personaId !== undefined) body.personaId = conversation.personaId;
     if (conversation.personaValues !== undefined) body.personaValues = conversation.personaValues;
+    if (conversation.parentId && conversation.forkMessageId) {
+      body.parentId = conversation.parentId;
+      body.forkMessageId = conversation.forkMessageId;
+    }
     try {
       const responseData = await lastValueFrom(
         this.http.post<any>(endpoint, body, this.getHttpOptions())
@@ -574,9 +578,12 @@ export class ApiService {
     return Conversation.fromApiResponse(responseData);
   }
 
-  // Delete conversation
-  async deleteConversation(id: string): Promise<void> {
-    const endpoint = `${this.baseUrl}/api/conversation/${id}`;
+  /**
+   * Delete conversation. Its side chats (docs/side_chats.md) are kept as conversations of their
+   * own, or deleted with it.
+   */
+  async deleteConversation(id: string, sideChats: 'keep' | 'delete' = 'keep'): Promise<void> {
+    const endpoint = `${this.baseUrl}/api/conversation/${id}?sideChats=${sideChats}`;
     try {
       await lastValueFrom(
         this.http.delete(endpoint, this.getHttpOptions())
@@ -585,6 +592,13 @@ export class ApiService {
       console.error('Error deleting conversation:', error);
       throw error;
     }
+  }
+
+  /** Make a side chat a conversation of its own (docs/side_chats.md): it gets copies of the messages it needs. */
+  async promoteSideChat(id: string): Promise<Conversation> {
+    const endpoint = `${this.baseUrl}/api/conversation/${id}/promote`;
+    const responseData = await lastValueFrom(this.http.post<any>(endpoint, {}, this.getHttpOptions()));
+    return Conversation.fromApiResponse(responseData);
   }
 
   /** A conversation with all its messages, as a conversation file. */

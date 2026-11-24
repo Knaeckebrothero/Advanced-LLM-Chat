@@ -34,8 +34,10 @@ _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # Lines that a tag at the end would break: a rule (---), a table's delimiter row (| --- | :-: |)
 _STRUCTURE_RE = re.compile(r"^\s*(?:([-*_])(?:\s*\1){2,}|\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?)\s*$")
 
-# A conversation (alias c) that is hidden: marked, or its agent is
-CONVERSATION_SQL = "(c.hidden OR EXISTS (SELECT 1 FROM personas np WHERE np.id = c.persona_id AND np.hidden))"
+# A conversation (alias c) that is hidden: marked, or its agent is, or it is a side chat of a hidden one
+CONVERSATION_SQL = ("(c.hidden OR EXISTS (SELECT 1 FROM personas np WHERE np.id = c.persona_id AND np.hidden)"
+                    " OR (c.side_chat AND EXISTS (SELECT 1 FROM conversations pc WHERE pc.id = c.parent_id"
+                    " AND (pc.hidden OR EXISTS (SELECT 1 FROM personas pp WHERE pp.id = pc.persona_id AND pp.hidden)))))")
 
 
 def family_mode(request: Request) -> bool:

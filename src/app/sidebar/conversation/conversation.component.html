@@ -10,7 +10,11 @@
     <div class="conversation-content">
       <mat-icon *ngIf="!editing && isHidden" class="hidden-mark" [title]="hiddenHint | translate"
                 [attr.aria-label]="hiddenHint | translate">visibility_off</mat-icon>
-      <span *ngIf="!editing" [title]="conversation.name">{{ conversation.name }}</span>
+      <span *ngIf="!editing" class="conversation-name" [title]="conversation.name">{{ conversation.name }}</span>
+      <span *ngIf="!editing && sideChatCount" class="side-chat-count"
+            [title]="(sideChatCount === 1 ? 'sideChat.countOne' : 'sideChat.count') | translate: { count: sideChatCount }">
+        <mat-icon aria-hidden="true">forum</mat-icon>{{ sideChatCount }}
+      </span>
       <input *ngIf="editing"
              #editInput
              class="edit-input"
@@ -40,6 +44,10 @@
     <button mat-menu-item (click)="exportConversation()">
       <mat-icon>download</mat-icon>
       <span>{{ 'conversationMenu.export' | translate }}</span>
+    </button>
+    <button mat-menu-item *ngIf="sideChatCount" (click)="showSideChats()">
+      <mat-icon>forum</mat-icon>
+      <span>{{ 'sideChat.menu' | translate: { count: sideChatCount } }}</span>
     </button>
     <button mat-menu-item (click)="showFiles()">
       <mat-icon>perm_media</mat-icon>

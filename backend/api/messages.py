@@ -191,7 +191,9 @@ def _memory_prompt(system_prompt: str, current_user: dict, conversation: Optiona
     content = memory['content'] if memory else None
     if not (conversation or {}).get('id'):
         return with_memory(system_prompt, content), None  # No conversation to keep a snapshot for
-    shown = memory_snapshot.prompt_memory(conversation['id'], content, vault, hide)
+    # A side chat shows its parent's snapshot, so its requests begin as the parent's do (docs/side_chats.md)
+    fork = db.get_fork(conversation['id'])
+    shown = memory_snapshot.prompt_memory(fork['parent_id'] if fork else conversation['id'], content, vault, hide)
     return with_memory(system_prompt, shown.content, today=shown.day), shown.note
 
 
@@ -1496,10 +1498,10 @@ async def stream_generate(
 
             # Build conversation history with placeholders for previous attachments: the
             # summary of the oldest messages, then as many messages as fit the model's context window.
-            # A new version of an answer gets the history before it, without a summary that covers it
-            summary = db.get_conversation_summary(request_body.conversationId)
-            if regenerated is not None and summary is not None and summary['covers_until'] >= message_id:
-                summary = None
+            # A new version of an answer gets the history before it, without a summary that covers it.
+            # A side chat's history starts with its parent's (docs/side_chats.md)
+            summary = history_builder.history_summary(request_body.conversationId, regenerated)
+            side_chat = db.get_fork(request_body.conversationId) is not None
             entries, available_attachments = await history_builder.build_entries(
                 request_body.conversationId,
                 include_latest_attachments=True,
@@ -1508,8 +1510,9 @@ async def stream_generate(
                 before_message=regenerated
             )
 
-            # Fold the oldest messages into the summary once the history nearly fills the window
-            fold_count = messages_to_summarize(entries, summary, token_budget)
+            # Fold the oldest messages into the summary once the history nearly fills the window. Not
+            # in a side chat: its oldest messages are its parent's, and fit() leaves them out first
+            fold_count = 0 if side_chat else messages_to_summarize(entries, summary, token_budget)
             if fold_count:
                 started_ms = int(time.time() * 1000)
                 step_id = f"{SUMMARY_STEP_PREFIX}{started_ms}"
@@ -1733,6 +1736,10 @@ async def summarize_conversation(
     if not verify_conversation_ownership(conversation_id, current_user['user_id']):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this conversation")
 
+    if db.get_fork(conversation_id) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="A side chat isn't summarized: its oldest messages are its conversation's.")
+
     config = _resolve_model_or_503(current_user, conversation_id)
     _, history_builder, _, token_budget, _, _ = await _answer_context(current_user, conversation_id, config, mcp=False)
     summary = db.get_conversation_summary(conversation_id)
@@ -1792,7 +1799,8 @@ async def context_size(
     config = _resolve_model_or_503(current_user, conversation_id, request_body.modelId)
     tools, history_builder, system_prompt, token_budget, _, memory_note = await _answer_context(
         current_user, conversation_id, config, mcp=False, hide=hide)
-    summary = db.get_conversation_summary(conversation_id)
+    summary = history_builder.history_summary(conversation_id)
+    side_chat = db.get_fork(conversation_id) is not None
     entries, _ = await history_builder.build_entries(
         conversation_id, include_latest_attachments=True, supports_vision=config.supports_vision, summary=summary)
     kept = history_builder.fit(conversation_id, entries, summary, token_budget)
@@ -1815,7 +1823,7 @@ async def context_size(
         historyBudget=token_budget,
         messageCount=message_count,
         leftOutCount=len(entries) - message_count,
-        summarizes=messages_to_summarize(entries, summary, token_budget) > 0,
+        summarizes=not side_chat and messages_to_summarize(entries, summary, token_budget) > 0,
     )
 
 
