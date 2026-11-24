@@ -1,3 +1,8 @@
+<!-- Its left edge changes its width: drag it, or the arrow keys once it has the focus; a double-click resets it -->
+<div class="side-panel__resize" [class.is-resizing]="resizing" role="separator" aria-orientation="vertical"
+  tabindex="0" [attr.aria-label]="'sideChat.resize' | translate" [title]="'sideChat.resizeHint' | translate"
+  [attr.aria-valuenow]="width" [attr.aria-valuemin]="300"
+  (pointerdown)="startResize($event)" (keydown)="onResizeKey($event)" (dblclick)="resetWidth()"></div>
 <aside class="side-panel" *ngIf="view$ | async as view" [attr.aria-label]="'sideChat.title' | translate">
 
   <!-- The side chats of the conversation -->

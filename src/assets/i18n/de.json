@@ -1006,6 +1006,8 @@
     "deleteKeep": "Nebenchats als Gespräche behalten",
     "deleteKeepOne": "Nebenchat als Gespräch behalten",
     "deleteAll": "Mit Nebenchats löschen",
-    "deleteAllOne": "Mit seinem Nebenchat löschen"
+    "deleteAllOne": "Mit seinem Nebenchat löschen",
+    "resize": "Breite der Nebenchats ändern",
+    "resizeHint": "Ziehen ändert die Breite, Doppelklick stellt sie zurück"
   }
 }
