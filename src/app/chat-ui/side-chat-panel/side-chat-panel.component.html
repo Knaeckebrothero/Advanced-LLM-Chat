@@ -86,23 +86,21 @@
     </div>
 
     <footer class="side-panel__composer">
-      <div class="side-composer">
-        <label class="side-composer__label" for="side-chat-input">{{ 'sideChat.placeholder' | translate }}</label>
-        <textarea #composer id="side-chat-input" class="side-composer__input" rows="1" cdkTextareaAutosize
-          cdkAutosizeMinRows="1" cdkAutosizeMaxRows="8" [(ngModel)]="draft" (keydown.enter)="onEnter($event)"
-          [placeholder]="'sideChat.placeholder' | translate"></textarea>
-        <button *ngIf="!(isStreaming$ | async); else stopButton" mat-icon-button type="button"
-          class="side-composer__send" (click)="send()" [disabled]="!draft.trim() || sending"
-          [title]="'sideChat.send' | translate" [attr.aria-label]="'sideChat.send' | translate">
-          <mat-icon>arrow_upward</mat-icon>
-        </button>
-        <ng-template #stopButton>
-          <button mat-icon-button type="button" class="side-composer__send side-composer__send--stop" (click)="stop()"
-            [title]="'sideChat.stop' | translate" [attr.aria-label]="'sideChat.stop' | translate">
-            <mat-icon>stop</mat-icon>
-          </button>
-        </ng-template>
-      </div>
+      <p class="side-panel__transcribing" *ngIf="transcribing" role="status">{{ 'sideChat.transcribing' | translate }}</p>
+      <!-- The chat's composer: attachments, voice messages, and the model and agent of the side chat -->
+      <app-chat-ui-inputfield
+        [ownDrops]="true"
+        placeholderKey="sideChat.placeholder"
+        [externalFiles]="pendingFiles"
+        [isMobile]="isMobile"
+        [isStreaming]="(isStreaming$ | async) ?? false"
+        [canShowChatFiles]="!view.isNew"
+        (chatFilesRequested)="showFiles(view.panel.sideId, view.title)"
+        (messageSent)="onMessageSent($event)"
+        (filesSelected)="onFilesSelected($event)"
+        (stopRequested)="stop()">
+        <app-model-picker composerTools [source]="sideChats"></app-model-picker>
+      </app-chat-ui-inputfield>
       <p class="side-composer__hint">{{ 'sideChat.composerHint' | translate }}</p>
     </footer>
   </ng-container>

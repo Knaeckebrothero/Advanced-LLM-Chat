@@ -254,7 +254,7 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     new_id = generate_conversation_id()  # Generate UUID
 
     if req.parentId is not None:
-        return _create_side_chat(req, new_id, participants_json, user_id)
+        return _create_side_chat(req, new_id, participants_json, current_user)
 
     _check_catalog_choice(current_user, req.modelId, req.personaId)
 
@@ -275,14 +275,17 @@ async def create_conversation(req: ConversationCreateRequest, current_user: dict
     return Conversation.from_row(new_conv)
 
 
-def _create_side_chat(req: ConversationCreateRequest, new_id: str, participants_json: str, user_id: int) -> Conversation:
+def _create_side_chat(req: ConversationCreateRequest, new_id: str, participants_json: str,
+                      current_user: dict) -> Conversation:
     """
     A side chat (docs/side_chats.md) of the user's conversation req.parentId, forked from its message
-    req.forkMessageId. It takes the conversation's agent, model, own system prompt and hidden mark.
+    req.forkMessageId. It takes the conversation's agent and model, unless the request picks others
+    (modelId, personaId sent), its own system prompt (with the same agent) and its hidden mark.
 
     :raises HTTPException: 404 if the conversation isn't the user's, 400 if it is a side chat itself
-        or the message isn't one of its messages.
+        or the message isn't one of its messages; as _check_catalog_choice() for a model or agent picked.
     """
+    user_id = current_user['user_id']
     parent = db.get_conversation_by_id(req.parentId, user_id)
     if not parent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -291,17 +294,27 @@ def _create_side_chat(req: ConversationCreateRequest, new_id: str, participants_
     if req.forkMessageId is None or db.get_message_by_id(req.forkMessageId, req.parentId) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="The message to fork from isn't in the conversation")
+    # The parent's agent and model, unless the side chat's composer picked others
+    picked = req.model_fields_set
+    model_id = req.modelId if 'modelId' in picked else parent.get('model_id')
+    persona_id, persona_values = ((req.personaId, req.personaValues) if 'personaId' in picked
+                                  else (parent.get('persona_id'), parent.get('persona_values')))
+    if 'modelId' in picked or 'personaId' in picked:
+        _check_catalog_choice(current_user, model_id if 'modelId' in picked else None,
+                              persona_id if 'personaId' in picked else None)
+    same_agent = persona_id == parent.get('persona_id')
     new_conv = db.create_conversation(
         conversation_id=new_id,
         user_id=user_id,
         name=req.name,
         participants=participants_json,
-        model_id=parent.get('model_id'),
-        persona_id=parent.get('persona_id'),
-        persona_values=parent.get('persona_values'),
+        model_id=model_id,
+        persona_id=persona_id,
+        persona_values=persona_values,
         hidden=bool(parent.get('hidden')),
         hidden_by=parent.get('hidden_by'),
-        system_prompt=parent.get('system_prompt'),
+        # The parent's own system prompt (manual editing) goes with its agent
+        system_prompt=parent.get('system_prompt') if same_agent else None,
         parent_id=req.parentId,
         fork_message_id=req.forkMessageId,
         side_chat=True

@@ -76,7 +76,7 @@
               (keydown)="handleKeyPress($event)"
               (paste)="onPaste($event)"
               class="message-textarea"
-              [placeholder]="'Type your message...' | translate"
+              [placeholder]="(placeholderKey ?? 'Type your message...') | translate"
               rows="1"
               [attr.aria-label]="'composer.message' | translate">
     </textarea>
