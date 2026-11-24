@@ -7,7 +7,7 @@ from typing import Optional
 
 from backend.database import db
 from backend.llm import ModelConfig, Usage, build_system_prompt, complete, with_instructions
-from .conversation_history import ConversationHistoryBuilder, history_token_budget
+from .conversation_history import ConversationHistoryBuilder, history_token_budget, message_token_cap
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +54,8 @@ async def generate_reply(
         include_latest_attachments=True,
         supports_vision=config.supports_vision,
         before_message=before_message,
-        token_budget=history_token_budget(config, system_prompt)
+        token_budget=history_token_budget(config, system_prompt),
+        message_cap=message_token_cap(config)
     )
     if not messages:
         raise ValueError("No messages found in conversation")

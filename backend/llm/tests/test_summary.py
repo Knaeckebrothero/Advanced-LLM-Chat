@@ -4,8 +4,10 @@ Offline test of the summary of a conversation's oldest messages (backend/service
     python -m backend.llm.tests.test_summary
 
 Against the fake OpenAI server: the oldest messages are summarized only once
-the history passes the trigger, down to the share kept word for word (whole
-exchanges); the
+the history passes the trigger, down to the newest messages kept word for word
+(the message cap's worth, whole exchanges); a message longer than the cap goes
+to the model as its start and its end, the newest one too, while the summarizer
+reads it whole; the
 messages are folded in chunks sized for the model's window, each pass merging
 the summary of the previous one (and the stored summary); a reply without the
 sections or cut off at the output limit is retried, and after the last attempt
@@ -29,17 +31,21 @@ from backend.llm.tests.fake_openai_server import (
     FakeOpenAIServer, chunk, completion, tool_call_delta, usage_chunk,
 )
 from backend.llm.prompts import FORMAT_PROMPT, IDENTITY_PROMPT, INSTRUCTIONS_HEADING, hide_prompt
+from backend.config import DEFAULT_CONTEXT_WINDOW
+from backend import config as settings
 from backend.llm.tests.test_history import LONG_ROWS, FakeDB, assistant, system, user
 from backend.llm.tools import Tool, ToolRegistry
 from backend.llm.types import KIND_OPENAI_COMPATIBLE, ModelConfig
 from backend.services import conversation_summary
 from backend.services.conversation_history import (
     CONTINUE_NOTE,
+    MESSAGE_CUT_NOTE,
     SUMMARY_CONTINUE,
     SUMMARY_LEAD_IN,
     TOOL_RECORD_KEY,
     ConversationHistoryBuilder,
     estimate_tokens,
+    message_token_cap,
 )
 from backend.services.conversation_summary import (
     SUMMARY_KEEP,
@@ -115,6 +121,85 @@ async def test_latest_question_is_never_summarized(server):
     entries = await entries_of(rows)
     count = messages_to_summarize(entries, None, 600)
     assert count == len(entries) - 1 and entries[count][1]["content"].startswith("Question 29"), count
+
+
+async def test_newest_messages_kept_are_the_message_cap(server):
+    entries = await entries_of(LONG_ROWS)  # 60 messages of about 100 tokens
+    budget, cap = 4000, 500
+    count = messages_to_summarize(entries, None, budget, cap)
+    kept = sum(estimate_tokens(m["content"]) for _, m in entries[count:])
+    assert kept <= cap and entries[count][1]["role"] == "user", (count, kept)
+    exchange = sum(estimate_tokens(m["content"]) for _, m in entries[count - 2:count])
+    assert kept + exchange > cap, kept
+    # Without a cap, up to SUMMARY_KEEP of the budget
+    assert messages_to_summarize(entries, None, budget) < count
+    # At least the latest question, also when it is longer than the cap (it counts as cut)
+    rest = entries[:-1]
+    assert messages_to_summarize(rest, None, 3000, 50) == len(rest) - 1
+
+
+async def test_message_token_cap(server):
+    assert message_token_cap(make_config(server.base_url, context_window=524288)) == 30000
+    assert message_token_cap(make_config(server.base_url, context_window=131072)) == 13107
+    assert message_token_cap(make_config(server.base_url)) == int(DEFAULT_CONTEXT_WINDOW * 0.1)
+    saved = settings.HISTORY_MESSAGE_TOKENS
+    settings.HISTORY_MESSAGE_TOKENS = 0
+    try:
+        assert message_token_cap(make_config(server.base_url, context_window=524288)) is None
+    finally:
+        settings.HISTORY_MESSAGE_TOKENS = saved
+
+
+LONG_TEXT = "Start of the paste. " + "x" * 30000 + " The question at the end?"  # about 10,000 tokens
+
+
+def assert_cut(text: str, original: str, cap: int):
+    """text is original cut to cap: its start and its end, with a note of how much is between."""
+    assert estimate_tokens(text) <= cap, estimate_tokens(text)
+    count = int(text.split("\n\n[", 1)[1].split(" ", 1)[0])
+    note = MESSAGE_CUT_NOTE.format(count=count)
+    head, tail = text.split(note)
+    assert original.startswith(head) and original.endswith(tail) and len(head) + count + len(tail) == len(original)
+    assert len(head) > len(tail) > 0, (len(head), len(tail))
+
+
+async def test_a_long_message_is_cut_to_its_start_and_end(server):
+    answer = "A long answer. " + "a" * 30000 + " The end of it."
+    rows = LONG_ROWS[:2] + [user(3000_000, 3000, LONG_TEXT), assistant(3000_500, 3000, answer),
+                            user(3001_000, 3001, LONG_TEXT)]
+    builder = ConversationHistoryBuilder(FakeDB(rows))
+    entries, _ = await builder.build_entries("c")
+    messages = builder.assemble("c", entries, None, 100000, 1000)
+    assert [m["content"] for m in messages[:2]] == [m["content"] for _, m in entries[:2]], "short ones stay whole"
+    assert_cut(messages[2]["content"], LONG_TEXT, 1000)
+    assert_cut(messages[3]["content"], answer, 1000)
+    # The newest message too, already in the answer to it: so the request starts the same in later turns
+    assert_cut(messages[4]["content"], LONG_TEXT, 1000)
+    # The summarizer reads it whole
+    assert entries[-1][1]["content"] == LONG_TEXT and transcript_parts(entries)[-1] == f"[User]: {LONG_TEXT}"
+    # It counts as cut: whole, these messages would pass the trigger of a budget of 5,000
+    assert messages_to_summarize(entries, None, 5000, 1000) == 0
+    assert messages_to_summarize(entries, None, 5000) > 0
+    # Without a cap, as it is
+    assert builder.assemble("c", entries, None, 100000)[-1]["content"] == LONG_TEXT
+
+
+async def test_a_message_as_big_as_the_window_is_cut(server):
+    rows = LONG_ROWS[:4] + [user(9000_000, 9000, LONG_TEXT)]
+    fake_db = EndpointDB(rows)
+    config = make_config(server.base_url, context_window=10000, supports_tools=False)
+    cap = message_token_cap(config)
+    server.script(summary_or_answer)
+    with message_api(fake_db, config) as client:
+        response = await client.post("/api/message/stream-generate", json={"conversationId": "c"})
+        assert response.status_code == 200 and "event: done" in response.text, response.text
+        assert not [event for event, _ in sse_events(response.text) if event in ("step", "error")], response.text
+        history = [m for m in server.requests[-1]["messages"] if m["role"] != "system"]
+        assert len(history) == 5, history
+        assert_cut(history[-1]["content"], LONG_TEXT, cap)
+        # The token indicator counts it as it is sent
+        sized = (await client.post("/api/message/context-size", json={"conversationId": "c"})).json()
+        assert sized["historyTokens"] <= 4 * 100 + cap and not sized["summarizes"], sized
 
 
 async def test_fold_in_chunks_merges_prior_summary(server):
@@ -363,6 +448,8 @@ async def test_stream_generate_summarizes_past_the_trigger(server):
     history = [m for m in answer_request["messages"] if m["role"] != "system"]
     assert history[0]["content"].startswith(SUMMARY_LEAD_IN), history[0]
     assert len(history) == 1 + len(rows) - len(folded), len(history)
+    # Next to it the newest messages of the message cap's worth (a tenth of the window)
+    assert sum(estimate_tokens(m["content"]) for m in history[1:]) <= message_token_cap(config), history
     # The saved answer counts the summary's model calls too
     summary_calls = sum(1 for request in server.requests if not request.get("stream"))
     done = json.loads(events[-1][1])
@@ -762,6 +849,8 @@ async def test_generate_after_an_answer_asks_the_model_to_go_on(server):
 
 
 TESTS = [test_summarizes_only_past_the_trigger, test_latest_question_is_never_summarized,
+         test_newest_messages_kept_are_the_message_cap, test_message_token_cap,
+         test_a_long_message_is_cut_to_its_start_and_end, test_a_message_as_big_as_the_window_is_cut,
          test_fold_in_chunks_merges_prior_summary, test_bad_reply_is_retried, test_failure_keeps_usage,
          test_summary_must_be_smaller, test_on_request_scales_the_length, test_oversized_message_is_split,
          test_history_starts_with_summary, test_stream_generate_summarizes_past_the_trigger,
