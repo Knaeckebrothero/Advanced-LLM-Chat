@@ -6,11 +6,13 @@ A port of the rolling-fold summarizer of Superhuman Remote Worker
 (src/agent/core/summarizer.py), for a chat whose history holds only text:
 
 - messages_to_summarize(): once the history passes SUMMARY_TRIGGER of the
-  token budget, the oldest messages are folded into the summary, so that about
-  SUMMARY_KEEP of the budget stays word for word. The headroom means a summary
-  is written every so many answers, not before each one. The user can also ask
-  for a summary of all messages so far (POST /api/message/summarize); then it
-  is asked for at most REQUESTED_SUMMARY_SHARE of what it covers.
+  token budget, the oldest messages are folded into the summary, so that the
+  newest messages of about message_token_cap() tokens stay word for word (at
+  most SUMMARY_KEEP of the budget, at least the latest user message). The
+  headroom means a summary is written every so many answers, not before each
+  one. The user can also ask for a summary of all messages so far
+  (POST /api/message/summarize); then it is asked for at most
+  REQUESTED_SUMMARY_SHARE of what it covers.
 - summarize(): the messages to fold are packed into chunks sized for the
   model's own context window and folded in turn:
   summary_i = summarize(summary_{i-1} + chunk_i). The stored summary seeds the
@@ -42,7 +44,7 @@ from .conversation_history import (
 logger = logging.getLogger(__name__)
 
 SUMMARY_TRIGGER = 0.8      # Share of the history budget at which the oldest messages are summarized
-SUMMARY_KEEP = 0.5         # Share of the budget the newest messages keep word for word (with the new summary)
+SUMMARY_KEEP = 0.5         # Share of the budget the newest messages keep at most (with the new summary)
 SUMMARY_SHARE = 0.1        # Length asked of the summary, as a share of the budget ...
 MIN_SUMMARY_TOKENS = 500   # ... at least
 MAX_SUMMARY_TOKENS = 4000  # ... at most
@@ -147,7 +149,12 @@ def summary_target_tokens(token_budget: int, covered_tokens: Optional[int] = Non
     return target
 
 
-def messages_to_summarize(entries: List[HistoryEntry], summary: Optional[dict], token_budget: int) -> int:
+def messages_to_summarize(
+    entries: List[HistoryEntry],
+    summary: Optional[dict],
+    token_budget: int,
+    message_cap: Optional[int] = None
+) -> int:
     """
     How many of the oldest entries to fold into the summary before answering; 0 when the history still fits.
 
@@ -155,8 +162,10 @@ def messages_to_summarize(entries: List[HistoryEntry], summary: Optional[dict], 
         entries: The history after the stored summary (build_entries() with it), oldest first.
         summary: The stored summary, if any.
         token_budget: The history budget of the model that answers (history_token_budget()).
+        message_cap: The most tokens one message takes (message_token_cap()), which is also
+            how much of the newest messages stays word for word; None: SUMMARY_KEEP of the budget.
     """
-    costs = [entry_tokens(message) for _, message in entries]
+    costs = [entry_tokens(message, message_cap) for _, message in entries]
     summary_tokens = estimate_tokens(summary_message(summary['content'])["content"]) if summary else 0
     if summary_tokens + sum(costs) <= token_budget * SUMMARY_TRIGGER:
         return 0
@@ -165,6 +174,8 @@ def messages_to_summarize(entries: List[HistoryEntry], summary: Optional[dict], 
     start = max((i for i, (_, message) in enumerate(entries) if message["role"] == "user"), default=len(entries))
     kept = sum(costs[start:])
     keep_budget = token_budget * SUMMARY_KEEP - summary_target_tokens(token_budget)
+    if message_cap:
+        keep_budget = min(keep_budget, message_cap)
     while start > 0 and kept + costs[start - 1] <= keep_budget:
         start -= 1
         kept += costs[start]

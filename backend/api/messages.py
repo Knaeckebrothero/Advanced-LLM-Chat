@@ -66,7 +66,7 @@ from backend.services.llm import generate_reply
 from backend.llm.tool_record import with_text as record_with_text
 from backend.services.conversation_history import (
     CONTINUE_NOTE, ConversationHistoryBuilder, HistoryEntry, continue_message, entry_tokens, estimate_tokens,
-    history_token_budget, needs_continue_note, summary_message
+    history_token_budget, message_token_cap, needs_continue_note, summary_message
 )
 from backend.config import DEFAULT_CONTEXT_WINDOW
 from backend.services.conversation_summary import SummaryFailed, messages_to_summarize, summarize
@@ -1515,7 +1515,8 @@ async def stream_generate(
 
             # Fold the oldest messages into the summary once the history nearly fills the window. Not
             # in a side chat: its oldest messages are its parent's, and fit() leaves them out first
-            fold_count = 0 if side_chat else messages_to_summarize(entries, summary, token_budget)
+            message_cap = message_token_cap(config)
+            fold_count = 0 if side_chat else messages_to_summarize(entries, summary, token_budget, message_cap)
             if fold_count:
                 started_ms = int(time.time() * 1000)
                 step_id = f"{SUMMARY_STEP_PREFIX}{started_ms}"
@@ -1536,7 +1537,8 @@ async def stream_generate(
                     summary_usage = e.usage
                     crud_logger.warning(f"Summary of {request_body.conversationId} failed ({e.reason}): {e}")
                     yield step_event(_summary_step(step_id, started_ms, fold_count, "failed", e.reason))
-            history_messages = history_builder.assemble(request_body.conversationId, entries, summary, token_budget)
+            history_messages = history_builder.assemble(
+                request_body.conversationId, entries, summary, token_budget, message_cap)
 
             if not history_messages:
                 yield {
@@ -1806,11 +1808,12 @@ async def context_size(
     side_chat = db.get_fork(conversation_id) is not None
     entries, _ = await history_builder.build_entries(
         conversation_id, include_latest_attachments=True, supports_vision=config.supports_vision, summary=summary)
-    kept = history_builder.fit(conversation_id, entries, summary, token_budget)
+    message_cap = message_token_cap(config)
+    kept = history_builder.fit(conversation_id, entries, summary, token_budget, message_cap)
 
     system_tokens = estimate_tokens(system_prompt)
     tool_tokens = estimate_tokens(json.dumps(tools.openai_schemas())) if tools else 0
-    history_tokens = sum(entry_tokens(message) for message in kept)
+    history_tokens = sum(entry_tokens(message, message_cap) for message in kept)
     if summary:
         history_tokens += estimate_tokens(summary_message(summary['content'])["content"])
     if memory_note:
@@ -1826,7 +1829,7 @@ async def context_size(
         historyBudget=token_budget,
         messageCount=message_count,
         leftOutCount=len(entries) - message_count,
-        summarizes=not side_chat and messages_to_summarize(entries, summary, token_budget) > 0,
+        summarizes=not side_chat and messages_to_summarize(entries, summary, token_budget, message_cap) > 0,
     )
 
 
