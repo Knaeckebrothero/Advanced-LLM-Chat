@@ -98,12 +98,12 @@
       "reasoning_passback": true,
       "reasoning_effort": "high",
       "context_window": 524288,
-      "extra_body": {"allowed_providers": ["arkane", "tensorix"], "provider_order": "custom"},
+      "extra_body": {"allowed_providers": ["arkane"], "provider_order": "custom"},
       "input_price_per_mtok": 2.693,
       "output_price_per_mtok": 13.464,
       "cached_input_price_per_mtok": 0.269,
       "sort_order": 40,
-      "notes": "Pinned to the host Arkane (cache reads 0.269, 90% cache hits, the fastest), Tensorix (0.673) if Arkane fails: each host has its own cache. Request settings need Allow overwrite in the Cortecs console."
+      "notes": "Pinned to the host Arkane (cache reads 0.269, 90% cache hits, the fastest): each host has its own cache. Since 2026-11-24 its only other host is Nebius (fp4, excluded in the account), Tensorix no longer serves it, so there is no fallback. Request settings need Allow overwrite in the Cortecs console."
     },
     {
       "provider": "Cortecs",
@@ -116,10 +116,12 @@
       "reasoning_passback": true,
       "reasoning_effort": "high",
       "context_window": 524288,
-      "input_price_per_mtok": 0.459,
-      "output_price_per_mtok": 1.836,
-      "cached_input_price_per_mtok": 0.138,
-      "sort_order": 35
+      "extra_body": {"allowed_providers": ["tensorix", "mistral"], "provider_order": "custom"},
+      "input_price_per_mtok": 1.571,
+      "output_price_per_mtok": 4.039,
+      "cached_input_price_per_mtok": 0.393,
+      "sort_order": 35,
+      "notes": "Pinned to the host Tensorix, the only EU host of Cortecs that states it serves the official FP8 weights, Mistral (precision not stated) if Tensorix fails. Unpinned, Cortecs picked a host per request, four of eight of them 4-bit (fp4, nvfp4). Request settings need Allow overwrite in the Cortecs console."
     },
     {
       "provider": "Homelab",
