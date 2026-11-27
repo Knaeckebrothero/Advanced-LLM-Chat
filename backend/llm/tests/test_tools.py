@@ -37,9 +37,10 @@ from typing import get_args
 from backend.api import messages
 from backend.catalog import resolver
 from backend.llm import tools as tools_module
-from backend.llm.prompts import (_ALSO_KEPT_FILES, CHAT_PROMPT, FILE_ACCESS_PROMPT, FORMAT_PROMPT, GRAPH_PROMPT,
-                                 KB_PROMPT, MEMORY_EMPTY, MEMORY_HEADING, WEB_FETCH_PROMPT, WEB_SEARCH_PROMPT,
-                                 build_system_prompt, with_instructions, with_memory)
+from backend.llm.prompts import (_ALSO_KEPT_FILES, CHAT_PROMPT, CHAT_PROMPT_WHEN_TOLD, CHAT_SAVE_LINE,
+                                 FILE_ACCESS_PROMPT, FORMAT_PROMPT, GRAPH_PROMPT, KB_PROMPT, KB_SAVE_RULES,
+                                 KB_SAVE_WHEN_TOLD, MEMORY_EMPTY, MEMORY_HEADING, WEB_FETCH_PROMPT, WEB_SEARCH_PROMPT,
+                                 build_system_prompt, kb_prompt, with_instructions, with_memory)
 from backend.llm.tools import (OPT_IN_GROUPS, TOOL_GROUPS, ToolInputError, ToolText, default_tools,
                                knowledge_base_tools,
                                tool_group_status, tool_message_content, tools_for_groups)
@@ -198,6 +199,24 @@ async def test_past_chats_need_the_knowledge_base():
     assert past_chats.postgres_regex(r"a\\b [\b] []\b] [[:alpha:]\b]\b") == r"a\\b [\b] []\b] [[:alpha:]\b]\y"
     assert past_chats.postgres_regex("(?i)lisbon") == "lisbon"
     assert past_chats.literal_regex("C++ (what?) a.b \\x") == r"C\+\+ \(what\?\) a\.b \\x"
+
+
+async def test_prompt_of_an_agent_that_saves_only_when_told():
+    # personas.auto_memory off: the save rules give way to "only when told", the past chats lose their save line
+    with configured(neo4j=True, tavily=True):
+        selected = tools_for_groups(["knowledge_base", "past_chats"], user_id=1, vault=8)
+        told = build_system_prompt("You tell stories. Save canon after his yes.", selected, auto_memory=False)
+        assert told.startswith("You tell stories.") and kb_prompt(False) in told and KB_SAVE_WHEN_TOLD in told
+        assert KB_SAVE_RULES not in told and "When in doubt, save it" not in told
+        assert told.endswith(CHAT_PROMPT_WHEN_TOLD) and CHAT_SAVE_LINE not in told
+        # The rest of the section stays: how to save, the files notes keep, when to look something up
+        assert kb_prompt(False).replace(KB_SAVE_WHEN_TOLD, KB_SAVE_RULES) == KB_PROMPT
+        # On (the default), the sections are as they were, so the prompt caches of existing agents keep working
+        assert build_system_prompt("x", selected) == build_system_prompt("x", selected, auto_memory=True)
+        assert CHAT_PROMPT == CHAT_PROMPT_WHEN_TOLD + "\n" + CHAT_SAVE_LINE and KB_PROMPT == kb_prompt()
+        # Without the knowledge base it changes nothing
+        files = tools_for_groups(["files"])
+        assert build_system_prompt("x", files, auto_memory=False) == build_system_prompt("x", files)
 
 
 async def test_memory_follows_the_tool_sections():
@@ -731,7 +750,7 @@ async def test_agents_hide_content():
 
 
 
-TESTS = [test_agents_hide_content, test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
+TESTS = [test_prompt_of_an_agent_that_saves_only_when_told, test_agents_hide_content, test_groups_match_the_api_model, test_selection_filters_the_enabled_tools,
          test_knowledge_base_is_opt_in, test_web_addresses_are_opt_in, test_unavailable_groups_stay_off,
          test_prompt_only_describes_selected_tools,
          test_past_chats_need_the_knowledge_base, test_memory_follows_the_tool_sections, test_stream_generate_tools_follow_the_persona,

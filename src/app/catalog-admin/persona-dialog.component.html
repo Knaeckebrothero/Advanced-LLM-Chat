@@ -140,6 +140,11 @@
         <mat-slide-toggle formControlName="ownMemory">{{ 'catalog.admin.personas.ownMemory' | translate }}</mat-slide-toggle>
         <p class="tool-reason">{{ 'catalog.admin.personas.ownMemoryHint' | translate }}</p>
       </div>
+      <!-- On: the save rules, the memory review and the nightly consolidation; off: only when its prompt says so or the user asks -->
+      <div class="own-memory">
+        <mat-slide-toggle formControlName="autoMemory">{{ 'catalog.admin.personas.autoMemory' | translate }}</mat-slide-toggle>
+        <p class="tool-reason">{{ 'catalog.admin.personas.autoMemoryHint' | translate }}</p>
+      </div>
     }
 
     <!-- MCP servers: always picked one by one, with either tool mode -->

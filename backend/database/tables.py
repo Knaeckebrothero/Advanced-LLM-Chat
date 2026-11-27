@@ -296,6 +296,8 @@ personas = Table(
     Column('enabled', Boolean, server_default='true'),
     Column('sort_order', Integer, server_default='0'),
     Column('own_memory', Boolean, server_default='false'),  # Its own knowledge base and memory per user
+    # Saves on its own (the save rules of the prompt, the memory review, the nightly consolidation), else only when told
+    Column('auto_memory', Boolean, nullable=False, server_default='true'),
     Column('mcp_servers', JSONB),  # Slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
     Column('skills', JSONB),  # Names of its skills (docs/skills.md), NULL = none
     Column('hidden', Boolean, nullable=False, server_default='false'),  # Hidden with its chats and own KB in family mode

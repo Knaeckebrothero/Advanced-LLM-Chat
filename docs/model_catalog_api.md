@@ -136,6 +136,9 @@ ProviderOut      id, name, kind, baseUrl, apiKeyEnv, apiKeySet, privacyTier, cur
 PersonaCreate    name, description?, systemPrompt, variables = [], tools = null,
                  availableToGuests = false, enabled = true, sortOrder = 0,
                  ownMemory = false (with knowledge_base: its own knowledge base and memory per user),
+                 autoMemory = true (with knowledge_base: saves on its own; false: only when its prompt says
+                 so or the user asks, no memory review or nightly consolidation, docs/knowledge_base.md;
+                 catalog file key auto_memory, an entry without it is true),
                  mcpServers = null (slugs of admin MCP servers, docs/mcp.md),
                  skills = null (names of skills, docs/skills.md),
                  public = false (every user's; else only its creator's, see "Agents are their creator's"),
@@ -145,7 +148,7 @@ PersonaCreate    name, description?, systemPrompt, variables = [], tools = null,
 PersonaUpdate    the same fields, all optional; left out = unchanged, tools: null = every enabled tool
                  (without the opt-in knowledge_base)
 PersonaOut       PersonaCreate + id (personas.created_by, the admin who created it in the app, is not sent)
-PublicPersona    id, name, description, systemPrompt, variables, tools, avatar
+PublicPersona    id, name, description, systemPrompt, variables, tools, hidden, autoMemory, avatar
 ToolGroupStatus  id ("files" | "web_search" | "web_fetch" | "knowledge_graph" | "knowledge_base" | "past_chats" | "user_mcp"),
                  available, reason (e.g. "TAVILY_API_KEY is not set", "NEO4J_ENABLED is off"; null when available),
                  optIn (only for personas that select it, not part of tools null: web_fetch, knowledge_base, past_chats, user_mcp),

@@ -130,11 +130,14 @@ export interface IKBReviewChange {
 
 /** What a memory review on request did (POST /api/kb/review). */
 export interface IKBReviewResult {
-  status: 'done' | 'nothing_new' | 'not_available' | 'failed';
+  // joined: the agent doesn't save on its own, so the messages only joined its memory (nothing was saved)
+  status: 'done' | 'nothing_new' | 'not_available' | 'failed' | 'joined';
   detail: string;
   modelName: string | null;
   changes: IKBReviewChange[];
   reviewedUntil: number | null;
+  joined?: number;     // joined: the messages that joined the memory, so its agent's past chat tools find them
+  elsewhere?: number;  // joined: the messages that belong to another memory and stay there
 }
 
 /** The memory's slug in every knowledge base */

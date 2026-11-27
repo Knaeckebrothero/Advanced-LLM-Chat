@@ -150,6 +150,7 @@ export class PersonaDialogComponent {
       enabled: [p?.enabled ?? true],
       sortOrder: [p?.sortOrder ?? 0],
       ownMemory: [p?.ownMemory ?? false],
+      autoMemory: [p?.autoMemory ?? true],
       hidden: [p?.hidden ?? false],
       // A new agent (also a copy) is only its creator's until it is made public
       public: [this.persona?.public ?? false]
@@ -168,7 +169,7 @@ export class PersonaDialogComponent {
     }
   }
 
-  /** The agent has the knowledge base (picked), so it can have its own memory instead of the shared one. */
+  /** The agent has the knowledge base (picked), so it can have its own memory and save only when told. */
   get hasKnowledgeBase(): boolean {
     return this.toolMode === 'pick' && this.pickedTools.has('knowledge_base');
   }
@@ -386,6 +387,7 @@ export class PersonaDialogComponent {
       enabled: !!v.enabled,
       sortOrder: numberOrNull(v.sortOrder) ?? 0,
       ownMemory: !!v.ownMemory,
+      autoMemory: v.autoMemory !== false,
       hidden: !!v.hidden,
       public: !!v.public,
       // [] for none: unambiguous for create and update

@@ -568,6 +568,22 @@ def persona_vault(user: Optional[dict], conversation: Optional[dict]) -> int:
     return persona["id"]
 
 
+def persona_auto_memory(user: Optional[dict], conversation: Optional[dict]) -> bool:
+    """
+    Whether the conversation's persona saves on its own (personas.auto_memory, docs/knowledge_base.md,
+    "Saving on its own"): the knowledge base section's save rules, the memory review and the nightly
+    consolidation. Off, it saves only when its prompt says so or the user asks. True without a
+    persona, as for one the user may not use.
+    """
+    persona_id = (conversation or {}).get("persona_id")
+    if persona_id is None:
+        return True
+    persona = db.get_persona_by_id(persona_id)
+    if not persona_usable(persona, user):
+        return True
+    return persona.get("auto_memory") is not False
+
+
 def _persona_hidden(persona_id: Optional[int]) -> bool:
     persona = db.get_persona_by_id(persona_id) if persona_id else None
     return bool(persona and persona.get("hidden"))

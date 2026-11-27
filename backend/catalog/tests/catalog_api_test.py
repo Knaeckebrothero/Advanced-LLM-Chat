@@ -57,8 +57,10 @@ TOGGLE_KEY_ENV = "ZZ_CATALOG_TOGGLE_API_KEY"
 PROVIDER_OUT_FIELDS = {"id", "name", "kind", "baseUrl", "apiKeyEnv", "apiKeySet", "privacyTier", "currency",
                        "reportedCostUnit", "defaultHeaders", "notes", "enabled", "modelCount", "createdAt", "updatedAt"}
 PERSONA_OUT_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "availableToGuests",
-                      "enabled", "sortOrder", "ownMemory", "mcpServers", "skills", "hidden", "public", "avatar"}
-PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "hidden", "avatar"}
+                      "enabled", "sortOrder", "ownMemory", "autoMemory", "mcpServers", "skills", "hidden", "public",
+                      "avatar"}
+PUBLIC_PERSONA_FIELDS = {"id", "name", "description", "systemPrompt", "variables", "tools", "hidden", "autoMemory",
+                         "avatar"}
 
 
 class Checks:

@@ -168,6 +168,9 @@ class PersonaBase(BaseModel):
     enabled: bool = True
     sortOrder: int = 0  # Higher numbers come first
     ownMemory: bool = False  # With the knowledge base: its own knowledge base and memory per user, not the shared one
+    # With the knowledge base: saves on its own (the save rules, the memory review, the nightly consolidation);
+    # off, only when its prompt says so or the user asks (docs/knowledge_base.md, "Saving on its own")
+    autoMemory: bool = True
     mcpServers: Optional[List[str]] = None  # Slugs of the admin MCP servers it uses (docs/mcp.md); None = none
     skills: Optional[List[str]] = None  # Names of its skills (docs/skills.md), in this order; None = none
     hidden: bool = False  # Hidden with all its chats and its own knowledge base in family mode
@@ -193,6 +196,7 @@ class PersonaUpdate(BaseModel):
     enabled: Optional[bool] = None
     sortOrder: Optional[int] = None
     ownMemory: Optional[bool] = None
+    autoMemory: Optional[bool] = None
     mcpServers: Optional[List[str]] = None  # Send null or [] for none
     skills: Optional[List[str]] = None  # Send null or [] for none
     hidden: Optional[bool] = None
@@ -213,6 +217,7 @@ class PublicPersona(BaseModel):
     variables: List[PersonaVariable] = []
     tools: Optional[List[ToolGroup]] = None
     hidden: bool = False  # The picker leaves it out in family mode
+    autoMemory: bool = True  # Saves on its own (the conversation menu names what "Save to memory" does)
     avatar: Optional[str] = None  # Its image, a data URL of a WebP; None = none
 
 
