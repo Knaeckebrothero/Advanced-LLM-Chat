@@ -162,6 +162,9 @@ export interface IPersonaBase {
   enabled: boolean;
   sortOrder: number;
   ownMemory?: boolean;  // With the knowledge base: its own knowledge base and memory per user (default: the shared one)
+  // With the knowledge base: saves on its own (default); off, only when its prompt says so or the user asks,
+  // and no memory review or nightly consolidation saves for it (docs/knowledge_base.md, "Saving on its own")
+  autoMemory?: boolean;
   mcpServers?: string[] | null;  // Slugs of the admin MCP servers it uses (docs/mcp.md); null or [] = none
   skills?: string[] | null;  // Names of its skills (docs/skills.md), in this order; null or [] = none
   hidden?: boolean;  // Hidden with all its chats and its own knowledge base in family mode
@@ -187,6 +190,7 @@ export interface IPublicPersona {
   variables: IPersonaVariable[];
   tools?: ToolGroup[] | null;
   hidden?: boolean;  // Left out of the picker in family mode
+  autoMemory?: boolean;  // Saves on its own (left out: yes); off, "Save to memory" only makes a chat searchable for it
   avatar?: string | null;  // Its image, a data URL; null = none (an icon is shown)
 }
 

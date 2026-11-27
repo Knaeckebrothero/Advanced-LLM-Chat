@@ -117,6 +117,7 @@ PERSONA_FIELDS = {
     "enabled": "enabled",
     "sortOrder": "sort_order",
     "ownMemory": "own_memory",
+    "autoMemory": "auto_memory",
     "mcpServers": "mcp_servers",
     "skills": "skills",
     "hidden": "hidden",
@@ -369,6 +370,7 @@ def persona_out(row: dict) -> PersonaOut:
         enabled=row.get("enabled") is not False,
         sortOrder=row.get("sort_order") or 0,
         ownMemory=bool(row.get("own_memory")),
+        autoMemory=row.get("auto_memory") is not False,
         mcpServers=list(row["mcp_servers"]) if row.get("mcp_servers") else None,
         skills=list(row["skills"]) if row.get("skills") else None,
         hidden=bool(row.get("hidden")),
@@ -387,6 +389,7 @@ def persona_public(row: dict) -> PublicPersona:
         variables=_variables(row),
         tools=_tools(row),
         hidden=bool(row.get("hidden")),
+        autoMemory=row.get("auto_memory") is not False,
         avatar=row.get("avatar"),
     )
 

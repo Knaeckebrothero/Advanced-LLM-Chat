@@ -185,11 +185,14 @@ class KBReviewChange(BaseModel):
 
 class KBReviewResult(BaseModel):
     """What a memory review on request did."""
-    status: Literal["done", "nothing_new", "not_available", "failed"]
+    # joined: the agent doesn't save on its own, so the messages only joined its memory (nothing was saved)
+    status: Literal["done", "nothing_new", "not_available", "failed", "joined"]
     detail: str = ""
     modelName: Optional[str] = None
     changes: List[KBReviewChange] = []
     reviewedUntil: Optional[int] = None
+    joined: int = 0  # joined: the messages that joined the memory, so its agent's past chat tools find them
+    elsewhere: int = 0  # joined: the messages that belong to another memory and stay there
 
 
 KBMemory.model_rebuild()

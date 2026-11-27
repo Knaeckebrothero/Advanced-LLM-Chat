@@ -19,7 +19,8 @@ leave alone and lists and searches leave out, its links. Agents with their own k
 export, the API's vault parameter, /vaults and /memory. The memory review
 (backend/services/memory_review.py) against the fake OpenAI server of backend/llm/tests: what it
 sends, what it saves (author 'review'), reading every message once, a failure, and which
-conversations are due. The nightly consolidation (backend/services/memory_dream.py) the same way:
+conversations are due; for an agent that doesn't save on its own, no model: its messages only join its
+memory (also through the API), and the consolidation leaves its chats out. The nightly consolidation (backend/services/memory_dream.py) the same way:
 the period, the days and their journal notes, the transcript and the changes it is given, the
 journal it writes (author 'dream'), memory_dreams, nothing to do, and a failure. Family mode
 : notes and #hidden lines hidden from the store, the tools and the API for a device
@@ -582,11 +583,12 @@ async def test_vaults():
     assert knowledge_base.list_vaults(user_ids[1]) == []
 
 
-def add_persona(name: str, tools_: list, own_memory: bool = False, enabled: bool = True) -> int:
+def add_persona(name: str, tools_: list, own_memory: bool = False, enabled: bool = True,
+                auto_memory: bool = True) -> int:
     with db.connection() as conn:
         return conn.execute(insert(personas).values(
             name=f"{TEST_PERSONA_PREFIX} {name}", system_prompt="You help.", tools=tools_, own_memory=own_memory,
-            enabled=enabled).returning(personas.c.id)).scalar_one()
+            enabled=enabled, auto_memory=auto_memory).returning(personas.c.id)).scalar_one()
 
 
 async def test_api_vaults_and_memory():
@@ -754,6 +756,105 @@ async def test_memory_review():
             assert (await memory_review.review_conversation(conversation_id)).status == "not_available"
         finally:
             memory_review.db, memory_review.resolve_memory_model, resolver.db = saved
+
+
+async def test_saves_only_when_told():
+    """
+    An agent that doesn't save on its own (personas.auto_memory off): no memory review, its messages only
+    join its memory (also on request, through the API), and the nightly consolidation leaves its chats out.
+    """
+    import time
+    from datetime import timedelta
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.api import knowledge_base as kb_api
+    from backend.llm.tests.fake_openai_server import FakeOpenAIServer
+    from backend.llm.tests.test_openai_loop import make_config
+    from backend.security import auth
+    from backend.security.auth import get_current_user
+    from backend.services import memory_dream, memory_review
+
+    storyteller = add_persona("Storyteller", ["knowledge_base", "past_chats"], own_memory=True, auto_memory=False)
+    narrator = add_persona("Narrator", ["knowledge_base", "past_chats"], auto_memory=False)  # The shared memory
+    keeper = add_persona("Keeper", ["knowledge_base"])
+    user = {"user_id": user_ids[0], "is_guest": False}
+    conversation_id, shared_id = "kb-test-told", "kb-test-told-shared"
+    base = int(time.time() * 1000) - 3_600_000
+    quiet = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30)
+    with db.connection() as conn:
+        # Stored without an agent, as an imported conversation: its messages belong to no memory
+        conn.execute(insert(conversations).values(id=conversation_id, userId=user_ids[0], name="Told test",
+                                                  lastMessageAt=quiet))
+        for offset, role, text in ((0, "user", "Once upon a time"), (1000, "Assistant", "there was a bridge."),
+                                   (2000, "system", "Slowly.")):
+            conn.execute(insert(messages).values(id=base + offset, conversationId=conversation_id, roleName=role,
+                                                 content=text, time=(base + offset) // 1000))
+        # One that an earlier agent's review gave the shared memory
+        conn.execute(insert(messages).values(id=base + 3000, conversationId=conversation_id, roleName="user",
+                                             content="Told before", time=(base + 3000) // 1000, memory_vault=0))
+        conn.execute(conversations.update().where(conversations.c.id == conversation_id)
+                     .values(persona_id=storyteller))
+        conn.execute(insert(conversations).values(id=shared_id, userId=user_ids[0], name="Told shared",
+                                                  persona_id=narrator, lastMessageAt=quiet))
+        conn.execute(insert(messages).values(id=base + 500, conversationId=shared_id, roleName="user",
+                                             content="A shared tale", time=(base + 500) // 1000))
+
+    def vaults() -> dict:
+        with db.connection() as conn:
+            return dict(conn.execute(select(messages.c.id, messages.c.memory_vault)
+                                     .where(messages.c.conversationId == conversation_id)).fetchall())
+
+    assert resolver.persona_auto_memory(user, db.get_conversation_by_id(conversation_id)) is False
+    assert resolver.persona_auto_memory(user, {"persona_id": keeper}) is True
+    assert resolver.persona_auto_memory(user, {"persona_id": None}) is True
+    saved = (memory_review.db, memory_review.resolve_memory_model, memory_dream.db, memory_dream.resolve_memory_model,
+             kb_api.db, auth.db)
+    memory_review.db = memory_dream.db = kb_api.db = auth.db = db
+    with FakeOpenAIServer() as server:
+        memory_review.resolve_memory_model = memory_dream.resolve_memory_model = \
+            lambda user_, conversation: make_config(server.base_url, reasoning="never")
+        try:
+            result = await memory_review.review_conversation(conversation_id)
+            assert (result.status, result.joined, result.elsewhere, result.reviewed_until) == \
+                ("joined", 3, 1, base + 3000), result
+            assert result.changes == [] and result.model_name is None and not server.requests, "no model call"
+            assert vaults() == {base: storyteller, base + 1000: storyteller, base + 2000: storyteller,
+                                base + 3000: 0}, "the shared memory's message stays there"
+            assert knowledge_base.get_memory(user_ids[0], storyteller) is None, "nothing saved"
+            # Not due any more; once more, nothing joins
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            due = lambda: [r["id"] for r in db.get_conversations_for_memory_review(  # noqa: E731
+                idle_before=now - timedelta(minutes=15), active_after=now - timedelta(days=7),
+                retry_before=now - timedelta(minutes=60))]
+            assert conversation_id not in due() and shared_id in due()
+            result = await memory_review.review_conversation(conversation_id)
+            assert (result.status, result.joined, result.elsewhere) == ("joined", 0, 1), result
+            # The agent with the shared memory: its messages are in it already, the loop runs no model either
+            result = await memory_review.review_conversation(shared_id)
+            assert (result.status, result.joined, result.elsewhere, result.reviewed_until) == \
+                ("joined", 0, 0, base + 500), result
+            assert shared_id not in due() and not server.requests
+            # On request, through the API
+            app = FastAPI()
+            app.include_router(kb_api.router)
+            app.dependency_overrides[get_current_user] = lambda: user
+            response = TestClient(app).post("/api/kb/review", json={"conversationId": conversation_id})
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert (body["status"], body["joined"], body["elsewhere"], body["changes"]) == ("joined", 0, 1, []), body
+            # The nightly consolidation leaves both out: in the agent's own knowledge base and in the shared one
+            now_ms = int(time.time() * 1000) + 1000
+            activity = {row["conversation_id"] for row in db.get_memory_dream_activity(base - 1, now_ms)}
+            assert not activity & {conversation_id, shared_id}, activity
+            assert await memory_dream.dream_due(now_ms=now_ms, user_id=user_ids[0]) == []
+            assert not server.requests
+            # Switched on, the agent's chats are consolidated again
+            with db.connection() as conn:
+                conn.execute(personas.update().where(personas.c.id == narrator).values(auto_memory=True))
+            assert shared_id in {row["conversation_id"] for row in db.get_memory_dream_activity(base - 1, now_ms)}
+        finally:
+            (memory_review.db, memory_review.resolve_memory_model, memory_dream.db, memory_dream.resolve_memory_model,
+             kb_api.db, auth.db) = saved
 
 
 async def test_memory_dream():
@@ -1476,7 +1577,8 @@ TESTS = [test_slugs_and_links, test_write_and_read_back, test_same_slug_is_refus
          test_update, test_search, test_list, test_archive_and_restore, test_users_are_separate, test_revisions,
          test_parallel_tool_calls, test_deleting_a_user_deletes_the_notes, test_tool_results_link_to_their_note,
          test_page_edits_and_versions, test_obsidian_export, test_api, test_memory, test_memory_limits, test_vaults,
-         test_api_vaults_and_memory, test_memory_review, test_memory_dream, test_hidden_lines,
+         test_api_vaults_and_memory, test_memory_review, test_saves_only_when_told, test_memory_dream,
+         test_hidden_lines,
          test_hidden_store_and_tools, test_hidden_api_and_agents, test_agents_hide_content, test_memory_snapshot,
          test_notes_keep_files, test_hidden_files, test_files_api_and_export]
 
