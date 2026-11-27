@@ -217,6 +217,7 @@ async def review_conversation(body: KBReviewRequest, user: dict = Depends(requir
     """
     Review a conversation for the memory now (as the memory review does once it is quiet): its
     model saves what matters from the messages since the last review. Waits for a running review.
+    For an agent that doesn't save on its own, the messages only join its memory (status joined).
     """
     if not verify_conversation_ownership(body.conversationId, user["user_id"]):
         raise HTTPException(status.HTTP_404_NOT_FOUND,
@@ -226,7 +227,7 @@ async def review_conversation(body: KBReviewRequest, user: dict = Depends(requir
                      f"{result.status}, {len(result.changes)} change(s)")
     return KBReviewResult(status=result.status, detail=result.detail, modelName=result.model_name,
                           changes=[KBReviewChange(**change) for change in result.changes],
-                          reviewedUntil=result.reviewed_until)
+                          reviewedUntil=result.reviewed_until, joined=result.joined, elsewhere=result.elsewhere)
 
 
 @router.get("/search", response_model=List[KBSearchHit])

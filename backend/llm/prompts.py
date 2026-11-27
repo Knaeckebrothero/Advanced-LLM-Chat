@@ -96,12 +96,23 @@ KB_FILES_RULES = """Images and other files:
 - One note per image. Its content says what the image shows, in enough detail to find it by words later: who and what is in it, the setting, the style and colors, any text in it. Add why it is kept and, for a generated image, the prompt and settings it was made with. Describe what you see in it, not what was asked for: look at the image first if you haven't. Give the note the tag "image".
 - The kept file gets the note's name, e.g. red-fox.png; search results and notes name the files they keep. To show one, in any conversation, place it in your answer by that name: ![A red fox in the snow](red-fox.png). A description can be wrong: look at the image itself before you claim a detail of it."""
 
-KB_PROMPT = f"""## Knowledge Base and Memory:
+# In place of KB_SAVE_RULES for an agent that doesn't save on its own (personas.auto_memory off,
+# docs/knowledge_base.md, "Saving on its own"): its own prompt says what to keep, and neither the
+# memory review nor the nightly consolidation saves anything for it
+KB_SAVE_WHEN_TOLD = """When to save something:
+- Only when your instructions above say so or the user asks you to. Nothing else saves for you: what you don't save stays only in the conversations.
+- When the user asks you to forget something, remove the line (memory_remove) or archive the note (kb_archive)."""
+
+
+def kb_prompt(auto_memory: bool = True) -> str:
+    """The section on the knowledge base and the memory; with auto_memory off, it saves only when told."""
+    save_rules = KB_SAVE_RULES if auto_memory else KB_SAVE_WHEN_TOLD
+    return f"""## Knowledge Base and Memory:
 You keep two things for this user that last across all of your conversations with them:
 - Your memory: short lines, shown below under "Your memory", that are part of every conversation. It holds what you should always have in mind about the user, and where the details are.
 - The knowledge base: Markdown notes with the details, like a notebook. You see a note only when you search for it (kb_search, kb_list) or read it (kb_read).
 
-{KB_SAVE_RULES}
+{save_rules}
 
 {KB_HOW_RULES}
 
@@ -114,6 +125,9 @@ When to look something up:
 
 Mention briefly when you save or change something. Never say you saved something unless the tool confirmed it."""
 
+
+KB_PROMPT = kb_prompt()
+
 # Heads the agent's memory (with_memory())
 MEMORY_HEADING = "## Your memory:"
 MEMORY_INTRO = "Your notes about this user from earlier conversations, which they can read and change. Follow the preferences in them."
@@ -121,16 +135,18 @@ MEMORY_EMPTY = "Your memory of this user is still empty."
 
 KB_TOOL_NAMES = set(TOOL_GROUPS["knowledge_base"])
 
-# Added when the past chat tools are enabled (docs/past_chats.md); they come only with the knowledge base
-CHAT_PROMPT = r"""## Past Chats:
+# Added when the past chat tools are enabled (docs/past_chats.md); they come only with the knowledge base.
+# CHAT_PROMPT, for an agent that saves on its own, ends with CHAT_SAVE_LINE; the one that only saves when told doesn't
+CHAT_PROMPT_WHEN_TOLD = r"""## Past Chats:
 You can search and read your earlier conversations with this user: the ones that belong to your memory, this one included. Your memory and notes are summaries; the chats are the source, word for word.
 - Search them when the user refers to an earlier conversation ("like we discussed", "last time", "you said"), asks what you talked about, or you need a detail your memory and notes don't have.
 - chat_search takes a regular expression, case-insensitive. Put alternatives and both languages into one pattern, e.g. "\bmother\b|\bmom\b|mutter|mama"; a part of a word also finds longer words. With many hits, make the pattern more specific or limit it with after and before; with none, try other words before you give up.
 - chat_list shows the conversations by date, e.g. for "what did we talk about last week".
 - Read around a hit with chat_read before you rely on a single line.
 - Say which conversation and date something comes from. If you find nothing, say so instead of guessing.
-- An earlier chat may have been roleplay or fiction, or with another agent: what was said in character is not a fact about the user.
-- What you find that matters beyond this conversation belongs in your memory or a note, as usual."""
+- An earlier chat may have been roleplay or fiction, or with another agent: what was said in character is not a fact about the user."""
+CHAT_SAVE_LINE = "- What you find that matters beyond this conversation belongs in your memory or a note, as usual."
+CHAT_PROMPT = CHAT_PROMPT_WHEN_TOLD + "\n" + CHAT_SAVE_LINE
 
 CHAT_TOOL_NAMES = set(TOOL_GROUPS["past_chats"])
 
@@ -207,6 +223,7 @@ def build_system_prompt(
     persona_prompt: Optional[str],
     tools: Union[ToolRegistry, Iterable[str], None],
     hide_definition: Optional[str] = None,
+    auto_memory: bool = True,
 ) -> str:
     """
     Build the agent's system prompt.
@@ -215,6 +232,8 @@ def build_system_prompt(
         persona_prompt: A rendered persona prompt that replaces the identity paragraph, or None.
         tools: The tools the model gets (a registry or tool names); None or empty for no tools.
         hide_definition: What the agent hides on its own (with hide_chat); the section is left out without it.
+        auto_memory: The agent saves on its own (personas.auto_memory, persona_auto_memory()); off, the
+            knowledge base and past chat sections tell it to save only when its prompt says so or the user asks.
 
     Returns:
         The system prompt.
@@ -241,9 +260,9 @@ def build_system_prompt(
     if names & GRAPH_TOOL_NAMES:
         sections.append(GRAPH_PROMPT)
     if names & KB_TOOL_NAMES:
-        sections.append(KB_PROMPT)
+        sections.append(kb_prompt(auto_memory))
     if names & CHAT_TOOL_NAMES:
-        sections.append(CHAT_PROMPT)
+        sections.append(CHAT_PROMPT if auto_memory else CHAT_PROMPT_WHEN_TOLD)
     if "hide_chat" in names:
         if hide_definition and hide_definition.strip():
             sections.append(hide_prompt(hide_definition, bool(names & KB_TOOL_NAMES)))

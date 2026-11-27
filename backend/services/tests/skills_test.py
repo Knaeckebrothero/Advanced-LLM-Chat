@@ -204,16 +204,25 @@ def check_catalog_file() -> None:
             {"name": f"{PREFIX}-extra", "description": "d", "content": "c", "colour": "red"},
         ],
         "personas": [{"name": f"{PREFIX} Imported", "system_prompt": "You help.",
-                      "skills": [f"{PREFIX}-imported", kept["name"]]}],
+                      "skills": [f"{PREFIX}-imported", kept["name"]]},
+                     # An agent that saves only when told (docs/knowledge_base.md, "Saving on its own")
+                     {"name": f"{PREFIX} Storyteller", "system_prompt": "You tell.", "tools": ["knowledge_base"],
+                      "auto_memory": False}],
     }
     result = catalog_file.import_catalog(data)
     assert (result.skills.created, result.skills.updated) == (2, 1), result
-    assert result.personas.created == 1, result
+    assert result.personas.created == 2, result
     assert any("Not A Name" in error and "lowercase letters" in error for error in result.errors), result.errors
     assert any("unknown key 'colour'" in error for error in result.errors), result.errors
     assert skills.get_skill_by_name(kept["name"])["description"] == "Changed by the import."
     imported_agent = next(p for p in service.list_personas() if p.name == f"{PREFIX} Imported")
     assert imported_agent.skills == [f"{PREFIX}-imported", kept["name"]]
+    assert imported_agent.autoMemory is True, "an entry without auto_memory saves on its own"
+    storyteller = next(p for p in service.list_personas() if p.name == f"{PREFIX} Storyteller")
+    assert storyteller.autoMemory is False
+    exported_agents = {entry["name"]: entry for entry in catalog_file.export_catalog()["personas"]}
+    assert exported_agents[f"{PREFIX} Storyteller"]["auto_memory"] is False
+    assert exported_agents[f"{PREFIX} Imported"]["auto_memory"] is True
 
     # Seeding only creates what's missing: the change made in the app stays
     seed = {"version": 1, "skills": [{"name": kept["name"], "description": "From the seed.", "content": "Seed."},

@@ -50,6 +50,7 @@ from backend.catalog.resolver import (
     ModelNotAllowed,
     ModelNotAvailable,
     conversation_hidden,
+    persona_auto_memory,
     persona_prompt_for_conversation,
     persona_skills,
     persona_tool_groups,
@@ -140,7 +141,8 @@ def _system_prompt(current_user: dict, conversation_id: str, tools=None) -> str:
     own = _own_system_prompt(conversation)
     if own is not None:
         return own
-    return build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools)
+    return build_system_prompt(persona_prompt_for_conversation(current_user, conversation), tools,
+                               auto_memory=persona_auto_memory(current_user, conversation))
 
 
 def _agent_tools(current_user: dict, conversation: Optional[dict], config: ModelConfig,
@@ -325,7 +327,8 @@ async def _answer_parts(
     if base_prompt is None:
         base_prompt, memory_note = _memory_prompt(
             with_mcp_servers(with_skills(build_system_prompt(persona_prompt_for_conversation(current_user, conversation),
-                                                             tools, hide_definition), skills),
+                                                             tools, hide_definition,
+                                                             persona_auto_memory(current_user, conversation)), skills),
                              toolset.servers, toolset.unavailable()),
             current_user, conversation, tools, hide)
     return AnswerParts(tools, history_builder, base_prompt, own_prompt,

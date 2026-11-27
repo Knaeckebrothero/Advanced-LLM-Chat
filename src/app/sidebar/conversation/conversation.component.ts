@@ -234,17 +234,46 @@ export class ConversationComponent implements OnInit, OnDestroy {
     this.snackBar.open(this.translate.instant(key, params), undefined, { duration: 5000 });
   }
 
-  /** The conversation's agent has the knowledge base, so it has a memory (only for signed-in users). */
+  /**
+   * The menu offers "Save to memory": the conversation's agent has the knowledge base (only for signed-in
+   * users). For an agent that saves only when told, it only makes the chat searchable for its past chat
+   * tools, so it is offered only with them.
+   */
   get hasMemory(): boolean {
-    return !this.auth.isGuest && !!this.catalog.getPersona(this.conversation.personaId)?.tools?.includes('knowledge_base');
+    const tools = this.catalog.getPersona(this.conversation.personaId)?.tools;
+    return !this.auth.isGuest && !!tools?.includes('knowledge_base') && (this.agentSavesOnItsOwn || tools.includes('past_chats'));
   }
 
-  /** Save what matters from this conversation to its agent's memory now, instead of after it has been quiet. */
+  /** The conversation's agent saves on its own (docs/knowledge_base.md, "Saving on its own"). */
+  get agentSavesOnItsOwn(): boolean {
+    return this.catalog.getPersona(this.conversation.personaId)?.autoMemory !== false;
+  }
+
+  /** The conversation's agent's name, for the texts of an agent that saves only when told. */
+  get agentName(): string {
+    return this.catalog.getPersona(this.conversation.personaId)?.name ?? '';
+  }
+
+  get memoryLabel(): string {
+    if (this.agentSavesOnItsOwn) return this.reviewingMemory ? 'conversationMenu.memorySaving' : 'conversationMenu.memory';
+    return this.reviewingMemory ? 'conversationMenu.memorySearchableWorking' : 'conversationMenu.memorySearchable';
+  }
+
+  /**
+   * Save what matters from this conversation to its agent's memory now, instead of after it has been quiet.
+   * For an agent that saves only when told, nothing is saved: the messages only join its memory (status joined).
+   */
   async reviewMemory(): Promise<void> {
     if (this.reviewingMemory) return;
     this.reviewingMemory = true;
     try {
       const result = await this.chatState.reviewMemory(this.conversation.id);
+      if (result.status === 'joined') {
+        const key = !result.elsewhere ? (result.joined ? 'conversationMenu.memoryJoined' : 'conversationMenu.memoryJoinedAlready')
+          : result.joined ? 'conversationMenu.memoryJoinedPartly' : 'conversationMenu.memoryElsewhere';
+        this.snackBar.open(this.translate.instant(key, { agent: this.agentName }), undefined, { duration: 8000 });
+        return;
+      }
       if (result.status === 'done' && result.changes.length) {
         const vault = result.changes[0].vault;
         this.snackBar.open(this.translate.instant('conversationMenu.memorySaved', { count: result.changes.length }),

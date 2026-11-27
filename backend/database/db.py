@@ -1510,7 +1510,8 @@ class Database:
     def get_memory_dream_activity(self, after_id: int, until_id: int) -> list[dict]:
         """
         The conversations with new messages for the nightly consolidation: of signed-in users, with
-        an enabled persona that selects the knowledge base, with a message (not a system message)
+        an enabled persona that selects the knowledge base and saves on its own (auto_memory: the
+        others are left out, in the shared knowledge base too), with a message (not a system message)
         in (after_id, until_id]. Each row: user_id, vault (the persona's id with own_memory, else 0),
         conversation_id, name, persona_id, hidden (marked, or of a hidden agent: ),
         first_message_id and last_message_id in that range.
@@ -1524,7 +1525,7 @@ class Database:
                 FROM conversations c
                 JOIN users u ON u.id = c."userId" AND NOT coalesce(u.is_guest, false)
                 JOIN personas p ON p.id = c.persona_id AND coalesce(p.enabled, true)
-                                   AND p.tools @> '["knowledge_base"]'::jsonb
+                                   AND p.tools @> '["knowledge_base"]'::jsonb AND p.auto_memory IS NOT FALSE
                 JOIN messages m ON m."conversationId" = c.id AND m."roleName" <> 'system'
                                    AND m.id > :after_id AND m.id <= :until_id
                 GROUP BY c."userId", p.own_memory, p.id, c.id
@@ -1576,6 +1577,39 @@ class Database:
                 if claimed:
                     log.info(f"Memory review of conversation {conversation_id}: {claimed} message(s) joined "
                              f"memory {vault}")
+
+    def join_memory(self, conversation_id: str, vault: int) -> tuple[int, int, Optional[int]]:
+        """
+        The memory review of an agent that doesn't save on its own (personas.auto_memory off): the
+        conversation's messages that belong to no memory join this one, as after a review, and the
+        review's mark moves to its newest message; nothing is read or saved (docs/past_chats.md).
+
+        Returns:
+            (the messages that joined, the messages that belong to another memory and stay there,
+            the newest message's id: the mark; None for a conversation without messages)
+        """
+        with self.connection() as conn:
+            newest = conn.execute(select(func.max(messages.c.id))
+                                  .where(messages.c.conversationId == conversation_id)).scalar()
+            if newest is None:
+                return 0, 0, None
+            conn.execute(update(conversations).where(conversations.c.id == conversation_id).values(
+                memory_reviewed_until=newest, memory_review_failed_at=None,
+                updatedAt=conversations.c.updatedAt))  # No change of the conversation, as in set_memory_review()
+            joined = conn.execute(update(messages).where(
+                messages.c.conversationId == conversation_id,
+                messages.c.id <= newest,
+                messages.c.memory_vault.is_(None),
+            ).values(memory_vault=vault, updated_at=messages.c.updated_at)).rowcount  # Not a change of the message
+            elsewhere = conn.execute(select(func.count()).select_from(messages).where(
+                messages.c.conversationId == conversation_id,
+                messages.c.memory_vault.is_not(None),
+                messages.c.memory_vault != vault,
+            )).scalar() or 0
+        if joined:
+            log.info(f"Memory of conversation {conversation_id}: {joined} message(s) joined memory {vault}, "
+                     f"nothing saved (the agent doesn't save on its own)")
+        return joined, elsewhere, newest
 
     def get_message_count(self, conversation_id: str) -> int:
         """

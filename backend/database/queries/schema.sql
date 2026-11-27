@@ -258,6 +258,7 @@ CREATE TABLE IF NOT EXISTS personas (
     enabled BOOLEAN DEFAULT TRUE,
     sort_order INTEGER DEFAULT 0,
     own_memory BOOLEAN DEFAULT FALSE,        -- its own knowledge base and memory per user instead of the user's shared one
+    auto_memory BOOLEAN NOT NULL DEFAULT TRUE, -- saves on its own: the save rules, the memory review, the nightly consolidation
     mcp_servers JSONB,                       -- slugs of the admin MCP servers it uses (docs/mcp.md), NULL = none
     skills JSONB,                            -- names of its skills (docs/skills.md), NULL = none
     hidden BOOLEAN NOT NULL DEFAULT FALSE,     -- hidden with its chats and its own knowledge base in family mode
@@ -363,6 +364,10 @@ ALTER TABLE personas ADD COLUMN IF NOT EXISTS public BOOLEAN NOT NULL DEFAULT FA
 -- name: add_persona_avatar
 -- Databases from before agents had an image (the CREATE TABLE above has it)
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar TEXT;
+
+-- name: add_persona_auto_memory
+-- Databases from before an agent could save only when told (the CREATE TABLE above has it, docs/knowledge_base.md)
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS auto_memory BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- name: add_model_price_columns
 -- Databases from before the price of cache reads and the providers' own costs (the CREATE TABLEs above have them)

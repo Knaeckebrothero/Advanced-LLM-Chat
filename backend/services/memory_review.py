@@ -18,6 +18,10 @@ is tried again after RETRY_MINUTES. review_conversation() also runs on request
 The messages the review read that belong to no memory yet (e.g. an imported conversation that got
 an agent with the knowledge base) join the memory it saves to, so that agent's past chat tools find
 them (db.set_memory_review(..., vault=...), docs/past_chats.md).
+
+An agent that doesn't save on its own (personas.auto_memory off, e.g. a storyteller whose prompt
+says what becomes canon) gets no review: its conversation's messages only join its memory, without
+a model (db.join_memory(), docs/knowledge_base.md, "Saving on its own").
 """
 import asyncio
 import logging
@@ -26,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from backend.catalog.resolver import persona_tool_groups, persona_vault, resolve_memory_model
+from backend.catalog.resolver import persona_auto_memory, persona_tool_groups, persona_vault, resolve_memory_model
 from backend.config import (DEFAULT_CONTEXT_WINDOW, MEMORY_REVIEW_ENABLED, MEMORY_REVIEW_IDLE_MINUTES,
                             MEMORY_REVIEW_MAX_AGE_DAYS)
 from backend.database import db
@@ -97,12 +101,16 @@ _lock = asyncio.Lock()
 @dataclass
 class ReviewResult:
     """What a review did."""
-    status: str                             # 'done' | 'nothing_new' | 'not_available' | 'failed'
+    status: str                             # 'done' | 'nothing_new' | 'not_available' | 'failed' | 'joined'
     detail: str = ""                        # Why it was not available or failed; the model's last line when done
     model_name: Optional[str] = None
     changes: list[dict] = field(default_factory=list)   # [{"tool", "title", "content", "note", "vault"}]
     reviewed_until: Optional[int] = None
     usage: Usage = field(default_factory=Usage)
+    # 'joined' (an agent that doesn't save on its own): the messages that joined its memory, and those of
+    # the conversation that belong to another memory and stay there
+    joined: int = 0
+    elsewhere: int = 0
 
 
 def _now() -> datetime:
@@ -239,6 +247,12 @@ async def _review(conversation_id: str) -> ReviewResult:
         # E.g. the user may no longer use the agent: the loop asks again after RETRY_MINUTES
         db.set_memory_review(conversation_id, failed=True)
         return ReviewResult("not_available", "The conversation's agent doesn't have the knowledge base")
+    if not persona_auto_memory(user, conversation):
+        # Its own prompt decides what it keeps: its messages only join its memory, for its past chat tools
+        joined, elsewhere, newest = db.join_memory(conversation_id, persona_vault(user, conversation))
+        return ReviewResult("joined", f"{joined} message(s) joined the memory, {elsewhere} belong to another; "
+                                      f"nothing saved: the agent saves only when told",
+                            reviewed_until=newest, joined=joined, elsewhere=elsewhere)
 
     # The agent marks hidden content itself: so does the review in its name, the conversation too
     hide_definition = auto_hide_definition(user["user_id"])
