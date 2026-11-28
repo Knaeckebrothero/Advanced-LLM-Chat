@@ -234,3 +234,4 @@ The compose files and the Helm chart run `pgvector/pgvector:pg16` (Debian) inste
 - **`[[links]]` in chat answers:** the agent mentions notes as `[[slug]]`, which the chat shows as plain text; they could link to the page.
 - **A diff** between two versions in the history.
 - **Memory:** the nightly consolidation in docker compose (Kubernetes only, by decision). The search over past conversations is built: `docs/past_chats.md`.
+- **A weekly check-up of the whole knowledge base** (planned, `docs/memory_checkup.md`): the review and the consolidation only look at what is new, so nothing reads the notes and the memory as a whole. A model would go over them once a week and propose what to merge, rewrite, shorten, correct or link, in a conversation with the agent where the user agrees and the agent applies.
